@@ -46,8 +46,9 @@ instead of 56. On 0.26.0-b2, with
 (also the checkpoint in [intel/llm-scaler#636](https://github.com/intel/llm-scaler/issues/636)):
 
 - eager mode serves it correctly but slowly, 14-17 tok/s at one stream (vLLM's own throughput
-  log, MTP 3), because the XPU AutoRound path (`INCXPULinearMethod`) runs oneDNN's generic
-  `int4_gemm_w4a16` for every shape, where `sym_int4` sends decode to ESIMD kernels;
+  log, MTP 3). With `auto_round_kernel` installed, as it is in this image, the XPU AutoRound path
+  is `INCARKLinearMethod` (`torch.ops.vllm.inc_ark_woq_linear`), where `sym_int4` sends decode to
+  ESIMD kernels;
 - compiled mode returns garbage from the first token, but only with XPU graphs and MTP
   speculation together: eager, compiled without XPU graphs, and XPU graphs without speculation
   all give correct output;

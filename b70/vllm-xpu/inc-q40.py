@@ -3,9 +3,10 @@
 An AutoRound checkpoint packed as auto_gptq, symmetric, 4 bits, group 128 already holds
 GGML Q4_0 with 128-wide blocks: q in [0, 15] with the zero point at 8, eight nibbles per
 int32 in order along K, fp16 scales. It stores them K-major ([K/8, N], [K/128, N]); the
-sym_int4 method wants them N-major. vLLM's XPU AutoRound path (inc) builds that same N-major
-storage and hands it to oneDNN's generic int4 GEMM for every shape, which decodes Qwen3.8-27B
-at ~15 tok/s against ~57 for sym_int4 in eager mode, and produces garbage in compiled mode.
+sym_int4 method wants them N-major. vLLM's stock XPU AutoRound path (with auto_round_kernel
+installed, as in this image: INCARKLinearMethod, torch.ops.vllm.inc_ark_woq_linear) decodes
+Qwen3.8-27B at 14-17 tok/s against ~57 for sym_int4 in eager mode, and returns garbage with XPU
+graphs and MTP speculation together.
 
 This adds INCXPUQ40LinearMethod: it loads the checkpoint's tensors as inc does, transposes
 them into sym_int4's layout after load, and is otherwise the sym_int4 method, so the tuned
