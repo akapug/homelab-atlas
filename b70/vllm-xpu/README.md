@@ -3,7 +3,8 @@
 Intel's [llm-scaler](https://github.com/intel/llm-scaler) image `intel/llm-scaler-vllm:0.26.0-b2`
 (vLLM 0.26.1.dev0+g568afb3a1 with Intel's XPU kernels) is the fastest way we have found to serve
 Qwen3.8-27B on one Arc Pro B70. We made three changes to it. All are small and are here as files
-you can apply: two fixes, and a speed-up for speculative decoding (section 3).
+you can apply: two fixes, and a speed-up for speculative decoding (section 3). A note on the host
+follows them: other work on the server's CCD can halve a MoE's decode ("The host's CPU").
 
 Everything below was measured on one B70 (32 GB) with Qwen3.8-27B, `--dtype float16`,
 `--max-model-len 40960`, `--max-num-seqs 4` unless stated otherwise, and speculative decoding
@@ -177,6 +178,51 @@ character deep in a long answer); the other 40 were exact. A bigger window is ca
 comprehension: planting one of three known defects in unrelated code and growing the prompt, this
 model found them in 9 of 9 reads at 2-12k tokens and in 10 of 36 past ~23k. An earlier measurement
 on llama.cpp with an 8-bit cache had the same shape, so the limit is the model, not the fp8 cache.
+
+## The host's CPU: keep other work off the server's CCD
+
+If the machine that serves the model also runs other heavy work (builds, test suites), where that
+work runs matters as much as how much of it there is. vLLM on XPU in eager mode launches every
+kernel from Python, so a short speculative step is largely CPU time. We measured this with
+Qwen3.6-35B-A3B (the MoE, 3B active, eager, fp8 KV, MTP 3 with the section-3 draft vocabulary), on a
+Ryzen 9 9950X3D. That CPU has two CCDs, each with its own L3: 96 MB (3D V-cache) on CPUs 0-7 and
+16-23, 32 MB on 8-15 and 24-31. The server ran in docker, and its CPU set was changed live
+(`docker update --cpuset-cpus`). Background load ran niced 19 in a user scope. Each figure is one
+run of [`../bench/spec-step-cost.sh`](../bench/spec-step-cost.sh) (one stream, 1,024 tokens), in
+ms per speculative step, so lower is better. Runs that another request shared are left out.
+
+| setup | ms per step |
+|---|---|
+| idle | 17.4, 19.3 |
+| idle, the server on one CCD (8-15, 24-31) | 15.2, 15.2 |
+| compute load (`stress-ng --cpu`) on every CPU | 23.4, 23.9 |
+| the same, the server on 2 cores of that CCD, the load on the other 28 CPUs | 22.1, 25.0 |
+| the same, the server on one CCD, the load on the other CCD | 19.1, 19.3 |
+| memory-bandwidth load (`stress-ng --stream`) on every CPU | 379 (7 tok/s) |
+| the same, the server on one CCD, the load still on every CPU | 398, 402 |
+| the same, the server on one CCD, the load on the other CCD | 17.8, 19.4 |
+| a real mixed load (a Rust release build, JavaScript test runners, Python jobs), unpinned | 30.5, 32.0, 33.6 |
+| the same, the server on one CCD | 35.0, 35.7 |
+| the same, every user process on the other CCD (`user.slice` AllowedCPUs) | **15.2, 15.2** |
+
+- **What costs the server is sharing its CCD.** Waiting for a core is not the problem. Pinning the
+  server does not help while other work still runs on its CCD, and a memory-bound load spread over
+  every CPU made it about 20 times slower.
+- **What helps is keeping everything else on the other CCD.** That was as fast as idle.
+- **The dense Qwen3.8-27B did not move.** Its 40 ms step is mostly GPU work: 40.1 unpinned under the
+  real load, 40.2 and 40.4 split.
+- **Limits.** One CPU and one model family. The server ran on the smaller-cache CCD; we did not try
+  it on the V-cache CCD. The real load varied from run to run.
+
+Our servers are idle most of the time, and a permanent split would take half the CPU from the other
+work. So we split only while a server is busy:
+- [`serving-cpu-guard.sh`](serving-cpu-guard.sh) runs as root, with
+  [`serving-cpu-guard.service`](serving-cpu-guard.service).
+- It keeps the server containers on one CCD.
+- While any of them has a request in flight, plus 20 s after the last one, it limits `user.slice`
+  (every login session and user service) to the other CCD. Otherwise that work gets every CPU.
+- Stopping it restores both. Measured with it running under our normal load: 15.2 ms per step
+  (190 tok/s).
 
 ## Apply
 

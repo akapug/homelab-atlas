@@ -1,0 +1,16 @@
+[Unit]
+Description=Keep other work off the inference server's CCD while it serves (serving-cpu-guard.sh)
+After=docker.service
+Wants=docker.service
+
+[Service]
+# One CCD each, as cpuset lists; these are a Ryzen 9 9950X3D's (see serving-cpu-guard.sh)
+Environment=CONTAINERS=my-vllm PORTS=8000 SERVE_CPUS=8-15,24-31 USER_CPUS=0-7,16-23
+ExecStart=/usr/local/bin/serving-cpu-guard.sh
+# a killed guard must not leave user work confined to half the CPUs
+ExecStopPost=/bin/systemctl set-property --runtime user.slice AllowedCPUs=
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

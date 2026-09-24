@@ -5,6 +5,7 @@
 | [`decode-streams.py`](decode-streams.py) | aggregate decode tok/s of a llama-server at N simultaneous streams and set prompt depths, from the server's own per-request timings |
 | [`decode-vllm.py`](decode-vllm.py) | the same against an OpenAI-compatible server that returns no timings (vLLM): each stream's decode is timed from its first to its last streamed chunk, tokens from `usage` |
 | [`spec-step-cost.sh`](spec-step-cost.sh) | the time of one speculative verify step at the server's current draft count: one stream of 1,024 tokens, tokens a step from vLLM's draft counters; it waits for an idle server and flags a run other requests shared |
+| [`cpu-contention-probe.sh`](cpu-contention-probe.sh) | whether host CPU load slows a vLLM server's speculative step, and what gets it back: `spec-step-cost.sh` idle, under `stress-ng` on every CPU, with the container pinned (`docker update`, live) and the load on the other CPUs, and pinned alone |
 | [`constrained-probe.py`](constrained-probe.py) | JSON schema, JSON mode, a tool call and a thinking request, the request shapes speculative decoding or a new kernel path can break |
 
 ```
