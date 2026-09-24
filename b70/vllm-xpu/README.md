@@ -1,9 +1,9 @@
-# vLLM on the Arc Pro B70: two fixes to llm-scaler 0.26.0-b2
+# vLLM on the Arc Pro B70: three changes to llm-scaler 0.26.0-b2
 
 Intel's [llm-scaler](https://github.com/intel/llm-scaler) image `intel/llm-scaler-vllm:0.26.0-b2`
 (vLLM 0.26.1.dev0+g568afb3a1 with Intel's XPU kernels) is the fastest way we have found to serve
-Qwen3.8-27B on one Arc Pro B70. We had to make two changes to it. Both are small and are here as
-files you can apply.
+Qwen3.8-27B on one Arc Pro B70. We made three changes to it. All are small and are here as files
+you can apply: two fixes, and a speed-up for speculative decoding (section 3).
 
 Everything below was measured on one B70 (32 GB) with Qwen3.8-27B, `--dtype float16`,
 `--max-model-len 40960`, `--max-num-seqs 4` unless stated otherwise, and speculative decoding
@@ -105,6 +105,61 @@ JSON schema, JSON mode, a tool call, a thinking request) passes on both.
 Limits: one model, one card, tensor parallel 1. Not tried: AWQ-packed checkpoints, other group
 sizes (those keep the stock path), other models.
 
+## 3. A smaller vocabulary for the MTP drafter (`draft-vocab.py`)
+
+With speculative decoding on, each extra draft token cost a Qwen3.8-27B verify step ~5.5 ms on a
+B70, and most of it was not the MTP layer itself. The MTP head has no lm_head of its own: vLLM gives
+it the target's, which the AutoRound checkpoint keeps unquantized, 248,320 x 5,120 fp16 = 2.54 GB,
+read whole for every draft token (~4.3 ms at the card's ~590 GB/s). Drafting is greedy, so only the
+argmax of those logits is used, and nearly all of the 248k rows are tokens our output never
+contains.
+
+[`draft-vocab.py`](draft-vocab.py) patches the drafter (`qwen3_5_mtp.py`) to score only the token
+ids listed in a file named by `VLLM_DRAFT_VOCAB`, from a copy of those rows taken once, and to give
+every other token -inf. The target still verifies every draft with its full lm_head, so the output
+is unchanged; a token missing from the list is a rejected draft, which costs acceptance, not
+correctness. Unset, the file behaves as before. This is the idea of FR-Spec (Zhao et al., 2025,
+"frequency-ranked speculative sampling"), which SGLang ships as `--speculative-token-map`; upstream
+vLLM has no equivalent today.
+
+The lists ([`draft-vocab/`](draft-vocab/)) come from [`draft-vocab-build.py`](draft-vocab-build.py):
+every token seen in about 10 million tokens of our own source code, docs and CI logs (37,435
+distinct), plus ids below 32,768 and the tokenizer's added tokens, 50,521 ids for Qwen3.8-27B
+(50,528 for Qwen3.6-35B-A3B, whose tokenizer differs). On text the model itself wrote and the list
+never saw, they cover 99.4 % and 99.2 % of tokens.
+
+Verify-step time at one stream, on an idle server ([`../bench/spec-step-cost.sh`](../bench/spec-step-cost.sh):
+1,024 tokens of a log summary, the draft counters for tokens a step; eager, fp8 KV, a 131,072-token
+window, 8 sequences; two runs each, averaged):
+
+| Qwen3.8-27B drafter vocabulary | 3 drafts | 5 drafts | 7 drafts | each extra draft |
+|---|---:|---:|---:|---:|
+| all 248,320 | 50.7 ms | 61.6 ms | | 5.5 ms |
+| ids below 100,000 | 43.0 ms | 49.0 ms | | 3.0 ms |
+| the 50,521-id list | 40.2 ms | 44.7 ms | 49.6 ms | 2.3 ms |
+
+At 3 drafts the tokens a step did not move (2.99-3.04 with the full vocabulary, 2.96-3.00 with the
+list), so one stream went from 59.5 to 74.6 tok/s, +25 %. On real coding-agent traffic (Claude Code
+through a proxy, four repository tasks) the drafter accepted 2.37 tokens a step with the list
+against 2.25 without, in separate runs: no loss we can measure. Qwen3.6-35B-A3B (the MoE, BF16
+quantized to `sym_int4` at load), whose drafter read a 1 GB lm_head: 19.3 to 15.2 ms a step at 3
+drafts, 147.4 to 189.8 tok/s, same acceptance (2.84 and 2.88 tokens a step). That MoE's short eager
+steps are sensitive to other work on the host's CPUs: with two cores busy the same measurement read
+15.7-19.9 ms.
+
+Checks. Greedy output: for the 27B with the ids-below-100k list, 6 of 14 outputs are identical to
+the no-speculation output, as with the full-vocabulary drafter, and the rest part at the same
+near-ties; for the MoE with its list, 9 of 14 are identical to its full-vocabulary drafter's, the
+rest parting late. In production with the lists, for both models: streamed tool calls arrive
+identical to non-streamed ones (16 of 16), a JSON-schema, JSON-mode, tool-call and thinking probe
+passes, and our 41-log CI-triage ruler scores 41 of 41 exact at 4-way concurrency.
+
+Why it pays so much here: the card is bandwidth-bound for one stream, the vocabulary is large, and
+the head is unquantized, so the head read was most of a draft. vLLM shares the target's lm_head with
+MTP drafters in general, so other large-vocabulary models may pay the same cost. Cheaper drafts can
+make more of them pay, but only where they are accepted: on these log summaries, with the list, 5
+drafts ran 74-78 tok/s and 7 drafts 68-71.
+
 ## A 131k-token window on one card
 
 With `--kv-cache-dtype fp8 --max-model-len 131072` (same flags otherwise, compiled + XPU graphs,
@@ -133,6 +188,17 @@ patch -p1 < inc-q40.diff
 python3 fix-699.py vllm/model_executor/layers/quantization/sym_int4.py
 find vllm/model_executor/layers/quantization -name '*.pyc' -delete
 ```
+
+For the smaller draft vocabulary (section 3), patch the drafter, put a list where the server can read
+it, and name it in the environment:
+
+```
+python3 draft-vocab.py vllm/model_executor/models/qwen3_5_mtp.py
+find vllm/model_executor/models -name 'qwen3_5_mtp*.pyc' -delete
+export VLLM_DRAFT_VOCAB=/path/to/draft-vocab/qwen38-freq32k.txt   # before vllm serve
+```
+
+The server logs `draft vocab: 50521 of 248320 tokens` on its first draft.
 
 Then serve the checkpoint with its own quantization method (no `--quantization` flag):
 
@@ -163,3 +229,5 @@ to `xhigh`, `minimal` and `none` to `low`, and a null to the default, and change
 python3 effort-template.py /path/to/Qwen3.8-27B-checkpoint qwen38-effort.jinja
 vllm serve ... --chat-template qwen38-effort.jinja
 ```
+
+-- Claude Opus 5.5, working in [helm](https://github.com/akapug/helm) for @akapug
