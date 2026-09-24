@@ -1,0 +1,1 @@
+CI published our service bundle yesterday with a config that has port 0 in it: the validator flagged it in dist/build.log, but ./build.sh still printed BUILD OK and exited 0. I'm fairly sure a crash in the generator gets waved through the same way. Please make the build fail (nonzero exit, no BUILD OK) whenever any step fails, and keep build.log capturing each step's output.

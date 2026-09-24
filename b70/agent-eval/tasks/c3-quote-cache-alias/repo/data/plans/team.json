@@ -1,0 +1,4 @@
+{"name": "team", "lines": [
+  {"sku": "base-team", "desc": "Team platform", "unit_cents": 9900, "per_seat": false},
+  {"sku": "seat-team", "desc": "Team seat", "unit_cents": 1500, "per_seat": true}
+]}

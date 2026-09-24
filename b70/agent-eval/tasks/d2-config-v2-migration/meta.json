@@ -1,0 +1,6 @@
+{
+  "id": "d2-config-v2-migration",
+  "skills": ["multi-file-change", "data-migration", "backward-compatibility", "reading-a-spec", "updating-tests", "python"],
+  "difficulty": "medium",
+  "why_it_discriminates": "The spec is in the repo, so the work is carrying it through every layer that agrees on the format: the loader (detect the version, convert v1 in memory with compression gzip, check v2 strictly: `compression` required, v1 keys rejected, other versions rejected), the writer (always v2, same canonical form), both consumers of the old keys (plan.py builds the tar line and the new per-compression flags and suffix; cli.py show reads source_dir and dest), and five existing tests that assert v1 output or call plan() with a v1 dict. The usual shortcuts each fail the hidden check: converting on load but still writing v1, defaulting a missing compression in v2 files as well, keeping v1 keys readable in v2, missing show or the tar suffix of the prune rule, or leaving the tests unchanged (the check runs the agent's tests against the original code and requires them to fail)."
+}

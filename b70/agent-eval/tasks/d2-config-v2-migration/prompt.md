@@ -1,0 +1,1 @@
+We've agreed on version 2 of the backup job file format (docs/config-v2.md) and nobody has implemented it yet. Please do: `bkp` should work on v2 files, the v1 files people already have must keep loading and planning exactly as before, `bkp fmt` should write v2, and a v2 file should survive a load and save unchanged. Update the tests to cover it.

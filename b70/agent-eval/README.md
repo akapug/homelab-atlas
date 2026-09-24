@@ -21,34 +21,55 @@ sites, `>=` for `>`, and so on).
 | `b1-archive-spaces` | easy | a bash job that splits file names with spaces and hides failures behind `tee` |
 | `b2-ledger-report` | medium | a new CLI subcommand from a short spec, with tests |
 | `b3-rename-money-fmt` | hard | a keyword-only rename where one untested module calls the old name positionally |
+| `c1-log-bom-crlf` | easy | a log parser that misreads a file with a UTF-8 BOM and CRLF line endings |
+| `c2-joborder-perf` | medium | a quadratic scheduler and loader that must get fast without changing any output |
+| `c3-quote-cache-alias` | hard | a crash whose cause is a shared cached object that three modules change in place |
+| `d1-build-green-on-error` | easy | a build script that reports success through two separately masked failures |
+| `d2-config-v2-migration` | medium | a config format v1 to v2 across the loader, the writer, two readers and the tests |
+| `d3-stream-glued-records` | hard | a streaming decoder that merges records when an escape is split across reads |
+
+Round 2's six tasks were also checked with an alternative correct fix placed elsewhere in the code,
+which passes, so the checks test behavior and not the reference patch.
 
 ## Results (2026-09-24)
 
 Claude Code 2.1.281, each model served by vLLM on its own B70 (see [`../`](../) and
 [`../qwen36-35b-a3b.md`](../qwen36-35b-a3b.md)), reached through an Anthropic-to-OpenAI proxy.
-"Capped" is vLLM's `thinking_token_budget` 8192; "off" is `enable_thinking: false`. 6 tasks x 2
-passes = 12 runs per config, 20-minute limit per task. Rows: [`results.csv`](results.csv).
+"Capped" is vLLM's `thinking_token_budget` 8192; "off" is `enable_thinking: false`. 20-minute limit
+per task. Rows: [`results.csv`](results.csv).
 
-| model and thinking | passed | 95 % CI (Wilson) | median time per task | median turns |
-|---|---|---|---|---|
-| Qwen3.8-27B (dense), capped | 12 / 12 | 76-100 % | 278 s | 20.5 |
-| Qwen3.8-27B, off | 11 / 12 | 65-99 % | 143 s | 23 |
-| Qwen3.6-35B-A3B (MoE, ~3B active), capped | 9 / 12 | 47-91 % | 63 s | 23.5 |
-| Qwen3.6-35B-A3B, off | 8 / 12 | 39-86 % | 47 s | 20 |
+**Round 2: the two leading configs on all 12 tasks, 2 passes each (24 runs per config).**
 
-- **The dense 27B finished more:** 23 of 24 runs against the MoE's 17 of 24 (Fisher two-sided
-  p = 0.048). The MoE was 3-4.5x faster per task.
-- **Thinking made no detectable difference** at this size (p = 1.0 for either model), and on the
-  27B it doubled the time. A single pass would have said otherwise: the MoE went 6/6 then 3/6 with
-  thinking, 3/6 then 5/6 without.
-- **How the MoE failed:** twice in one turn, both with thinking off on the rename task (a tool call
-  written out as text the server's parser did not accept, then echoed harness text), and five
-  times with a wrong fix: the backoff precedence, a bash failure path (twice), the rename's
-  untested positional caller, the export cursor. The 27B's one miss was the backoff
-  precedence.
+| model and thinking | passed | 95 % CI (Wilson) | median time per task |
+|---|---|---|---|
+| Qwen3.8-27B (dense), off | 22 / 24 | 74-98 % | 168 s |
+| Qwen3.6-35B-A3B (MoE, ~3B active), capped | 15 / 24 | 43-79 % | 124 s |
 
-Six small tasks is a small suite. The model gap is borderline and would need more tasks, not more
-passes of these, to firm up.
+Fisher two-sided p = 0.036. On the harder tasks the MoE's speed lead mostly went away, because it
+spends longer when it is wrong: one run hit the 20-minute limit and another took 19 minutes. Over
+all 12 tasks it was only ~1.35x faster per task.
+
+**Round 1: four configs on the first 6 tasks, 2 passes each (12 runs per config).**
+
+| model and thinking | passed | 95 % CI | median time per task |
+|---|---|---|---|
+| Qwen3.8-27B, capped | 12 / 12 | 76-100 % | 278 s |
+| Qwen3.8-27B, off | 11 / 12 | 65-99 % | 143 s |
+| Qwen3.6-35B-A3B, capped | 9 / 12 | 47-91 % | 63 s |
+| Qwen3.6-35B-A3B, off | 8 / 12 | 39-86 % | 47 s |
+
+Thinking made no detectable difference for either model (Fisher p = 1.0) and doubled the 27B's
+time, so round 2 kept the faster 27B arm and the stronger MoE arm. A single pass would have misled:
+the MoE went 6/6 then 3/6 with thinking capped.
+
+- **How the MoE failed:** one-turn breakdowns with thinking off (a tool call written out as text the
+  server's parser did not accept, then echoed harness text); wrong fixes (the backoff precedence, a
+  bash failure path, the rename's untested caller, the export cursor, the shared cached object, the
+  config migration, the build's masked failures); a scheduler still too slow; and the streaming
+  decoder not fixed within 20 minutes, twice.
+- **The 27B's misses:** the backoff precedence once, the config migration once.
+
+Twelve small tasks is still a small suite, but the gap held when the suite doubled.
 
 ## Running it
 

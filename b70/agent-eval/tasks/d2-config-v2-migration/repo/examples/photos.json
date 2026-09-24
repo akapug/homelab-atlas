@@ -1,0 +1,11 @@
+{
+  "dest": "/mnt/backup/photos",
+  "exclude": [
+    "*.tmp",
+    "cache/"
+  ],
+  "keep": 14,
+  "name": "photos",
+  "source_dir": "/srv/photos",
+  "version": 1
+}

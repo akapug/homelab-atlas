@@ -1,0 +1,13 @@
+# name              priority  needs
+fetch-sources       5
+fetch-assets        1
+build-api           3         fetch-sources
+build-web           3         fetch-sources,fetch-assets
+lint                0         fetch-sources
+unit-api            2         build-api
+unit-web            2         build-web
+migrate-staging     4         build-api
+deploy-staging      4         migrate-staging,build-web
+smoke-staging       4         deploy-staging
+e2e                 1         deploy-staging,unit-web
+report              0         lint,unit-api,unit-web,e2e,smoke-staging

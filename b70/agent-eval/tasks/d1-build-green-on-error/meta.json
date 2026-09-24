@@ -1,0 +1,6 @@
+{
+  "id": "d1-build-green-on-error",
+  "skills": ["bash", "exit-status-propagation", "set-e-semantics", "pipefail", "reproducing-a-bug", "running-tests"],
+  "difficulty": "easy",
+  "why_it_discriminates": "build.sh already has `set -e`, and the visible tests show that both tools exit 1 on bad input, so the agent has to see why the script still reaches BUILD OK. There are two separate masks: `step | tee` without pipefail (generate and package) and `validate ... && echo ok` in the validate loop, which set -e ignores even when it is the last iteration. Adding pipefail alone, the obvious fix, leaves the reported port-0 case green; fixing only the && leaves the generator and tar failures green; dropping tee to get the status back fails the build.log checks. The hidden check builds copies with a bad file first, middle and last, a generator crash on the first and last file, and a tar that fails."
+}

@@ -1,0 +1,60 @@
+diff --git a/quoter/catalog.py b/quoter/catalog.py
+index 54bc5b2..dda9311 100644
+--- a/quoter/catalog.py
++++ b/quoter/catalog.py
+@@ -2,8 +2,11 @@
+ 
+ Each file is read once per process and then served from memory: a batch
+ quotes hundreds of orders, and in production the price list lives on a slow
+-network share.
++network share. Callers get their own copy of what they ask for, because a
++quote edits its lines (add-ons, discounts), and those edits must not reach
++the cache and so the next order's quote.
+ """
++import copy
+ import json
+ import os
+ 
+@@ -17,11 +20,11 @@ class UnknownItem(LookupError):
+ 
+ 
+ def _load(relpath):
+-    """The parsed contents of DATA_DIR/relpath."""
++    """A private copy of the parsed contents of DATA_DIR/relpath."""
+     if relpath not in _cache:
+         with open(os.path.join(DATA_DIR, relpath), encoding="utf-8") as f:
+             _cache[relpath] = json.load(f)
+-    return _cache[relpath]
++    return copy.deepcopy(_cache[relpath])
+ 
+ 
+ def get_plan(name):
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index 9eef5ac..775ea28 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -29,6 +29,24 @@ class BatchTest(unittest.TestCase):
+         self.assertEqual([(r["quote"], r["total_cents"]) for r in records],
+                          [("Q-1", 8100), ("Q-2", 49900 + 40 * 2500 + 20000 + 40 * 300)])
+ 
++    def test_quotes_do_not_depend_on_the_rest_of_the_batch(self):
++        orders = [
++            {"id": "Q-1", "customer": "A", "plan": "team", "seats": 12, "addons": ["sso"]},
++            {"id": "Q-2", "customer": "B", "plan": "team", "seats": 60, "addons": ["audit-log"]},
++            {"id": "Q-3", "customer": "C", "plan": "enterprise", "seats": 250, "addons": ["sso"]},
++            {"id": "Q-4", "customer": "D", "plan": "team", "seats": 8},
++            {"id": "Q-5", "customer": "E", "plan": "team", "seats": 5, "addons": ["sso"]},
++            {"id": "Q-6", "customer": "F", "plan": "team", "seats": 60},
++        ]
++        alone = []
++        for o in orders:
++            catalog.clear_cache()
++            alone += self.run_batch([o])[1]
++        catalog.clear_cache()
++        code, together = self.run_batch(orders)
++        self.assertEqual(code, 0)
++        self.assertEqual(together, alone)
++
+     def test_stops_at_the_first_bad_order(self):
+         with self.assertLogs("quoter.batch", "ERROR"):
+             code, records = self.run_batch([

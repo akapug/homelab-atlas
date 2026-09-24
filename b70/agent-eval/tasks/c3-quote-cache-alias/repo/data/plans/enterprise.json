@@ -1,0 +1,5 @@
+{"name": "enterprise", "lines": [
+  {"sku": "base-enterprise", "desc": "Enterprise platform", "unit_cents": 49900, "per_seat": false},
+  {"sku": "seat-enterprise", "desc": "Enterprise seat", "unit_cents": 2500, "per_seat": true},
+  {"sku": "support-premium", "desc": "Premium support", "unit_cents": 20000, "per_seat": false}
+]}

@@ -1,0 +1,6 @@
+{
+  "id": "c2-joborder-perf",
+  "skills": ["performance", "profiling", "algorithm-equivalence", "topological-sort", "tie-breaking", "python"],
+  "difficulty": "medium",
+  "why_it_discriminates": "The scheduling rule (highest priority among ready jobs, ties by declaration order) has to be kept exactly while the rescan-everything loop becomes Kahn's algorithm with a heap keyed on (-priority, declared position). Breaking ties by name, queueing tied jobs in the order they became ready, or using graphlib gives a valid but different order. Counting repeated dependencies twice reports a false cycle, and the cycle error must still name every stuck job, sorted. The loader has its own quadratic (duplicate and unknown-dependency checks against a list, about 80 s at 100,000 jobs), so an agent that fixes only the scheduler and never times the whole command fails the 10 s limit; the reference fix takes 0.3 s. The check compares output with the original algorithm on 146 small files (ties, repeated and self dependencies, cycles), then with a fast reference on a 100,000-job file with and without a cycle."
+}

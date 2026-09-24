@@ -1,0 +1,6 @@
+{
+  "id": "c3-quote-cache-alias",
+  "skills": ["debugging-from-traceback", "root-cause-analysis", "aliasing-and-mutable-state", "cross-module-data-flow", "python"],
+  "difficulty": "hard",
+  "why_it_discriminates": "The traceback points at render.py's duplicate-SKU guard, but the cause is two modules away. catalog.py caches the parsed price list and hands out the cached objects. quote.py uses the plan's line list without copying it, addons.attach appends to that list, and pricing.apply_volume_discount rewrites unit prices in place. So every order leaks its add-ons into later quotes on the same plan (it only crashes when an add-on repeats), and volume discounts compound, both on a plan's seat price and on a shared add-on's price across plans. The visible tests clear the cache before each case, so they stay green. Band-aids at the crash site (skip or merge duplicate lines, catch and continue) and partial fixes (a shallow copy of the list, or a deep copy of the plan but not the add-ons) all still give wrong totals. The check runs 16 orders, then the same orders again in reverse, in one batch. Each record must equal that order's quote from the original code run alone, and an order with an add-on its plan does not sell must still stop the batch."
+}

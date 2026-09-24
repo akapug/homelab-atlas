@@ -1,0 +1,94 @@
+diff --git a/jobq/order.py b/jobq/order.py
+index 407b0a1..869ea5f 100644
+--- a/jobq/order.py
++++ b/jobq/order.py
+@@ -1,4 +1,5 @@
+ """The order to run jobs in."""
++import heapq
+ 
+ 
+ class CycleError(Exception):
+@@ -15,16 +16,26 @@ def run_order(jobs):
+     first. If some jobs can never become ready (they sit on or behind a
+     dependency cycle), raises CycleError naming all of them, sorted.
+     """
++    # Kahn's algorithm; the heap holds the ready jobs keyed by (-priority, declared position),
++    # so it pops exactly the job the rule above picks. O(E log V) instead of rescanning every
++    # pending job after each step.
++    position = {job.name: i for i, job in enumerate(jobs)}
++    waiting = [len(set(job.deps)) for job in jobs]
++    dependents = [[] for _ in jobs]
++    for i, job in enumerate(jobs):
++        for dep in set(job.deps):
++            dependents[position[dep]].append(i)
++    ready = [(-job.priority, i) for i, job in enumerate(jobs) if not waiting[i]]
++    heapq.heapify(ready)
+     done = []
+-    pending = list(jobs)
+-    while pending:
+-        ready = [j for j in pending if all(d in done for d in j.deps)]
+-        if not ready:
+-            raise CycleError(sorted(j.name for j in pending))
+-        best = ready[0]
+-        for j in ready[1:]:
+-            if j.priority > best.priority:
+-                best = j
+-        done.append(best.name)
+-        pending.remove(best)
++    while ready:
++        _, i = heapq.heappop(ready)
++        done.append(jobs[i].name)
++        for k in dependents[i]:
++            waiting[k] -= 1
++            if not waiting[k]:
++                heapq.heappush(ready, (-jobs[k].priority, k))
++    if len(done) < len(jobs):
++        ran = set(done)
++        raise CycleError(sorted(job.name for job in jobs if job.name not in ran))
+     return done
+diff --git a/jobq/spec.py b/jobq/spec.py
+index 064ffe6..956b401 100644
+--- a/jobq/spec.py
++++ b/jobq/spec.py
+@@ -20,7 +20,7 @@ class Job:
+ 
+ def parse(text):
+     """The jobs in `text`, in the order they are declared."""
+-    jobs, names = [], []
++    jobs, names = [], set()
+     for n, raw in enumerate(text.splitlines(), 1):
+         line = raw.split("#", 1)[0].strip()
+         if not line:
+@@ -35,7 +35,7 @@ def parse(text):
+             raise SpecError(f"line {n}: bad priority {prio!r}") from None
+         if name in names:
+             raise SpecError(f"line {n}: duplicate job {name}")
+-        names.append(name)
++        names.add(name)
+         deps = tuple(fields[2].split(",")) if len(fields) == 3 else ()
+         jobs.append(Job(name, priority, deps))
+     for job in jobs:
+diff --git a/tests/test_order.py b/tests/test_order.py
+index 0bd28aa..1a9f448 100644
+--- a/tests/test_order.py
++++ b/tests/test_order.py
+@@ -30,6 +30,19 @@ class OrderTest(unittest.TestCase):
+         self.assertEqual(ctx.exception.names, ["a", "after", "b"])
+         self.assertEqual(str(ctx.exception), "dependency cycle among: a, after, b")
+ 
++    def test_tie_goes_to_the_earlier_declared_job_not_the_earlier_ready_one(self):
++        self.assertEqual(order("x 1 y\ny 5\nz 1\n"), ["y", "x", "z"])
++
++    def test_repeated_and_self_dependencies(self):
++        self.assertEqual(order("p 2 q,q\nq -1\n"), ["q", "p"])
++        with self.assertRaises(CycleError) as ctx:
++            order("solo 3 solo\nfree 0\n")
++        self.assertEqual(ctx.exception.names, ["solo"])
++
++    def test_large_chain_is_fast(self):
++        text = "".join(f"j{i} {i % 3} j{i - 1}\n" if i else "j0 0\n" for i in range(50000))
++        self.assertEqual(len(order(text)), 50000)
++
+     def test_example(self):
+         with open(EXAMPLE) as f:
+             self.assertEqual(run_order(parse(f.read())), [

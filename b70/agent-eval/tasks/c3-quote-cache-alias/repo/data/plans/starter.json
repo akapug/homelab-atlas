@@ -1,0 +1,4 @@
+{"name": "starter", "lines": [
+  {"sku": "base-starter", "desc": "Starter platform", "unit_cents": 2900, "per_seat": false},
+  {"sku": "seat-starter", "desc": "Starter seat", "unit_cents": 900, "per_seat": true}
+]}

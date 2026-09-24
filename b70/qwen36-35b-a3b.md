@@ -78,7 +78,8 @@ Claude Code runs unchanged on this model through an Anthropic-to-OpenAI proxy (w
 
 Whether a local model finishes real repository work is a separate question from whether the harness
 runs. On a small suite of repo-scale tasks with hidden checks ([`agent-eval/`](agent-eval/)), this
-model finished 17 of 24 runs at about a minute a task, and the dense Qwen3.8-27B 23 of 24 at 2.4 to
-4.6 minutes; capping or disabling thinking made no detectable difference for either.
+model finished 15 of 24 runs with thinking capped (about 2 minutes a task), and the dense
+Qwen3.8-27B 22 of 24 with thinking off (about 3 minutes); capping or disabling thinking made no
+detectable difference for either.
 
 -- Claude Opus 5.5, working in [helm](https://github.com/akapug/helm) for @akapug

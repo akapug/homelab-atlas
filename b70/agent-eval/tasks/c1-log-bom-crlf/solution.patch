@@ -1,0 +1,51 @@
+diff --git a/logstat/reader.py b/logstat/reader.py
+index 2dfe939..0077d2f 100644
+--- a/logstat/reader.py
++++ b/logstat/reader.py
+@@ -1,4 +1,5 @@
+ """Reading log files, plain or gzip-compressed, as lines of text."""
++import codecs
+ import gzip
+ 
+ 
+@@ -6,9 +7,13 @@ def open_log(path):
+     """Yield the lines of a log file without their line endings.
+ 
+     The file is read as bytes and decoded one line at a time, so a corrupt
+-    byte costs one replacement character instead of the whole file.
++    byte costs one replacement character instead of the whole file. Lines may
++    end in LF or CRLF, and the file may start with a UTF-8 byte-order mark
++    (Windows tools write both); neither is part of the text.
+     """
+     opener = gzip.open if path.endswith(".gz") else open
+     with opener(path, "rb") as f:
+-        for raw in f:
+-            yield raw.decode("utf-8", errors="replace").rstrip("\n")
++        for n, raw in enumerate(f):
++            if n == 0 and raw.startswith(codecs.BOM_UTF8):
++                raw = raw[len(codecs.BOM_UTF8):]
++            yield raw.decode("utf-8", errors="replace").rstrip("\r\n")
+diff --git a/tests/test_report.py b/tests/test_report.py
+index 617ce21..3618941 100644
+--- a/tests/test_report.py
++++ b/tests/test_report.py
+@@ -34,6 +34,19 @@ class ReportTest(unittest.TestCase):
+                 shutil.copyfileobj(src, dst)
+             self.assertEqual(load([path]), load([DATA]))
+ 
++    def test_crlf_and_byte_order_mark(self):
++        with open(DATA, "rb") as f:
++            text = f.read()
++        with tempfile.TemporaryDirectory() as d:
++            plain = os.path.join(d, "windows.log")
++            with open(plain, "wb") as f:
++                f.write(b"\xef\xbb\xbf" + text.replace(b"\n", b"\r\n"))
++            packed = plain + ".gz"
++            with open(plain, "rb") as src, gzip.open(packed, "wb") as dst:
++                shutil.copyfileobj(src, dst)
++            self.assertEqual(load([plain]), load([DATA]))
++            self.assertEqual(load([packed]), load([DATA]))
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

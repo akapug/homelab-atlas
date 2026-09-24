@@ -1,0 +1,461 @@
+diff --git a/README.md b/README.md
+index 8aec911..9aa1112 100644
+--- a/README.md
++++ b/README.md
+@@ -5,21 +5,24 @@ them. One job per JSON file.
+ 
+     python3 -m bkp plan JOB.json     # the tar command and the prune rule
+     python3 -m bkp show JOB.json     # a short summary
+-    python3 -m bkp fmt JOB.json...   # rewrite files in the canonical form
++    python3 -m bkp fmt JOB.json...   # rewrite files in the canonical (v2) form
+ 
+ A job file (see `examples/photos.json`):
+ 
+     {
++      "version": 2,
+       "name": "photos",
+-      "source_dir": "/srv/photos",
+-      "exclude": ["*.tmp", "cache/"],
+-      "dest": "/mnt/backup/photos",
+-      "keep": 14
++      "source": {"path": "/srv/photos", "exclude": ["*.tmp", "cache/"]},
++      "target": "/mnt/backup/photos",
++      "keep": 14,
++      "compression": "zstd"
+     }
+ 
+-`name`, `source_dir` and `dest` are required; `exclude` defaults to `[]` and
+-`keep` (how many archives to keep) to 7. Unknown keys are an error. The
+-format's next version is described in `docs/config-v2.md`.
++`version`, `name`, `source.path`, `target` and `compression` (`gzip`, `zstd`
++or `none`) are required; `source.exclude` defaults to `[]` and `keep` (how
++many archives to keep) to 7. Unknown keys are an error. Files in the older v1
++format still load, as gzip jobs; `bkp fmt` rewrites them as v2. The format is
++described in `docs/config-v2.md`.
+ 
+ ## Tests
+ 
+diff --git a/bkp/cli.py b/bkp/cli.py
+index 1b4df9b..8a4479c 100644
+--- a/bkp/cli.py
++++ b/bkp/cli.py
+@@ -12,11 +12,12 @@ def cmd_plan(args):
+ 
+ def cmd_show(args):
+     job = config.load(args.file)
+-    n = len(job["exclude"])
+-    print(f"name:    {job['name']}")
+-    print(f"source:  {job['source_dir']} ({n} exclude{'' if n == 1 else 's'})")
+-    print(f"dest:    {job['dest']}")
+-    print(f"keep:    {job['keep']}")
++    n = len(job["source"]["exclude"])
++    print(f"name:        {job['name']}")
++    print(f"source:      {job['source']['path']} ({n} exclude{'' if n == 1 else 's'})")
++    print(f"target:      {job['target']}")
++    print(f"keep:        {job['keep']}")
++    print(f"compression: {job['compression']}")
+ 
+ 
+ def cmd_fmt(args):
+@@ -34,7 +35,7 @@ def main(argv=None):
+     s = sub.add_parser("show", help="summarize a job")
+     s.add_argument("file")
+     s.set_defaults(func=cmd_show)
+-    s = sub.add_parser("fmt", help="rewrite job files in the canonical form")
++    s = sub.add_parser("fmt", help="rewrite job files in the canonical v2 form")
+     s.add_argument("files", nargs="+")
+     s.set_defaults(func=cmd_fmt)
+     args = p.parse_args(argv)
+diff --git a/bkp/config.py b/bkp/config.py
+index 62d4042..a4b9181 100644
+--- a/bkp/config.py
++++ b/bkp/config.py
+@@ -1,53 +1,83 @@
+-"""Loading, checking and saving job files."""
++"""Loading, checking and saving job files.
++
++Files are written in format v2 (docs/config-v2.md). v1 files still load: they are converted to v2
++when read, so everything past load() sees only the v2 shape."""
+ import json
+ import os
+ 
+-FORMAT_VERSION = 1
++FORMAT_VERSION = 2
++COMPRESSIONS = ("gzip", "zstd", "none")
++V1_KEYS = {"version", "name", "source_dir", "exclude", "dest", "keep"}
++V2_KEYS = {"version", "name", "source", "target", "keep", "compression"}
+ 
+ 
+ class ConfigError(Exception):
+     """A job file that cannot be used; the message says which file and why."""
+ 
+ 
+-# key: (type, required, default)
+-FIELDS = {
+-    "name": (str, True, None),
+-    "source_dir": (str, True, None),
+-    "exclude": (list, False, []),
+-    "dest": (str, True, None),
+-    "keep": (int, False, 7),
+-}
++def _keys(data, allowed, required, where, prefix=""):
++    unknown = sorted(set(data) - allowed)
++    if unknown:
++        raise ConfigError(f"{where}: unknown key {prefix}{unknown[0]!r}")
++    for key in required:
++        if key not in data:
++            raise ConfigError(f"{where}: missing required key {prefix}{key!r}")
++
++
++def _typed(value, kind, what, where):
++    if not isinstance(value, kind) or isinstance(value, bool):
++        raise ConfigError(f"{where}: {what} must be a {kind.__name__}")
++    return value
++
++
++def migrate_v1(data, where="job"):
++    """The contents of a v1 job file in the v2 shape (not yet checked). Every v1 job made gzip
++    archives, so that is its compression."""
++    _keys(data, V1_KEYS, ("name", "source_dir", "dest"), where)
++    job = {"version": FORMAT_VERSION, "name": data["name"], "target": data["dest"], "compression": "gzip",
++           "source": {"path": data["source_dir"], "exclude": data.get("exclude", [])}}
++    if "keep" in data:
++        job["keep"] = data["keep"]
++    return job
+ 
+ 
+ def validate(data, where="job"):
+-    """A copy of `data` with defaults filled in; raises ConfigError if it is not a usable job."""
++    """A copy of the v2 job `data` with defaults filled in; raises ConfigError if it is not usable.
++    A v2 job must be complete: nothing is converted or filled in here except the defaults."""
+     if not isinstance(data, dict):
+         raise ConfigError(f"{where}: expected a JSON object")
+-    version = data.get("version", FORMAT_VERSION)
+-    if version != FORMAT_VERSION:
+-        raise ConfigError(f"{where}: unsupported version {version!r}")
+-    unknown = sorted(set(data) - set(FIELDS) - {"version"})
+-    if unknown:
+-        raise ConfigError(f"{where}: unknown key {unknown[0]!r}")
+-    job = {}
+-    for key, (kind, required, default) in FIELDS.items():
+-        if key not in data:
+-            if required:
+-                raise ConfigError(f"{where}: missing required key {key!r}")
+-            job[key] = list(default) if isinstance(default, list) else default
+-        elif not isinstance(data[key], kind) or isinstance(data[key], bool):
+-            raise ConfigError(f"{where}: {key} must be a {kind.__name__}")
+-        else:
+-            job[key] = data[key]
+-    if not all(isinstance(p, str) for p in job["exclude"]):
+-        raise ConfigError(f"{where}: exclude must be a list of strings")
++    if data.get("version") != FORMAT_VERSION:
++        raise ConfigError(f"{where}: unsupported version {data.get('version')!r}")
++    _keys(data, V2_KEYS, ("name", "source", "target", "compression"), where)
++    source = _typed(data["source"], dict, "source", where)
++    _keys(source, {"path", "exclude"}, ("path",), where, "source.")
++    exclude = _typed(source.get("exclude", []), list, "source.exclude", where)
++    if not all(isinstance(p, str) for p in exclude):
++        raise ConfigError(f"{where}: source.exclude must be a list of strings")
++    job = {
++        "version": FORMAT_VERSION,
++        "name": _typed(data["name"], str, "name", where),
++        "source": {"path": _typed(source["path"], str, "source.path", where), "exclude": list(exclude)},
++        "target": _typed(data["target"], str, "target", where),
++        "keep": _typed(data.get("keep", 7), int, "keep", where),
++        "compression": data["compression"],
++    }
+     if job["keep"] < 1:
+         raise ConfigError(f"{where}: keep must be 1 or more")
++    if job["compression"] not in COMPRESSIONS:
++        raise ConfigError(f"{where}: compression must be one of {', '.join(COMPRESSIONS)}")
+     return job
+ 
+ 
++def upgrade(data, where="job"):
++    """The contents of a job file of any supported version as a checked v2 job."""
++    if isinstance(data, dict) and data.get("version", 1) == 1:
++        data = migrate_v1(data, where)
++    return validate(data, where)
++
++
+ def load(path):
+-    """The job in the file at `path`, checked, with defaults filled in."""
++    """The job in the file at `path` as a checked v2 job, with defaults filled in."""
+     try:
+         with open(path) as f:
+             data = json.load(f)
+@@ -55,16 +85,16 @@ def load(path):
+         raise ConfigError(f"{path}: {e.strerror}") from None
+     except ValueError as e:
+         raise ConfigError(f"{path}: not valid JSON ({e})") from None
+-    return validate(data, path)
++    return upgrade(data, path)
+ 
+ 
+ def dumps(job):
+-    """The canonical text of a job file: 2-space indent, sorted keys, trailing newline."""
+-    return json.dumps(dict(validate(job), version=FORMAT_VERSION), indent=2, sort_keys=True) + "\n"
++    """The canonical v2 text of a job: 2-space indent, sorted keys, trailing newline."""
++    return json.dumps(validate(dict(job, version=FORMAT_VERSION)), indent=2, sort_keys=True) + "\n"
+ 
+ 
+ def save(job, path):
+-    """Write `job` to `path` in the canonical form, replacing the file atomically."""
++    """Write the v2 `job` to `path` in the canonical form, replacing the file atomically."""
+     text = dumps(job)
+     tmp = path + ".tmp"
+     with open(tmp, "w") as f:
+diff --git a/bkp/plan.py b/bkp/plan.py
+index 87db008..4a0f630 100644
+--- a/bkp/plan.py
++++ b/bkp/plan.py
+@@ -1,13 +1,17 @@
+ """The commands a job runs, as text: the runner executes them and `bkp plan` prints them."""
+ from shlex import quote
+ 
++# compression: (tar flags, archive suffix)
++ARCHIVES = {"gzip": ("-czf", ".tar.gz"), "zstd": ("--zstd -cf", ".tar.zst"), "none": ("-cf", ".tar")}
++
+ 
+ def plan(job):
+-    """Lines describing `job`: its name, the tar command, then the prune rule."""
+-    stem = f"{job['dest']}/{job['name']}"
+-    excludes = "".join(f" --exclude={quote(p)}" for p in job["exclude"])
++    """Lines describing the v2 `job`: its name, the tar command, then the prune rule."""
++    flags, suffix = ARCHIVES[job["compression"]]
++    stem = f"{job['target']}/{job['name']}"
++    excludes = "".join(f" --exclude={quote(p)}" for p in job["source"]["exclude"])
+     return [
+         f"job {job['name']}",
+-        f"  tar -czf {quote(stem + '-{date}.tar.gz')}{excludes} -C {quote(job['source_dir'])} .",
+-        f"  prune {quote(stem + '-*.tar.gz')} keep {job['keep']}",
++        f"  tar {flags} {quote(stem + '-{date}' + suffix)}{excludes} -C {quote(job['source']['path'])} .",
++        f"  prune {quote(stem + '-*' + suffix)} keep {job['keep']}",
+     ]
+diff --git a/docs/config-v2.md b/docs/config-v2.md
+index ea6c469..be25416 100644
+--- a/docs/config-v2.md
++++ b/docs/config-v2.md
+@@ -1,6 +1,6 @@
+ # Job config format v2
+ 
+-Status: agreed, not implemented yet.
++Status: implemented.
+ 
+ The same job as in the README, in v2:
+ 
+diff --git a/examples/photos.json b/examples/photos.json
+index f481b08..b4e46d8 100644
+--- a/examples/photos.json
++++ b/examples/photos.json
+@@ -1,11 +1,14 @@
+ {
+-  "dest": "/mnt/backup/photos",
+-  "exclude": [
+-    "*.tmp",
+-    "cache/"
+-  ],
++  "compression": "zstd",
+   "keep": 14,
+   "name": "photos",
+-  "source_dir": "/srv/photos",
+-  "version": 1
++  "source": {
++    "exclude": [
++      "*.tmp",
++      "cache/"
++    ],
++    "path": "/srv/photos"
++  },
++  "target": "/mnt/backup/photos",
++  "version": 2
+ }
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index c2f5e15..8bf5583 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -1,5 +1,6 @@
+ import contextlib
+ import io
++import json
+ import shutil
+ import unittest
+ 
+@@ -28,6 +29,15 @@ class CliTest(unittest.TestCase):
+         self.assertIn("/srv/photos (2 excludes)", out)
+         self.assertIn("/mnt/backup/photos", out)
+ 
++    def test_fmt_migrates_v1_without_changing_the_plan(self):
++        v1 = {"name": "docs", "source_dir": "/home/docs", "exclude": ["*.swp"], "dest": "/backup/docs"}
++        path = job_file(self, v1)
++        before = run("plan", path)[1]
++        self.assertEqual(run("fmt", path)[0], 0)
++        with open(path) as f:
++            self.assertEqual(json.load(f)["version"], 2)
++        self.assertEqual(run("plan", path)[1], before)
++
+     def test_fmt_keeps_a_canonical_file(self):
+         path = job_file(self, {})
+         shutil.copyfile(EXAMPLE, path)
+@@ -35,6 +45,14 @@ class CliTest(unittest.TestCase):
+         with open(path) as f, open(EXAMPLE) as g:
+             self.assertEqual(f.read(), g.read())
+ 
++    def test_fmt_leaves_a_bad_file_alone(self):
++        path = job_file(self, {"version": 2, "name": "x"})
++        with open(path) as f:
++            before = f.read()
++        self.assertEqual(run("fmt", path)[0], 1)
++        with open(path) as f:
++            self.assertEqual(f.read(), before)
++
+     def test_bad_file(self):
+         code, _, err = run("plan", "/nonexistent/job.json")
+         self.assertEqual(code, 1)
+diff --git a/tests/test_config.py b/tests/test_config.py
+index 1aa1678..71e47e1 100644
+--- a/tests/test_config.py
++++ b/tests/test_config.py
+@@ -1,23 +1,25 @@
++import json
+ import unittest
+ 
+ from bkp.config import ConfigError, load, save
+ 
+ from tests.helpers import EXAMPLE, job_file
+ 
+-MINIMAL = {"name": "docs", "source_dir": "/home/docs", "dest": "/backup/docs"}
++MINIMAL = {"name": "docs", "source_dir": "/home/docs", "dest": "/backup/docs"}  # v1
++V2 = {"version": 2, "name": "docs", "source": {"path": "/home/docs", "exclude": ["*.swp"]},
++      "target": "/backup/docs", "keep": 3, "compression": "zstd"}
+ 
+ 
+-class LoadTest(unittest.TestCase):
+-    def test_defaults(self):
+-        job = load(job_file(self, MINIMAL))
+-        self.assertEqual(job["exclude"], [])
+-        self.assertEqual(job["keep"], 7)
++class LoadV1Test(unittest.TestCase):
++    def test_converted_to_v2_with_defaults(self):
++        self.assertEqual(load(job_file(self, MINIMAL)), {
++            "version": 2, "name": "docs", "source": {"path": "/home/docs", "exclude": []},
++            "target": "/backup/docs", "keep": 7, "compression": "gzip"})
+ 
+-    def test_example(self):
+-        job = load(EXAMPLE)
+-        self.assertEqual(job["source_dir"], "/srv/photos")
+-        self.assertEqual(job["exclude"], ["*.tmp", "cache/"])
+-        self.assertEqual(job["keep"], 14)
++    def test_explicit_version_1(self):
++        job = load(job_file(self, dict(MINIMAL, version=1, exclude=["*.tmp"], keep=30)))
++        self.assertEqual(job["source"], {"path": "/home/docs", "exclude": ["*.tmp"]})
++        self.assertEqual((job["keep"], job["compression"]), (30, "gzip"))
+ 
+     def test_missing_required_key(self):
+         data = dict(MINIMAL)
+@@ -33,9 +35,45 @@ class LoadTest(unittest.TestCase):
+         with self.assertRaises(ConfigError):
+             load(job_file(self, dict(MINIMAL, keep=0)))
+ 
++
++class LoadV2Test(unittest.TestCase):
++    def test_example(self):
++        job = load(EXAMPLE)
++        self.assertEqual(job["source"], {"path": "/srv/photos", "exclude": ["*.tmp", "cache/"]})
++        self.assertEqual((job["target"], job["keep"], job["compression"]), ("/mnt/backup/photos", 14, "zstd"))
++
++    def test_as_written(self):
++        self.assertEqual(load(job_file(self, V2)), V2)
++
++    def test_defaults(self):
++        data = dict(V2, source={"path": "/home/docs"})
++        del data["keep"]
++        job = load(job_file(self, data))
++        self.assertEqual((job["source"]["exclude"], job["keep"]), ([], 7))
++
++    def test_compression_is_required(self):
++        data = dict(V2)
++        del data["compression"]
++        with self.assertRaisesRegex(ConfigError, "compression"):
++            load(job_file(self, data))
++
++    def test_unknown_compression(self):
++        with self.assertRaisesRegex(ConfigError, "compression"):
++            load(job_file(self, dict(V2, compression="lz4")))
++
++    def test_v1_keys_are_not_converted(self):
++        data = dict(V2, dest="/backup/docs")
++        del data["target"]
++        with self.assertRaisesRegex(ConfigError, "dest"):
++            load(job_file(self, data))
++
++    def test_source_path_is_required(self):
++        with self.assertRaisesRegex(ConfigError, "path"):
++            load(job_file(self, dict(V2, source={"exclude": []})))
++
+     def test_unsupported_version(self):
+         with self.assertRaisesRegex(ConfigError, "version"):
+-            load(job_file(self, dict(MINIMAL, version=2)))
++            load(job_file(self, dict(V2, version=3)))
+ 
+     def test_not_json(self):
+         path = job_file(self, {})
+@@ -51,8 +89,15 @@ class SaveTest(unittest.TestCase):
+         save(load(path), path)
+         with open(path) as f:
+             text = f.read()
+-        self.assertTrue(text.startswith('{\n  "dest": "/backup/docs",\n'), text)
+-        self.assertTrue(text.endswith('"version": 1\n}\n'), text)
++        self.assertTrue(text.startswith('{\n  "compression": "gzip",\n'), text)
++        self.assertTrue(text.endswith('"version": 2\n}\n'), text)
++
++    def test_v1_is_saved_as_v2(self):
++        path = job_file(self, MINIMAL)
++        job = load(path)
++        save(job, path)
++        with open(path) as f:
++            self.assertEqual(json.load(f), job)
+ 
+     def test_round_trip(self):
+         path = job_file(self, {})
+diff --git a/tests/test_plan.py b/tests/test_plan.py
+index 5b8cba4..2cd4196 100644
+--- a/tests/test_plan.py
++++ b/tests/test_plan.py
+@@ -3,9 +3,9 @@ import unittest
+ from bkp.plan import plan
+ 
+ 
+-def job(**kw):
+-    base = {"name": "photos", "source_dir": "/srv/photos", "exclude": [], "dest": "/mnt/b", "keep": 7}
+-    return dict(base, **kw)
++def job(exclude=(), path="/srv/photos", target="/mnt/b", compression="gzip"):
++    return {"version": 2, "name": "photos", "source": {"path": path, "exclude": list(exclude)},
++            "target": target, "keep": 7, "compression": compression}
+ 
+ 
+ class PlanTest(unittest.TestCase):
+@@ -16,12 +16,22 @@ class PlanTest(unittest.TestCase):
+             "  prune '/mnt/b/photos-*.tar.gz' keep 7",
+         ])
+ 
++    def test_compression(self):
++        self.assertEqual(plan(job(compression="zstd"))[1:], [
++            "  tar --zstd -cf '/mnt/b/photos-{date}.tar.zst' -C /srv/photos .",
++            "  prune '/mnt/b/photos-*.tar.zst' keep 7",
++        ])
++        self.assertEqual(plan(job(compression="none"))[1:], [
++            "  tar -cf '/mnt/b/photos-{date}.tar' -C /srv/photos .",
++            "  prune '/mnt/b/photos-*.tar' keep 7",
++        ])
++
+     def test_excludes_are_quoted(self):
+         lines = plan(job(exclude=["*.tmp", "cache/"]))
+         self.assertIn(" --exclude='*.tmp' --exclude=cache/ -C", lines[1])
+ 
+     def test_paths_with_spaces(self):
+-        lines = plan(job(source_dir="/srv/my photos", dest="/mnt/usb disk"))
++        lines = plan(job(path="/srv/my photos", target="/mnt/usb disk"))
+         self.assertIn("-C '/srv/my photos' .", lines[1])
+         self.assertEqual(lines[2], "  prune '/mnt/usb disk/photos-*.tar.gz' keep 7")
+ 

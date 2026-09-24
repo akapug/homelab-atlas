@@ -1,0 +1,6 @@
+{
+  "id": "c1-log-bom-crlf",
+  "skills": ["debugging-from-symptom", "text-encoding", "line-endings", "byte-level-inspection", "python"],
+  "difficulty": "easy",
+  "why_it_discriminates": "The file looks normal in an editor, so the agent has to look at its bytes: it starts with a UTF-8 byte-order mark and ends its lines with CRLF. The reader opens files as bytes (for .gz and corrupt bytes) and strips only \\n, so every line keeps a trailing \\r that the parser's `ms$` anchor rejects. Fixing only that (rstrip, strip(), a looser regex) still leaves the first line malformed, because str.strip() does not remove U+FEFF, and the prompt says every line is a real request. Converting the sample file instead of the code, or switching only plain files to text mode, also fails. The hidden check feeds one log as LF, CRLF, BOM+CRLF, BOM+LF, mixed endings, no final newline, and gzipped, and requires output byte-identical to what the fixture prints for the LF file today, with its genuinely malformed lines still counted."
+}

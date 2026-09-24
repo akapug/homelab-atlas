@@ -1,0 +1,59 @@
+diff --git a/tabstream/decoder.py b/tabstream/decoder.py
+index 57ab79d..7e8935b 100644
+--- a/tabstream/decoder.py
++++ b/tabstream/decoder.py
+@@ -12,7 +12,7 @@ class Decoder:
+ 
+     def __init__(self):
+         self._pending = ""  # the unfinished record so far
+-        self._scanned = 0   # how much of _pending has been scanned for the record's end
++        self._scanned = 0   # where the scan resumes in _pending; one past its end after a trailing backslash
+ 
+     def feed(self, text):
+         """The records completed by `text`, in order."""
+@@ -30,7 +30,11 @@ class Decoder:
+             else:
+                 i += 1
+         self._pending = data[start:]
+-        self._scanned = len(self._pending)
++        # Not len(self._pending): when the text ends with a backslash, i has already stepped over
++        # the character it escapes, one past the end. Resuming at the end instead would scan that
++        # escaped character as if it were bare, so an escaped backslash (\\) split between two
++        # pieces became an escape of whatever followed, often the LF that ends the record.
++        self._scanned = i - start
+         return records
+ 
+     def close(self):
+diff --git a/tests/test_decoder.py b/tests/test_decoder.py
+index 7cab9bd..26df472 100644
+--- a/tests/test_decoder.py
++++ b/tests/test_decoder.py
+@@ -46,11 +46,26 @@ class DecoderTest(unittest.TestCase):
+                 decoder = Decoder()
+                 self.assertEqual(decoder.feed(first) + decoder.feed(second) + decoder.close(), [[want]])
+ 
++    def test_escaped_backslash_split_across_pieces(self):
++        # The second backslash of \\ starts the next piece; it must not escape the LF after it.
++        decoder = Decoder()
++        records = decoder.feed("88213\tD:\\\\exports\\") + decoder.feed("\\\n88214\tx\n") + decoder.close()
++        self.assertEqual(records, [["88213", "D:\\exports\\"], ["88214", "x"]])
++
++    def test_every_split_of_backslash_runs(self):
++        records = [["a\\"], ["\\\\"], ["\\", "\\\\\\"], [None, "\\N"], ["b"]]
++        text = "".join(map(encode_record, records))
++        for cut in range(len(text) + 1):
++            with self.subTest(cut=cut):
++                decoder = Decoder()
++                self.assertEqual(decoder.feed(text[:cut]) + decoder.feed(text[cut:]) + decoder.close(), records)
++
+     def test_small_pieces(self):
+-        text = "".join(map(encode_record, RECORDS))
++        records = RECORDS + [["5", "C:\\temp\\", "\\\\server\\"]]
++        text = "".join(map(encode_record, records))
+         for size in range(1, 9):
+             with self.subTest(size=size):
+-                self.assertEqual(feed_in_pieces(text, size), RECORDS)
++                self.assertEqual(feed_in_pieces(text, size), records)
+ 
+     def test_capture(self):
+         with open(CAPTURE, encoding="utf-8") as f:

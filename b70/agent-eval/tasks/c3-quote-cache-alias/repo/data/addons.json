@@ -1,0 +1,10 @@
+{
+  "sso": {"sku": "sso", "desc": "Single sign-on", "unit_cents": 300, "per_seat": true,
+          "plans": ["team", "enterprise"]},
+  "audit-log": {"sku": "audit-log", "desc": "Audit log, 1 year", "unit_cents": 4900, "per_seat": false,
+                "plans": ["team", "enterprise"]},
+  "sandbox": {"sku": "sandbox", "desc": "Staging sandbox", "unit_cents": 2500, "per_seat": false,
+              "plans": ["starter", "team", "enterprise"]},
+  "priority-support": {"sku": "priority-support", "desc": "Priority support", "unit_cents": 200,
+                       "per_seat": true, "plans": ["starter", "team"]}
+}

@@ -1,0 +1,6 @@
+{
+  "id": "d3-stream-glued-records",
+  "skills": ["reproducing-a-bug", "streaming-parser-state", "chunk-boundaries", "escape-parity", "reading-misleading-tests", "python"],
+  "difficulty": "hard",
+  "why_it_discriminates": "The capture decodes correctly in one piece, so the agent has to work out that socket reads split the input and then find a split that fails. The existing tests already split an escape across two pieces (\\t, \\n, \\N) and pass, which points away from the bug: only an escaped backslash split between its two characters misleads the scan, and only when more backslash pairs and then the record's LF follow. The cause is one line in Decoder.feed: after a trailing backslash the scan index has stepped past the end, and the decoder resumes at len(pending) instead, so the escaped backslash is scanned again as the start of a new escape. The obvious patch, stepping back one when the pending text ends in a backslash, is wrong when the text ends in a complete pair, and working around it in read_records leaves Decoder.feed broken for the pieces its docstring promises to accept. The hidden check tries every split in two and three pieces of streams built from runs of backslashes, 400 seeded random splits, every chunk size from 1 to 39 through read_records, records without a final LF, a dangling backslash at the end, and the CLI."
+}
