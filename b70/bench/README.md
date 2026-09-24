@@ -13,7 +13,12 @@ constrained-probe.py http://127.0.0.1:8000/v1/chat/completions
 ```
 
 Both decode tools prefill every stream's prompt first (one-token requests), so the timed pass
-reuses the prompt cache and measures decode only. Without that, one stream's decode steps carry
+reuses the prompt cache and measures decode only. `decode-vllm.py` also prints a **steady** rate:
+tokens produced only while every stream is decoding, from the per-chunk token counts vLLM streams
+with `continuous_usage_stats`. Trust that one for concurrency. With a hybrid model's prefix cache
+some prompts are partly re-prefilled in the timed pass, their streams start late, and at 128
+tokens per stream the stagger alone moved one server's 4-stream figure between 72 and 194 tok/s.
+Use `TOKENS=512` for concurrency runs. Without that, one stream's decode steps carry
 the others' prefill and the "decode" rate is partly prefill. Each stream starts from a different
 document, so no two prompts share a prefix. Both print the uncached prompt tokens of the timed
 pass: a large value means the cache was lost and that row is not a clean decode measurement.

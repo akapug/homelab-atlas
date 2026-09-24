@@ -79,6 +79,10 @@ Frozenlock's checkpoint, compiled + XPU graphs, MTP 3, with both fixes:
 | AutoRound int4 + inc-q40, `--enforce-eager` | 54.4 / 55.3 | 186.7 / | |
 | BF16 + `--quantization sym_int4` | 60.4 / 56.1 | 194.4 / 178.9 | |
 
+Multi-stream figures above are sums of per-stream rates from 128-token runs whose wall-clock
+rate stayed within ~15 % of them. Measured later with the steady-state rate and 512-token streams
+on the serving card (eager, fp8 KV): 4 streams 197.1 tok/s at ~1.5k and 188.0 at ~16k.
+
 Intel notes that XPU graphs are not supported yet
 ([#698](https://github.com/intel/llm-scaler/issues/698)); the eager row is the configuration
 without them, 5-12 % slower here and ~3.5x the stock AutoRound path.
