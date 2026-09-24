@@ -37,6 +37,9 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
 - [`llama.cpp-sycl/`](llama.cpp-sycl/): 18 patches, each with its measured effect, and a build
   script that verifies the patched source tree.
 - [`bench/`](bench/): the decode benchmarks and the structured-output probe.
+- [`qwen36-35b-a3b.md`](qwen36-35b-a3b.md): the MoE model our agents run on (Qwen3.6-35B-A3B): vLLM
+  at 2.1-5.1x llama.cpp Vulkan on one card, its full 262k window, a silent load hang to watch for,
+  and running Claude Code on it.
 
 ## Related work
 

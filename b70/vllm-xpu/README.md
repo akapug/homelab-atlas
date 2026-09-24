@@ -152,3 +152,14 @@ Compiled mode takes ~3-4 minutes to capture graphs before `/health` answers.
 Two differences callers see: vLLM returns parsed thinking in `message.reasoning` (and
 `delta.reasoning` when streaming), not `reasoning_content`, and `/v1/models` reports the window
 as `max_model_len` rather than `meta.n_ctx`. Answers are in `content` either way.
+
+A third, from Qwen3.8's own chat template: it takes `reasoning_effort` xhigh (the default), medium
+or low, and rejects anything else with HTTP 400. llama-server does not pass the field to the
+template; vLLM does, so an OpenAI-style client or Claude Code sending `high` fails on every request.
+[`effort-template.py`](effort-template.py) writes a copy of the template that maps `high` and `max`
+to `xhigh`, `minimal` and `none` to `low`, and a null to the default, and changes nothing else:
+
+```bash
+python3 effort-template.py /path/to/Qwen3.8-27B-checkpoint qwen38-effort.jinja
+vllm serve ... --chat-template qwen38-effort.jinja
+```
