@@ -37,3 +37,19 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
 - [`llama.cpp-sycl/`](llama.cpp-sycl/): 18 patches, each with its measured effect, and a build
   script that verifies the patched source tree.
 - [`bench/`](bench/): the decode benchmarks and the structured-output probe.
+
+## Related work
+
+- [CySpiegel/vllm-intel](https://github.com/CySpiegel/vllm-intel): upstream vLLM tuned on two B70s
+  (tensor parallel 2) for Qwen3.8-27B, with XPU fixes proposed to vLLM and to
+  vllm-xpu-kernels. One matters to anyone serving this model with speculative decoding:
+  [vllm-xpu-kernels#552](https://github.com/vllm-project/vllm-xpu-kernels/pull/552), an
+  out-of-bounds write in the DeltaNet kernel for batches that mix speculative and
+  non-speculative sequences.
+- intel/llm-scaler issues we have added data to:
+  [#699](https://github.com/intel/llm-scaler/issues/699) (compiled mode),
+  [#698](https://github.com/intel/llm-scaler/issues/698) (XPU graphs; Intel: not supported yet),
+  [#636](https://github.com/intel/llm-scaler/issues/636) (AutoRound checkpoints).
+- For NVIDIA cards, [syv-ai/HyperQwen](https://github.com/syv-ai/HyperQwen) serves the same model
+  family on vLLM with many patches; we measured it on a Turing Quadro RTX 6000 and sent the one
+  fix it needed there ([HyperQwen#188](https://github.com/syv-ai/HyperQwen/pull/188)).
