@@ -113,7 +113,7 @@ MTP 3), the KV pool on one B70 is 195,233 tokens: one full-window request with r
 On our task eval the fp8 cache cost one answer in 41 a malformed JSON string (a raw control
 character deep in a long answer); the other 40 were exact. A bigger window is capacity, not
 comprehension: planting one of three known defects in unrelated code and growing the prompt, this
-model found them in 9 of 9 reads at 2-12k tokens and in 11 of 36 past ~23k. An earlier measurement
+model found them in 9 of 9 reads at 2-12k tokens and in 10 of 36 past ~23k. An earlier measurement
 on llama.cpp with an 8-bit cache had the same shape, so the limit is the model, not the fp8 cache.
 
 ## Apply
