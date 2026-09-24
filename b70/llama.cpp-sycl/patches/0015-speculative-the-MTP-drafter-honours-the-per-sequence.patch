@@ -1,0 +1,34 @@
+From 339688b422c818c9bce46b31e0dc026ddaedcaf7 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 19:50:30 +0000
+Subject: [PATCH 15/16] speculative: the MTP drafter honours the per-sequence
+ draft limit
+
+The MTP draft loop stopped a sequence only at the global n_max and ignored the per-sequence
+limit the caller sets in its draft params (the server derives it from the context space and
+the tokens left to generate). It drafted up to n_max tokens for every sequence and the rest
+were discarded or ran past the limit. Stop at either limit, as the simple drafter does.
+
+With a server limit of 1 draft per slot and n_max 3 (Qwen3.8-27B, its own MTP head, Arc Pro
+B70, 4 streams), decode went 80.0-80.6 -> 87.0-87.5 tok/s: each step no longer runs the MTP
+head and the output head twice more per slot for drafts it throws away.
+---
+ common/speculative.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/common/speculative.cpp b/common/speculative.cpp
+index 77dfe95..c0a924c 100644
+--- a/common/speculative.cpp
++++ b/common/speculative.cpp
+@@ -1697,7 +1697,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+ 
+                 result.push_back(id);
+ 
+-                if (params.n_max <= (int) result.size()) {
++                if (params.n_max <= (int) result.size() || (dp.n_max > 0 && dp.n_max <= (int) result.size())) {
+                     drafting[seq_id] = false;
+                     n_drafting--;
+                     continue;
+-- 
+2.51.0
+

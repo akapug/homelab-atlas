@@ -1,0 +1,547 @@
+From b618efdb06de145891c06abf714fb9f6f80f06eb Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 17:28:07 +0000
+Subject: [PATCH 12/16] sycl: XMX small-batch mat-mul for Q4_K, Q6_K and
+ IQ4_XS; from 4 columns
+
+Extend the XMX mat-mul from Q5_K to Q4_K and Q6_K, read in their reorder layouts, and to
+IQ4_XS, which has no reorder layout here and is read in its plain 136-byte blocks. The
+dispatch now tries the XMX path before the reorder check, and each type states which layout
+its kernel reads. Q4_K takes Q5_K's nibble path without the high bit. Q6_K's 6-bit codes use
+the same fp16 trick (code | 0x6400 is 1024 + code), less 1056. IQ4_XS decodes each byte's two
+codes through a 256-entry fp16 pair table in shared memory: per-weight register lookups left
+the kernel ALU bound, 1.7x slower than dp4a. Its fields are taken from the loaded words by
+shifts, because reading them through a block pointer into that array broke strict aliasing
+and returned NaN.
+
+At most 1280 row groups run at once and the sub-groups walk the rest: a 248320-row output
+head launched whole ran 1.3x slower than dp4a. The path now starts at 4 columns: at 3 each
+kernel alone still beats dp4a, but Qwen3-4B decoded 3% slower as a whole. IQ4_XS gate/up pairs
+keep the fused dp4a kernel, which beats two XMX launches for them.
+
+Arc Pro B70, test-backend-ops perf, dp4a -> XMX, us at 4 / 8 columns:
+  Q4_K   5120x17408 194 / 389 -> 115 / 117    17408x5120 166 / 360 -> 126 / 127
+  Q6_K   5120x17408 237 / 398 -> 151 / 153    17408x5120 215 / 360 -> 172 / 174
+  Q6_K   248320x5120 (output head) 2882 / 4794 -> 2317 / 2343
+  IQ4_XS 5120x17408 190 / 259 -> 175 / 177    (17408x5120 173 / 240 -> 180 / 183, not taken)
+Qwen3-4B with Q5_K gate/up and Q6_K down, llama-batched-bench decode: 4 sequences +11%,
+8 sequences +77%; 1-3 unchanged. test-backend-ops MUL_MAT and MUL_MAT_VEC_FUSION pass
+against the CPU; the XMX eval cases cover all four types.
+---
+ ggml/src/ggml-sycl/ggml-sycl.cpp |  13 +-
+ ggml/src/ggml-sycl/mmvq-xmx.cpp  | 327 +++++++++++++++++++++++++------
+ ggml/src/ggml-sycl/mmvq-xmx.hpp  |  13 +-
+ tests/test-backend-ops.cpp       |  20 +-
+ 4 files changed, 294 insertions(+), 79 deletions(-)
+
+diff --git a/ggml/src/ggml-sycl/ggml-sycl.cpp b/ggml/src/ggml-sycl/ggml-sycl.cpp
+index 03c6cd1..3bb486a 100644
+--- a/ggml/src/ggml-sycl/ggml-sycl.cpp
++++ b/ggml/src/ggml-sycl/ggml-sycl.cpp
+@@ -4880,11 +4880,11 @@ static void ggml_sycl_mul_mat(ggml_backend_sycl_context & ctx, const ggml_tensor
+         ggml_sycl_op_mul_mat<no_quantize_q8_1>(ctx, src0, src1, dst, ggml_sycl_op_dequantize_mul_mat_vec);
+     } else if (use_mul_mat_vec_q) {
+         opt_for_reorder(&ctx, src0, src1, dst, mul_mat_algo::MMVQ);
++        if (!split && ggml_sycl_mul_mat_xmx(ctx, src0, src1, dst)) {
++            return;
++        }
+         ggml_tensor_extra_gpu * extra = static_cast<ggml_tensor_extra_gpu *>(src0->extra);
+         if (extra && extra->optimized_feature.reorder) {
+-            if (!split && ggml_sycl_mul_mat_xmx(ctx, src0, src1, dst)) {
+-                return;
+-            }
+             ggml_sycl_op_mul_mat<quantize_and_reorder_q8_1_soa>(ctx, src0, src1, dst, ggml_sycl_op_mul_mat_vec_q);
+         } else {
+             ggml_sycl_op_mul_mat<quantize_q8_1>(ctx, src0, src1, dst, ggml_sycl_op_mul_mat_vec_q);
+@@ -4958,10 +4958,9 @@ static bool ggml_sycl_mul_mat_glu_mmvq_fused(ggml_backend_sycl_context & ctx, gg
+         return false;
+     }
+ 
+-    // at 4-8 columns the unfused path runs each weight on the XMX engines, which beats this
+-    // dp4a kernel; declining also lets the unfused path move the weights to the reorder layout.
+-    // At 3 the XMX gate/up weights only tie the unfused dp4a kernel, so the fusion wins.
+-    if (act->ne[1] >= 4 && ggml_sycl_mul_mat_xmx_usable(ctx, wg, act) && ggml_sycl_mul_mat_xmx_usable(ctx, wu, act)) {
++    // the unfused path runs these weights on the XMX engines, which beats this dp4a kernel;
++    // declining also lets it move the weights to the reorder layout
++    if (ggml_sycl_mul_mat_xmx_takes_glu_pair(ctx, wg, wu, act)) {
+         return false;
+     }
+ 
+diff --git a/ggml/src/ggml-sycl/mmvq-xmx.cpp b/ggml/src/ggml-sycl/mmvq-xmx.cpp
+index 9ccce2c..29f113a 100644
+--- a/ggml/src/ggml-sycl/mmvq-xmx.cpp
++++ b/ggml/src/ggml-sycl/mmvq-xmx.cpp
+@@ -3,23 +3,25 @@
+ // SPDX-License-Identifier: MIT
+ //
+ 
+-// Small-batch (2-8 column) quantized mat-mul on the XMX matrix engines.
++// Small-batch (4-8 column) quantized mat-mul on the XMX matrix engines: Q4_K, Q5_K, Q6_K, IQ4_XS.
+ //
+ // The dp4a mat-vec kernels do their int8 math on the vector units, so their cost grows with
+ // the column count: at 4 or 8 columns they are compute bound, far from the weights' memory
+ // floor. Here each sub-group owns 16 weight rows, dequantizes its 256-value blocks to fp16
+ // straight into the B operand registers (a lane holds its own row), and multiplies them by an
+-// fp16 copy of the activations padded to 8 rows. The time is then about the same at 2 and at
+-// 8 columns. K is split across work-groups when there are too few row groups to keep the
+-// card busy, and a second kernel sums the splits into dst.
++// fp16 copy of the activations padded to 8 rows. The kernel time is then about the same at 4
++// and at 8 columns. K is split across work-groups when there are too few row groups to keep
++// the card busy, and a second kernel sums the splits into dst. Q4_K, Q5_K and Q6_K are read in
++// their reorder layout; IQ4_XS, which has none, in its plain blocks.
+ //
+-// Two columns stay on the dp4a kernels: there the fused gate/up + GLU mat-vec, which this path
+-// has to decline to reach the weights, is still faster end to end. A fused XMX gate/up kernel
+-// measured slower than two plain launches plus the GLU op.
++// The fused gate/up + GLU dp4a mat-vec declines, so both weights come here, except for IQ4_XS
++// pairs (see ggml_sycl_mul_mat_xmx_takes_glu_pair). A fused XMX gate/up kernel measured slower
++// than two plain launches plus the GLU op.
+ 
+ #include "mmvq-xmx.hpp"
+ 
+ #include "dequantize.hpp"
++#include "vecdotq.hpp"
+ 
+ #include <sycl/ext/oneapi/matrix/matrix.hpp>
+ 
+@@ -30,11 +32,17 @@ static constexpr int XMX_N          = 16;  // weight rows per sub-group (one per
+ static constexpr int XMX_K          = 16;  // fp16 values per tile along K
+ static constexpr int XMX_SG         = 16;
+ static constexpr int XMX_SGS_PER_WG = 4;
+-static constexpr int XMX_MIN_COLS   = 3;
++// At 3 columns each kernel alone beats dp4a, but a whole model does not: Qwen3-4B decodes 3%
++// slower, likely the two extra launches (activation copy, split sum) on small weights. 3 stays
++// on dp4a.
++static constexpr int XMX_MIN_COLS   = 4;
+ // row groups x splits that ran fastest on an Arc Pro B70 (32 Xe cores); fewer leaves the
+ // card idle, more over-subscribes it
+ static constexpr int XMX_TARGET_SGS = 1280;
+ 
++// one activation tile
++using xmx_a_t = sm::joint_matrix<sycl::sub_group, sycl::half, sm::use::a, XMX_M, XMX_K, sm::layout::row_major>;
++
+ // f32 activations -> fp16 [XMX_M][ncols], each group of 4 stored as (k0, k2, k1, k3) so that one
+ // nibble mask of a weight word yields an fp16 pair in the B operand's order; rows >= ncols_y are 0
+ static void xmx_convert_y(const float * x, sycl::half * y, int ncols, int ncols_y, int64_t stride_x,
+@@ -53,6 +61,8 @@ static void xmx_convert_y(const float * x, sycl::half * y, int ncols, int ncols_
+ 
+ // One lane's Q5_K block in the reorder layout: [qs 128][qh 32][scales 12][d, dmin] regions over all blocks.
+ struct xmx_block_q5_K {
++    static constexpr bool uses_table = false;
++
+     sycl::uint4 qs[8], qh[2];
+     uint32_t    sc[3];
+     sycl::half2 dm;
+@@ -103,68 +113,247 @@ struct xmx_block_q5_K {
+     }
+ };
+ 
++// One lane's Q4_K block in the reorder layout: [qs 128][scales 12][d, dmin] regions over all blocks.
++// The codes sit as Q5_K's low bits do.
++struct xmx_block_q4_K {
++    static constexpr bool uses_table = false;
++
++    sycl::uint4 qs[8];
++    uint32_t    sc[3];
++    sycl::half2 dm;
++
++    void load(const uint8_t * base, size_t nblk, size_t bi) {
++        const sycl::uint4 * gqs = (const sycl::uint4 *) base;
++        const uint32_t *    gsc = (const uint32_t *) (base + (QK_K / 2) * nblk);
++        const sycl::half2 * gdm = (const sycl::half2 *) (base + (QK_K / 2 + K_SCALE_SIZE) * nblk);
++#pragma unroll
++        for (int i = 0; i < 8; ++i) {
++            qs[i] = gqs[bi * 8 + i];
++        }
++#pragma unroll
++        for (int i = 0; i < 3; ++i) {
++            sc[i] = gsc[bi * 3 + i];
++        }
++        dm = gdm[bi];
++    }
++
++    // the 16 weights of tile t (k = 16 t .. 16 t + 15), each group of 4 as (k0, k2, k1, k3)
++    void tile(int t, sycl::half * w) const {
++        const int  s = t / 2, kt = t % 2, p = s / 2;
++        const bool hi = s % 2;
++        uint8_t    sc6, mn6;
++        get_scale_min_k4(s, (const uint8_t *) sc, sc6, mn6);
++        const float       d = dm[0], dmin = dm[1];
++        const sycl::half2 a2((sycl::half) (d * sc6)), c2((sycl::half) (-dmin * mn6)), k1024((sycl::half) 1024.0f);
++        const uint32_t *  qs32 = (const uint32_t *) qs;
++#pragma unroll
++        for (int j = 0; j < 4; ++j) {
++            // a 4-bit code | 0x6400 is the fp16 value 1024 + code
++            const uint32_t ql = qs32[8 * p + 4 * kt + j];
++            const uint32_t v  = hi ? (ql >> 4) : ql;
++            const uint32_t u0 = (v & 0x000F000Fu) | 0x64006400u;
++            const uint32_t u1 = ((v >> 8) & 0x000F000Fu) | 0x64006400u;
++            const sycl::half2 p0 = sycl::fma(sycl::bit_cast<sycl::half2>(u0) - k1024, a2, c2);
++            const sycl::half2 p1 = sycl::fma(sycl::bit_cast<sycl::half2>(u1) - k1024, a2, c2);
++            w[4 * j + 0] = p0[0];
++            w[4 * j + 1] = p0[1];
++            w[4 * j + 2] = p1[0];
++            w[4 * j + 3] = p1[1];
++        }
++    }
++};
++
++// One lane's Q6_K block in the reorder layout: [ql 128][qh 64][scales 16][d] regions over all
++// blocks. Each 16-value tile has one int8 scale.
++struct xmx_block_q6_K {
++    static constexpr bool uses_table = false;
++
++    sycl::uint4 ql[8], qh[4], sc;
++    sycl::half  d;
++
++    void load(const uint8_t * base, size_t nblk, size_t bi) {
++        const sycl::uint4 * gql = (const sycl::uint4 *) base;
++        const sycl::uint4 * gqh = (const sycl::uint4 *) (base + (QK_K / 2) * nblk);
++        const sycl::uint4 * gsc = (const sycl::uint4 *) (base + (QK_K / 2 + QK_K / 4) * nblk);
++        const sycl::half *  gd  = (const sycl::half *) (base + (QK_K / 2 + QK_K / 4 + QK_K / 16) * nblk);
++#pragma unroll
++        for (int i = 0; i < 8; ++i) {
++            ql[i] = gql[bi * 8 + i];
++        }
++#pragma unroll
++        for (int i = 0; i < 4; ++i) {
++            qh[i] = gqh[bi * 4 + i];
++        }
++        sc = gsc[bi];
++        d  = gd[bi];
++    }
++
++    // the 16 weights of tile t (k = 16 t .. 16 t + 15), each group of 4 as (k0, k2, k1, k3). Tile t
++    // lies in half h of the block, quarter g of that half (ql low or high nibbles of the first or
++    // second 32 bytes, qh bits 2g), 16-value run lh.
++    void tile(int t, sycl::half * w) const {
++        const int         h = t / 8, g = (t % 8) / 2, lh = t % 2;
++        const int8_t      scale = ((const int8_t *) &sc)[8 * h + lh + 2 * g];
++        const sycl::half2 a2((sycl::half) ((float) d * scale)), k1056((sycl::half) 1056.0f);
++        const uint32_t *  ql32 = (const uint32_t *) ql;
++        const uint32_t *  qh32 = (const uint32_t *) qh;
++#pragma unroll
++        for (int j = 0; j < 4; ++j) {
++            // a 6-bit code | 0x6400 is the fp16 value 1024 + code; the weight is code - 32
++            const uint32_t qlw = ql32[16 * h + 8 * (g & 1) + 4 * lh + j];
++            const uint32_t qhw = qh32[8 * h + 4 * lh + j] >> (2 * g);
++            const uint32_t v   = (g >> 1) ? (qlw >> 4) : qlw;
++            const uint32_t u0  = (v & 0x000F000Fu) | ((qhw & 0x00030003u) << 4) | 0x64006400u;
++            const uint32_t u1  = ((v >> 8) & 0x000F000Fu) | (((qhw >> 8) & 0x00030003u) << 4) | 0x64006400u;
++            const sycl::half2 p0 = (sycl::bit_cast<sycl::half2>(u0) - k1056) * a2;
++            const sycl::half2 p1 = (sycl::bit_cast<sycl::half2>(u1) - k1056) * a2;
++            w[4 * j + 0] = p0[0];
++            w[4 * j + 1] = p0[1];
++            w[4 * j + 2] = p1[0];
++            w[4 * j + 3] = p1[1];
++        }
++    }
++};
++
++// One lane's IQ4_XS block in the plain layout (136 bytes: d, scales_h, scales_l[4], qs[128]);
++// IQ4_XS has no reorder layout. Sub-block s holds 32 values: the low nibbles of its 16 qs
++// bytes, then the high nibbles.
++struct xmx_block_iq4_xs {
++    // kvalues_iq4nl for both nibbles of a byte as an fp16 pair, low nibble first: one lookup
++    // in shared memory per two weights. Per-weight register lookups left the kernel ALU bound
++    // (1.7x slower than dp4a).
++    static constexpr bool uses_table = true;
++
++    static void fill_table(uint32_t * tab, int lid, int nthreads) {
++        for (int e = lid; e < 256; e += nthreads) {
++            const sycl::half2 h((sycl::half) (float) (int8_t) kvalue_iq4nl_u8(e & 0xF),
++                                (sycl::half) (float) (int8_t) kvalue_iq4nl_u8(e >> 4));
++            tab[e] = sycl::bit_cast<uint32_t>(h);
++        }
++    }
++
++    const uint32_t * tab;
++    uint32_t         v[sizeof(block_iq4_xs) / 4];
++
++    void load(const uint8_t * base, size_t /* nblk */, size_t bi) {
++        // blocks are 8-byte aligned (136 = 17 x 8)
++        const sycl::uint2 * src = (const sycl::uint2 *) (base + bi * sizeof(block_iq4_xs));
++#pragma unroll
++        for (int i = 0; i < (int) sizeof(block_iq4_xs) / 8; ++i) {
++            const sycl::uint2 u = src[i];
++            v[2 * i]            = u[0];
++            v[2 * i + 1]        = u[1];
++        }
++    }
++
++    // the 16 weights of tile t (k = 16 t .. 16 t + 15), each group of 4 as (k0, k2, k1, k3). The
++    // fields come out of the words by shifts: reading them through a block_iq4_xs pointer to
++    // this array breaks strict aliasing, and the compiler returned NaN.
++    void tile(int t, sycl::half * w) const {
++        const int         s        = t / 2, kt = t % 2;
++        const float       d        = sycl::bit_cast<sycl::half>((uint16_t) (v[0] & 0xFFFF));
++        const uint32_t    scales_h = v[0] >> 16;
++        const uint32_t    scales_l = (v[1] >> (8 * (s / 2))) & 0xFF;
++        const int         ls       = ((scales_l >> 4 * (s % 2)) & 0xF) | (((scales_h >> 2 * s) & 3) << 4);
++        const sycl::half2 dl2((sycl::half) (d * (ls - 32)));
++#pragma unroll
++        for (int j = 0; j < 4; ++j) {
++            // qs starts at byte 8; after the shift each byte's code is its low nibble
++            const uint32_t    q   = v[2 + 4 * s + j] >> (4 * kt);
++            const uint32_t    i02 = (q & 0xF) | ((q >> 12) & 0xF0);
++            const uint32_t    i13 = ((q >> 8) & 0xF) | ((q >> 20) & 0xF0);
++            const sycl::half2 p0  = sycl::bit_cast<sycl::half2>(tab[i02]) * dl2;
++            const sycl::half2 p1  = sycl::bit_cast<sycl::half2>(tab[i13]) * dl2;
++            w[4 * j + 0] = p0[0];
++            w[4 * j + 1] = p0[1];
++            w[4 * j + 2] = p1[0];
++            w[4 * j + 3] = p1[1];
++        }
++    }
++};
++
++// whether the XMX kernel for a type reads the reorder layout, else the plain block layout
++static bool xmx_reads_reorder(ggml_type type) {
++    return type != GGML_TYPE_IQ4_XS;
++}
++
++
+ // dst = W y. With one split the sub-group writes dst itself; with several each writes
+-// part[split] and xmx_reduce sums them.
++// part[split] and xmx_reduce sums them. At most XMX_TARGET_SGS row groups run at once; the
++// sub-groups walk the rest in turn (a 248,320-row output head launched whole ran 1.3x slower
++// than dp4a).
+ template <typename block_t>
+ static void mul_mat_xmx(const void * vx, const sycl::half * y, float * part, float * dst, int ncols, int nrows,
+                         int ncols_y, int64_t stride_dst, int nsplit, dpct::queue_ptr stream) {
+-    const int    nsg = nrows / XMX_N;
+-    const int    nb  = ncols / QK_K;
+-    const size_t nwg = (size_t) ((nsg + XMX_SGS_PER_WG - 1) / XMX_SGS_PER_WG) * nsplit;
++    const int nsg       = nrows / XMX_N;
++    const int nb        = ncols / QK_K;
++    const int nwg_rows  = (std::min(nsg, XMX_TARGET_SGS) + XMX_SGS_PER_WG - 1) / XMX_SGS_PER_WG;
++    const int stride_sg = nwg_rows * XMX_SGS_PER_WG;
+     stream->submit([&](sycl::handler & cgh) {
+-        sycl::local_accessor<float, 1> slm(sycl::range<1>(XMX_SGS_PER_WG * XMX_M * XMX_N), cgh);
+-        cgh.parallel_for(sycl::nd_range<1>(nwg * XMX_SGS_PER_WG * XMX_SG, XMX_SGS_PER_WG * XMX_SG),
++        sycl::local_accessor<float, 1>    slm(sycl::range<1>(XMX_SGS_PER_WG * XMX_M * XMX_N), cgh);
++        sycl::local_accessor<uint32_t, 1> tab(sycl::range<1>(block_t::uses_table ? 256 : 1), cgh);
++        const size_t wg_size = XMX_SGS_PER_WG * XMX_SG;
++        cgh.parallel_for(sycl::nd_range<1>((size_t) nwg_rows * nsplit * wg_size, wg_size),
+                          [=](sycl::nd_item<1> it) [[sycl::reqd_sub_group_size(XMX_SG)]] {
++            // before any sub-group can leave, so the whole work-group reaches the barrier
++            if constexpr (block_t::uses_table) {
++                block_t::fill_table(&tab[0], it.get_local_linear_id(), XMX_SGS_PER_WG * XMX_SG);
++                sycl::group_barrier(it.get_group());
++            }
+             auto      sg    = it.get_sub_group();
+             const int lane  = sg.get_local_linear_id();
+             const int sgi   = sg.get_group_linear_id();
+             // the splits of one row group are dispatched next to each other
+-            const int split = it.get_group(0) % nsplit;
+-            const int gsg   = (it.get_group(0) / nsplit) * XMX_SGS_PER_WG + sgi;
+-            if (gsg >= nsg) {
+-                return;
+-            }
+-            const int       ib0 = split * nb / nsplit, ib1 = (split + 1) * nb / nsplit;
+-            const int       row0 = gsg * XMX_N, row = row0 + lane;
+-            const size_t    nblk    = (size_t) nrows * nb;
+-            auto gy = sycl::address_space_cast<sycl::access::address_space::global_space, sycl::access::decorated::no>(y);
++            const int    split = it.get_group(0) % nsplit;
++            const int    ib0 = split * nb / nsplit, ib1 = (split + 1) * nb / nsplit;
++            const size_t nblk  = (size_t) nrows * nb;
++            float *      tile  = &slm[sgi * XMX_M * XMX_N];
++            auto gy = sycl::address_space_cast<sycl::access::address_space::global_space,
++                                               sycl::access::decorated::no>(y);
+ 
+-            sm::joint_matrix<sycl::sub_group, float, sm::use::accumulator, XMX_M, XMX_N> mc;
+-            sm::joint_matrix_fill(sg, mc, 0.0f);
+             // an element-wise apply on a never-written B hangs the GPU, so give it a value first
+             sm::joint_matrix<sycl::sub_group, sycl::half, sm::use::b, XMX_K, XMX_N, sm::layout::ext_intel_packed> mb;
+             sm::joint_matrix_fill(sg, mb, sycl::half(0.0f));
+ 
+-            for (int ib = ib0; ib < ib1; ++ib) {
+-                block_t blk;
+-                blk.load((const uint8_t *) vx, nblk, (size_t) row * nb + ib);
++            for (int gsg = (it.get_group(0) / nsplit) * XMX_SGS_PER_WG + sgi; gsg < nsg; gsg += stride_sg) {
++                const int row0 = gsg * XMX_N, row = row0 + lane;
++                sm::joint_matrix<sycl::sub_group, float, sm::use::accumulator, XMX_M, XMX_N> mc;
++                sm::joint_matrix_fill(sg, mc, 0.0f);
++                for (int ib = ib0; ib < ib1; ++ib) {
++                    block_t blk;
++                    if constexpr (block_t::uses_table) {
++                        blk.tab = &tab[0];
++                    }
++                    blk.load((const uint8_t *) vx, nblk, (size_t) row * nb + ib);
+ #pragma unroll
+-                for (int t = 0; t < QK_K / XMX_K; ++t) {
+-                    sm::joint_matrix<sycl::sub_group, sycl::half, sm::use::a, XMX_M, XMX_K, sm::layout::row_major> ma;
+-                    sm::joint_matrix_load(sg, ma, gy + ib * QK_K + t * XMX_K, ncols);
+-                    sycl::half wt[XMX_K];
+-                    blk.tile(t, wt);
+-                    // a lane holds column n = lane of B, and its i-th element is k = i
+-                    int i = 0;
+-                    sm::joint_matrix_apply(sg, mb, [&](sycl::half & x) { x = wt[i++]; });
+-                    sm::joint_matrix_mad(sg, mc, ma, mb, mc);
++                    for (int t = 0; t < QK_K / XMX_K; ++t) {
++                        xmx_a_t ma;
++                        sm::joint_matrix_load(sg, ma, gy + ib * QK_K + t * XMX_K, ncols);
++                        sycl::half wt[XMX_K];
++                        blk.tile(t, wt);
++                        // a lane holds column n = lane of B, and its i-th element is k = i
++                        int i = 0;
++                        sm::joint_matrix_apply(sg, mb, [&](sycl::half & x) { x = wt[i++]; });
++                        sm::joint_matrix_mad(sg, mc, ma, mb, mc);
++                    }
+                 }
+-            }
+ 
+-            if (nsplit > 1) {
+-                auto gpart = sycl::address_space_cast<sycl::access::address_space::global_space,
+-                                                      sycl::access::decorated::no>(
+-                    part + (size_t) split * XMX_M * nrows + row0);
+-                sm::joint_matrix_store(sg, mc, gpart, nrows, sm::layout::row_major);
+-                return;
+-            }
+-            // one split: stage the tile through SLM and write the ncols_y real rows of dst
+-            float * tile = &slm[sgi * XMX_M * XMX_N];
+-            auto    lt   = sycl::address_space_cast<sycl::access::address_space::local_space, sycl::access::decorated::no>(tile);
+-            sm::joint_matrix_store(sg, mc, lt, XMX_N, sm::layout::row_major);
+-            sycl::group_barrier(sg);
+-            for (int m = 0; m < ncols_y; ++m) {
+-                dst[m * stride_dst + row] = tile[m * XMX_N + lane];
++                if (nsplit > 1) {
++                    auto gpart = sycl::address_space_cast<sycl::access::address_space::global_space,
++                                                          sycl::access::decorated::no>(
++                        part + (size_t) split * XMX_M * nrows + row0);
++                    sm::joint_matrix_store(sg, mc, gpart, nrows, sm::layout::row_major);
++                    continue;
++                }
++                // one split: stage the tile through SLM and write the ncols_y real rows of dst
++                auto lt = sycl::address_space_cast<sycl::access::address_space::local_space,
++                                                   sycl::access::decorated::no>(tile);
++                sm::joint_matrix_store(sg, mc, lt, XMX_N, sm::layout::row_major);
++                sycl::group_barrier(sg);
++                for (int m = 0; m < ncols_y; ++m) {
++                    dst[m * stride_dst + row] = tile[m * XMX_N + lane];
++                }
++                sycl::group_barrier(sg);
+             }
+         });
+     });
+@@ -189,10 +378,13 @@ static int xmx_nsplit(int nrows, int ncols) {
+ }
+ 
+ bool ggml_sycl_mul_mat_xmx_supports_type(ggml_type type) {
+-    return type == GGML_TYPE_Q5_K;
++    return type == GGML_TYPE_Q4_K || type == GGML_TYPE_Q5_K || type == GGML_TYPE_Q6_K || type == GGML_TYPE_IQ4_XS;
+ }
+ 
+-bool ggml_sycl_mul_mat_xmx_usable(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1) {
++// whether the XMX path serves src0 x src1 once src0 is in the layout it reads: 4-8 f32 columns,
++// a 2-D weight, a device with XMX. src0 must not be a split buffer.
++static bool ggml_sycl_mul_mat_xmx_usable(ggml_backend_sycl_context & ctx, const ggml_tensor * src0,
++                                         const ggml_tensor * src1) {
+     static int enabled = ggml_sycl_get_env("GGML_SYCL_XMX_MMVQ", 1);
+     if (!enabled || !ggml_sycl_mul_mat_xmx_supports_type(src0->type)) {
+         return false;
+@@ -210,9 +402,10 @@ bool ggml_sycl_mul_mat_xmx_usable(ggml_backend_sycl_context & ctx, const ggml_te
+ 
+ bool ggml_sycl_mul_mat_xmx(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1,
+                            ggml_tensor * dst) {
+-    const auto * extra = static_cast<const ggml_tensor_extra_gpu *>(src0->extra);
+-    if (!extra || !extra->optimized_feature.reorder || dst->type != GGML_TYPE_F32 || dst->nb[0] != sizeof(float) ||
+-        !ggml_sycl_mul_mat_xmx_usable(ctx, src0, src1)) {
++    const auto * extra     = static_cast<const ggml_tensor_extra_gpu *>(src0->extra);
++    const bool   reordered = extra && extra->optimized_feature.reorder;
++    if (dst->type != GGML_TYPE_F32 || dst->nb[0] != sizeof(float) || !ggml_sycl_mul_mat_xmx_usable(ctx, src0, src1) ||
++        reordered != xmx_reads_reorder(src0->type)) {
+         return false;
+     }
+     scope_op_debug_print scope_dbg_print(__func__, dst, /*num_src=*/2, " : XMX");
+@@ -232,6 +425,18 @@ bool ggml_sycl_mul_mat_xmx(ggml_backend_sycl_context & ctx, const ggml_tensor *
+             mul_mat_xmx<xmx_block_q5_K>(src0->data, y_alloc.get(), part_alloc.get(), (float *) dst->data, ncols, nrows,
+                                         ncols_y, ld, nsplit, stream);
+             break;
++        case GGML_TYPE_Q4_K:
++            mul_mat_xmx<xmx_block_q4_K>(src0->data, y_alloc.get(), part_alloc.get(), (float *) dst->data, ncols, nrows,
++                                        ncols_y, ld, nsplit, stream);
++            break;
++        case GGML_TYPE_Q6_K:
++            mul_mat_xmx<xmx_block_q6_K>(src0->data, y_alloc.get(), part_alloc.get(), (float *) dst->data, ncols, nrows,
++                                        ncols_y, ld, nsplit, stream);
++            break;
++        case GGML_TYPE_IQ4_XS:
++            mul_mat_xmx<xmx_block_iq4_xs>(src0->data, y_alloc.get(), part_alloc.get(), (float *) dst->data, ncols,
++                                          nrows, ncols_y, ld, nsplit, stream);
++            break;
+         default:
+             GGML_ABORT("unsupported type for the XMX mat-mul");
+     }
+@@ -240,3 +445,11 @@ bool ggml_sycl_mul_mat_xmx(ggml_backend_sycl_context & ctx, const ggml_tensor *
+     }
+     return true;
+ }
++
++bool ggml_sycl_mul_mat_xmx_takes_glu_pair(ggml_backend_sycl_context & ctx, const ggml_tensor * gate_w,
++                                          const ggml_tensor * up_w, const ggml_tensor * src1) {
++    // two XMX mat-muls and the GLU op beat the fused dp4a gate/up kernel, except for IQ4_XS:
++    // its fused dp4a pair (330 us at 4 columns, 17,408 x 5,120) beats two XMX launches (2 x 180)
++    return gate_w->type != GGML_TYPE_IQ4_XS && up_w->type != GGML_TYPE_IQ4_XS &&
++           ggml_sycl_mul_mat_xmx_usable(ctx, gate_w, src1) && ggml_sycl_mul_mat_xmx_usable(ctx, up_w, src1);
++}
+diff --git a/ggml/src/ggml-sycl/mmvq-xmx.hpp b/ggml/src/ggml-sycl/mmvq-xmx.hpp
+index 87276e0..374adfa 100644
+--- a/ggml/src/ggml-sycl/mmvq-xmx.hpp
++++ b/ggml/src/ggml-sycl/mmvq-xmx.hpp
+@@ -11,13 +11,14 @@
+ // Weight types the XMX small-batch mat-mul dequantizes.
+ bool ggml_sycl_mul_mat_xmx_supports_type(ggml_type type);
+ 
+-// Whether the XMX path would serve src0 x src1 once src0 is in the reorder layout: 3-8
+-// f32 columns, a 2-D non-split weight, a device with XMX. Callers use it to decline
+-// fusions that would keep the weight out of that layout. src0 must not be a split buffer.
+-bool ggml_sycl_mul_mat_xmx_usable(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1);
++// Whether the fused dp4a gate/up + GLU mat-vec should decline so that both weights run on
++// the XMX path instead (which also lets the unfused path move them to the reorder layout).
++bool ggml_sycl_mul_mat_xmx_takes_glu_pair(ggml_backend_sycl_context & ctx, const ggml_tensor * gate_w,
++                                          const ggml_tensor * up_w, const ggml_tensor * src1);
+ 
+-// dst = src0 x src1 on the XMX engines. src0 must be in the reorder layout and not a split
+-// buffer. Returns false, having done nothing, when this path does not serve the case.
++// dst = src0 x src1 on the XMX engines. src0 must be in the layout its type's kernel reads
++// (the reorder layout; for IQ4_XS, which has none, the plain one) and not a split buffer.
++// Returns false, having done nothing, when this path does not serve the case.
+ bool ggml_sycl_mul_mat_xmx(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1,
+                            ggml_tensor * dst);
+ 
+diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
+index 0e7d8a7..c700fcf 100644
+--- a/tests/test-backend-ops.cpp
++++ b/tests/test-backend-ops.cpp
+@@ -10959,16 +10959,18 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+ 
+     // small-batch XMX mat-mul: one K split (enough row groups) and several (few row groups, long K),
+     // alone and as the FFN gate/up + GLU, which the fused dp4a path hands to it from 4 columns
+-    for (int64_t n_tok : {2, 3, 5, 8}) {
+-        for (auto mk : std::vector<std::array<int64_t, 2>>{{4096, 256}, {64, 1024}}) {
+-            test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q5_K, GGML_TYPE_F32, mk[0], n_tok, mk[1], {1, 1}, {1, 1}));
++    for (ggml_type type : {GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_IQ4_XS}) {
++        for (int64_t n_tok : {2, 3, 5, 8}) {
++            for (auto mk : std::vector<std::array<int64_t, 2>>{{4096, 256}, {64, 1024}}) {
++                test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, mk[0], n_tok, mk[1], {1, 1}, {1, 1}));
++            }
+         }
+-    }
+-    for (ggml_glu_op glu_op : {GGML_GLU_OP_SWIGLU, GGML_GLU_OP_GEGLU}) {
+-        for (int64_t m_batch : {3, 4, 8}) {
+-            for (auto nk : std::vector<std::array<int64_t, 2>>{{4096, 256}, {64, 1024}}) {
+-                test_cases.emplace_back(new test_mul_mat_vec_fusion(GGML_TYPE_Q5_K, glu_op, m_batch, nk[0], nk[1], false, 1,
+-                                                                    1, false, false, true, false, {1, 1}));
++        for (ggml_glu_op glu_op : {GGML_GLU_OP_SWIGLU, GGML_GLU_OP_GEGLU}) {
++            for (int64_t m_batch : {3, 4, 8}) {
++                for (auto nk : std::vector<std::array<int64_t, 2>>{{4096, 256}, {64, 1024}}) {
++                    test_cases.emplace_back(new test_mul_mat_vec_fusion(type, glu_op, m_batch, nk[0], nk[1], false, 1, 1,
++                                                                        false, false, true, false, {1, 1}));
++                }
+             }
+         }
+     }
+-- 
+2.51.0
+

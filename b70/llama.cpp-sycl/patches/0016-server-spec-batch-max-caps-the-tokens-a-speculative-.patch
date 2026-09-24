@@ -1,0 +1,96 @@
+From 0ffba360eb09ffe3b92f71cfb368881d6850bbe3 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 19:50:30 +0000
+Subject: [PATCH 16/16] server: --spec-batch-max caps the tokens a speculative
+ step verifies
+
+More draft tokens help a single stream and can sink several: on a backend whose small-batch
+kernels stop at a fixed width, a step of 4 streams x (1 + 3 drafts) = 16 tokens falls onto the
+large-batch path. With --spec-batch-max N, each active slot drafts at most N / slots - 1 tokens
+(and never more than --spec-draft-n-max), so a step stays within N tokens: several drafts at one
+stream, fewer as streams are added. Active slots count, not only generating ones: a request
+that just started adds its prompt tail to the same step. 0 (the default) keeps today's behaviour.
+
+Qwen3.8-27B drafting with its own MTP head on an Arc Pro B70 (whose XMX mat-mul costs about the
+same from 1 to 8 columns), decode tok/s at ~1.5k / ~16k context:
+  --spec-draft-n-max 1:                          1 stream 34.6 / 31.8, 4 streams 88.0 / 78.3
+  --spec-draft-n-max 3:                          1 stream 43.8 / 39.2, 4 streams  2.8 /  3.6
+  --spec-draft-n-max 3 --spec-batch-max 8:       1 stream 43.8 / 40.1, 4 streams 87.5 / 77.9
+---
+ common/arg.cpp                  | 12 ++++++++++++
+ common/common.h                 |  4 ++++
+ tools/server/server-context.cpp | 13 ++++++++++++-
+ 3 files changed, 28 insertions(+), 1 deletion(-)
+
+diff --git a/common/arg.cpp b/common/arg.cpp
+index 63e3427..85cb23a 100644
+--- a/common/arg.cpp
++++ b/common/arg.cpp
+@@ -4132,6 +4132,18 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
+         }
+     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_N_CPU_MOE"));
+ 
++    add_opt(common_arg(
++        {"--spec-batch-max"}, "N",
++        string_format("cap the tokens a decode step verifies, sampled plus drafted over all generating slots: each "
++                      "slot drafts at most N / slots - 1 tokens, so more streams draft less (default: %d, 0 = no cap)",
++                      params.speculative.n_batch_max),
++        [](common_params & params, int value) {
++            if (value < 0) {
++                throw std::invalid_argument("invalid value");
++            }
++            params.speculative.n_batch_max = value;
++        }
++    ).set_spec().set_examples({LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_SPEC_BATCH_MAX"));
+     add_opt(common_arg(
+         {"--spec-draft-n-max"}, "N",
+         string_format("number of tokens to draft for speculative decoding (default: %d)", params.speculative.draft.n_max),
+diff --git a/common/common.h b/common/common.h
+index 7afc266..0b94251 100644
+--- a/common/common.h
++++ b/common/common.h
+@@ -373,6 +373,10 @@ struct common_params_speculative {
+     double synth_len = -1.0;
+     std::vector<double> synth_rates;
+ 
++    // cap on the tokens one decode step verifies, sampled plus drafted, over all generating slots:
++    // each slot drafts at most n_batch_max / slots - 1 tokens (0 = no cap)
++    int32_t n_batch_max = 0;
++
+     // used by Simple, MTP, Eagle3, etc. - all methods that require some kind of draft model
+     common_params_speculative_draft draft;
+ 
+diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
+index b6835e4..7446033 100644
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -2980,6 +2980,17 @@ private:
+         std::vector<server_slot *> generating;
+         std::vector<server_slot *> drafting;
+ 
++        // with a verify cap, each slot drafts at most n_batch_max / slots - 1 tokens. Count every active
++        // slot, not only the generating ones: a request that just started adds its prompt tail to this step.
++        int n_draft_cap = INT_MAX;
++        if (spec && params_base.speculative.n_batch_max > 0) {
++            int n_active = 0;
++            for (const auto & s : slots) {
++                n_active += s.is_processing();
++            }
++            n_draft_cap = std::max(0, params_base.speculative.n_batch_max / std::max(1, n_active) - 1);
++        }
++
+         // determine which slots are generating and drafting
+         iterate(slots, [&](server_slot & slot) {
+             if (slot.state != SLOT_STATE_GENERATING) {
+@@ -3001,7 +3012,7 @@ private:
+                 const bool use_ckpt_tgt = ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
+                 const bool use_ckpt_dft = ctx_dft_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL;
+ 
+-                const int n_draft_max = slot.get_n_draft_max();
++                const int n_draft_max = std::min(slot.get_n_draft_max(), n_draft_cap);
+ 
+                 if (n_draft_max > 0) {
+                     GGML_ASSERT(slot.can_speculate());
+-- 
+2.51.0
+

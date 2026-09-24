@@ -1,0 +1,77 @@
+diff -ru a/vllm/model_executor/layers/quantization/inc/schemes/inc_wna16_linear.py b/vllm/model_executor/layers/quantization/inc/schemes/inc_wna16_linear.py
+--- a/vllm/model_executor/layers/quantization/inc/schemes/inc_wna16_linear.py
++++ b/vllm/model_executor/layers/quantization/inc/schemes/inc_wna16_linear.py
+@@ -459,5 +459,45 @@
+         )
+ 
+ 
++from vllm.model_executor.layers.quantization.sym_int4 import (  # noqa: E402
++    SymInt4LinearMethod,
++    _register_linear_int4_layouts,
++)
++
++
++class INCXPUQ40LinearMethod(SymInt4LinearMethod):
++    """AutoRound int4 (auto_gptq packing, symmetric, group 128) on the sym_int4 kernels.
++
++    Such a checkpoint is GGML Q4_0 with 128-wide blocks stored K-major. Loading uses the inc
++    parameters; after load the two tensors are transposed into sym_int4's N-major layout and
++    everything else is sym_int4's, including apply() and is_sym_int4.
++    """
++
++    uses_meta_device = False
++
++    def __init__(self, layer_config: "INCLayerConfig") -> None:
++        self.quant_config = None
++        self.weight_bits = layer_config.bits
++        self.group_size = layer_config.group_size
++        self.sym = layer_config.sym
++        self.pack_factor = 32 // self.weight_bits
++        self.is_awq_packed = False
++
++    create_weights = INCXPULinearBase.create_weights
++    _create_inc_weights = INCXPULinearBase._create_inc_weights
++
++    def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
++        if getattr(layer, "_already_called_process_weights_after_loading", False):
++            return
++        qweight = layer.qweight.data.t().contiguous()  # [N, K/8] int32
++        scales = layer.scales.data.t().contiguous().to(torch.float16)  # [N, K/128]
++        _register_linear_int4_layouts(layer, qweight, scales)
++        del layer.g_idx
++        in_features = qweight.shape[1] * self.pack_factor
++        layer._int4_in_features = in_features
++        layer._int4_in_features_padded = in_features
++        layer._already_called_process_weights_after_loading = True
++
++
+ class INCXPUW4A16LinearScheme(INCXPULinearMethod):
+     pass
+diff -ru a/vllm/model_executor/layers/quantization/inc/schemes/inc_wna16_scheme.py b/vllm/model_executor/layers/quantization/inc/schemes/inc_wna16_scheme.py
+--- a/vllm/model_executor/layers/quantization/inc/schemes/inc_wna16_scheme.py
++++ b/vllm/model_executor/layers/quantization/inc/schemes/inc_wna16_scheme.py
+@@ -1,6 +1,7 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ 
++import os
+ from typing import TYPE_CHECKING
+ 
+ from vllm.logger import init_logger
+@@ -38,6 +39,16 @@
+         del config, layer
+         if current_platform.is_xpu():
+             if layer_config.bits in XPU_WNA16_SUPPORTED_BITS and layer_config.sym:
++                if (
++                    layer_config.bits == 4
++                    and layer_config.group_size == 128
++                    and layer_config.is_gptq
++                    and os.environ.get("VLLM_INC_XPU_Q40", "1") != "0"
++                ):
++                    # inc-q40: the checkpoint is Q4_0 already; serve it on sym_int4's kernels
++                    from .inc_wna16_linear import INCXPUQ40LinearMethod
++
++                    return INCXPUQ40LinearMethod(layer_config)
+                 from .inc_ark_ops import get_ark_state
+                 from .inc_wna16_linear import (
+                     INCARKLinearMethod,

@@ -1,0 +1,32 @@
+From e4077b970e803d7ecc62ec6974e448403ffa221a Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 10:56:04 +0000
+Subject: [PATCH 03/16] sycl: split the KV range finer for flash attention
+ decode
+
+---
+ ggml/src/ggml-sycl/fattn-common.hpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/ggml/src/ggml-sycl/fattn-common.hpp b/ggml/src/ggml-sycl/fattn-common.hpp
+index 82813f7..76892d7 100644
+--- a/ggml/src/ggml-sycl/fattn-common.hpp
++++ b/ggml/src/ggml-sycl/fattn-common.hpp
+@@ -1095,6 +1095,14 @@ void launch_fattn(
+             }
+         }
+ 
++        // Decode (all of Q in one tile): the wave model above fills the device with a few long
++        // blocks, each walking many KV tiles in sequence. Splitting the KV range finer is faster:
++        // 128 blocks per tile measured best on Intel Arc Pro B70 (Xe2) from 2k to 128k KV at
++        // 1-4 sequences, up to 1.55x over the wave model.
++        if (ntiles_x == 1) {
++            parallel_blocks = std::max(parallel_blocks, std::min(ntiles_KQ, 128));
++        }
++
+         blocks_num.x = ntiles_x;
+         blocks_num.y = parallel_blocks;
+         blocks_num.z = ntiles_z_gqa*K->ne[2]*Q->ne[3];
+-- 
+2.51.0
+

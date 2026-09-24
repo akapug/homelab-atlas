@@ -1,0 +1,169 @@
+From 2cda51334a673987bf7ee642de7963e7a37e2aa1 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 07:55:09 +0000
+Subject: [PATCH 02/16] sycl: add a multi-column MMVQ kernel for IQ4_NL
+
+IQ4_NL had no multi-column MMVQ kernel: a batch of n decode tokens ran the
+single-column kernel n times, re-reading and re-decoding every weight block per
+token. This adds one in the shared-weights form of #27062: each block's 4-bit
+table lookups are decoded once and applied to every column, with the per-column
+arithmetic and its order exactly the single-column kernel's.
+
+IQ4_NL is a small share of unsloth UD mixes (1.6% of Qwen3.8-27B UD-Q4_K_XL) but,
+being unbatched, it was about 15% of batched matmul time there.
+
+Arc Pro B70, MUL_MAT iq4_nl 4096x14336, median of 3 alternating runs, vs master:
+  n=1 0.99x (unchanged path), n=2 1.91x, n=4 3.46x, n=8 6.18x (Q4_K control 1.00x)
+test-backend-ops: MUL_MAT iq4_nl 14/14 (n=2..8 covered) and MUL_MAT_ID 3/3 match the CPU.
+End to end, Qwen3.8-27B UD-Q4_K_XL, 4 streams x 300 tokens: 41.4 -> 45.4 tok/s.
+---
+ ggml/src/ggml-sycl/mmvq.cpp | 119 +++++++++++++++++++++++++++++++++++-
+ 1 file changed, 118 insertions(+), 1 deletion(-)
+
+diff --git a/ggml/src/ggml-sycl/mmvq.cpp b/ggml/src/ggml-sycl/mmvq.cpp
+index 209d173..7fb8375 100644
+--- a/ggml/src/ggml-sycl/mmvq.cpp
++++ b/ggml/src/ggml-sycl/mmvq.cpp
+@@ -716,6 +716,79 @@ static void mul_mat_vec_q_iq4_nl_q8_1(const void *__restrict__ vx,
+     }
+ }
+ 
++template <int ncols_dst>
++static void mul_mat_vec_q_iq4_nl_q8_1_ncols(const void * __restrict__ vx, const void * __restrict__ vy,
++                                            float * __restrict__ dst, const int ncols, const int nrows,
++                                            const int stride_col_y, const int stride_col_dst,
++                                            const sycl::nd_item<3> & item_ct1) {
++    constexpr int qk  = QK4_NL;
++    constexpr int qi  = QI4_NL;
++    constexpr int vdr = VDR_Q4_0_Q8_1_MMVQ;  // what vec_dot_iq4_nl_q8_1 loops over
++
++    const int row = item_ct1.get_group(2) * item_ct1.get_local_range(1) + item_ct1.get_local_id(1);
++    if (row >= nrows) {
++        return;
++    }
++
++    const int     blocks_per_row  = ncols / qk;
++    constexpr int blocks_per_warp = vdr * WARP_SIZE / qi;
++    static_assert(blocks_per_warp > 0);
++
++    float tmp[ncols_dst] = { 0.0f };
++
++    const block_iq4_nl * x      = (const block_iq4_nl *) vx;
++    const block_q8_1 *   y      = (const block_q8_1 *) vy;
++    const uint8_t *      values = (const uint8_t *) kvalues_iq4nl;
++
++    for (int i = item_ct1.get_local_id(2) / (qi / vdr); i < blocks_per_row; i += blocks_per_warp) {
++        const int ibx = row * blocks_per_row + i;
++        const int iby = i * (qk / QK8_1);
++        const int iqs = vdr * (item_ct1.get_local_id(2) % (qi / vdr));
++
++        // the weight side, decoded once for every column
++        const block_iq4_nl * bq = &x[ibx];
++        const uint16_t *     q4 = (const uint16_t *) bq->qs + 2 * iqs;
++        int v1[vdr];
++        int v2[vdr];
++#pragma unroll
++        for (int l = 0; l < vdr; ++l) {
++            const uint32_t aux = q4[2 * l] | (q4[2 * l + 1] << 16);
++            get_int_from_table_16(aux, values, v1[l], v2[l]);
++        }
++        const float dx = (float) bq->d;
++
++#pragma unroll
++        for (int j = 0; j < ncols_dst; ++j) {
++            const block_q8_1 * bq8 = &y[j * stride_col_y + iby];
++            const int32_t *    q8  = (const int32_t *) bq8->qs + iqs;
++            int sumi1 = 0;
++            int sumi2 = 0;
++#pragma unroll
++            for (int l = 0; l < vdr; ++l) {
++                sumi1 = dpct::dp4a(v1[l], q8[l + 0], sumi1);
++                sumi2 = dpct::dp4a(v2[l], q8[l + 4], sumi2);
++            }
++            const float d = dx * bq8->ds[0];
++            tmp[j] += d * (sumi1 + sumi2);
++        }
++    }
++
++#pragma unroll
++    for (int j = 0; j < ncols_dst; ++j) {
++#pragma unroll
++        for (int mask = WARP_SIZE / 2; mask > 0; mask >>= 1) {
++            tmp[j] += dpct::permute_sub_group_by_xor(item_ct1.get_sub_group(), tmp[j], mask);
++        }
++    }
++
++    if (item_ct1.get_local_id(2) == 0) {
++#pragma unroll
++        for (int j = 0; j < ncols_dst; ++j) {
++            dst[j * stride_col_dst + row] = tmp[j];
++        }
++    }
++}
++
+ 
+ template <int qk, int qi, typename block_q_t, int vdr>
+ static void mul_mat_vec_q_iq4_xs_q8_1(const void *__restrict__ vx,
+@@ -2256,6 +2329,40 @@ static void mul_mat_vec_iq4_nl_q8_1_sycl(const void *vx, const void *vy,
+     }
+ }
+ 
++template <int ncols_dst>
++static void mul_mat_vec_iq4_nl_q8_1_sycl_ncols(const void * vx, const void * vy, float * dst, const int ncols,
++                                               const int nrows, const int stride_col_y, const int stride_col_dst,
++                                               dpct::queue_ptr stream) {
++    GGML_ASSERT(ncols % QK4_NL == 0);
++    const int            block_num_y = (nrows + GGML_SYCL_MMV_Y - 1) / GGML_SYCL_MMV_Y;
++    const sycl::range<3> block_nums(1, 1, block_num_y);
++    const sycl::range<3> block_dims(1, GGML_SYCL_MMV_Y, WARP_SIZE);
++
++    stream->submit([&](sycl::handler & cgh) {
++        cgh.parallel_for(sycl::nd_range<3>(block_nums * block_dims, block_dims),
++                         [=](sycl::nd_item<3> item_ct1) [[sycl::reqd_sub_group_size(WARP_SIZE)]] {
++                             mul_mat_vec_q_iq4_nl_q8_1_ncols<ncols_dst>(vx, vy, dst, ncols, nrows, stride_col_y,
++                                                                        stride_col_dst, item_ct1);
++                         });
++    });
++}
++
++static void mul_mat_vec_iq4_nl_q8_1_sycl_switch_ncols(const void * vx, const void * vy, float * dst, const int ncols,
++                                                      const int nrows, const int ncols_dst, const int stride_col_y,
++                                                      const int stride_col_dst, dpct::queue_ptr stream) {
++    switch (ncols_dst) {
++        case 1: mul_mat_vec_iq4_nl_q8_1_sycl(vx, vy, dst, ncols, nrows, stream); break;
++        case 2: mul_mat_vec_iq4_nl_q8_1_sycl_ncols<2>(vx, vy, dst, ncols, nrows, stride_col_y, stride_col_dst, stream); break;
++        case 3: mul_mat_vec_iq4_nl_q8_1_sycl_ncols<3>(vx, vy, dst, ncols, nrows, stride_col_y, stride_col_dst, stream); break;
++        case 4: mul_mat_vec_iq4_nl_q8_1_sycl_ncols<4>(vx, vy, dst, ncols, nrows, stride_col_y, stride_col_dst, stream); break;
++        case 5: mul_mat_vec_iq4_nl_q8_1_sycl_ncols<5>(vx, vy, dst, ncols, nrows, stride_col_y, stride_col_dst, stream); break;
++        case 6: mul_mat_vec_iq4_nl_q8_1_sycl_ncols<6>(vx, vy, dst, ncols, nrows, stride_col_y, stride_col_dst, stream); break;
++        case 7: mul_mat_vec_iq4_nl_q8_1_sycl_ncols<7>(vx, vy, dst, ncols, nrows, stride_col_y, stride_col_dst, stream); break;
++        case 8: mul_mat_vec_iq4_nl_q8_1_sycl_ncols<8>(vx, vy, dst, ncols, nrows, stride_col_y, stride_col_dst, stream); break;
++        default: GGML_ABORT("unsupported ncols_dst=%d for IQ4_NL multi-col MMVQ", ncols_dst);
++    }
++}
++
+ static void mul_mat_vec_iq4_xs_q8_1_sycl(const void *vx, const void *vy,
+                                           float *dst, const int ncols,
+                                           const int nrows,
+@@ -2631,7 +2738,17 @@ void ggml_sycl_op_mul_mat_vec_q(ggml_backend_sycl_context & ctx, const ggml_tens
+                 mul_mat_vec_iq3_s_q8_1_sycl(src0_dd_i, src1_ddq_i_bs, dst_dd_i_bs, ne00, row_diff, stream);
+                 break;
+             case GGML_TYPE_IQ4_NL:
+-                mul_mat_vec_iq4_nl_q8_1_sycl(src0_dd_i, src1_ddq_i_bs, dst_dd_i_bs, ne00, row_diff, stream);
++                if (i == 0 && src1_ncols > 1 && src1_ncols <= 8) {
++                    const int stride_col_y   = src1_padded_col_size / QK8_1;
++                    const int stride_col_dst = dst->ne[0];
++                    GGML_SYCL_DEBUG("Calling mul_mat_vec_iq4_nl_q8_1_sycl_switch_ncols ncols=%d\n", (int)src1_ncols);
++                    mul_mat_vec_iq4_nl_q8_1_sycl_switch_ncols(
++                        src0_dd_i, src1_ddq_i, dst_dd_i, ne00, row_diff,
++                        src1_ncols, stride_col_y, stride_col_dst, stream);
++                    return;
++                } else if (i == 0 || src1_ncols == 1) {
++                    mul_mat_vec_iq4_nl_q8_1_sycl(src0_dd_i, src1_ddq_i_bs, dst_dd_i_bs, ne00, row_diff, stream);
++                }
+                 break;
+             case GGML_TYPE_IQ4_XS:
+                 if (i == 0 && src1_ncols > 1 && src1_ncols <= 8) {
+-- 
+2.51.0
+

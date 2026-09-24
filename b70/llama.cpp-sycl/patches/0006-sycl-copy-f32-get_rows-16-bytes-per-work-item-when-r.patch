@@ -1,0 +1,83 @@
+From b30de5ddf2f3ee8570f1e0558c07c349bc2789eb Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 13:45:39 +0000
+Subject: [PATCH 06/16] sycl: copy f32 get_rows 16 bytes per work-item when
+ rows allow it
+
+The f32 get_rows kernel moves one float per work-item and recomputes the row index and
+pointers for each. Large rows, such as a recurrent model's per-sequence state (3 MB per
+layer for Qwen3.8-27B's DeltaNet), then copy at a fraction of bandwidth. When the row
+length, all strides and both base pointers are 16-byte aligned, copy a float4 per
+work-item; otherwise the existing kernel runs.
+
+Arc Pro B70, GET_ROWS f32 rows of 786432: 1 row 20.2 -> 3.3 us, 4 rows 78.2 -> 10.3 us
+(cache-resident test tensor). test-backend-ops GET_ROWS 216/216 against the CPU.
+---
+ ggml/src/ggml-sycl/getrows.cpp | 37 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 37 insertions(+)
+
+diff --git a/ggml/src/ggml-sycl/getrows.cpp b/ggml/src/ggml-sycl/getrows.cpp
+index 4e84bd2..f2a18f1 100644
+--- a/ggml/src/ggml-sycl/getrows.cpp
++++ b/ggml/src/ggml-sycl/getrows.cpp
+@@ -15,6 +15,8 @@
+ #include "dequantize.hpp"
+ #include "getrows.hpp"
+ 
++#include <type_traits>
++
+ 
+ template<int qk, int qr, dequantize_kernel_t dequantize_kernel, typename dst_t>
+ static void k_get_rows(
+@@ -137,6 +139,27 @@ static void k_get_rows_float(
+     dst_row[i00] = src0_row[i00];
+ }
+ 
++// f32 rows, 16 bytes per work-item: one row index and one pair of pointers per four floats
++static void k_get_rows_f32_vec4(const float * src0, const int32_t * src1, float * dst, int64_t ne00_4, int64_t ne12,
++                                size_t s1, size_t s2, size_t s3, size_t nb01, size_t nb02, size_t nb03, size_t s10,
++                                size_t s11, size_t s12, const sycl::nd_item<3> & item_ct1) {
++    const int64_t i4  = (int64_t) item_ct1.get_group(2) * item_ct1.get_local_range(2) + item_ct1.get_local_id(2);
++    const int     i10 = item_ct1.get_group(1);
++    const int     i11 = item_ct1.get_group(0) / ne12;
++    const int     i12 = item_ct1.get_group(0) % ne12;
++
++    if (i4 >= ne00_4) {
++        return;
++    }
++
++    const int i01 = src1[i10*s10 + i11*s11 + i12*s12];
++
++    const sycl::float4 * src0_row = (const sycl::float4 *) ((const char *) src0 + i01*nb01 + i11*nb02 + i12*nb03);
++    sycl::float4 *       dst_row  = (sycl::float4 *) (dst + i10*s1 + i11*s2 + i12*s3);
++
++    dst_row[i4] = src0_row[i4];
++}
++
+ template <int qk, int qr, dequantize_kernel_t dq>
+ static void get_rows_sycl(ggml_backend_sycl_context & ctx, const ggml_tensor *src0, const ggml_tensor *src1,
+                           ggml_tensor *dst, const void *src0_dd,
+@@ -229,6 +252,20 @@ static void get_rows_sycl_float(ggml_backend_sycl_context & ctx, const ggml_tens
+     const size_t s12 = nb12 / ggml_element_size(src1);
+     //const size_t s13 = nb13 / ggml_element_size(src1);
+ 
++    if constexpr (std::is_same_v<src0_t, float> && std::is_same_v<dst_t, float>) {
++        const bool aligned = ne00 % 4 == 0 && nb01 % 16 == 0 && nb02 % 16 == 0 && nb03 % 16 == 0 && s1 % 4 == 0 &&
++                             s2 % 4 == 0 && s3 % 4 == 0 && (uintptr_t) src0_dd % 16 == 0 && (uintptr_t) dst_dd % 16 == 0;
++        if (aligned) {
++            const int64_t        ne00_4 = ne00 / 4;
++            const sycl::range<3> nums4(ne11 * ne12, ne10, (ne00_4 + SYCL_GET_ROWS_BLOCK_SIZE - 1) / SYCL_GET_ROWS_BLOCK_SIZE);
++            stream->parallel_for(sycl::nd_range<3>(nums4 * block_dims, block_dims), [=](sycl::nd_item<3> item_ct1) {
++                k_get_rows_f32_vec4(src0_dd, src1_dd, dst_dd, ne00_4, ne12, s1, s2, s3, nb01, nb02, nb03, s10, s11, s12,
++                                    item_ct1);
++            });
++            return;
++        }
++    }
++
+     {
+         dpct::has_capability_or_fail(stream->get_device(),
+                                      {sycl::aspect::fp16});
+-- 
+2.51.0
+

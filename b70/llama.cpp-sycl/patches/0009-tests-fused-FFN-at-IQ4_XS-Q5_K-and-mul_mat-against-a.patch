@@ -1,0 +1,82 @@
+From 3f0e52b748d46eb1767510af1d839db7c2e5f5cd Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 14:39:45 +0000
+Subject: [PATCH 09/16] tests: fused FFN at IQ4_XS/Q5_K, and mul_mat against an
+ already-reordered weight
+
+Two cases the eval set did not reach. The fused {mul_mat(gate), mul_mat(up), GLU} mat-vec
+was only tested at base_types, which lack IQ4_XS and Q5_K, the pairs unsloth UD mixes use.
+And no case ran a batch against a weight that an earlier single-token mat-vec had
+reordered (prefill after decode), so backends' reordered dequantize paths went untested.
+---
+ tests/test-backend-ops.cpp | 47 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 47 insertions(+)
+
+diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
+index 505112f..1b0b406 100644
+--- a/tests/test-backend-ops.cpp
++++ b/tests/test-backend-ops.cpp
+@@ -6943,6 +6943,36 @@ struct test_moe_reduce : public test_case {
+     }
+ };
+ 
++// A weight used by one token and then by a batch, in that order: on backends that reorder a
++// weight on its first mat-vec, the batch then reads the reordered layout.
++struct test_mul_mat_reorder_then_batch : public test_case {
++    const ggml_type type;
++    const int64_t   m, k, n;
++
++    std::string vars() override { return VARS_TO_STR4(type, m, k, n); }
++
++    double max_nmse_err() override { return 5e-4; }  // as test_mul_mat: q8_1 activations
++
++    std::string op_desc(ggml_tensor * t) override {
++        GGML_UNUSED(t);
++        return "MUL_MAT_REORDER_THEN_BATCH";
++    }
++
++    test_mul_mat_reorder_then_batch(ggml_type type = GGML_TYPE_Q4_0, int64_t m = 64, int64_t k = 256, int64_t n = 32)
++        : type(type), m(m), k(k), n(n) {}
++
++    ggml_tensor * build_graph(ggml_context * ctx) override {
++        ggml_tensor * w     = ggml_new_tensor_2d(ctx, type, k, m);
++        ggml_tensor * x1    = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, k, 1);
++        ggml_tensor * xn    = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, k, n);
++        ggml_tensor * one   = ggml_mul_mat(ctx, w, x1);   // first: the single-token mat-vec
++        ggml_tensor * batch = ggml_mul_mat(ctx, w, xn);   // then: the batch
++        ggml_tensor * out   = ggml_add(ctx, ggml_repeat(ctx, one, batch), batch);
++        ggml_set_name(out, "out");
++        return out;
++    }
++};
++
+ struct test_mul_mat_vec_fusion : public test_case {
+     const ggml_type type;
+     const ggml_glu_op glu_op;
+@@ -10908,6 +10938,23 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+     test_cases.emplace_back(new test_opt_step_adamw(GGML_TYPE_F32, {10, 5, 4, 3}));
+     test_cases.emplace_back(new test_opt_step_sgd(GGML_TYPE_F32, {10, 5, 4, 3}));
+ 
++    // reorder-then-batch: prefill against a weight a decode already reordered
++    for (ggml_type type : {GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_IQ4_NL}) {
++        for (int64_t n : {16, 64}) {
++            test_cases.emplace_back(new test_mul_mat_reorder_then_batch(type, 64, 512, n));
++        }
++    }
++
++    // fused FFN at UD mix types (IQ4_XS, Q5_K), 1-8 tokens, even and odd block counts
++    for (ggml_type type : {GGML_TYPE_IQ4_XS, GGML_TYPE_Q5_K}) {
++        for (int64_t k : {512, 768}) {
++            for (int64_t m_batch : {1, 2, 4, 8}) {
++                test_cases.emplace_back(new test_mul_mat_vec_fusion(type, GGML_GLU_OP_SWIGLU, m_batch, 32, k, false, 1, 1,
++                                                                    false, false, true, false, {1, 1}));
++            }
++        }
++    }
++
+     for (ggml_type type : base_types) {
+         for (bool with_gate : {false, true}) {
+             for (bool use_id : {false, true}) {
+-- 
+2.51.0
+

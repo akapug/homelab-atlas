@@ -1,0 +1,56 @@
+From 9cd32bb7262c34dd0c6ad558c90b5e8542d29a13 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 13:14:18 +0000
+Subject: [PATCH 05/16] sycl: fold batch dims into columns for a 2-D quantized
+ weight
+
+Decode over several sequences hands mul_mat src1 as [k, 1, n_seq] (one token per
+sequence), e.g. a hybrid model's recurrent-layer output projection. ggml_sycl_op_mul_mat()
+walks those batch dims and runs n_seq single-column mat-vecs. When src0 is a contiguous
+2-D quantized weight and src1 and dst are contiguous, the same product is one
+multi-column mat-vec: fold the batch dims into columns and dispatch that.
+
+Arc Pro B70, MUL_MAT 5120x6144, src1 [6144, 1, 4]: q5_K 320 -> 73 us, q6_K 848 -> 76 us,
+equal to the [6144, 4] case. test-backend-ops MUL_MAT 1126/1126 against the CPU.
+---
+ ggml/src/ggml-sycl/ggml-sycl.cpp | 24 ++++++++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+diff --git a/ggml/src/ggml-sycl/ggml-sycl.cpp b/ggml/src/ggml-sycl/ggml-sycl.cpp
+index d99c41e..eec94dd 100644
+--- a/ggml/src/ggml-sycl/ggml-sycl.cpp
++++ b/ggml/src/ggml-sycl/ggml-sycl.cpp
+@@ -4775,6 +4775,30 @@ static void ggml_sycl_mul_mat(ggml_backend_sycl_context & ctx, const ggml_tensor
+     }
+ 
+     const bool split = ggml_backend_buffer_is_sycl_split(src0->buffer);
++
++    // One token per sequence against a 2-D quantized weight (decode over several sequences:
++    // src1 is [k, 1, n_seq]) is one multi-column mat-vec. Unfolded, ggml_sycl_op_mul_mat()
++    // walks the batch dims and runs n_seq single-column mat-vecs. src1 and dst are
++    // contiguous, so fold their batch dims into columns and dispatch that instead.
++    if (!split && dst->op == GGML_OP_MUL_MAT && ggml_is_quantized(src0->type) && ggml_is_contiguous(src0) &&
++        src0->ne[2] == 1 && src0->ne[3] == 1 && src1->ne[1] == 1 && src1->ne[2] * src1->ne[3] > 1 &&
++        ggml_is_contiguous(src1) && ggml_is_contiguous(dst)) {
++        ggml_tensor src1_2d = *src1;
++        ggml_tensor dst_2d  = *dst;
++        for (ggml_tensor * t : { &src1_2d, &dst_2d }) {
++            t->ne[1] = t->ne[2] * t->ne[3];
++            t->ne[2] = 1;
++            t->ne[3] = 1;
++            // a size-1 dim may carry any stride, so rebuild them from the row size
++            t->nb[1] = ggml_row_size(t->type, t->ne[0]);
++            t->nb[2] = t->nb[1] * t->ne[1];
++            t->nb[3] = t->nb[2];
++        }
++        dst_2d.src[1] = &src1_2d;
++        ggml_sycl_mul_mat(ctx, src0, &src1_2d, &dst_2d);
++        return;
++    }
++
+     int64_t min_compute_capability = INT_MAX;
+ 
+     if (split) {
+-- 
+2.51.0
+

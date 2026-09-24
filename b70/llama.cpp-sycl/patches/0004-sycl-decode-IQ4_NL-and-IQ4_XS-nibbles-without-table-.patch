@@ -1,0 +1,111 @@
+From 63719daec601bbc4de0c2b923d41ce75a1aa5cee Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 12:45:52 +0000
+Subject: [PATCH 04/16] sycl: decode IQ4_NL and IQ4_XS nibbles without table
+ loads
+
+---
+ ggml/src/ggml-sycl/mmvq.cpp    |  3 +--
+ ggml/src/ggml-sycl/vecdotq.hpp | 39 +++++++++++++++++++---------------
+ 2 files changed, 23 insertions(+), 19 deletions(-)
+
+diff --git a/ggml/src/ggml-sycl/mmvq.cpp b/ggml/src/ggml-sycl/mmvq.cpp
+index 7fb8375..984c2ed 100644
+--- a/ggml/src/ggml-sycl/mmvq.cpp
++++ b/ggml/src/ggml-sycl/mmvq.cpp
+@@ -738,7 +738,6 @@ static void mul_mat_vec_q_iq4_nl_q8_1_ncols(const void * __restrict__ vx, const
+ 
+     const block_iq4_nl * x      = (const block_iq4_nl *) vx;
+     const block_q8_1 *   y      = (const block_q8_1 *) vy;
+-    const uint8_t *      values = (const uint8_t *) kvalues_iq4nl;
+ 
+     for (int i = item_ct1.get_local_id(2) / (qi / vdr); i < blocks_per_row; i += blocks_per_warp) {
+         const int ibx = row * blocks_per_row + i;
+@@ -753,7 +752,7 @@ static void mul_mat_vec_q_iq4_nl_q8_1_ncols(const void * __restrict__ vx, const
+ #pragma unroll
+         for (int l = 0; l < vdr; ++l) {
+             const uint32_t aux = q4[2 * l] | (q4[2 * l + 1] << 16);
+-            get_int_from_table_16(aux, values, v1[l], v2[l]);
++            get_int_from_table_16_iq4nl(aux, v1[l], v2[l]);
+         }
+         const float dx = (float) bq->d;
+ 
+diff --git a/ggml/src/ggml-sycl/vecdotq.hpp b/ggml/src/ggml-sycl/vecdotq.hpp
+index 12e94da..1a1f82e 100644
+--- a/ggml/src/ggml-sycl/vecdotq.hpp
++++ b/ggml/src/ggml-sycl/vecdotq.hpp
+@@ -111,19 +111,26 @@ static __dpct_inline__ float vec_dot_q6_K_q8_1_impl_mmvq_scalar(
+     return d * sumf;
+ }
+ 
+-static __dpct_inline__ void get_int_from_table_16(const uint32_t &q4,
+-                                                  const uint8_t *values,
+-                                                  int &val1, int &val2) {
+-
+-    uint32_t aux32; const uint8_t * q8 = (const uint8_t *)&aux32;
+-    aux32 = q4 & 0x0f0f0f0f;
+-    uint16_t v1 = values[q8[0]] | (values[q8[1]] << 8);
+-    uint16_t v2 = values[q8[2]] | (values[q8[3]] << 8);
+-    val1 = v1 | (v2 << 16);
+-    aux32 = (q4 >> 4) & 0x0f0f0f0f;
+-    v1 = values[q8[0]] | (values[q8[1]] << 8);
+-    v2 = values[q8[2]] | (values[q8[3]] << 8);
+-    val2 = v1 | (v2 << 16);
++// kvalues_iq4nl[idx] as a byte, from four 32-bit constants holding the table's bytes
++// little-endian: two selects, a shift and a mask. A lookup through memory is a gather per
++// nibble, and on Intel Xe2 those gathers, not DRAM, bound IQ4 mat-vec.
++static __dpct_inline__ uint32_t kvalue_iq4nl_u8(const uint32_t idx) {
++    const uint32_t lo = (idx & 4) ? 0xF6EADDCFu : 0xBFAD9881u;
++    const uint32_t hi = (idx & 4) ? 0x71594535u : 0x26190D01u;
++    return (((idx & 8) ? hi : lo) >> ((idx & 3) * 8)) & 0xFF;
++}
++
++// kvalues_iq4nl for the eight nibbles of q4: low nibbles to val1, high nibbles to val2.
++static __dpct_inline__ void get_int_from_table_16_iq4nl(const uint32_t & q4, int & val1, int & val2) {
++    uint32_t v1 = 0;
++    uint32_t v2 = 0;
++#pragma unroll
++    for (int k = 0; k < 4; ++k) {
++        v1 |= kvalue_iq4nl_u8((q4 >> (8 * k)) & 0xF) << (8 * k);
++        v2 |= kvalue_iq4nl_u8((q4 >> (8 * k + 4)) & 0xF) << (8 * k);
++    }
++    val1 = (int) v1;
++    val2 = (int) v2;
+ }
+ 
+ static __dpct_inline__ sycl::int2 get_int_from_table_16(
+@@ -1741,13 +1748,12 @@ vec_dot_iq4_nl_q8_1(const void *__restrict__ vbq,
+     const uint16_t * q4 = (const uint16_t *)bq->qs + 2*iqs;
+     const int32_t  * q8 = (const int32_t  *)bq8_1->qs + iqs;
+ 
+-    const uint8_t * values = (const uint8_t *)kvalues_iq4nl;
+ 
+     int v1, v2;
+     int sumi1 = 0, sumi2 = 0;
+     for (int l = 0; l < VDR_Q4_0_Q8_1_MMVQ; ++l) {
+         const uint32_t aux = q4[2*l] | (q4[2*l+1] << 16);
+-        get_int_from_table_16(aux, values, v1, v2);
++        get_int_from_table_16_iq4nl(aux, v1, v2);
+         sumi1 = dpct::dp4a(v1, q8[l + 0], sumi1);
+         sumi2 = dpct::dp4a(v2, q8[l + 4], sumi2);
+     }
+@@ -1765,7 +1771,6 @@ vec_dot_iq4_xs_q8_1(const void *__restrict__ vbq,
+ 
+ #if QK_K == 256
+     const block_iq4_xs * bq4 = (const block_iq4_xs *) vbq;
+-    const uint8_t * values = (const uint8_t *)kvalues_iq4nl;
+ 
+     // iqs is 0...7
+     const int ib32 = iqs;
+@@ -1776,7 +1781,7 @@ vec_dot_iq4_xs_q8_1(const void *__restrict__ vbq,
+     int v1, v2;
+     int sumi1 = 0, sumi2 = 0;
+     for (int j = 0; j < 4; ++j) {
+-        get_int_from_table_16(q4[j], values, v1, v2);
++        get_int_from_table_16_iq4nl(q4[j], v1, v2);
+         sumi1 = dpct::dp4a(v1, q8[j + 0], sumi1);
+         sumi2 = dpct::dp4a(v2, q8[j + 4], sumi2);
+     }
+-- 
+2.51.0
+
