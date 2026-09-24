@@ -1,0 +1,6 @@
+{
+  "id": "b1-archive-spaces",
+  "skills": ["bash", "shell-quoting", "exit-status-propagation", "reading-sourced-library", "running-tests"],
+  "difficulty": "easy",
+  "why_it_discriminates": "The bugs are split across the entry script and a sourced library: word-splitting in the file loop, unquoted basename/gzip/redirect in the helper, a helper whose status is its trailing echo, and a tee pipeline that masks failures. A partial fix (quote the helper only, or add set -e only) still fails either the spaces or the exit-status checks, so the agent must trace the whole status path and verify with its own runs."
+}

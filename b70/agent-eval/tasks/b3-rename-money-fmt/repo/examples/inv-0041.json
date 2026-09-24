@@ -1,0 +1,5 @@
+{"number": "INV-0041", "date": "2026-08-28", "customer": "Blue Fern LLC", "currency": "USD",
+ "lines": [
+  {"desc": "Support plan", "qty": 1, "unit": 49900},
+  {"desc": "Refund: overcharge", "qty": 1, "unit": -60000}
+ ]}

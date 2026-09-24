@@ -1,0 +1,196 @@
+diff --git a/README.md b/README.md
+index dceed82..5f23342 100644
+--- a/README.md
++++ b/README.md
+@@ -13,7 +13,12 @@ Settings come from built-in defaults, then the config file given with
+ | `[sync] endpoint`     | `SYNC_ENDPOINT`           | `http://localhost:8080/api` |
+ | `[sync] timeout`      | `SYNC_TIMEOUT`            | `10` (seconds)              |
+ | `[retry] max_attempts`| `SYNC_RETRY_MAX_ATTEMPTS` | `4`                         |
+-| `[retry] delay`       | `SYNC_RETRY_DELAY`        | `2` (seconds between tries) |
++| `[retry] backoff_base`| `SYNC_RETRY_BACKOFF_BASE` | `1` (seconds)               |
++| `[retry] backoff_max` | `SYNC_RETRY_BACKOFF_MAX`  | `30` (seconds)              |
++
++Retries back off exponentially: the wait before retry n is `backoff_base * 2**(n-1)`
++seconds, capped at `backoff_max` (which must be at least `backoff_base`). The old
++`[retry] delay` key is still read, as `backoff_base`.
+ 
+ See `settings.example.ini`. Print the effective settings with:
+ 
+diff --git a/settings.example.ini b/settings.example.ini
+index 2677a4a..12ddb26 100644
+--- a/settings.example.ini
++++ b/settings.example.ini
+@@ -4,4 +4,5 @@ timeout = 15
+ 
+ [retry]
+ max_attempts = 5
+-delay = 2
++backoff_base = 1
++backoff_max = 30
+diff --git a/syncer/cli.py b/syncer/cli.py
+index c5a0faa..de30802 100644
+--- a/syncer/cli.py
++++ b/syncer/cli.py
+@@ -10,7 +10,8 @@ def show_config(cfg):
+         f"sync.endpoint = {cfg.endpoint}",
+         f"sync.timeout = {cfg.timeout:g}",
+         f"retry.max_attempts = {cfg.retry.max_attempts}",
+-        f"retry.delay = {cfg.retry.delay:g}",
++        f"retry.backoff_base = {cfg.retry.backoff_base:g}",
++        f"retry.backoff_max = {cfg.retry.backoff_max:g}",
+     ])
+ 
+ 
+diff --git a/syncer/client.py b/syncer/client.py
+index eadd9bb..f8d6d70 100644
+--- a/syncer/client.py
++++ b/syncer/client.py
+@@ -12,8 +12,9 @@ class RetryError(RuntimeError):
+ 
+ 
+ def retry_delays(policy):
+-    """Seconds to wait before each retry, in order (max_attempts - 1 of them)."""
+-    return [policy.delay] * (policy.max_attempts - 1)
++    """Seconds to wait before each retry, in order (max_attempts - 1 of them): exponential
++    backoff, backoff_base * 2**(n-1) before retry n, capped at backoff_max."""
++    return [min(policy.backoff_base * 2 ** n, policy.backoff_max) for n in range(policy.max_attempts - 1)]
+ 
+ 
+ def call_with_retry(fn, policy, sleep=time.sleep, log=None):
+diff --git a/syncer/config.py b/syncer/config.py
+index cc49508..292ab60 100644
+--- a/syncer/config.py
++++ b/syncer/config.py
+@@ -11,7 +11,8 @@ class ConfigError(ValueError):
+ @dataclass
+ class RetryPolicy:
+     max_attempts: int = 4
+-    delay: float = 2.0
++    backoff_base: float = 1.0
++    backoff_max: float = 30.0
+ 
+ 
+ @dataclass
+@@ -26,9 +27,13 @@ FIELDS = [
+     ("sync", "endpoint", "SYNC_ENDPOINT", str),
+     ("sync", "timeout", "SYNC_TIMEOUT", float),
+     ("retry", "max_attempts", "SYNC_RETRY_MAX_ATTEMPTS", int),
+-    ("retry", "delay", "SYNC_RETRY_DELAY", float),
++    ("retry", "backoff_base", "SYNC_RETRY_BACKOFF_BASE", float),
++    ("retry", "backoff_max", "SYNC_RETRY_BACKOFF_MAX", float),
+ ]
+ 
++# Old file keys still accepted: {(section, old key): new key}. The new key wins if both are set.
++LEGACY_KEYS = {("retry", "delay"): "backoff_base"}
++
+ 
+ def load_config(path=None, env=None):
+     """The effective Config. `env` defaults to os.environ."""
+@@ -36,6 +41,9 @@ def load_config(path=None, env=None):
+     parser = configparser.ConfigParser()
+     if path and not parser.read(path):
+         raise ConfigError(f"cannot read config file {path}")
++    for (section, old), new in LEGACY_KEYS.items():
++        if parser.has_option(section, old) and not parser.has_option(section, new):
++            parser.set(section, new, parser.get(section, old))
+     cfg = Config()
+     for section, key, var, kind in FIELDS:
+         raw = env.get(var, parser.get(section, key, fallback=None))
+@@ -55,5 +63,7 @@ def validate(cfg):
+         raise ConfigError("sync.timeout must be positive")
+     if cfg.retry.max_attempts < 1:
+         raise ConfigError("retry.max_attempts must be at least 1")
+-    if cfg.retry.delay < 0:
+-        raise ConfigError("retry.delay must not be negative")
++    if cfg.retry.backoff_base < 0:
++        raise ConfigError("retry.backoff_base must not be negative")
++    if cfg.retry.backoff_max < cfg.retry.backoff_base:
++        raise ConfigError("retry.backoff_max must not be smaller than retry.backoff_base")
+diff --git a/tests/test_client.py b/tests/test_client.py
+index cfa2740..092eaa8 100644
+--- a/tests/test_client.py
++++ b/tests/test_client.py
+@@ -25,18 +25,25 @@ class ClientTest(unittest.TestCase):
+     def test_retries_then_succeeds(self):
+         fn, calls = flaky(2)
+         slept = []
+-        result = call_with_retry(fn, RetryPolicy(max_attempts=4, delay=1.5), sleep=slept.append)
++        result = call_with_retry(fn, RetryPolicy(max_attempts=4, backoff_base=1.5), sleep=slept.append)
+         self.assertEqual(result, "done")
+-        self.assertEqual(slept, [1.5, 1.5])
++        self.assertEqual(slept, [1.5, 3.0])
+ 
+     def test_gives_up(self):
+         fn, calls = flaky(10)
+         slept = []
+         with self.assertRaises(RetryError) as ctx:
+-            call_with_retry(fn, RetryPolicy(max_attempts=3, delay=1), sleep=slept.append)
++            call_with_retry(fn, RetryPolicy(max_attempts=3, backoff_base=1), sleep=slept.append)
+         self.assertEqual(ctx.exception.attempts, 3)
+         self.assertEqual(len(calls), 3)
+-        self.assertEqual(slept, [1, 1])
++        self.assertEqual(slept, [1, 2])
++
++    def test_backoff_is_capped(self):
++        fn, calls = flaky(10)
++        slept = []
++        with self.assertRaises(RetryError):
++            call_with_retry(fn, RetryPolicy(max_attempts=6, backoff_base=1, backoff_max=5), sleep=slept.append)
++        self.assertEqual(slept, [1, 2, 4, 5, 5])
+ 
+     def test_other_errors_not_retried(self):
+         def fn():
+diff --git a/tests/test_config.py b/tests/test_config.py
+index 4c60044..b3626e0 100644
+--- a/tests/test_config.py
++++ b/tests/test_config.py
+@@ -17,27 +17,41 @@ class ConfigTest(unittest.TestCase):
+         cfg = load_config(env={})
+         self.assertEqual(cfg.endpoint, "http://localhost:8080/api")
+         self.assertEqual(cfg.retry.max_attempts, 4)
+-        self.assertEqual(cfg.retry.delay, 2.0)
++        self.assertEqual(cfg.retry.backoff_base, 1.0)
++        self.assertEqual(cfg.retry.backoff_max, 30.0)
+ 
+     def test_file_values(self):
+-        path = self.write("[sync]\ntimeout = 3\n[retry]\nmax_attempts = 6\ndelay = 0.5\n")
++        path = self.write("[sync]\ntimeout = 3\n[retry]\nmax_attempts = 6\n"
++                          "backoff_base = 0.5\nbackoff_max = 4\n")
+         cfg = load_config(path, env={})
+         self.assertEqual(cfg.timeout, 3.0)
+         self.assertEqual(cfg.retry.max_attempts, 6)
+-        self.assertEqual(cfg.retry.delay, 0.5)
++        self.assertEqual((cfg.retry.backoff_base, cfg.retry.backoff_max), (0.5, 4.0))
+ 
+     def test_env_beats_file(self):
+-        path = self.write("[retry]\ndelay = 0.5\n")
+-        cfg = load_config(path, env={"SYNC_RETRY_DELAY": "7"})
+-        self.assertEqual(cfg.retry.delay, 7.0)
++        path = self.write("[retry]\nbackoff_base = 0.5\nbackoff_max = 4\n")
++        cfg = load_config(path, env={"SYNC_RETRY_BACKOFF_BASE": "2", "SYNC_RETRY_BACKOFF_MAX": "9"})
++        self.assertEqual((cfg.retry.backoff_base, cfg.retry.backoff_max), (2.0, 9.0))
++
++    def test_legacy_delay_is_backoff_base(self):
++        path = self.write("[retry]\ndelay = 3\n")
++        self.assertEqual(load_config(path, env={}).retry.backoff_base, 3.0)
++
++    def test_new_key_beats_legacy_delay(self):
++        path = self.write("[retry]\ndelay = 3\nbackoff_base = 0.5\n")
++        self.assertEqual(load_config(path, env={}).retry.backoff_base, 0.5)
++
++    def test_max_below_base_rejected(self):
++        with self.assertRaises(ConfigError):
++            load_config(env={"SYNC_RETRY_BACKOFF_BASE": "5", "SYNC_RETRY_BACKOFF_MAX": "2"})
+ 
+     def test_bad_number(self):
+         with self.assertRaises(ConfigError):
+             load_config(env={"SYNC_RETRY_MAX_ATTEMPTS": "lots"})
+ 
+-    def test_negative_delay_rejected(self):
++    def test_negative_base_rejected(self):
+         with self.assertRaises(ConfigError):
+-            load_config(env={"SYNC_RETRY_DELAY": "-1"})
++            load_config(env={"SYNC_RETRY_BACKOFF_BASE": "-1"})
+ 
+     def test_missing_file(self):
+         with self.assertRaises(ConfigError):

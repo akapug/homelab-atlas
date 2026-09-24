@@ -1,0 +1,109 @@
+diff --git a/orderexp/checkpoint.py b/orderexp/checkpoint.py
+index 597b165..476080b 100644
+--- a/orderexp/checkpoint.py
++++ b/orderexp/checkpoint.py
+@@ -4,15 +4,20 @@ import os
+ 
+ 
+ def load(path):
+-    """The saved position, or None if there is no checkpoint yet."""
++    """The saved (updated_at, id) position, or None if there is no checkpoint yet.
++
++    A checkpoint written before ids were recorded resumes at the start of its timestamp, so
++    orders that shared it are exported again rather than lost."""
+     if not os.path.exists(path):
+         return None
+     with open(path) as f:
+-        return json.load(f)["updated_at"]
++        data = json.load(f)
++    return data["updated_at"], data.get("id", 0)
+ 
+ 
+ def save(path, position):
++    updated_at, order_id = position
+     tmp = path + ".tmp"
+     with open(tmp, "w") as f:
+-        json.dump({"updated_at": position}, f)
++        json.dump({"updated_at": updated_at, "id": order_id}, f)
+     os.replace(tmp, path)
+diff --git a/orderexp/exporter.py b/orderexp/exporter.py
+index 784a140..f6e7bc7 100644
+--- a/orderexp/exporter.py
++++ b/orderexp/exporter.py
+@@ -26,6 +26,6 @@ def export(store, out, checkpoint_path, page_size=500, max_pages=None):
+             writer.writerow([order_id, ref, updated_at, money(cents)])
+         written += len(rows)
+         pages += 1
+-        position = rows[-1][2]
++        position = (rows[-1][2], rows[-1][0])
+         checkpoint.save(checkpoint_path, position)
+     return written
+diff --git a/orderexp/store.py b/orderexp/store.py
+index fdfb329..beb26af 100644
+--- a/orderexp/store.py
++++ b/orderexp/store.py
+@@ -29,11 +29,15 @@ class Store:
+         return self.db.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+ 
+     def changed_since(self, since, limit):
+-        """Up to `limit` orders changed after `since` (None: from the beginning), oldest first,
+-        as (id, ref, updated_at, total_cents) tuples."""
++        """Up to `limit` orders after position `since`, an (updated_at, id) pair (None: from the
++        beginning), in (updated_at, id) order, as (id, ref, updated_at, total_cents) tuples.
++
++        The id breaks ties: many orders can share one updated_at second, and a position made of
++        the timestamp alone would skip the rest of a burst that a page boundary splits."""
+         if since is None:
+-            sql, args = f"SELECT {COLUMNS} FROM orders ORDER BY updated_at LIMIT ?", (limit,)
++            sql, args = f"SELECT {COLUMNS} FROM orders ORDER BY updated_at, id LIMIT ?", (limit,)
+         else:
+-            sql = f"SELECT {COLUMNS} FROM orders WHERE updated_at > ? ORDER BY updated_at LIMIT ?"
+-            args = (since, limit)
++            sql = (f"SELECT {COLUMNS} FROM orders WHERE updated_at > ? OR (updated_at = ? AND id > ?)"
++                   " ORDER BY updated_at, id LIMIT ?")
++            args = (since[0], since[0], since[1], limit)
+         return self.db.execute(sql, args).fetchall()
+diff --git a/tests/test_checkpoint.py b/tests/test_checkpoint.py
+index 2248786..c14fe24 100644
+--- a/tests/test_checkpoint.py
++++ b/tests/test_checkpoint.py
+@@ -11,8 +11,14 @@ class CheckpointTest(unittest.TestCase):
+ 
+     def test_round_trip(self):
+         path = checkpoint_path(self)
+-        checkpoint.save(path, stamp(42))
+-        self.assertEqual(checkpoint.load(path), stamp(42))
++        checkpoint.save(path, (stamp(42), 17))
++        self.assertEqual(checkpoint.load(path), (stamp(42), 17))
++
++    def test_old_timestamp_only_file(self):
++        path = checkpoint_path(self)
++        with open(path, "w") as f:
++            f.write('{"updated_at": "%s"}' % stamp(42))
++        self.assertEqual(checkpoint.load(path), (stamp(42), 0))
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/tests/test_export.py b/tests/test_export.py
+index 1802764..a2a684d 100644
+--- a/tests/test_export.py
++++ b/tests/test_export.py
+@@ -35,6 +35,18 @@ class ExportTest(unittest.TestCase):
+         n, rows = run(export, self.store, self.cp, page_size=5)
+         self.assertEqual([int(r[0]) for r in rows], new)
+ 
++    def test_burst_split_by_page_boundaries(self):
++        ids = [self.store.add(f"ORD-{i:05d}", stamp(i // 7), 1000 + i) for i in range(30)]
++        n, rows = run(export, self.store, self.cp, page_size=5)
++        self.assertEqual([int(r[0]) for r in rows], ids)
++
++    def test_capped_runs_resume_mid_burst(self):
++        ids = [self.store.add(f"ORD-{i:05d}", stamp(i // 9), 1000 + i) for i in range(20)]
++        seen = []
++        for _ in range(10):
++            seen += [int(r[0]) for r in run(export, self.store, self.cp, page_size=4, max_pages=1)[1]]
++        self.assertEqual(seen, ids)
++
+     def test_max_pages_resumes_next_run(self):
+         ids = self.seed(25)
+         seen = []

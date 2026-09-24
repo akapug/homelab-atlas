@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# archive-logs SRC_DIR DEST_DIR
+# Gzip every *.log file in SRC_DIR into DEST_DIR as <name>.gz, record
+# each one in DEST_DIR/archive.log, and print a summary line.
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+. "$HERE/../lib/archive.sh"
+
+if [ $# -ne 2 ]; then
+    echo "usage: archive-logs SRC_DIR DEST_DIR" >&2
+    exit 2
+fi
+
+src=$1
+dest=$2
+mkdir -p "$dest" || exit 1
+
+count=0
+for f in $(list_logs "$src"); do
+    archive_one "$f" "$dest" | tee -a "$dest/archive.log"
+    count=$((count + 1))
+done
+
+echo "archived $count files"

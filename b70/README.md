@@ -40,6 +40,9 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
 - [`qwen36-35b-a3b.md`](qwen36-35b-a3b.md): the MoE model our agents run on (Qwen3.6-35B-A3B): vLLM
   at 2.1-5.1x llama.cpp Vulkan on one card, its full 262k window, a silent load hang to watch for,
   and running Claude Code on it.
+- [`agent-eval/`](agent-eval/): can a local model finish real repository work? Six tasks with
+  hidden checks, a sandboxed runner, and 48 runs: the dense 27B finished 23 of 24, the MoE 17 of 24
+  at 3-4.5x the speed.
 
 ## Related work
 

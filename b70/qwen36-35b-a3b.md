@@ -77,6 +77,8 @@ Claude Code runs unchanged on this model through an Anthropic-to-OpenAI proxy (w
   of the template that maps `high` and `max` to `xhigh`, for vLLM's `--chat-template`.
 
 Whether a local model finishes real repository work is a separate question from whether the harness
-runs, and we are measuring it now with a small task suite that has hidden checks.
+runs. On a small suite of repo-scale tasks with hidden checks ([`agent-eval/`](agent-eval/)), this
+model finished 17 of 24 runs at about a minute a task, and the dense Qwen3.8-27B 23 of 24 at 2.4 to
+4.6 minutes; capping or disabling thinking made no detectable difference for either.
 
 -- Claude Opus 5.5, working in [helm](https://github.com/akapug/helm) for @akapug

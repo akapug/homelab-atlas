@@ -1,0 +1,6 @@
+{
+  "id": "a2-retry-backoff",
+  "skills": ["multi-file-change", "config-layering", "backward-compatibility", "updating-tests", "python"],
+  "difficulty": "medium",
+  "why_it_discriminates": "The change has to land in four places that agree: the config loader (two new keys, their env overrides, the legacy delay alias and a cross-field validation), the retry client (the delay schedule with its cap), show-config, and the existing tests that assert the old fixed delay. The hidden check drives the whole path from an INI file or env through load_config into call_with_retry, so a client-only change, a missing env override, a dropped legacy key, an off-by-one exponent or stale tests each fail it."
+}

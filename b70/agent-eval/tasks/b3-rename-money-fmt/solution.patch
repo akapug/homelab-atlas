@@ -1,0 +1,107 @@
+diff --git a/shop/export_csv.py b/shop/export_csv.py
+index 67d6e82..469e415 100644
+--- a/shop/export_csv.py
++++ b/shop/export_csv.py
+@@ -3,7 +3,7 @@ import csv
+ import io
+ 
+ from . import invoice
+-from .money import fmt as _amount
++from .money import format_cents
+ 
+ 
+ def to_csv(invoices):
+@@ -13,5 +13,5 @@ def to_csv(invoices):
+     for inv in invoices:
+         cur = inv["currency"]
+         w.writerow([inv["number"], inv["date"], inv["customer"], cur,
+-                    _amount(invoice.total(inv), cur, False)])
++                    format_cents(invoice.total(inv), currency=cur, show_symbol=False)])
+     return buf.getvalue()
+diff --git a/shop/invoice.py b/shop/invoice.py
+index 3729ce5..d3c598b 100644
+--- a/shop/invoice.py
++++ b/shop/invoice.py
+@@ -27,9 +27,9 @@ def render(inv):
+         "",
+     ]
+     for line in inv["lines"]:
+-        unit = money.fmt(line["unit"], cur, True, 12)
+-        amount = money.fmt(line_total(line), cur, True, 12)
++        unit = money.format_cents(line["unit"], currency=cur, pad=12)
++        amount = money.format_cents(line_total(line), currency=cur, pad=12)
+         out.append(f"{line['desc']:<20} {line['qty']:>4} x {unit} {amount}")
+     out.append("")
+-    out.append(f"{'TOTAL':<20} {'':>4}   {'':>12} {money.fmt(total(inv), cur, pad=12)}")
++    out.append(f"{'TOTAL':<20} {'':>4}   {'':>12} {money.format_cents(total(inv), currency=cur, pad=12)}")
+     return "\n".join(out) + "\n"
+diff --git a/shop/money.py b/shop/money.py
+index ef6e0a2..77cb594 100644
+--- a/shop/money.py
++++ b/shop/money.py
+@@ -4,12 +4,13 @@ SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥"}
+ DECIMALS = {"JPY": 0}
+ 
+ 
+-def fmt(cents, currency="USD", show_symbol=True, pad=0):
++def format_cents(cents, *, currency="USD", show_symbol=True, pad=0):
+     """Format an amount of minor units for display.
+ 
+-    fmt(123456) -> '$1,234.56'; fmt(-5, 'EUR') -> '-€0.05';
+-    fmt(1500, 'JPY', False) -> '1,500'. A nonzero pad right-aligns the
+-    result to that width. Unknown currencies use the code as a prefix.
++    format_cents(123456) -> '$1,234.56';
++    format_cents(-5, currency='EUR') -> '-€0.05';
++    format_cents(1500, currency='JPY', show_symbol=False) -> '1,500'.
++    A nonzero pad right-aligns the result to that width. Unknown currencies use the code as a prefix.
+     """
+     places = DECIMALS.get(currency, 2)
+     sign = "-" if cents < 0 else ""
+diff --git a/shop/report.py b/shop/report.py
+index 61459c5..78b5e4c 100644
+--- a/shop/report.py
++++ b/shop/report.py
+@@ -6,6 +6,6 @@ def summary(invoices):
+     rows = []
+     for inv in sorted(invoices, key=lambda i: (i["date"], i["number"])):
+         when = dates.fmt(dates.parse(inv["date"]))
+-        amount = money.fmt(invoice.total(inv), currency=inv["currency"], pad=14)
++        amount = money.format_cents(invoice.total(inv), currency=inv["currency"], pad=14)
+         rows.append(f"{inv['number']:<10} {when}  {inv['customer']:<16} {amount}")
+     return "\n".join(rows) + "\n"
+diff --git a/tests/test_money.py b/tests/test_money.py
+index cb53b2f..7bbafbf 100644
+--- a/tests/test_money.py
++++ b/tests/test_money.py
+@@ -3,20 +3,24 @@ import unittest
+ from shop import money
+ 
+ 
+-class FmtTest(unittest.TestCase):
++class FormatCentsTest(unittest.TestCase):
+     def test_defaults_to_dollars(self):
+-        self.assertEqual(money.fmt(123456), "$1,234.56")
++        self.assertEqual(money.format_cents(123456), "$1,234.56")
+ 
+     def test_other_currencies(self):
+-        self.assertEqual(money.fmt(-5, "EUR"), "-€0.05")
+-        self.assertEqual(money.fmt(1500, currency="JPY"), "¥1,500")
+-        self.assertEqual(money.fmt(100, "CHF"), "CHF 1.00")
++        self.assertEqual(money.format_cents(-5, currency="EUR"), "-€0.05")
++        self.assertEqual(money.format_cents(1500, currency="JPY"), "¥1,500")
++        self.assertEqual(money.format_cents(100, currency="CHF"), "CHF 1.00")
+ 
+     def test_without_symbol(self):
+-        self.assertEqual(money.fmt(1500, "JPY", False), "1,500")
++        self.assertEqual(money.format_cents(1500, currency="JPY", show_symbol=False), "1,500")
++
++    def test_flags_are_keyword_only(self):
++        with self.assertRaises(TypeError):
++            money.format_cents(100, "EUR")
+ 
+     def test_pad(self):
+-        self.assertEqual(money.fmt(250, "GBP", pad=8), "   £2.50")
++        self.assertEqual(money.format_cents(250, currency="GBP", pad=8), "   £2.50")
+ 
+ 
+ if __name__ == "__main__":

@@ -1,0 +1,5 @@
+{"number": "INV-0043", "date": "2026-09-03", "customer": "Kaito Trading", "currency": "JPY",
+ "lines": [
+  {"desc": "Consulting (hours)", "qty": 12, "unit": 15000},
+  {"desc": "Travel", "qty": 1, "unit": 4280}
+ ]}

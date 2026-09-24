@@ -1,0 +1,2 @@
+# Source that quotes SQL (an agent-eval fixture building an in-memory SQLite table), not a dump.
+b70/agent-eval/tasks/a3-export-ties/repo/orderexp/store.py helm-bulk=quotes

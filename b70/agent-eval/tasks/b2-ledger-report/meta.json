@@ -1,0 +1,6 @@
+{
+  "id": "b2-ledger-report",
+  "skills": ["python", "argparse-subcommands", "feature-from-spec", "reading-existing-conventions", "writing-tests"],
+  "difficulty": "medium",
+  "why_it_discriminates": "The spec is short but exact: the agent has to learn that amounts are stored as integer cents and dates as ISO strings (store.py), reuse the existing money formatter and the iso_date argparse type so a bad --since exits 2 like other date options, wire a new subparser with a required choice, and sort and total correctly including refunds and an inclusive --since. The check also requires the agent to grow the visible test suite, so a model that only edits cli.py and stops fails."
+}

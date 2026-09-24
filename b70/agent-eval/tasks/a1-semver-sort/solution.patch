@@ -1,0 +1,22 @@
+diff --git a/semverlite/compare.py b/semverlite/compare.py
+index 5163445..8fda875 100644
+--- a/semverlite/compare.py
++++ b/semverlite/compare.py
+@@ -1,14 +1,10 @@
+ """Ordering of version strings."""
+-from .version import InvalidVersion, prerelease_key
++from .version import parse, prerelease_key
+ 
+ 
+ def _key(text):
+-    # Cheap key for sorting long tag lists without building a Version per item.
+-    core, _, pre = text.strip().lstrip("v").partition("-")
+-    parts = core.split(".")
+-    if len(parts) != 3:
+-        raise InvalidVersion(f"not a version: {text!r}")
+-    return (tuple(parts), prerelease_key(pre))
++    v = parse(text)
++    return (v.major, v.minor, v.patch, prerelease_key(v.prerelease))
+ 
+ 
+ def compare(a, b):

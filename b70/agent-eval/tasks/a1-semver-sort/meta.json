@@ -1,0 +1,6 @@
+{
+  "id": "a1-semver-sort",
+  "skills": ["running-tests", "reading-test-failures", "python", "cross-module-tracing"],
+  "difficulty": "easy",
+  "why_it_discriminates": "The prompt names no file or test: the agent has to run the suite, read the one failing test (a release-train sort), and trace it from compare.py's private sort key back to version.py, where a correct numeric parse already exists. The hidden check tests multi-digit ordering in every part, prereleases and max_version's return value, and reruns the original tests against the code, so editing the test or special-casing the failing values does not pass."
+}

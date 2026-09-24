@@ -1,0 +1,6 @@
+{"number": "INV-0042", "date": "2026-09-01", "customer": "Acme Corp", "currency": "EUR",
+ "lines": [
+  {"desc": "Widget", "qty": 3, "unit": 1250},
+  {"desc": "Gadget, large", "qty": 1, "unit": 123456},
+  {"desc": "Loyalty discount", "qty": 1, "unit": -2500}
+ ]}

@@ -1,0 +1,6 @@
+{
+  "id": "b3-rename-money-fmt",
+  "skills": ["python", "cross-module-refactor", "call-site-discovery", "api-signature-change", "behavior-preservation"],
+  "difficulty": "hard",
+  "why_it_discriminates": "The rename is easy where the visible tests look (invoice.py, report.py, test_money.py), but export_csv.py imports the helper under an alias (`from .money import fmt as _amount`) and calls it positionally as `_amount(total, cur, False)`, and no visible test imports that module or the CLI. A search for `fmt(` misses the call, so an agent that only chases red tests leaves an ImportError there; an agent that converts it carelessly maps False onto the wrong keyword and prints currency symbols into the CSV. shop/dates.py also has an unrelated `fmt` that a blind global rename breaks. The check requires keyword-only parameters, the removed old name, the untouched date helper, and byte-identical output for every CLI command."
+}

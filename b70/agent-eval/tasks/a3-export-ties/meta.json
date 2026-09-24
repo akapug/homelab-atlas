@@ -1,0 +1,6 @@
+{
+  "id": "a3-export-ties",
+  "skills": ["reproducing-a-bug", "boundary-conditions", "keyset-pagination", "sqlite", "state-persistence", "multi-file-change"],
+  "difficulty": "hard",
+  "why_it_discriminates": "The existing tests use one order per second and pass; the loss only appears when a page boundary falls inside a group of orders sharing an updated_at second, so the agent must build a reproduction from the symptom. The cursor is the bare timestamp in three places (the store query's `updated_at > ?`, the exporter's position, the JSON checkpoint). The obvious patch, `>=`, duplicates rows and loops forever when a burst is larger than a page, and a fix that only changes the in-run cursor still drops orders when a --max-pages run stops mid-burst. The hidden check covers one run, capped resumed runs, bursts larger than a page, page size 1 and the CLI, and requires every order exactly once."
+}

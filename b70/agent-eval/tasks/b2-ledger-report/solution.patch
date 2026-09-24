@@ -1,0 +1,82 @@
+diff --git a/ledger/cli.py b/ledger/cli.py
+index 3e464ce..1e34791 100644
+--- a/ledger/cli.py
++++ b/ledger/cli.py
+@@ -47,6 +47,18 @@ def cmd_total(args):
+     print(f"TOTAL\t{money.format_cents(total)}")
+ 
+ 
++def cmd_report(args):
++    totals = {}
++    for e in store.load(args.file):
++        if args.since and e["date"] < args.since:
++            continue
++        key = e["category"] if args.by == "category" else e["date"][:7]
++        totals[key] = totals.get(key, 0) + e["amount"]
++    for key in sorted(totals):
++        print(f"{key}\t{money.format_cents(totals[key])}")
++    print(f"TOTAL\t{money.format_cents(sum(totals.values()))}")
++
++
+ def build_parser():
+     p = argparse.ArgumentParser(prog="ledger", description="A tiny personal expense ledger.")
+     p.add_argument("--file", default=os.environ.get("LEDGER_FILE", DEFAULT_FILE),
+@@ -66,6 +78,11 @@ def build_parser():
+ 
+     t = sub.add_parser("total", help="sum of all entries")
+     t.set_defaults(func=cmd_total)
++
++    r = sub.add_parser("report", help="totals grouped by category or month")
++    r.add_argument("--by", required=True, choices=["category", "month"])
++    r.add_argument("--since", type=iso_date, help="only entries on or after YYYY-MM-DD")
++    r.set_defaults(func=cmd_report)
+     return p
+ 
+ 
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index 4a7b68c..d15cbe0 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -76,5 +76,42 @@ class CliTest(unittest.TestCase):
+         self.assertEqual(code, 2)
+ 
+ 
++class ReportTest(unittest.TestCase):
++    def setUp(self):
++        self.tmp = tempfile.TemporaryDirectory()
++        self.file = os.path.join(self.tmp.name, "ledger.json")
++        for amt, cat, day in [("12.50", "food", "2026-08-30"), ("-3.50", "food", "2026-09-01"),
++                              ("1000", "rent", "2026-09-02")]:
++            self.cli("add", amt, cat, "--date", day)
++
++    def tearDown(self):
++        self.tmp.cleanup()
++
++    def cli(self, *argv):
++        return run("--file", self.file, *argv)
++
++    def test_report_by_category(self):
++        code, out, _ = self.cli("report", "--by", "category")
++        self.assertEqual(code, 0)
++        self.assertEqual(out.splitlines(), ["food\t9.00", "rent\t1000.00", "TOTAL\t1009.00"])
++
++    def test_report_by_month(self):
++        _, out, _ = self.cli("report", "--by", "month")
++        self.assertEqual(out.splitlines(), ["2026-08\t12.50", "2026-09\t996.50", "TOTAL\t1009.00"])
++
++    def test_report_since_is_inclusive(self):
++        _, out, _ = self.cli("report", "--by", "category", "--since", "2026-09-01")
++        self.assertEqual(out.splitlines(), ["food\t-3.50", "rent\t1000.00", "TOTAL\t996.50"])
++
++    def test_report_bad_since_is_usage_error(self):
++        code, _, err = self.cli("report", "--by", "month", "--since", "2026-02-30")
++        self.assertEqual(code, 2)
++        self.assertIn("invalid date", err)
++
++    def test_report_requires_by(self):
++        code, _, _ = self.cli("report")
++        self.assertEqual(code, 2)
++
++
+ if __name__ == "__main__":
+     unittest.main()

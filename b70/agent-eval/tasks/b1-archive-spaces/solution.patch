@@ -1,0 +1,58 @@
+diff --git a/bin/archive-logs b/bin/archive-logs
+index 3c09dae..46389b9 100755
+--- a/bin/archive-logs
++++ b/bin/archive-logs
+@@ -2,6 +2,7 @@
+ # archive-logs SRC_DIR DEST_DIR
+ # Gzip every *.log file in SRC_DIR into DEST_DIR as <name>.gz, record
+ # each one in DEST_DIR/archive.log, and print a summary line.
++set -o pipefail
+ 
+ HERE=$(cd "$(dirname "$0")" && pwd)
+ . "$HERE/../lib/archive.sh"
+@@ -16,9 +17,18 @@ dest=$2
+ mkdir -p "$dest" || exit 1
+ 
+ count=0
+-for f in $(list_logs "$src"); do
+-    archive_one "$f" "$dest" | tee -a "$dest/archive.log"
+-    count=$((count + 1))
++failed=0
++for f in "$src"/*.log; do
++    [ -f "$f" ] || continue
++    if archive_one "$f" "$dest" | tee -a "$dest/archive.log"; then
++        count=$((count + 1))
++    else
++        failed=$((failed + 1))
++    fi
+ done
+ 
+ echo "archived $count files"
++if [ "$failed" -gt 0 ]; then
++    echo "archive-logs: $failed file(s) failed to archive" >&2
++    exit 1
++fi
+diff --git a/lib/archive.sh b/lib/archive.sh
+index 97a9a22..98ef972 100644
+--- a/lib/archive.sh
++++ b/lib/archive.sh
+@@ -1,15 +1,10 @@
+ # Helpers for bin/archive-logs. Source this file; do not run it.
+ 
+-# Print the *.log files directly inside a directory, one per line.
+-list_logs() {
+-    ls $1/*.log 2>/dev/null
+-}
+-
+ # Gzip one file into a destination directory as <basename>.gz and
+-# print a line saying so.
++# print a line saying so. Returns nonzero if the archive was not written.
+ archive_one() {
+-    local src=$1 dest=$2
+-    local name=$(basename $src)
+-    gzip -c $src > $dest/$name.gz
++    local src=$1 dest=$2 name
++    name=$(basename -- "$src")
++    gzip -c -- "$src" > "$dest/$name.gz" || return 1
+     echo "archived $name"
+ }
