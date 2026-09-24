@@ -76,7 +76,12 @@ Frozenlock's checkpoint, compiled + XPU graphs, MTP 3, with both fixes:
 | | 1 stream, 1.5k / 16k | 4 streams, 1.5k / 16k | 8 streams, 1.5k |
 |---|---|---|---|
 | AutoRound int4 + inc-q40 | 61.2-61.5 / 58.6 | 197.0-201.0 / 192.1 | 351.4 (`--max-num-seqs 16`) |
+| AutoRound int4 + inc-q40, `--enforce-eager` | 54.4 / 55.3 | 186.7 / | |
 | BF16 + `--quantization sym_int4` | 60.4 / 56.1 | 194.4 / 178.9 | |
+
+Intel notes that XPU graphs are not supported yet
+([#698](https://github.com/intel/llm-scaler/issues/698)); the eager row is the configuration
+without them, 5-12 % slower here and ~3.5x the stock AutoRound path.
 
 Quality, on a task eval of ours (41 labelled CI test logs; the model must return the failing
 tests as JSON, with a reason quoted from the log), greedy:
@@ -92,6 +97,24 @@ JSON schema, JSON mode, a tool call, a thinking request) passes on both.
 
 Limits: one model, one card, tensor parallel 1. Not tried: AWQ-packed checkpoints, other group
 sizes (those keep the stock path), other models.
+
+## A 131k-token window on one card
+
+With `--kv-cache-dtype fp8 --max-model-len 131072` (same flags otherwise, compiled + XPU graphs,
+MTP 3), the KV pool on one B70 is 195,233 tokens: one full-window request with room to spare.
+
+| context | 1 stream | 4 streams |
+|---|---|---|
+| ~1.5k | 56.9 | 186.9 |
+| ~16k | 57.8 | 191.9 |
+| ~66k | 55.4 | |
+| ~129k | 44.3 | |
+
+On our task eval the fp8 cache cost one answer in 41 a malformed JSON string (a raw control
+character deep in a long answer); the other 40 were exact. A bigger window is capacity, not
+comprehension: planting a known defect in unrelated code and growing the prompt, this model finds
+it reliably below ~12k tokens and only now and then past ~23k, with an fp8 or an 8-bit cache
+alike.
 
 ## Apply
 
