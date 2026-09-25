@@ -6,7 +6,9 @@ Qwen3.8-27B on one Arc Pro B70. We made five changes to it. All are small and ar
 you can apply: two fixes, a speed-up for speculative decoding (section 3), and two changes that make
 tool calls from Claude Code and similar agent clients reliable (section 4). Notes follow on a ~213k-token
 window, which the xe driver's job time limit decides, and on the host: other work on the server's CCD
-can halve a MoE's decode ("The host's CPU").
+can halve a MoE's decode ("The host's CPU"). [`gdn-mixed-batch/`](gdn-mixed-batch/) is our run of the
+DeltaNet mixed-batch test from vllm-xpu-kernels#552 on this image. [`../../PATCHES.md`](../../PATCHES.md)
+sorts every file here by the hardware and software it needs, with how to check and undo each.
 
 Everything below was measured on one B70 (32 GB) with Qwen3.8-27B, `--dtype float16`,
 `--max-model-len 40960`, `--max-num-seqs 4` unless stated otherwise, and speculative decoding
@@ -325,8 +327,9 @@ Two differences callers see: vLLM returns parsed thinking in `message.reasoning`
 as `max_model_len` rather than `meta.n_ctx`. Answers are in `content` either way.
 
 A third, from Qwen3.8's own chat template: it takes `reasoning_effort` xhigh (the default), medium
-or low, and rejects anything else with HTTP 400. llama-server does not pass the field to the
-template; vLLM does, so an OpenAI-style client or Claude Code sending `high` fails on every request.
+or low, and rejects anything else with HTTP 400. The llama-server build we served it with before did
+not pass the field to the template (other builds may); vLLM does, so an OpenAI-style client or
+Claude Code sending `high` fails on every request.
 [`effort-template.py`](effort-template.py) writes a copy of the template that maps `high` and `max`
 to `xhigh`, `minimal` and `none` to `low`, and a null to the default, and changes nothing else:
 

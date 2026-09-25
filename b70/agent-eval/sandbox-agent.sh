@@ -1,9 +1,9 @@
 #!/bin/bash
 # Claude Code on a local model, in the agent-eval sandbox (Dockerfile): the task's working copy
 # ($QWEN_CWD, set by run.py) is the only host path it sees. Arguments go to claude.
-#   QWEN_PROXY=http://127.0.0.1:8411 QWEN_MODEL=qwen-local QWEN_BACKEND=http://127.0.0.1:8081 \
+#   QWEN_PROXY=http://127.0.0.1:8399 QWEN_MODEL=my-model QWEN_BACKEND=http://127.0.0.1:8000 \
 #   QWEN_KEY_FILE=... run.py --label x -- bash sandbox-agent.sh
-# The window is read from the backend (vLLM's max_model_len), as local-agent.sh does.
+# The window is read from the backend (vLLM's max_model_len); 65,536 if it cannot be read.
 set -u
 : "${QWEN_CWD:?}" "${QWEN_PROXY:?}" "${QWEN_MODEL:?}" "${QWEN_BACKEND:?}" "${QWEN_KEY_FILE:?}"
 CTX=$(curl -s -m 5 "$QWEN_BACKEND/v1/models" | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"][0]["max_model_len"])' 2>/dev/null)

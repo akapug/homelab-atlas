@@ -1,11 +1,11 @@
-"""depth-decode4.py for a vLLM OpenAI server: same prompts, depths, stream counts and output
+"""decode-streams.py for a vLLM OpenAI server: same prompts, depths, stream counts and output
 format, so the numbers line up with the llama-server runs.
 
-depth-decode4.py reads llama-server's `timings` (predicted_per_second, prompt_n, cache_n) and
+decode-streams.py reads llama-server's `timings` (predicted_per_second, prompt_n, cache_n) and
 pins slots with `id_slot`; vLLM returns none of that. Here each stream is a streamed
 /v1/completions request, and its decode rate is (completion_tokens - 1) / (last chunk - first
 chunk): the prompt's prefill (time to first token) is excluded, as it is from
-predicted_per_second. The aggregate is the sum over streams, as in depth-decode4.py; a wall-clock
+predicted_per_second. The aggregate is the sum over streams, as in decode-streams.py; a wall-clock
 aggregate (all tokens after each stream's first / span from the earliest first chunk to the latest
 last chunk) is printed beside it. Prompts are prefilled first with max_tokens 1, so the timed
 pass reuses vLLM's prefix cache (serve with --enable-prefix-caching; with

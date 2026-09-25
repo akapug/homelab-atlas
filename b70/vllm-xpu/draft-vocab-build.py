@@ -4,7 +4,8 @@ The drafter can only propose tokens in the list, so the list should hold every t
 likely to write. It is the union of: every token seen in the corpus (source trees, docs, logs), ids
 below K (BPE merges are roughly in frequency order, so low ids are the common ones), and the
 tokenizer's added (special) tokens. Coverage is measured on held-out text the model itself wrote
-(spec-differential.py outputs, as token ids), since a token missing from the list is a lost draft.
+(JSON files of the form {"rows": [{"ids": [...]}, ...]}: the model's own output as token ids), since
+a token missing from the list is a lost draft.
 Run it with the image's Python, which has `tokenizers`:
   draft-vocab-build.py <tokenizer.json> <K> <out.txt> <heldout.json ...> -- <corpus dir or file ...>
 Prints, for several K, the list size and the held-out share it covers; writes the list for <K>."""

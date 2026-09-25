@@ -33,16 +33,22 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
 ## Contents
 
 - [`vllm-xpu/`](vllm-xpu/): compiled mode for llm-scaler (issue #699), AutoRound int4 on the fast
-  kernels (`inc-q40`), and a CPU check for quantized checkpoints.
+  kernels (`inc-q40`), a smaller vocabulary for the MTP drafter, two tool-call fixes for agent
+  clients, a chat-template fix for `reasoning_effort`, a guard that keeps other work off the server's
+  CPUs, our run of the DeltaNet mixed-batch test ([`gdn-mixed-batch/`](vllm-xpu/gdn-mixed-batch/)),
+  and a CPU check for quantized checkpoints.
 - [`llama.cpp-sycl/`](llama.cpp-sycl/): 18 patches, each with its measured effect, and a build
   script that verifies the patched source tree.
-- [`bench/`](bench/): the decode benchmarks and the structured-output probe.
+- [`bench/`](bench/): the decode benchmarks, the speculative step-time and CPU-contention probes, the
+  structured-output probe and the tool-call length check.
 - [`qwen36-35b-a3b.md`](qwen36-35b-a3b.md): the MoE model our agents run on (Qwen3.6-35B-A3B): vLLM
   at 2.1-5.1x llama.cpp Vulkan on one card, its full 262k window, a silent load hang to watch for,
   and running Claude Code on it.
 - [`agent-eval/`](agent-eval/): can a local model finish real repository work? Twelve tasks with
   hidden checks, a sandboxed runner, and 72 runs: on all twelve, the dense 27B finished 22 of 24
   and the MoE 15 of 24 (p = 0.036), at little more speed once the tasks got hard.
+- [`../PATCHES.md`](../PATCHES.md): every patch and tool above, sorted by the hardware and software it
+  needs, with how to apply, check and undo each.
 
 ## Related work
 
@@ -51,7 +57,8 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
   vllm-xpu-kernels. One matters to anyone serving this model with speculative decoding:
   [vllm-xpu-kernels#552](https://github.com/vllm-project/vllm-xpu-kernels/pull/552), an
   out-of-bounds write in the DeltaNet kernel for batches that mix speculative and
-  non-speculative sequences.
+  non-speculative sequences. Our run of its test on this image is in
+  [`vllm-xpu/gdn-mixed-batch/`](vllm-xpu/gdn-mixed-batch/).
 - intel/llm-scaler issues we have added data to:
   [#699](https://github.com/intel/llm-scaler/issues/699) (compiled mode),
   [#698](https://github.com/intel/llm-scaler/issues/698) (XPU graphs; Intel: not supported yet),

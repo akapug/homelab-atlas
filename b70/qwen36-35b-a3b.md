@@ -26,9 +26,10 @@ rates with each stream pinned to its own slot and prefilled first.
 - **llama.cpp**: release b10545, Vulkan (Mesa 26.1.8), unsloth's `UD-Q4_K_XL` GGUF, q8_0 KV, 4 slots
   of 131,072 tokens. We ran this in production until the numbers above.
 
-Speculation pays at 1 to 4 streams and costs about 10 % at 8. On our 41-log test-triage eval
-(structured JSON out of real test logs, 4 requests at once) the vLLM server scored 41 of 41, with no
-false alarms on 8 passing logs.
+Speculation pays at 1 to 4 streams and costs about 10 % at 8. Measured later with the smaller drafter
+vocabulary in [`vllm-xpu/`](vllm-xpu/) (section 3), one stream went from 147.4 to 189.8 tok/s with the
+same acceptance. On our 41-log test-triage eval (structured JSON out of real test logs, 4 requests at
+once) the vLLM server scored 41 of 41, with no false alarms on 8 passing logs.
 
 ## The full 262,144-token window
 
@@ -71,6 +72,9 @@ Claude Code runs unchanged on this model through an Anthropic-to-OpenAI proxy (w
   to the local one in the proxy, or those calls fail.
 - **Context.** Read the window from vLLM's `/v1/models` (`max_model_len`); llama.cpp reports it on
   `/props`. A harness that believes it has more room than the server never auto-compacts.
+- **Tool calls.** Two patches in [`vllm-xpu/`](vllm-xpu/) (section 4): tool names constrained to the
+  declared tools (without it, a Qwen model once called a tool named ``Bash` ``), and a tool call cut off
+  by `max_tokens` reported as `length`, so Claude Code continues instead of failing the call.
 - **Reasoning effort (Qwen3.8-27B only).** Its chat template accepts `reasoning_effort` xhigh,
   medium or low and rejects anything else with HTTP 400, including `high`, which OpenAI-style clients
   and Claude Code send. [`vllm-xpu/effort-template.py`](vllm-xpu/effort-template.py) writes a copy

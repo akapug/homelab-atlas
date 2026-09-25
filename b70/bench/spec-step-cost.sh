@@ -7,7 +7,7 @@
 # step-time ratio.
 # The counters are the server's, so any other request in flight is counted too and slows the step:
 # the script waits for an idle server and flags a run whose counters saw more tokens than it decoded.
-# Hold the model's canary meanwhile (its probes are requests too).
+# Pause any health probe that sends the server requests meanwhile (its requests are counted too).
 #   spec-step-cost.sh <label> <corpus.jsonl> [port, default 8083]      Env: TOKENS (default 1024)
 set -u
 L=${1:?label}; C=${2:?corpus.jsonl}; P=${3:-8083}

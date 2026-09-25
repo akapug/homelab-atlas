@@ -3,13 +3,13 @@
 
 Qwen3.8-27B's own template takes reasoning_effort xhigh (default), medium or low and raises on
 anything else. An OpenAI-compatible client sends low, medium or high, and Claude Code through
-cliproxy sends its effort level (default high): every such request failed with HTTP 400 "Unexpected
-reasoning effort high" once vLLM served the model (2026-09-24; llama.cpp never passed the field to
-the template). The copy maps high and max to xhigh, minimal and none to low, and a null to the
-default, before the model's own check. Nothing else changes.
+a proxy sends its effort level (default high): every such request failed with HTTP 400 "Unexpected
+reasoning effort high" once vLLM served the model (2026-09-24; the llama.cpp build it ran on
+before did not pass the field to the template). The copy maps high and max to xhigh, minimal and
+none to low, and a null to the default, before the model's own check. Nothing else changes.
 
     effort-template.py <model dir> <output .jinja>
-Serve it with vLLM's --chat-template (b70-vllm.sh: CHAT_TEMPLATE=<path under the models dir>).
+Serve it with vLLM's --chat-template <output .jinja>.
 """
 import sys
 

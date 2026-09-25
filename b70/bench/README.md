@@ -36,3 +36,6 @@ context length, not content.
 
 Rules we kept to: measure on an otherwise idle card; run each configuration at least twice and
 report both; report the uncached-prompt column.
+
+Which server each tool works against, and which patch it helps you check:
+[`../../PATCHES.md`](../../PATCHES.md#bench-the-measurements-behind-the-numbers).

@@ -12,6 +12,9 @@ Most patches are small. They are not all independent (0008 calls a helper 0004 a
 patches need 0008 and 0009). Kernel timings are `test-backend-ops perf` on the B70; end-to-end
 numbers are aggregate decode tok/s from [`../bench/decode-streams.py`](../bench/decode-streams.py)
 at ~1.5k ("short") and ~16k tokens of context.
+[`../../PATCHES.md`](../../PATCHES.md#3-intel-arc-pro-b70-with-llamacpp) sorts the patches by the GGUF
+quantization types they speed up. 0015 and 0016 change no SYCL code and apply on their own to the
+same base commit, whatever the backend.
 
 | patch | what it changes | measured on the B70 |
 |---|---|---|
