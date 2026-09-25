@@ -1,10 +1,12 @@
-# vLLM on the Arc Pro B70: three changes to llm-scaler 0.26.0-b2
+# vLLM on the Arc Pro B70: changes to llm-scaler 0.26.0-b2
 
 Intel's [llm-scaler](https://github.com/intel/llm-scaler) image `intel/llm-scaler-vllm:0.26.0-b2`
 (vLLM 0.26.1.dev0+g568afb3a1 with Intel's XPU kernels) is the fastest way we have found to serve
-Qwen3.8-27B on one Arc Pro B70. We made three changes to it. All are small and are here as files
-you can apply: two fixes, and a speed-up for speculative decoding (section 3). A note on the host
-follows them: other work on the server's CCD can halve a MoE's decode ("The host's CPU").
+Qwen3.8-27B on one Arc Pro B70. We made five changes to it. All are small and are here as files
+you can apply: two fixes, a speed-up for speculative decoding (section 3), and two changes that make
+tool calls from Claude Code and similar agent clients reliable (section 4). Notes follow on a ~213k-token
+window, which the xe driver's job time limit decides, and on the host: other work on the server's CCD
+can halve a MoE's decode ("The host's CPU").
 
 Everything below was measured on one B70 (32 GB) with Qwen3.8-27B, `--dtype float16`,
 `--max-model-len 40960`, `--max-num-seqs 4` unless stated otherwise, and speculative decoding
@@ -161,6 +163,31 @@ MTP drafters in general, so other large-vocabulary models may pay the same cost.
 make more of them pay, but only where they are accepted: on these log summaries, with the list, 5
 drafts ran 74-78 tok/s and 7 drafts 68-71.
 
+## 4. Tool calls from agent clients (`strict-tools.py`, `length-finish.py`)
+
+An agent client such as Claude Code, reaching vLLM through an Anthropic-to-OpenAI proxy, sends a long
+tool list on every request and relies on two things the image does not give it.
+
+**Tool names that exist.** The image already builds an xgrammar structural tag for the `qwen3_coder`
+parser (once the model writes `<tool_call>` and `<function=`, the name can only be a declared tool and
+the arguments must fit its schema), but for `tool_choice: "auto"` it applies it only when some tool says
+`"strict": true`. Claude Code's tools never do, and without the constraint a Qwen model once called a tool
+named ``Bash` `` (a stray backtick and newline in the name). [`strict-tools.py`](strict-tools.py) makes
+every auto request with tools use the grammar when `VLLM_STRICT_TOOLS_AUTO=1` is set. Text and
+thinking stay free: the tag fires only on the tool-call trigger and waits for the end of reasoning.
+Claude Code's ~120 tools compile in 0.8 s, and the XPU bitmask then applies in under 1 ms a step. A
+tool whose schema xgrammar cannot validate (regex lookahead, an unresolved `$ref`) keeps its name
+constrained with free arguments, so one odd schema never turns requests into errors.
+
+**A truncated tool call that says so.** When a turn hits `max_tokens` inside a tool call's arguments,
+the image still reports `finish_reason: "tool_calls"`, so the client gets a "finished" call with
+unterminated JSON and no signal to continue; Claude Code then fails the call. [`length-finish.py`](length-finish.py)
+keeps `"length"` for a length stop, as OpenAI's API does (upstream vLLM main already does this for
+streaming). A proxy that maps OpenAI finish reasons to Anthropic stop reasons must also let `length` win
+over a tool call it has already seen, or it masks the stop again.
+[`../bench/length-cut-check.py`](../bench/length-cut-check.py) forces a cut and prints the finish reason:
+`tool_calls` before the patch, `length` after.
+
 ## A 131k-token window on one card
 
 With `--kv-cache-dtype fp8 --max-model-len 131072` (same flags otherwise, compiled + XPU graphs,
@@ -178,6 +205,22 @@ character deep in a long answer); the other 40 were exact. A bigger window is ca
 comprehension: planting one of three known defects in unrelated code and growing the prompt, this
 model found them in 9 of 9 reads at 2-12k tokens and in 10 of 36 past ~23k. An earlier measurement
 on llama.cpp with an 8-bit cache had the same shape, so the limit is the model, not the fp8 cache.
+
+## A ~213k-token window: the xe driver's job time limit sets the prefill chunk
+
+The xe driver kills any compute job that runs longer than the engine's `job_timeout_ms`, 5,000 ms for
+the compute engine (ccs) on these cards, and one vLLM engine step is one job. With `--max-num-batched-tokens 8192`,
+an 8,192-token prefill chunk attending over ~180k tokens of context took longer than that: the kernel
+logged `GT0: Engine reset: engine_class=ccs` and the server died. With `--max-num-batched-tokens 2048`
+the same card answered needle-in-context requests at 104k, 146k, 188k and 229k tokens (the needle
+recalled each time) with no reset, and it has served a 212,992-token window since. The KV pool at
+`--kv-cache-dtype fp8 --gpu-memory-utilization 0.95` is 242,600 tokens (eager mode). One request near
+the top of the window holds most of the pool, so above ~120k the card serves one big context at a time.
+
+The limit is a root sysfs knob, per boot, up to 10,000 ms on these cards:
+`/sys/class/drm/card<N>/device/tile0/gt0/engines/ccs/job_timeout_ms`. We keep the default and use
+2,048-token chunks. Between 8,192 and 16,384 the chunk size did not change prefill speed; 2,048 has not been
+timed against them yet.
 
 ## The host's CPU: keep other work off the server's CCD
 
@@ -246,6 +289,15 @@ export VLLM_DRAFT_VOCAB=/path/to/draft-vocab/qwen38-freq32k.txt   # before vllm 
 
 The server logs `draft vocab: 50521 of 248320 tokens` on its first draft.
 
+For agent clients (section 4), patch the tool-call grammar and the finish reason, and turn the grammar on:
+
+```
+python3 strict-tools.py vllm/tool_parsers/structural_tag_registry.py
+python3 length-finish.py vllm/entrypoints/openai/chat_completion/serving.py
+find vllm/tool_parsers vllm/entrypoints/openai/chat_completion -name '*.pyc' -delete
+export VLLM_STRICT_TOOLS_AUTO=1   # before vllm serve
+```
+
 Then serve the checkpoint with its own quantization method (no `--quantization` flag):
 
 ```
@@ -258,6 +310,13 @@ VLLM_XPU_ENABLE_XPU_GRAPH=1 vllm serve Frozenlock/Qwen3.8-27B-int4-AutoRound \
 ```
 
 Compiled mode takes ~3-4 minutes to capture graphs before `/health` answers.
+
+For the ~213k window, change these flags (our server runs this window in eager mode):
+
+```
+  --max-model-len 212992 --kv-cache-dtype fp8 --max-num-seqs 8 --max-num-batched-tokens 2048 \
+  --gpu-memory-utilization 0.95 --enforce-eager
+```
 
 ## If you are coming from llama-server
 
