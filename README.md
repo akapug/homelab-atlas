@@ -38,6 +38,7 @@ Before you start:
 | entry | what is in it |
 |---|---|
 | [**Intel Arc Pro B70**](b70/): Qwen3.8-27B and Qwen3.6-35B-A3B | vLLM on Intel's llm-scaler image with [five changes](b70/vllm-xpu/): compiled mode (llm-scaler #699), AutoRound int4 checkpoints on the fast int4 kernels (61 tok/s at one stream, 351 at eight), a smaller vocabulary for the speculative drafter (+25-29 % at one stream), and two tool-call fixes for agent clients. [18 llama.cpp SYCL patches](b70/llama.cpp-sycl/), 39 → 101 tok/s at four streams. [The MoE](b70/qwen36-35b-a3b.md) at 2.1-5.1x llama.cpp Vulkan with its full 262k window. [An agent eval](b70/agent-eval/): can a local model finish real repository work? [The benchmarks](b70/bench/) behind all of it. |
+| [**Big MoE models on one GPU plus system memory**](moe-offload/): GLM-5.3-Flash, DeepSeek V4.1 Flash, Qwen3.8 Flash-Next | GLM-5.3-Flash at 23.08 tok/s on an RTX 3090 Ti plus 192 GB DDR5, and at 15.73 on a 2019 dual-Xeon workstation with an RTX 6000 and Optane; DeepSeek V4.1 Flash at 10.6 on the same workstation; Qwen3.8 Flash-Next at 87.1 on one B70. Eight measured lessons: what binds, when speculative decoding loses, which layers tolerate fewer bits, splitting experts across sockets, and what more Optane would and would not buy. |
 
 ## How numbers are reported here
 
