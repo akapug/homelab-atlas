@@ -1,0 +1,291 @@
+{
+ "_doc": "Cause labels read from each run's notes and logs (never guessed): runs/runs.jsonl stays as recorded. class = a key of causes in build.py (data.causes). phases = the measured decode phases the cause touched ([] = none); confirmed false = the notes name it as a suspicion only, so it neither excludes nor counts; effect = a contact the notes say harmed nothing, so it is no cause. report.js --accuracy reads this file beside the ledger. A crash cause has phases [] (the whole run; the row already went bad).",
+ "droopy-glm-glm-be1q3e-1215": {
+  "causes": [
+   {
+    "class": "interference",
+    "phases": [
+     "m0"
+    ],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q3f-1314": {
+  "causes": [
+   {
+    "class": "interference",
+    "phases": [
+     "m2"
+    ],
+    "effect": "none visible",
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q3a2f-1342": {
+  "causes": [
+   {
+    "class": "interference",
+    "phases": [],
+    "effect": "load only",
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q4c-1831": {
+  "causes": [
+   {
+    "class": "unexplained_slowdown",
+    "phases": [
+     "m1",
+     "m0"
+    ],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   },
+   {
+    "class": "interference",
+    "phases": [
+     "m1",
+     "m0"
+    ],
+    "confirmed": false,
+    "evidence": "lab notes",
+    "src": "lab notes"
+   },
+   {
+    "class": "long_prompt_vram",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q4l-2246": {
+  "causes": [
+   {
+    "class": "interference",
+    "phases": [
+     "V0_A2",
+     "V1_B1"
+    ],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q4i-0121": {
+  "causes": [
+   {
+    "class": "interference",
+    "phases": [
+     "V0_4",
+     "V0C_5",
+     "V0_6",
+     "V0C_7"
+    ],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q4j-0230": {
+  "causes": [
+   {
+    "class": "interference",
+    "phases": [
+     "V0R_0",
+     "V0R_1",
+     "V0R_2",
+     "V0R_3"
+    ],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q3-0644": {
+  "causes": [
+   {
+    "class": "vram_load",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q3b-0822": {
+  "causes": [
+   {
+    "class": "vram_load",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q3a2b-0823": {
+  "causes": [
+   {
+    "class": "vram_load",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q3c-0917": {
+  "causes": [
+   {
+    "class": "vram_load",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q3d-1123": {
+  "causes": [
+   {
+    "class": "vram_prefill",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q3a2e-1300": {
+  "causes": [
+   {
+    "class": "vram_prefill",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-glm-glm-be1q3n-1606": {
+  "causes": [
+   {
+    "class": "vram_prefill",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "odie-glm-q3-b1n": {
+  "causes": [
+   {
+    "class": "vram_prefill",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "odie-glm-q3-b1n2": {
+  "causes": [
+   {
+    "class": "host_pinned_dram",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "odie-glm-q3-b1n4": {
+  "causes": [
+   {
+    "class": "host_pinned_dram",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "snoopy-glm-p4-1646": {
+  "causes": [
+   {
+    "class": "tool_bug",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "snoopy-glm-p4-1741": {
+  "causes": [
+   {
+    "class": "tool_bug",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "snoopy-glm-arma-0719": {
+  "causes": [
+   {
+    "class": "vram_other_process",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-v41-e1": {
+  "causes": [
+   {
+    "class": "placement_short",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-v41-b1b-1": {
+  "causes": [
+   {
+    "class": "dram_node_pressure",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-v41-b1c": {
+  "causes": [
+   {
+    "class": "dram_node_pressure",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-v41-b1017pm": {
+  "causes": [
+   {
+    "class": "dram_node_pressure",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ },
+ "droopy-v41-b1017sw": {
+  "causes": [
+   {
+    "class": "dram_node_pressure",
+    "phases": [],
+    "evidence": "lab notes",
+    "src": "lab notes"
+   }
+  ]
+ }
+}

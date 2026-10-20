@@ -1,0 +1,113 @@
+{
+ "id": "lassie-v41-q8-rows8",
+ "box": "lassie",
+ "model": "v41",
+ "engine": "ik",
+ "label": "lassie V4.1 CPU rows8 Q8_0: 1017 Q8_0 store (mrfakename, routed experts MXFP4 (native), non-experts Q8_0), --no-mmap, routed experts rows:0..7 (slice k on node k) + GGML_MOE_GROUPS=8, -cr 0-63, T64, DSpark q2 draft CPU n4 / n0, no GPU",
+ "store": {
+  "split": false,
+  "types": [
+   "mxfp4"
+  ],
+  "hot_type": "mxfp4",
+  "cold_type": "mxfp4"
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": 4096,
+ "draft": true,
+ "banks_gib": 0,
+ "threads": 64,
+ "numa": {
+  "headroom_gib": 40.0,
+  "layout": "rows",
+  "spill_heal": false,
+  "src": "every expert rows:0,1,2,3,4,5,6,7 + GGML_MOE_GROUPS=8 + -cr in node order; Q8_0 experts ~34 GiB per node; the split store is dropped from the tmpfs first so each node keeps ~30 GiB after the load",
+  "verify": "LLAMA_EXPERT_PLACEMENT_VERIFY=1 + numa_maps per node after load",
+  "pinned_host": false
+ },
+ "system": {
+  "numa_balancing": 0,
+  "demotion": false,
+  "swap": "on (7 GiB, unused)"
+ },
+ "files": [
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00001-of-00010.gguf",
+   "holds": "experts + non-experts shard 1",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00002-of-00010.gguf",
+   "holds": "experts + non-experts shard 2",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00003-of-00010.gguf",
+   "holds": "experts + non-experts shard 3",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00004-of-00010.gguf",
+   "holds": "experts + non-experts shard 4",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00005-of-00010.gguf",
+   "holds": "experts + non-experts shard 5",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00006-of-00010.gguf",
+   "holds": "experts + non-experts shard 6",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00007-of-00010.gguf",
+   "holds": "experts + non-experts shard 7",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00008-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00009-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00010-of-00010.gguf",
+   "holds": "experts + non-experts shard 10",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/draft/DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf",
+   "holds": "DSpark q2 draft (1017)",
+   "access": "mmap"
+  }
+ ],
+ "src": "lab notes (lassie ~/lassie-v41)",
+ "conditions": {
+  "ctx": "8192 (-c 8192)",
+  "kv_type": "f16 (ik default)",
+  "draft_n": "DSpark q2 draft (1017) on the CPU (-ngld 0), per request n4 (n_max 4, conf_cum_min 0.5) and n0",
+  "sampling": {
+   "temperature": 0,
+   "set_by": "client"
+  },
+  "reasoning_effort": "none (raw /completion, no chat template)",
+  "workload": {
+   "prompt_kind": "coding-agent.json first 3 briefs (std, ~1.5-2.2k tokens) + one ~600-token (short) + one ~3.7k-token (long), raw /completion",
+   "gen_tokens": 256,
+   "ignore_eos": true,
+   "cache_prompt": false
+  },
+  "threads": 64,
+  "cpu_reserve": "64 SMT siblings left to the system",
+  "cpu_order": "-cr 0-63 (node k = CPUs 8k..8k+7)"
+ },
+ "gate_waiver": "vram_peak: the planner has no CPU-only path on own boxes (dense/KV/draft always on the first GPU); this probe runs a CPU-only build, no GPU memory used",
+ "gate_note": "launched after mm7q8 showed Q8_0 decodes as fast as the split store on lassie (CPU-bound, not bytes-bound)"
+}

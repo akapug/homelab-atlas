@@ -1,0 +1,46 @@
+== b0 start 2026-10-17T18:37:41Z PK=~/optane-bin/split-unrepack-72d65438 PLACE=~/optane-place/v41-split-dramfill74.placement.tsv HOT=~/optane-place/v41split-dramfill74-hot3p0-w6.tsv PLACE_EXPECT=N0:73,N1:75,N2:76
+P0: swap off (0 active)
+P0: numa_balancing 0 demotion false
+== V4.1 split from /mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00001-of-00010.gguf
+node0 MemFree 86 GiB
+node1 MemFree 89 GiB
+== N0 LOW 18:47:41Z: node0 MemFree 0 GiB
+== N0 LOW 18:48:11Z: node0 MemFree 2 GiB
+== N0 LOW 19:12:12Z: node0 MemFree 0 GiB
+{"arm": "b1d-swapoff-place74-hot3p0-t40", "extra": "-cr 0-39 --numa numactl -dple --cpu-moe -md ~/models/drafts/DeepSeek-V4.1-Flash-DSpark-exps-Q2_K.gguf -ngld 99 -cd 4096 -draft -ncmoe 0 --no-mmap --spec-type dspark:n_max=4,conf_cum_min=0.5 -ub 4096 -b 4096 -cuda offload-batch-size=100000", "client_rc": 0, "vram_after_warmup": {"used_mib": 21566, "total_mib": 23040}, "phases": [{"phase": "n4", "n_max": 4, "decode_tps": [7.64, 4.99, 5.85], "prefill_tps": [45.0, 51.1, 50.6], "draft_n": [248, 243, 235], "draft_acc": [221, 224, 189], "texts_sha": ["76000d31a9", "b94fa80988", "ef06352e36"], "decode_mean": 6.16, "prefill_mean": 48.9}, {"phase": "n3", "n_max": 3, "decode_tps": [7.57, 8.34, 5.11], "prefill_tps": [48.9, 54.5, 47.5], "draft_n": [231, 227, 222], "draft_acc": [209, 214, 177], "texts_sha": ["76000d31a9", "b94fa80988", "0389a1fffb"], "decode_mean": 7.01, "prefill_mean": 50.3}, {"phase": "n0", "n_max": 0, "decode_tps": [5.06, 6.54, 4.39], "prefill_tps": [49.4, 55.0, 53.3], "draft_n": [0, 0, 0], "draft_acc": [0, 0, 0], "texts_sha": ["76000d31a9", "2465c59545", "f684caad02"], "decode_mean": 5.33, "prefill_mean": 52.6}, {"phase": "n4b", "n_max": 4, "decode_tps": [7.61, 8.46, 7.4], "prefill_tps": [49.5, 54.4, 53.6], "draft_n": [248, 243, 235], "draft_acc": [221, 224, 189], "texts_sha": ["76000d31a9", "b94fa80988", "ef06352e36"], "decode_mean": 7.82, "prefill_mean": 52.5}], "vram_end": {"used_mib": 21574, "total_mib": 23040}, "resident_GiB_by_node": {"other_N0": 69.88, "other_N1": 75.9, "other_N2": 75.75}, "placement_ok": true, "placement_off_GiB": {"N0": -3.1, "N1": 0.9, "N2": -0.2}, "gpu_sm_busy_pct_mean": 17.8, "union_cap_log_lines": 0}
+== b1d-swapoff-place74-hot3p0-t40 rc=0 19:35:13Z
+n4 prompt0 decode 7.64 prefill 45.0 draft 248/221 wall 74s
+n4 prompt1 decode 4.99 prefill 51.1 draft 243/224 wall 104s
+n4 prompt2 decode 5.85 prefill 50.6 draft 235/189 wall 91s
+n3 prompt0 decode 7.57 prefill 48.9 draft 231/209 wall 71s
+n3 prompt1 decode 8.34 prefill 54.5 draft 227/214 wall 77s
+n3 prompt2 decode 5.11 prefill 47.5 draft 222/177 wall 101s
+n0 prompt0 decode 5.06 prefill 49.4 draft 0/0 wall 91s
+n0 prompt1 decode 6.54 prefill 55.0 draft 0/0 wall 86s
+n0 prompt2 decode 4.39 prefill 53.3 draft 0/0 wall 106s
+n4b prompt0 decode 7.61 prefill 49.5 draft 248/221 wall 71s
+n4b prompt1 decode 8.46 prefill 54.4 draft 243/224 wall 76s
+n4b prompt2 decode 7.4 prefill 53.6 draft 235/189 wall 78s
+  vram {'used_mib': 21566, 'total_mib': 23040} {'used_mib': 21574, 'total_mib': 23040} resident {'other_N0': 69.88, 'other_N1': 75.9, 'other_N2': 75.75} sm 17.8
+   n4 decode 6.16 [7.64, 4.99, 5.85] prefill 48.9 [45.0, 51.1, 50.6] draft [248, 243, 235] [221, 224, 189] ['76000d31a9', 'b94fa80988', 'ef06352e36']
+   n3 decode 7.01 [7.57, 8.34, 5.11] prefill 50.3 [48.9, 54.5, 47.5] draft [231, 227, 222] [209, 214, 177] ['76000d31a9', 'b94fa80988', '0389a1fffb']
+   n0 decode 5.33 [5.06, 6.54, 4.39] prefill 52.6 [49.4, 55.0, 53.3] draft [0, 0, 0] [0, 0, 0] ['76000d31a9', '2465c59545', 'f684caad02']
+   n4b decode 7.82 [7.61, 8.46, 7.4] prefill 52.5 [49.5, 54.4, 53.6] draft [248, 243, 235] [221, 224, 189] ['76000d31a9', 'b94fa80988', 'ef06352e36']
+0
+llama_expert_numa_apply: ~/optane-place/v41-split-dramfill74.placement.tsv: 240 expert tensors placed in 6885 ranges (0 skipped), 6645 straddle pages, 0.94 MiB left at tensor edges
+llama_expert_numa_apply:   node(s) 0,1      interleave   128860.2 MiB
+llama_expert_numa_apply:   node(s) 2        bind          77558.3 MiB
+llama_expert_numa_apply:   node(s) 1        bind          15350.2 MiB
+llama_hot_experts: 40 layers with split expert tensors (every batch runs one chain per partition)
+llama_hot_experts: ~/optane-place/v41split-dramfill74-hot3p0-w6.tsv: 177 hot experts in 39 layers, 3019.40 MiB on GPU, banks for batches <= 8 tokens
+llama_init_from_model:      CUDA0 compute buffer size =  2180.00 MiB
+llama_init_from_model:  CUDA_Host compute buffer size =  1337.09 MiB
+llama_expert_numa_apply: ~/optane-place/v41-split-dramfill74.placement.tsv: 0 expert tensors placed in 0 ranges (0 skipped), 0 straddle pages, 0.00 MiB left at tensor edges
+llama_expert_numa_apply:   node(s) 0,1      interleave        0.0 MiB
+llama_expert_numa_apply:   node(s) 2        bind              0.0 MiB
+llama_expert_numa_apply:   node(s) 1        bind              0.0 MiB
+llama_hot_experts: ~/optane-place/v41split-dramfill74-hot3p0-w6.tsv:2 names expert 318 but this model has 128 experts; hot experts inactive for this model
+llama_init_from_model:      CUDA0 compute buffer size =     2.66 MiB
+llama_init_from_model:  CUDA_Host compute buffer size =     0.22 MiB
+== pswpin delta 0
+== b1d done 2026-10-17T19:35:14Z

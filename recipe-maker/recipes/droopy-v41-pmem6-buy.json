@@ -1,0 +1,147 @@
+{
+ "id": "droopy-v41-pmem6-buy",
+ "box": "droopy",
+ "model": "v41",
+ "engine": "ik",
+ "label": "V4.1 best measured layout (v41r1b, 10.6 tok/s) on droopy with +4 PMem 100 128 GB sticks (6-way on socket 0)",
+ "store": {
+  "split": true,
+  "types": [
+   "mxfp4",
+   "q2_K"
+  ],
+  "hot_type": "mxfp4",
+  "cold_type": "q2_K"
+ },
+ "lowbit_share": 0.225,
+ "rtr": false,
+ "ub": 4096,
+ "draft": true,
+ "banks_gib": 2.2,
+ "threads": 39,
+ "numa": {
+  "headroom_gib": [
+   7,
+   13
+  ],
+  "spill_heal": true,
+  "layout": "rows",
+  "src": "v41-1017-split-rows.placement.tsv = v41-1017-split-dramfill with every '0,1' expert as rows:0,1 and the 2.99 GiB N1-alone cold set on N0: experts N0 79.0 / N1 76.0 / N2 61.6 GiB (b1017heal interleave measured 85.5 / 74.1 / 62.0 other GiB, N0 0.5 free); headroom from plan-time free 86/89 (B0 nortr): N0 86-79.0 = 7, N1 89-76.0 = 13 (b1017: 10/10, same 155 GiB total); v41r1b: load report 9.22 % off (N1 -19.0 GiB), srv-arm bind-heal moved 20.94 GiB, live verify PASS 0.58 % off",
+  "pinned_host": false,
+  "verify": "fail"
+ },
+ "system": {
+  "numa_balancing": 0,
+  "demotion": false,
+  "swap": "off"
+ },
+ "files": [
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00001-of-00010.gguf",
+   "holds": "experts + non-experts shard 1",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00002-of-00010.gguf",
+   "holds": "experts + non-experts shard 2",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00003-of-00010.gguf",
+   "holds": "experts + non-experts shard 3",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00004-of-00010.gguf",
+   "holds": "experts + non-experts shard 4",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00005-of-00010.gguf",
+   "holds": "experts + non-experts shard 5",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00006-of-00010.gguf",
+   "holds": "experts + non-experts shard 6",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00007-of-00010.gguf",
+   "holds": "experts + non-experts shard 7",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/nvme-p4/v41-1017/DeepSeek-V4.1-Flash-1017-Q8_0-00008-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file"
+  },
+  {
+   "path": "/mnt/nvme-p4/v41-1017/DeepSeek-V4.1-Flash-1017-Q8_0-00009-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00010-of-00010.gguf",
+   "holds": "experts + non-experts shard 10",
+   "access": "loaded"
+  },
+  {
+   "path": "~/models/drafts/DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf",
+   "holds": "DSpark q2 draft (1017)",
+   "access": "loaded"
+  }
+ ],
+ "src": "run-v41r1.sh (rebuild-1017)",
+ "conditions": {
+  "ctx": "server default (-c unset, as b1017)",
+  "kv_type": "f16 (ik default)",
+  "draft_n": "DSpark q2 draft (1017), --spec-type dspark:n_max=4,conf_cum_min=0.5; per request: n4 (0.5), c75 (n_max 4, conf_cum_min 0.75), c90 (0.9), n0 (no draft), n4b (0.5 again)",
+  "sampling": {
+   "temperature": 0,
+   "set_by": "e1-client.py"
+  },
+  "reasoning_effort": "none (raw /completion, no chat template)",
+  "workload": {
+   "e1": {
+    "prompt_kind": "~/prompts/coding-agent.json first 3 briefs, raw /completion",
+    "gen_tokens": 300,
+    "ignore_eos": true,
+    "cache_prompt": false,
+    "phases": [
+     "n4",
+     "c75",
+     "c90",
+     "n0",
+     "n4b"
+    ]
+   }
+  },
+  "threads": 39,
+  "cpu_reserve": "1 (~/.config/optane-kit/settings.env: CPU 39, every other task pinned to it by sys-pin.py)",
+  "maint_timers": "paused for the load (srv-arm.sh MAINT_PAUSE=1), restored on exit",
+  "cpu_order": "-cr 0-9,20-29,10-19,30-38 (threads 0-19 socket 0, 20-38 socket 1; GGML_MOE_GROUPS=2 -> group g = socket g)",
+  "package": "optane-bin/v41rows-0104a59e (split-unrepack-72d65438 + expert-rows 0104a59e)"
+ },
+ "heat": {
+  "plan": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17:prefill",
+  "src": "1017 a5 routing counts lab notes (sha256 6fc394af...): regen-place-1017.sh ranked the B1017 hot banks with gen-hot-split.py at W=6, excluding the cold experts dram-fill put in DRAM",
+  "maps": {
+   "plan": {
+    "map_id": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17",
+    "digest": "sha256:ed30967cb0c7992a66b46d5f1f3a3e53bc41f3aa3917bfdd96a491b91fe46497",
+    "slice": "prefill"
+   }
+  }
+ },
+ "what_if": {
+  "of": "v41r1b-1354",
+  "purchase": "+4 Intel Optane PMem 100 128 GB (NMA1XXD128GPS), socket 0 2-2-2",
+  "state": "lab notes 2026-10-19 PMem 4-stick buy figure",
+  "bracket": "knob optaneBwScale 3.0 = linear stripe (high end); the box default bw_scale 2.239 = 30 GB/s both-socket (low end)"
+ },
+ "knobs": {
+  "addOptane": true,
+  "optaneBwScale": 3.0
+ }
+}

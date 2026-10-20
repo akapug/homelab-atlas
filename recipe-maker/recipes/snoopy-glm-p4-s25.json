@@ -1,0 +1,38 @@
+{
+ "id": "glm-p4-s25",
+ "label": "GLM P4 S25 per-expert mix (coldest experts K=2 2.05 bpw, rest 3.05)",
+ "box": "snoopy",
+ "model": "glm",
+ "engine": "glmlite",
+ "engine_build": "p512-lane",
+ "store": {
+  "split": true,
+  "types": [
+   "exl3_3.05",
+   "exl3_2.05"
+  ],
+  "read_share_by_type": {
+   "exl3_2.05": 0.304,
+   "exl3_3.05": 0.696
+  }
+ },
+ "rtr": false,
+ "threads": 16,
+ "draft": false,
+ "knobs": {
+  "freeDesktop": true
+ },
+ "banks_gib": 14.0625,
+ "banks_experts": 1600,
+ "ram_tier_gib": 107.0,
+ "files": [
+  {
+   "path": "~/glm53/store-p4-25/glm53_flash_exl3_split_experts.bin",
+   "holds": "expert store (NVMe tier; RAM tier holds all experts with EXCL=0)",
+   "access": "mmap"
+  }
+ ],
+ "decode_kl": null,
+ "src": "lab notes 16:46Z",
+ "note": "banks = the 1600 VRAM slots of -cs 32768 (excl0-1143); desktop off the GPU (the kit turns the display off first)"
+}

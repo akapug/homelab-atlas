@@ -1,0 +1,142 @@
+{
+ "name": "Hf",
+ "tensor_names": [],
+ "arch": {
+  "v": "dream",
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/Dream-Coder-7B-Q4_0.gguf"
+ },
+ "hidden": {
+  "v": 3584,
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/Dream-Coder-7B-Q4_0.gguf"
+ },
+ "expert_ff": {
+  "v": null,
+  "tag": "UNKNOWN",
+  "src": "expert_ff: not in the header/config"
+ },
+ "n_shared": {
+  "v": null,
+  "tag": "UNKNOWN",
+  "src": "n_shared: not in the header/config"
+ },
+ "layers": {
+  "v": {
+   "main": 28,
+   "moe": 0,
+   "dense": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27
+   ],
+   "linear_attention": []
+  },
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/Dream-Coder-7B-Q4_0.gguf"
+ },
+ "kv_bytes_per_token": {
+  "v": null,
+  "tag": "UNKNOWN",
+  "src": "no KV head shape in the source"
+ },
+ "mtp": {
+  "v": {
+   "layers_config": null,
+   "in_this_source": false,
+   "gib": 0.0
+  },
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/Dream-Coder-7B-Q4_0.gguf"
+ },
+ "intake": {
+  "source": "GGUF headers odie:~/dllm/models/Dream-Coder-7B-Q4_0.gguf",
+  "tag": "READ",
+  "files": [
+   [
+    "Dream-Coder-7B-Q4_0.gguf",
+    4431390624,
+    339
+   ]
+  ],
+  "total_gib": 4.122,
+  "gib_by_class": {
+   "attention": 0.432,
+   "embedding": 0.286,
+   "norm": 0.0,
+   "other": 2.988,
+   "output": 0.416
+  },
+  "bytes_by_class": {
+   "attention": {
+    "f32": 917504,
+    "q4_0": 462422016
+   },
+   "embedding": {
+    "q4_0": 306561024
+   },
+   "norm": {
+    "f32": 415744
+   },
+   "other": {
+    "q4_0": 3208052736
+   },
+   "output": {
+    "q6_K": 447068160
+   }
+  },
+  "experts_gib": 0.0,
+  "dense_gib": 3.836,
+  "lookup_gib": {
+   "embedding": 0.286
+  },
+  "expert_types": {},
+  "unclassified": [
+   "blk.0.ffn_down.weight",
+   "blk.0.ffn_gate.weight",
+   "blk.0.ffn_up.weight",
+   "blk.1.ffn_down.weight",
+   "blk.1.ffn_gate.weight",
+   "blk.1.ffn_up.weight",
+   "blk.2.ffn_down.weight",
+   "blk.2.ffn_gate.weight",
+   "blk.2.ffn_up.weight",
+   "blk.3.ffn_down.weight",
+   "blk.3.ffn_gate.weight",
+   "blk.3.ffn_up.weight",
+   "blk.4.ffn_down.weight",
+   "blk.4.ffn_gate.weight",
+   "blk.4.ffn_up.weight",
+   "blk.5.ffn_down.weight",
+   "blk.5.ffn_gate.weight",
+   "blk.5.ffn_up.weight",
+   "blk.6.ffn_down.weight",
+   "blk.6.ffn_gate.weight"
+  ]
+ }
+}

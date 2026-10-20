@@ -1,0 +1,38 @@
+== d1g start 2026-10-17T03:40:02Z
+# hot experts from ~/a5v41b/imatrix.dat.expert-counts.tsv: 371 experts, 6.50 GiB (expert 18800640 B); in-sample share of routed reads on GPU 0.232
+P0: numa_balancing 0 demotion false
+# placement from ~/a5v41b/imatrix.dat.expert-counts.tsv: 6396 experts (111.99 GiB) on node 2, rest on node(s) 0,1
+# placement from ~/a5v41b/imatrix.dat.expert-counts.tsv: 6396 experts (111.99 GiB) on node 2, rest on node(s) 0,1
+# placement from ~/a5v41b/imatrix.dat.expert-counts.tsv: 6396 experts (111.99 GiB) on node 2, rest on node(s) 0,1
+== V4.1 from ~/models/v41-nfs/DeepSeek-V4.1-Flash-Q8_0-00001-of-00010.gguf
+node0 MemFree 83 GiB
+node1 MemFree 85 GiB
+{"arm": "d1g-v41-q2d-p0", "extra": "-cr 0-19 --numa numactl -dple --cpu-moe -md ~/models/drafts/DeepSeek-V4.1-Flash-DSpark-exps-Q2_K.gguf -ngld 99 -cd 4096 -draft -ncmoe 0 --no-mmap --spec-type dspark:n_max=4,conf_cum_min=0.5", "decode_tps": [7.98, 8.62, 7.53], "prefill_tps": [21.9, 23.7, 24.0], "n": [300, 300, 300], "resident_GiB_by_node": {"other_N0": 83.04, "other_N1": 68.85, "other_N2": 120.91}, "gpu_sm_busy_pct_mean": 11.5}
+== d1g-v41-q2d-p0 rc=0 04:22:18Z
+llama_expert_numa_apply: ~/optane-place/v41-n112-hot6p5.tsv: 120 expert tensors placed in 22362 ranges (0 skipped), 22100 straddle pages, 0.46 MiB left at tensor edges
+llama_expert_numa_apply:   node(s) 0,1      interleave   160721.4 MiB
+llama_expert_numa_apply:   node(s) 2        bind         114678.1 MiB
+llama_expert_numa_report: verified (1 page in 64): node0=84360.0MiB node1=68283.2MiB node2=123818.0MiB; 3.56% of sampled pages are off their target
+llama_hot_experts: ~/optane-place/v41-hot6p5.tsv: 371 hot experts in 40 layers, 6651.98 MiB on GPU, two-path for batches <= 8 tokens
+draft acceptance rate = 0.89837 (  221 accepted /   246 generated)
+draft acceptance rate = 0.93277 (  222 accepted /   238 generated)
+draft acceptance rate = 0.82627 (  195 accepted /   236 generated)
+node0 MemFree 86 GiB
+node1 MemFree 89 GiB
+{"arm": "d1g-v41-q2d-fb-p0", "extra": "-cr 0-19 --numa numactl -dple --cpu-moe -md ~/models/drafts/DeepSeek-V4.1-Flash-DSpark-exps-Q2_K.gguf -ngld 99 -cd 4096 -draft -ncmoe 0 --no-mmap --spec-type dspark:n_max=4,conf_cum_min=0.5", "decode_tps": [5.19, 6.32, 4.48], "prefill_tps": [13.4, 12.7, 14.3], "n": [300, 300, 300], "resident_GiB_by_node": {"other_N0": 85.18, "other_N1": 89.16, "other_N2": 98.46}, "gpu_sm_busy_pct_mean": 6.8}
+== d1g-v41-q2d-fb-p0 rc=0 04:55:43Z
+llama_hot_experts: ~/optane-place/v41-hot6p5.tsv: 371 hot experts in 40 layers, 6651.98 MiB on GPU, two-path for batches <= 8 tokens
+llama_hot_experts: ~/optane-place/v41-hot6p5.tsv:2 names expert 237 but this model has 128 experts; hot experts inactive for this model
+draft acceptance rate = 0.89837 (  221 accepted /   246 generated)
+draft acceptance rate = 0.93277 (  222 accepted /   238 generated)
+draft acceptance rate = 0.82627 (  195 accepted /   236 generated)
+node0 MemFree 86 GiB
+node1 MemFree 89 GiB
+{"arm": "d1g-v41-place12-p0", "extra": "-cr 0-19 --numa numactl -dple", "decode_tps": [7.44, 7.95, 7.7], "prefill_tps": [39.8, 36.7, 37.7], "n": [300, 300, 300], "resident_GiB_by_node": {"other_N0": 81.8, "other_N1": 72.35, "other_N2": 117.82}, "gpu_sm_busy_pct_mean": 15.1}
+== d1g-v41-place12-p0 rc=0 05:23:24Z
+llama_expert_numa_apply: ~/optane-place/v41-n112-hot12.tsv: 120 expert tensors placed in 22287 ranges (0 skipped), 22023 straddle pages, 0.46 MiB left at tensor edges
+llama_expert_numa_apply:   node(s) 0,1      interleave   160721.4 MiB
+llama_expert_numa_apply:   node(s) 2        bind         114678.1 MiB
+llama_expert_numa_report: verified (1 page in 64): node0=83349.2MiB node1=73177.2MiB node2=119933.2MiB; 2.16% of sampled pages are off their target
+llama_hot_experts: ~/optane-place/v41-hot12.tsv: 685 hot experts in 40 layers, 12281.90 MiB on GPU, two-path for batches <= 8 tokens
+== d1g done 2026-10-17T05:23:24Z

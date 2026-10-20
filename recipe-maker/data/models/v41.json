@@ -1,0 +1,202 @@
+{
+ "name": "DeepseekV41ForCausalLM",
+ "L": 40,
+ "layer_ids": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+  32,
+  33,
+  34,
+  35,
+  36,
+  37,
+  38,
+  39
+ ],
+ "E": 384,
+ "k": 6,
+ "P": 35389440,
+ "P_src": "HF deepseek-ai/DeepSeek-V4.1-Flash-1017@main config.json + 48 safetensors headers: 3 x hidden 5120 x expert_ff 2304",
+ "arch": {
+  "v": "deepseek_v41_text",
+  "tag": "READ",
+  "src": "HF deepseek-ai/DeepSeek-V4.1-Flash-1017@main config.json + 48 safetensors headers"
+ },
+ "hidden": {
+  "v": 5120,
+  "tag": "READ",
+  "src": "HF deepseek-ai/DeepSeek-V4.1-Flash-1017@main config.json + 48 safetensors headers"
+ },
+ "expert_ff": {
+  "v": 2304,
+  "tag": "READ",
+  "src": "HF deepseek-ai/DeepSeek-V4.1-Flash-1017@main config.json + 48 safetensors headers"
+ },
+ "n_shared": {
+  "v": 1,
+  "tag": "READ",
+  "src": "HF deepseek-ai/DeepSeek-V4.1-Flash-1017@main config.json + 48 safetensors headers"
+ },
+ "layers": {
+  "v": {
+   "main": 40,
+   "moe": 40,
+   "dense": [],
+   "linear_attention": []
+  },
+  "tag": "READ",
+  "src": "HF deepseek-ai/DeepSeek-V4.1-Flash-1017@main config.json + 48 safetensors headers"
+ },
+ "kv_bytes_per_token": {
+  "v": null,
+  "tag": "UNKNOWN",
+  "src": "per-layer KV compression ([0, 1, 2]) + sliding window 128: the cache size depends on the engine layout; not derived from config.json"
+ },
+ "mtp": {
+  "v": {
+   "layers_config": 3,
+   "in_this_source": true,
+   "gib": 7.388
+  },
+  "tag": "READ",
+  "src": "HF deepseek-ai/DeepSeek-V4.1-Flash-1017@main config.json + 48 safetensors headers"
+ },
+ "draft_heads": {
+  "v": "DSpark draft config in config.json: 128 routed experts, top-3, block 5, target layers [37, 38, 39]",
+  "tag": "READ",
+  "src": "HF deepseek-ai/DeepSeek-V4.1-Flash-1017@main config.json + 48 safetensors headers"
+ },
+ "intake": {
+  "source": "HF deepseek-ai/DeepSeek-V4.1-Flash-1017@main config.json + 48 safetensors headers",
+  "tag": "READ",
+  "files": 48,
+  "total_gib": 475.241,
+  "gib_by_class": {
+   "attention": 4.798,
+   "embedding": 1.233,
+   "engram": 0.293,
+   "engram_table": 188.833,
+   "expert_down": 89.648,
+   "expert_gate": 89.648,
+   "expert_up": 89.648,
+   "hyper_connection": 0.146,
+   "mtp": 7.388,
+   "norm": 0.0,
+   "output": 1.233,
+   "router": 0.147,
+   "shared_expert": 1.32,
+   "vision": 0.904
+  },
+  "bytes_by_class": {
+   "attention": {
+    "BF16": 40403968,
+    "F32": 10240,
+    "F8_E4M3": 5106565120,
+    "F8_E8M0": 4986880
+   },
+   "embedding": {
+    "BF16": 1323827200
+   },
+   "engram": {
+    "BF16": 163840,
+    "F8_E4M3": 314572800,
+    "F8_E8M0": 307200
+   },
+   "engram_table": {
+    "F8_E4M3": 196613849600,
+    "F8_E8M0": 6144182800
+   },
+   "expert_down": {
+    "F8_E8M0": 5662310400,
+    "I8": 90596966400
+   },
+   "expert_gate": {
+    "F8_E8M0": 5662310400,
+    "I8": 90596966400
+   },
+   "expert_up": {
+    "F8_E8M0": 5662310400,
+    "I8": 90596966400
+   },
+   "hyper_connection": {
+    "F32": 157295040
+   },
+   "mtp": {
+    "BF16": 136418304,
+    "F32": 11800968,
+    "F8_E4M3": 564658176,
+    "F8_E8M0": 425224704,
+    "I8": 6794772480
+   },
+   "norm": {
+    "BF16": 419840
+   },
+   "output": {
+    "BF16": 1323827200
+   },
+   "router": {
+    "BF16": 157286400,
+    "F32": 122880
+   },
+   "shared_expert": {
+    "F8_E4M3": 1415577600,
+    "F8_E8M0": 1382400
+   },
+   "vision": {
+    "BF16": 970536960
+   }
+  },
+  "experts_gib": 268.945,
+  "dense_gib": 7.938,
+  "lookup_gib": {
+   "engram_table": 188.833,
+   "embedding": 1.233
+  },
+  "expert_types": {
+   "expert_down": {
+    "F8_E8M0": 5.273,
+    "I8": 84.375
+   },
+   "expert_gate": {
+    "F8_E8M0": 5.273,
+    "I8": 84.375
+   },
+   "expert_up": {
+    "F8_E8M0": 5.273,
+    "I8": 84.375
+   }
+  },
+  "unclassified": [],
+  "expert_bpw": 4.25
+ }
+}

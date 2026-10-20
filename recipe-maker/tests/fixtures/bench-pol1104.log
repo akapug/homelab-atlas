@@ -1,0 +1,11 @@
+{"prompt": 0, "rep": 0, "ttft_s": 4.7243392009986565, "decode_tps": 17.561275393572934, "e2e_tps": 13.792826046340368, "prefill_tps_proxy": 14.39354735274423, "finish": "length", "usage": {"prompt_tokens": 68, "completion_tokens": 300, "total_tokens": 368}, "loadavg_after": ["8.88", "3.50", "3.15"]}
+{"prompt": 1, "rep": 0, "ttft_s": 4.521761951036751, "decode_tps": 16.6924687469195, "e2e_tps": 13.372540718130162, "prefill_tps_proxy": 14.374927451697623, "finish": "length", "usage": {"prompt_tokens": 65, "completion_tokens": 300, "total_tokens": 365}, "loadavg_after": ["11.33", "4.41", "3.46"]}
+{"prompt": 2, "rep": 0, "ttft_s": 4.782067533989903, "decode_tps": 17.34594198089972, "e2e_tps": 13.624269851344021, "prefill_tps_proxy": 32.41275847701721, "finish": "length", "usage": {"prompt_tokens": 155, "completion_tokens": 300, "total_tokens": 455}, "loadavg_after": ["11.94", "4.97", "3.66"]}
+{"prompt": 0, "rep": 1, "ttft_s": 4.529761592973955, "decode_tps": 17.42776779253109, "e2e_tps": 13.833624589786346, "prefill_tps_proxy": 15.011827577299824, "finish": "length", "usage": {"prompt_tokens": 68, "completion_tokens": 300, "total_tokens": 368}, "loadavg_after": ["12.98", "5.75", "3.95"]}
+{"prompt": 1, "rep": 1, "ttft_s": 4.5319855499546975, "decode_tps": 16.867223007451976, "e2e_tps": 13.477892070730816, "prefill_tps_proxy": 14.342499393152247, "finish": "length", "usage": {"prompt_tokens": 65, "completion_tokens": 300, "total_tokens": 365}, "loadavg_after": ["13.65", "6.34", "4.18"]}
+{"prompt": 2, "rep": 1, "ttft_s": 4.539807708002627, "decode_tps": 16.967450455031294, "e2e_tps": 13.53681669770931, "prefill_tps_proxy": 34.14241526723059, "finish": "length", "usage": {"prompt_tokens": 155, "completion_tokens": 300, "total_tokens": 455}, "loadavg_after": ["15.06", "7.22", "4.53"]}
+{"prefill_rep": 0, "prompt_tokens": 12694, "ttft_s": 22.070040509977844, "prefill_tps_proxy": 575.1688581750022, "decode_tps": 19.265561424243906}
+{"prefill_rep": 1, "prompt_tokens": 12694, "ttft_s": 4.542213557986543, "prefill_tps_proxy": 2794.672649787729, "decode_tps": 19.407130530118145}
+{"c8_aggregate_tps": 14.187817005351187, "tokens": 2400, "span_s": 169.15921590296784, "per_stream_decode": [3.7, 3.7, 3.7, 4.49, 3.51, 4.49, 4.5, 4.49]}
+C1 decode median 17.35 min 16.69 max 17.56 over 6
+stopped glm53-sa-pol-1104

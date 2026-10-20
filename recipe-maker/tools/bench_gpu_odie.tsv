@@ -1,0 +1,6 @@
+# label	kind	model path (inside the container: odie /mnt/bulk/models mounted at /models)
+qwen3-1.7b-q8_0	dense	/models/small-parity/Qwen3-1.7B-Q8_0.gguf
+ha8b-q4_k_m	dense	/models/hybridagent/gguf/ha8b-q4_k_m.gguf
+ha8b-q8_0	dense	/models/hybridagent/gguf/ha8b-q8_0.gguf
+gpt-oss-20b-mxfp4	moe	/models/gpt-oss-20b-GGUF/gpt-oss-20b-MXFP4.gguf
+qwen3-30b-a3b-q4_k_s	moe	/models/Qwen3-30B-A3B-GGUF/Qwen3-30B-A3B-Q4_K_S.gguf

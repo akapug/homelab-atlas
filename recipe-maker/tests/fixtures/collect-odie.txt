@@ -1,0 +1,723 @@
+@@meta
+hostname=odie
+time=2026-10-17T20:27:43Z
+kernel=7.0.0-38-generic
+sudo=yes
+@@cpuinfo
+processor	: 0
+physical id	: 0
+core id		: 0
+processor	: 1
+physical id	: 0
+core id		: 1
+processor	: 2
+physical id	: 0
+core id		: 2
+processor	: 3
+physical id	: 0
+core id		: 4
+processor	: 4
+physical id	: 0
+core id		: 5
+processor	: 5
+physical id	: 0
+core id		: 6
+processor	: 6
+physical id	: 0
+core id		: 8
+processor	: 7
+physical id	: 0
+core id		: 9
+processor	: 8
+physical id	: 0
+core id		: 10
+processor	: 9
+physical id	: 0
+core id		: 12
+processor	: 10
+physical id	: 0
+core id		: 13
+processor	: 11
+physical id	: 0
+core id		: 14
+processor	: 12
+physical id	: 0
+core id		: 16
+processor	: 13
+physical id	: 0
+core id		: 17
+processor	: 14
+physical id	: 0
+core id		: 18
+processor	: 15
+physical id	: 0
+core id		: 20
+processor	: 16
+physical id	: 0
+core id		: 21
+processor	: 17
+physical id	: 0
+core id		: 22
+processor	: 18
+physical id	: 0
+core id		: 24
+processor	: 19
+physical id	: 0
+core id		: 25
+processor	: 20
+physical id	: 0
+core id		: 26
+processor	: 21
+physical id	: 0
+core id		: 28
+processor	: 22
+physical id	: 0
+core id		: 29
+processor	: 23
+physical id	: 0
+core id		: 30
+processor	: 24
+physical id	: 0
+core id		: 0
+processor	: 25
+physical id	: 0
+core id		: 1
+processor	: 26
+physical id	: 0
+core id		: 2
+processor	: 27
+physical id	: 0
+core id		: 4
+processor	: 28
+physical id	: 0
+core id		: 5
+processor	: 29
+physical id	: 0
+core id		: 6
+processor	: 30
+physical id	: 0
+core id		: 8
+processor	: 31
+physical id	: 0
+core id		: 9
+processor	: 32
+physical id	: 0
+core id		: 10
+processor	: 33
+physical id	: 0
+core id		: 12
+processor	: 34
+physical id	: 0
+core id		: 13
+processor	: 35
+physical id	: 0
+core id		: 14
+processor	: 36
+physical id	: 0
+core id		: 16
+processor	: 37
+physical id	: 0
+core id		: 17
+processor	: 38
+physical id	: 0
+core id		: 18
+processor	: 39
+physical id	: 0
+core id		: 20
+processor	: 40
+physical id	: 0
+core id		: 21
+processor	: 41
+physical id	: 0
+core id		: 22
+processor	: 42
+physical id	: 0
+core id		: 24
+processor	: 43
+physical id	: 0
+core id		: 25
+processor	: 44
+physical id	: 0
+core id		: 26
+processor	: 45
+physical id	: 0
+core id		: 28
+processor	: 46
+physical id	: 0
+core id		: 29
+processor	: 47
+physical id	: 0
+core id		: 30
+model name: AMD Ryzen Threadripper 3960X 24-Core Processor
+flags: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 hw_pstate ssbd mba ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 cqm rdt_a rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local clzero irperf xsaveerptr rdpru wbnoinvd arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif v_spec_ctrl umip rdpid overflow_recov succor smca sev sev_es
+online: 0-47
+Cpus_allowed_list:	0-21,24-45
+@@nodes
+node=0 cpus=0-47
+Node 0 MemTotal:       127302208 kB
+Node 0 MemFree:         1258512 kB
+@@meminfo
+MemTotal:       127302208 kB
+MemFree:         1258004 kB
+MemAvailable:   77590012 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+@@sysctl
+numa_balancing=0
+demotion_enabled=false
+thp_enabled=always [madvise] never
+thp_defrag=always defer defer+madvise [madvise] never
+swappiness=60
+@@swaps
+Filename				Type		Size		Used		Priority
+@@dax
+@@nd
+@@dmidecode
+Handle 0x000B, DMI type 16, 23 bytes
+	Maximum Capacity: 512 GB
+	Number Of Devices: 8
+Handle 0x0013, DMI type 17, 84 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: Unknown
+	Locator: DIMM 0
+	Bank Locator: P0 CHANNEL A
+	Type: Unknown
+Handle 0x0015, DMI type 17, 84 bytes
+Memory Device
+	Size: 32 GB
+	Form Factor: DIMM
+	Locator: DIMM 1
+	Bank Locator: P0 CHANNEL A
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 2
+	Configured Memory Speed: 3200 MT/s
+	Memory Technology: DRAM
+Handle 0x0018, DMI type 17, 84 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: Unknown
+	Locator: DIMM 0
+	Bank Locator: P0 CHANNEL B
+	Type: Unknown
+Handle 0x001A, DMI type 17, 84 bytes
+Memory Device
+	Size: 32 GB
+	Form Factor: DIMM
+	Locator: DIMM 1
+	Bank Locator: P0 CHANNEL B
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 2
+	Configured Memory Speed: 3200 MT/s
+	Memory Technology: DRAM
+Handle 0x001D, DMI type 17, 84 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: Unknown
+	Locator: DIMM 0
+	Bank Locator: P0 CHANNEL C
+	Type: Unknown
+Handle 0x001F, DMI type 17, 84 bytes
+Memory Device
+	Size: 32 GB
+	Form Factor: DIMM
+	Locator: DIMM 1
+	Bank Locator: P0 CHANNEL C
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 2
+	Configured Memory Speed: 3200 MT/s
+	Memory Technology: DRAM
+Handle 0x0022, DMI type 17, 84 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: Unknown
+	Locator: DIMM 0
+	Bank Locator: P0 CHANNEL D
+	Type: Unknown
+Handle 0x0024, DMI type 17, 84 bytes
+Memory Device
+	Size: 32 GB
+	Form Factor: DIMM
+	Locator: DIMM 1
+	Bank Locator: P0 CHANNEL D
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 2
+	Configured Memory Speed: 3200 MT/s
+	Memory Technology: DRAM
+@@nvidia
+@@!nvidia nvidia-smi not installed
+@@xpu
+@@xpu_dev 0
+{
+    "core_clock_rate": "2800 MHz",
+    "device_id": 0,
+    "device_name": "Intel(R) Graphics [0xe223]",
+    "device_state": "normal",
+    "device_stepping": "A0",
+    "device_type": "Discrete GPU",
+    "driver_version": "17010844",
+    "drm_device": "/dev/dri/card0",
+    "gfx_data_firmware_name": "GFX_DATA",
+    "gfx_data_firmware_version": "",
+    "gfx_firmware_name": "GFX",
+    "gfx_firmware_status": "normal",
+    "gfx_firmware_version": "",
+    "kernel_version": "7.0.0-38-generic",
+    "max_command_queue_priority": "0",
+    "max_hardware_contexts": "65536",
+    "max_mem_alloc_size_byte": "32530182144",
+    "memory_bus_width": "4294967295",
+    "memory_ecc_state": "disabled",
+    "memory_free_size_byte": "4235137024",
+    "memory_physical_size": "32656.00 MiB",
+    "memory_physical_size_byte": 34242297856,
+    "number_of_eus": 256,
+    "number_of_eus_per_sub_slice": "8",
+    "number_of_media_engines": "0",
+    "number_of_media_enh_engines": "0",
+    "number_of_memory_channels": "4294967295",
+    "number_of_slices": "8",
+    "number_of_sub_slices_per_slice": "4",
+    "number_of_threads_per_eu": "8",
+    "number_of_tiles": 1,
+    "oam_socket_id": "N/A",
+    "pci_bdf_address": "0000:23:00.0",
+    "pci_device_id": "0xe223",
+    "pci_slot": "",
+    "pci_vendor_id": "0x8086",
+    "pcie_generation": "N/A",
+    "pcie_max_bandwidth": "N/A",
+    "pcie_max_link_width": "N/A",
+    "physical_eu_simd_width": "16",
+    "serial_number": "unknown",
+    "sku_type": "Production ES",
+    "uuid": "00000000-0000-0023-0000-0000e2238086",
+    "vendor_name": "Intel(R) Corporation"
+}
+@@xpu_dev 1
+{
+    "core_clock_rate": "2800 MHz",
+    "device_id": 1,
+    "device_name": "Intel(R) Graphics [0xe223]",
+    "device_state": "normal",
+    "device_stepping": "A0",
+    "device_type": "Discrete GPU",
+    "driver_version": "17010844",
+    "drm_device": "/dev/dri/card1",
+    "gfx_data_firmware_name": "GFX_DATA",
+    "gfx_data_firmware_version": "",
+    "gfx_firmware_name": "GFX",
+    "gfx_firmware_status": "normal",
+    "gfx_firmware_version": "",
+    "kernel_version": "7.0.0-38-generic",
+    "max_command_queue_priority": "0",
+    "max_hardware_contexts": "65536",
+    "max_mem_alloc_size_byte": "32530182144",
+    "memory_bus_width": "4294967295",
+    "memory_ecc_state": "disabled",
+    "memory_free_size_byte": "32292769792",
+    "memory_physical_size": "32656.00 MiB",
+    "memory_physical_size_byte": 34242297856,
+    "number_of_eus": 256,
+    "number_of_eus_per_sub_slice": "8",
+    "number_of_media_engines": "0",
+    "number_of_media_enh_engines": "0",
+    "number_of_memory_channels": "4294967295",
+    "number_of_slices": "8",
+    "number_of_sub_slices_per_slice": "4",
+    "number_of_threads_per_eu": "8",
+    "number_of_tiles": 1,
+    "oam_socket_id": "N/A",
+    "pci_bdf_address": "0000:4c:00.0",
+    "pci_device_id": "0xe223",
+    "pci_slot": "",
+    "pci_vendor_id": "0x8086",
+    "pcie_generation": "N/A",
+    "pcie_max_bandwidth": "N/A",
+    "pcie_max_link_width": "N/A",
+    "physical_eu_simd_width": "16",
+    "serial_number": "unknown",
+    "sku_type": "Production ES",
+    "uuid": "00000000-0000-004c-0000-0000e2238086",
+    "vendor_name": "Intel(R) Corporation"
+}
+@@drm
+card=card0 pci=0000:23:00.0 path=/sys/devices/pci0000:20/0000:20:03.1/0000:21:00.0/0000:22:01.0/0000:23:00.0 vendor=0x8086 device=0xe223 class=0x030000 driver=xe boot_vga=1 vram_total= vram_used= vram_vendor= ep_speed=2.5_GT/s_PCIe ep_width=1 ep_max_speed=2.5_GT/s_PCIe ep_max_width=1 rootport=0000:20:03.1 rp_speed=16.0_GT/s_PCIe rp_width=16 rp_max_speed=16.0_GT/s_PCIe rp_max_width=16
+card=card1 pci=0000:4c:00.0 path=/sys/devices/pci0000:40/0000:40:03.1/0000:4a:00.0/0000:4b:01.0/0000:4c:00.0 vendor=0x8086 device=0xe223 class=0x030000 driver=xe boot_vga=0 vram_total= vram_used= vram_vendor= ep_speed=2.5_GT/s_PCIe ep_width=1 ep_max_speed=2.5_GT/s_PCIe ep_max_width=1 rootport=0000:40:03.1 rp_speed=16.0_GT/s_PCIe rp_width=16 rp_max_speed=16.0_GT/s_PCIe rp_max_width=16
+@@mounts
+/run tmpfs tmpfs 26071494656 26068176896 
+/ /dev/nvme0n1p5 ext4 823676641280 152004046848 9d28f1d4-937c-44c2-9eb6-756b009add1a
+/dev devtmpfs devtmpfs 55784005632 55784005632 
+/dev/shm tmpfs tmpfs 65178730496 65172877312 
+/dev/pts devpts devpts 0 0 
+/sys sysfs sysfs 0 0 
+/sys/kernel/security securityfs securityfs 0 0 
+/sys/fs/cgroup cgroup2 cgroup2 0 0 
+/sys/fs/pstore none pstore 0 0 
+/sys/firmware/efi/efivars efivarfs efivarfs 131072 114920 
+/sys/fs/bpf bpf bpf 0 0 
+/sys/kernel/config configfs configfs 0 0 
+/proc proc proc 0 0 
+/proc/sys/fs/binfmt_misc systemd-1 autofs 0 0 
+/sys/kernel/debug debugfs debugfs 0 0 
+/dev/mqueue mqueue mqueue 0 0 
+/sys/kernel/tracing tracefs tracefs 0 0 
+/dev/hugepages hugetlbfs hugetlbfs 0 0 
+/tmp tmpfs tmpfs 65178730496 58863894528 
+/run/credentials/systemd-journald.service none tmpfs 1048576 1048576 
+/sys/fs/fuse/connections fusectl fusectl 0 0 
+/run/credentials/systemd-resolved.service none tmpfs 1048576 1048576 
+/snap/core24/1643 /dev/loop0 squashfs 70123520 0 
+/snap/hwctl/123 /dev/loop2 squashfs 1703936 0 
+/snap/core24/2124 /dev/loop1 squashfs 70123520 0 
+/snap/hwctl/131 /dev/loop3 squashfs 1703936 0 
+/snap/snapd/27710 /dev/loop4 squashfs 52559872 0 
+/snap/snapd/28254 /dev/loop5 squashfs 46923776 0 
+/boot/efi /dev/nvme0n1p1 vfat 205520896 149045248 FE82-2E56
+/models /dev/nvme1n1p1 ext4 1967846068224 525975044096 aa7bd7f9-1c17-4f68-b14f-76fca16083be
+/mnt/models-cache /dev/sdc1 ext4 2046985015296 672545775616 2a5c3505-89b6-443e-a8bd-4de0b68ae823
+/run/credentials/systemd-networkd.service none tmpfs 1048576 1048576 
+/mnt/seagate750 /dev/sde1 ext4 737230651392 281787183104 c9cb5439-da51-492f-8109-fdc851ebef2b
+/proc/sys/fs/binfmt_misc binfmt_misc binfmt_misc 0 0 
+/run/user/1000 tmpfs tmpfs 13035745280 13035560960 
+/var/lib/docker/rootfs/overlayfs/59523de2cb7417c3f6e31479a9b5b28463155a2b769b6efd5a675561831d544f overlay overlay   
+/run/docker/netns/default nsfs[net:[4026531833]] nsfs   
+/var/lib/docker/rootfs/overlayfs/ff73cb9eb7c0b3af63055b72ef77cf19db396b1781b24386cb73d9e979ef76ac overlay overlay   
+/var/lib/docker/rootfs/overlayfs/5dfb3aac1540a26d73f8d05684bf64b9a151b09ce3fa2786a2c4cc22b26f6421 overlay overlay   
+/var/lib/docker/rootfs/overlayfs/952e08138d7564eafa853857f41f3524b8702827e74f05b9c1899a9617355816 overlay overlay   
+/run/docker/netns/b79673f9165f nsfs[net:[4026535067]] nsfs   
+/run/docker/netns/9bbff1e8569b nsfs[net:[4026535124]] nsfs   
+/var/lib/docker/rootfs/overlayfs/16bd666a87656b8b126b548f4b0bc962d3201694cdf1e6d1e3bbf596582b3725 overlay overlay   
+/mnt/bulk /dev/sdb1 btrfs 8001562152960 2014690213888 721f5918-9c07-4d45-ad91-eab031c96cec
+/run/credentials/getty@tty1.service none tmpfs 1048576 1048576 
+/run/rpc_pipefs sunrpc rpc_pipefs 0 0 
+/proc/fs/nfsd nfsd nfsd 0 0 
+@@lsblk
+{
+   "blockdevices": [
+      {
+         "name": "loop0",
+         "kname": "loop0",
+         "path": "/dev/loop0",
+         "size": 70049792,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/core24/1643"
+      },{
+         "name": "loop1",
+         "kname": "loop1",
+         "path": "/dev/loop1",
+         "size": 70033408,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/core24/2124"
+      },{
+         "name": "loop2",
+         "kname": "loop2",
+         "path": "/dev/loop2",
+         "size": 1581056,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/hwctl/123"
+      },{
+         "name": "loop3",
+         "kname": "loop3",
+         "path": "/dev/loop3",
+         "size": 1581056,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/hwctl/131"
+      },{
+         "name": "loop4",
+         "kname": "loop4",
+         "path": "/dev/loop4",
+         "size": 52535296,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/snapd/27710"
+      },{
+         "name": "loop5",
+         "kname": "loop5",
+         "path": "/dev/loop5",
+         "size": 46882816,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/snapd/28254"
+      },{
+         "name": "sda",
+         "kname": "sda",
+         "path": "/dev/sda",
+         "size": 8001563222016,
+         "type": "disk",
+         "rota": true,
+         "tran": "sata",
+         "model": "ST8000DM004-2U91",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "sda1",
+               "kname": "sda1",
+               "path": "/dev/sda1",
+               "size": 8001562156544,
+               "type": "part",
+               "rota": true,
+               "tran": null,
+               "model": null,
+               "fstype": "btrfs",
+               "uuid": "721f5918-9c07-4d45-ad91-eab031c96cec",
+               "mountpoint": null
+            }
+         ]
+      },{
+         "name": "sdb",
+         "kname": "sdb",
+         "path": "/dev/sdb",
+         "size": 8001563222016,
+         "type": "disk",
+         "rota": true,
+         "tran": "sata",
+         "model": "ST8000DM004-2U91",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "sdb1",
+               "kname": "sdb1",
+               "path": "/dev/sdb1",
+               "size": 8001562156544,
+               "type": "part",
+               "rota": true,
+               "tran": null,
+               "model": null,
+               "fstype": "btrfs",
+               "uuid": "721f5918-9c07-4d45-ad91-eab031c96cec",
+               "mountpoint": "/mnt/bulk"
+            }
+         ]
+      },{
+         "name": "sdc",
+         "kname": "sdc",
+         "path": "/dev/sdc",
+         "size": 2048408248320,
+         "type": "disk",
+         "rota": true,
+         "tran": "usb",
+         "model": "                ",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "sdc1",
+               "kname": "sdc1",
+               "path": "/dev/sdc1",
+               "size": 2048407182848,
+               "type": "part",
+               "rota": true,
+               "tran": null,
+               "model": null,
+               "fstype": "ext4",
+               "uuid": "2a5c3505-89b6-443e-a8bd-4de0b68ae823",
+               "mountpoint": "/mnt/models-cache"
+            }
+         ]
+      },{
+         "name": "sdd",
+         "kname": "sdd",
+         "path": "/dev/sdd",
+         "size": 136952414208,
+         "type": "disk",
+         "rota": true,
+         "tran": "usb",
+         "model": "USB 3.0 FD",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "sdd1",
+               "kname": "sdd1",
+               "path": "/dev/sdd1",
+               "size": 136952381440,
+               "type": "part",
+               "rota": true,
+               "tran": null,
+               "model": null,
+               "fstype": "ext4",
+               "uuid": "2af6f892-533e-4299-8695-e70128c1ac57",
+               "mountpoint": null
+            }
+         ]
+      },{
+         "name": "sde",
+         "kname": "sde",
+         "path": "/dev/sde",
+         "size": 750156374016,
+         "type": "disk",
+         "rota": true,
+         "tran": "usb",
+         "model": "ST750LX003-1AC154",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "sde1",
+               "kname": "sde1",
+               "path": "/dev/sde1",
+               "size": 750155325440,
+               "type": "part",
+               "rota": true,
+               "tran": null,
+               "model": null,
+               "fstype": "ext4",
+               "uuid": "c9cb5439-da51-492f-8109-fdc851ebef2b",
+               "mountpoint": "/mnt/seagate750"
+            }
+         ]
+      },{
+         "name": "nvme0n1",
+         "kname": "nvme0n1",
+         "path": "/dev/nvme0n1",
+         "size": 1000204886016,
+         "type": "disk",
+         "rota": false,
+         "tran": "nvme",
+         "model": "WDBRPG0010BNC-WRSN",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "nvme0n1p1",
+               "kname": "nvme0n1p1",
+               "path": "/dev/nvme0n1p1",
+               "size": 209715200,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "vfat",
+               "uuid": "FE82-2E56",
+               "mountpoint": "/boot/efi"
+            },{
+               "name": "nvme0n1p2",
+               "kname": "nvme0n1p2",
+               "path": "/dev/nvme0n1p2",
+               "size": 16777216,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": null,
+               "uuid": null,
+               "mountpoint": null
+            },{
+               "name": "nvme0n1p3",
+               "kname": "nvme0n1p3",
+               "path": "/dev/nvme0n1p3",
+               "size": 161061273600,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "ntfs",
+               "uuid": "F04A83664A832884",
+               "mountpoint": null
+            },{
+               "name": "nvme0n1p4",
+               "kname": "nvme0n1p4",
+               "path": "/dev/nvme0n1p4",
+               "size": 935329792,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "ntfs",
+               "uuid": "B0D8CE9ED8CE61E8",
+               "mountpoint": null
+            },{
+               "name": "nvme0n1p5",
+               "kname": "nvme0n1p5",
+               "path": "/dev/nvme0n1p5",
+               "size": 837978947584,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "ext4",
+               "uuid": "9d28f1d4-937c-44c2-9eb6-756b009add1a",
+               "mountpoint": "/"
+            }
+         ]
+      },{
+         "name": "nvme1n1",
+         "kname": "nvme1n1",
+         "path": "/dev/nvme1n1",
+         "size": 2000398934016,
+         "type": "disk",
+         "rota": false,
+         "tran": "nvme",
+         "model": "WD_BLACK SN850X 2000GB",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "nvme1n1p1",
+               "kname": "nvme1n1p1",
+               "path": "/dev/nvme1n1p1",
+               "size": 2000397868544,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "ext4",
+               "uuid": "aa7bd7f9-1c17-4f68-b14f-76fca16083be",
+               "mountpoint": "/models"
+            }
+         ]
+      }
+   ]
+}
+@@btrfs
+uuid=721f5918-9c07-4d45-ad91-eab031c96cec members=sda1 sdb1 
+@@loop
+dev=loop0 backing=/var/lib/snapd/snaps/core24_1643.snap
+dev=loop1 backing=/var/lib/snapd/snaps/core24_2124.snap
+dev=loop2 backing=/var/lib/snapd/snaps/hwctl_123.snap
+dev=loop3 backing=/var/lib/snapd/snaps/hwctl_131.snap
+dev=loop4 backing=/var/lib/snapd/snaps/snapd_27710.snap
+dev=loop5 backing=/var/lib/snapd/snaps/snapd_28254.snap
+@@end

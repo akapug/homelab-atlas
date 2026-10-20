@@ -1,0 +1,6 @@
+# label	kind	model path (droopy)
+qwen3-1.7b-q8_0	dense	/mnt/datadrive1/models/dense-ladder/Qwen3-1.7B-Q8_0.gguf
+ha8b-q4_k_m	dense	/mnt/datadrive1/models/dense-ladder/ha8b-q4_k_m.gguf
+ha8b-q8_0	dense	/mnt/datadrive1/models/dense-ladder/ha8b-q8_0.gguf
+gpt-oss-20b-mxfp4	moe	/mnt/datadrive1/models/moe-overhead/gpt-oss-20b-MXFP4.gguf
+qwen3-30b-a3b-q4_k_s	moe	/mnt/datadrive1/models/moe-overhead/Qwen3-30B-A3B-Q4_K_S.gguf

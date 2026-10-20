@@ -1,0 +1,57 @@
+{
+ "kind": "dllm",
+ "id": "odie-dllm-llada22flash-2xb70-perpair-lev-s-fuse",
+ "label": "plan: LLaDA2.2-flash Q4_0 on both B70s (layer split), per-pair MoE kernel, --lev S thresholds, fuse mode, fixed prompts (the held-out run as a recipe)",
+ "box": "odie",
+ "model": "llada22flash",
+ "engine": "llama-dllm-gen",
+ "engine_build": "llama-dllm-15000de5d352",
+ "backend": "sycl",
+ "moe_path": "per-pair",
+ "cards": [
+  "b70_1",
+  "b70_2"
+ ],
+ "quant": "q4_0",
+ "decoder": "llada22-lev",
+ "schedule": {
+  "name": "lev-s-fuse",
+  "mode": "fuse",
+  "thr": 0.5,
+  "edit_thr": 0.0,
+  "device_argmax": false,
+  "lev": true,
+  "block": 32,
+  "steps": 32,
+  "max_post": 16,
+  "args": "--lev --thr 0.5 --edit-thr 0.0 --mode fuse"
+ },
+ "block": 32,
+ "workload": "fixed4x256",
+ "placement": "all_gpu",
+ "ctx": 512,
+ "conditions": {
+  "ctx": 512,
+  "kv_type": "f16, block-causal block KV (llama_kv_cache_block)",
+  "draft_n": 0,
+  "sampling": {
+   "temperature": 0,
+   "set_by": "llama-dllm-gen greedy argmax (no sampler)"
+  },
+  "reasoning_effort": "thinking off: the model chat template default (LLaDA2/Ling thinking_option 'off'), applied by llama-dllm-gen; no request sets it",
+  "workload": {
+   "key": "fixed4x256",
+   "prompt_kind": "4 fixed prompts (code_fib, math, code_crc, explain), one chat user message each",
+   "cached_depth": 0,
+   "gen_tokens": 256,
+   "eos_stop": false
+  },
+  "env": "none",
+  "cards": [
+   "b70_1",
+   "b70_2"
+  ],
+  "placement": "all_gpu"
+ },
+ "src": "from ledger row odie-dllm-n1p-flash2-q4-lev-s-fuse (tools/record_dllm.py)"
+}

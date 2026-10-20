@@ -1,0 +1,38 @@
+{
+ "about": "Per-model, per-layer sensitivity maps (the layer map). Each band names model layer ids (GGUF blk.N; models.<m>.layer_ids maps them to planner layers) and either a value with its provenance (tag MEASURED = ours, CLAIMED = someone else's published figure with a url, INFERRED-BY-US = derived by us) or fit: true (the planner fits the band from our measured quality points, src/model.js layerMap). A layer in no band is UNKNOWN, never zero. The value unit is the model's own 'unit' (for GLM: Maya's KL to the full model when that band alone keeps 5 routed experts). build.py copies this file to data.layer_maps.",
+ "settings": {
+  "trim_min_keep": {"v": 4, "tag": "CLAIMED", "src": "CLAIMED Maya SETTINGS.md TRUNK_KEEP_MAP (abc09c7): keep 4 on layers 30-44 is the deepest trim they measured; deeper is extrapolation, so the trim proposer stops at 4", "url": "https://github.com/mw00/project-maya/blob/abc09c7/lab notes"},
+  "plan_margin": {"v": "max_residual", "tag": "INFERRED-BY-US", "src": "INFERRED: a layout the planner proposes from the map keeps its predicted KL below the bar by the largest KL residual of the map's own calibration points, and its predicted top-1 above the bar by the largest top-1 residual (the map is an inference; the margin is its measured miss)"}
+ },
+ "models": {
+  "glm": {
+   "unit": "KL to the full model when the band alone keeps 5 of 8 routed experts for experts not in VRAM (Maya-M, Maya's KL scale)",
+   "trim": {
+    "ref_keep": 5,
+    "ref_miss_share": {"v": 0.5, "tag": "INFERRED-BY-US", "src": "INFERRED: Maya's per-band KL was measured with Maya-M (116 GB) on a 3090 + 3060 (36 GB VRAM), so about half of the routed picks miss VRAM; their miss share is not published. Our snoopy k2e layout serves 51 % of reads from the GPU banks (planner tiers)"},
+    "transfer": {"v": 1.12, "tag": "MEASURED", "src": "MEASURED lab notes (2026-10-20, snoopy k2e s1w, decode KL vs EXL3-3.05 exact, 928 positions): least squares through 0 of the served trim KL (served minus lane-only 0.00446) on the map's trim KL at transfer 1, three runs: A keep 7 on 26 + keep 4 on 27-44 measured 0.01481 vs 0.0124 (x1.19), B keep 5 on 27-44 0.00585 vs 0.0088 (x0.66), C keep 4 on 29-44 0.01096 vs 0.00657 (x1.67). The trim KL is convex in the dropped rank (keep 4 costs well over the linear 4/3 of keep 5), which the per-rank linear map does not model: a single factor leaves about 0.004 KL residual, so keep-4 points still read optimistic", "runs": ["snoopy-glm-glm-coder-s1w-trim-a", "snoopy-glm-glm-coder-s1w-trim-b", "snoopy-glm-glm-coder-s1w-trim-c"]},
+    "top1_per_kl": {"v": 1.49, "tag": "MEASURED", "src": "MEASURED lab notes: top-1 lost per unit of served trim KL, least squares through 0 over runs A (0.9914 -> 0.96875 at trim KL 0.01481: 1.53), B (0.9838 at 0.00585: 1.30) and C (0.9752 at 0.01096: 1.48). The 2-bit line costs about 0.81 top-1 per KL: a trim drops whole expert picks, which flips the argmax faster than low-bit error does. mapQuality uses this rate for the trim part", "runs": ["snoopy-glm-glm-coder-s1w-trim-a", "snoopy-glm-glm-coder-s1w-trim-b", "snoopy-glm-glm-coder-s1w-trim-c"]},
+    "rank_drop": "keep n drops ranks n..k-1 of the picks that miss VRAM: (k - n) / k of those picks (INFERRED: miss independent of rank)",
+    "engines": {"glmlite": {"status": "yes", "src": "glm53-lane expert-trim e1160e7 (GLM53_NV_TRIM_KEEP, /nv_trim runtime switch; decode picks that miss VRAM, no renorm; 17 CPU tests OK in the serving image 2026-10-20), measured in lab notes runs A and B"}}
+   },
+   "bands": [
+    {"layers": [3, 7], "kl": 0.040, "tag": "CLAIMED", "src": "CLAIMED Maya SETTINGS.md TRUNK_KEEP_MAP / MISS_SKIP_W rows (abc09c7): GLM-5.3 keep 5 on layers 3-7, Maya-M, KL to full 0.040 (the sensitive early band)", "url": "https://github.com/mw00/project-maya/blob/abc09c7/lab notes"},
+    {"layers": [8, 22], "fit": true, "tag": "INFERRED-BY-US", "src": "INFERRED: Maya publishes no figure for layers 8-22; the planner fits this band from our measured GLM quality points (P3 middle 30 layers at 2.05 bpw, P4 S25 / S15 coldest experts at 2.05 bpw, all vs EXL3-3.05) given the CLAIMED bands"},
+    {"layers": [23, 29], "kl": 0.012, "tag": "CLAIMED", "src": "CLAIMED Maya SETTINGS.md TRUNK_KEEP_MAP (abc09c7): keep 5 on layers 23-29, Maya-M, KL to full 0.012", "url": "https://github.com/mw00/project-maya/blob/abc09c7/lab notes"},
+    {"layers": [30, 44], "kl": 0.0025, "range": [0.002, 0.003], "tag": "CLAIMED", "src": "CLAIMED Maya SETTINGS.md TRUNK_KEEP_MAP (abc09c7): keep 5 on layers 30-44, Maya-M, KL to full 0.002-0.003 (midpoint 0.0025)", "url": "https://github.com/mw00/project-maya/blob/abc09c7/lab notes"}
+   ],
+   "claims": [
+    {"what": "uniform keep 7 (Maya-M)", "trim": [{"layers": [3, 44], "keep": 7}], "kl": 0.032, "tag": "CLAIMED", "src": "CLAIMED Maya SETTINGS.md (abc09c7): uniform keep 7 gives 21.8 tok/s at KL 0.032 on 3090 + 3060", "url": "https://github.com/mw00/project-maya/blob/abc09c7/lab notes"},
+    {"what": "keep 5 on 23-29 + keep 4 on 30-44 (Maya-M)", "trim": [{"layers": [23, 29], "keep": 5}, {"layers": [30, 44], "keep": 4}], "kl": 0.018, "speed": [20.0, 24.6], "tag": "CLAIMED", "src": "CLAIMED Maya SETTINGS.md (abc09c7): Maya-M 20.0 -> 24.6 tok/s at KL 0.018 on 3090 + 3060", "url": "https://github.com/mw00/project-maya/blob/abc09c7/lab notes"}
+   ]
+  },
+  "v41": {
+   "unit": "our decode KL vs the 1017 Q8_0 reference per layer whose routed reads are all 2-bit (no published map: Maya's DS4 engine ships V4.1 but no layer sensitivity at abc09c7)",
+   "bands": [
+    {"layers": [0, 13], "fit": true, "tag": "INFERRED-BY-US", "src": "INFERRED: fitted from our two V4.1 KL points (lassie: the 1017 split, cold experts q2_K on every layer; the q3_K L0-13 / q2_K L14-39 requant). Two points, two bands: exactly determined, no residual to check it; q3_K on layers 0-13 is taken as lossless, as the 2-bit share line does"},
+    {"layers": [14, 39], "fit": true, "tag": "INFERRED-BY-US", "src": "INFERRED: fitted from the same two V4.1 KL points (see layers 0-13)"}
+   ],
+   "claims": []
+  }
+ }
+}

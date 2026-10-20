@@ -1,0 +1,94 @@
+{
+ "box": "droopy",
+ "model": "v41",
+ "engine": "ik",
+ "store": {
+  "split": true,
+  "types": [
+   "mxfp4",
+   "q2_K"
+  ],
+  "hot_type": "mxfp4",
+  "cold_type": "q2_K"
+ },
+ "lowbit_share": 0.225,
+ "rtr": false,
+ "ub": 4096,
+ "draft": true,
+ "id": "b1b-hot3p0-t40",
+ "label": "B1b arm 1: B0 nortr + 3.0 GiB hot banks (hot3p0), T40",
+ "banks_gib": 2.95,
+ "threads": 40,
+ "vram": {
+  "post_warmup_gib": 21.5,
+  "src": "INFERRED: B0 nortr post-warm-up 20.79 GiB with 2.24 GiB banks (lab notes 15:52Z) - 2.24 + 2.95",
+  "gpu_total_gib": 23.04,
+  "units": "STATE readings: nvidia-smi MiB / 1000 (23,040 MiB card = 23.04); the margin bounds use the same unit"
+ },
+ "files": [
+  {
+   "path": "/mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00001-of-00010.gguf",
+   "holds": "experts + non-experts shard 1",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00002-of-00010.gguf",
+   "holds": "experts + non-experts shard 2",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00003-of-00010.gguf",
+   "holds": "experts + non-experts shard 3",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00004-of-00010.gguf",
+   "holds": "experts + non-experts shard 4",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00005-of-00010.gguf",
+   "holds": "experts + non-experts shard 5",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00006-of-00010.gguf",
+   "holds": "experts + non-experts shard 6",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00007-of-00010.gguf",
+   "holds": "experts + non-experts shard 7",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00010-of-00010.gguf",
+   "holds": "experts + non-experts shard 10",
+   "access": "loaded"
+  },
+  {
+   "path": "~/models/v41/shard-00008-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file",
+   "link": "/mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00008-of-00010.gguf",
+   "note": "link target per lab notes 13:4xZ (shard 8 on / NVMe); file name is a placeholder: the kit should pass readlink -f or use --resolve-ssh"
+  },
+  {
+   "path": "/mnt/nvme-p4/v41/shard-00009-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file",
+   "link": "/mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00009-of-00010.gguf",
+   "note": "link target per lab notes 13:4xZ (shard 9 on /mnt/nvme-p4); file name is a placeholder"
+  },
+  {
+   "path": "~/models/drafts/DeepSeek-V4.1-Flash-DSpark-exps-Q2_K.gguf",
+   "holds": "DSpark q2 draft",
+   "access": "loaded"
+  }
+ ],
+ "src": "lab notes run-b1b.sh + lab notes 16:32Z",
+ "numa": {
+  "headroom_gib": 10,
+  "src": "dram-fill placement headroom per node; stopped invalid 17:38Z: node0 MemFree 0.5 GiB (lab notes 17:38Z)"
+ }
+}

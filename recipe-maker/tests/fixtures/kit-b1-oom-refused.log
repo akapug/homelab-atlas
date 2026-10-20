@@ -1,0 +1,35 @@
+== b0 start 2026-10-17T15:52:21Z PK=~/optane-bin/split-unrepack-72d65438 PLACE=~/optane-place/v41-split-dramfill.placement.tsv HOT=~/optane-place/v41split-dramfill-hot3p9-w6.tsv PLACE_EXPECT=N0:78,N1:81,N2:62
+P0: numa_balancing 0 demotion false
+== V4.1 split from /mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00001-of-00010.gguf
+node0 MemFree 86 GiB
+node1 MemFree 89 GiB
+{"arm": "b1-hot3p9-t40", "extra": "-cr 0-39 --numa numactl -dple --cpu-moe -md ~/models/drafts/DeepSeek-V4.1-Flash-DSpark-exps-Q2_K.gguf -ngld 99 -cd 4096 -draft -ncmoe 0 --no-mmap --spec-type dspark:n_max=4,conf_cum_min=0.5 -ub 4096 -b 4096 -cuda offload-batch-size=100000", "client_rc": 1, "error": "client rc=1, no client.json", "resident_GiB_by_node": {}, "placement_ok": false, "placement_off_GiB": {"N0": -78.0, "N1": -81.0, "N2": -62.0}, "gpu_sm_busy_pct_mean": 0.0, "union_cap_log_lines": 0}
+== b1-hot3p9-t40 rc=1 16:31:51Z
+~ggml_backend_cuda_context: have 0 graphs
+Traceback (most recent call last):
+ConnectionResetError: [Errno 104] Connection reset by peer
+  vram None None resident {} sm 0.0
+1
+llama_expert_numa_apply: ~/optane-place/v41-split-dramfill.placement.tsv: 240 expert tensors placed in 11124 ranges (0 skipped), 10884 straddle pages, 0.94 MiB left at tensor edges
+llama_expert_numa_apply:   node(s) 0,1      interleave   155646.5 MiB
+llama_expert_numa_apply:   node(s) 2        bind          63050.7 MiB
+llama_expert_numa_apply:   node(s) 1        bind           3071.5 MiB
+llama_hot_experts: 40 layers with split expert tensors (every batch runs one chain per partition)
+llama_hot_experts: ~/optane-place/v41split-dramfill-hot3p9-w6.tsv: 234 hot experts in 40 layers, 3987.70 MiB on GPU, banks for batches <= 8 tokens
+llama_init_from_model:      CUDA0 compute buffer size =  2180.00 MiB
+llama_init_from_model:  CUDA_Host compute buffer size =  1337.09 MiB
+llama_expert_numa_apply: ~/optane-place/v41-split-dramfill.placement.tsv: 0 expert tensors placed in 0 ranges (0 skipped), 0 straddle pages, 0.00 MiB left at tensor edges
+llama_expert_numa_apply:   node(s) 0,1      interleave        0.0 MiB
+llama_expert_numa_apply:   node(s) 2        bind              0.0 MiB
+llama_expert_numa_apply:   node(s) 1        bind              0.0 MiB
+llama_hot_experts: ~/optane-place/v41split-dramfill-hot3p9-w6.tsv:2 names expert 242 but this model has 128 experts; hot experts inactive for this model
+llama_init_from_model:      CUDA0 compute buffer size =     2.66 MiB
+llama_init_from_model:  CUDA_Host compute buffer size =     0.22 MiB
+node0 MemFree 86 GiB
+node1 MemFree 89 GiB
+{"arm":"b1-hot3p6-t20","error":"REFUSED partial recipe: CPUS 0-19 leaves 20 of 40 online CPUs idle. Set PARTIAL_OK=<measured reason> to run it anyway."}
+== b1-hot3p6-t20 rc=4 16:31:59Z
+grep: ~/optane-bench/srv/b1-hot3p6-t20/server.log: No such file or directory
+grep: ~/optane-bench/srv/b1-hot3p6-t20/server.log: No such file or directory
+grep: ~/optane-bench/srv/b1-hot3p6-t20/server.log: No such file or directory
+== b1 done 2026-10-17T16:31:59Z

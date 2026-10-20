@@ -1,0 +1,350 @@
+{
+ "name": "droopy",
+ "cpu": {
+  "model": {
+   "v": "Intel(R) Xeon(R) Gold 5215 CPU @ 2.50GHz",
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /proc/cpuinfo"
+  },
+  "sockets": {
+   "v": 2,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /proc/cpuinfo physical id"
+  },
+  "phys": {
+   "v": 20,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /proc/cpuinfo (physical id, core id) pairs"
+  },
+  "threads": {
+   "v": 40,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z online CPUs"
+  },
+  "threads_online": {
+   "v": 40,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /sys/devices/system/cpu/online"
+  },
+  "isa": {
+   "v": {
+    "avx": true,
+    "avx2": true,
+    "fma": true,
+    "f16c": true,
+    "avx512f": true,
+    "avx512bw": true,
+    "avx512vl": true,
+    "avx512_vnni": true,
+    "avx512_bf16": false,
+    "avx512_fp16": false,
+    "avx_vnni": false,
+    "amx_tile": false,
+    "amx_int8": false,
+    "amx_bf16": false
+   },
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /proc/cpuinfo flags"
+  },
+  "smt": {
+   "v": true,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z online CPUs vs physical cores"
+  }
+ },
+ "dram": {
+  "total_gib": {
+   "v": 183.35,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /sys/devices/system/node/node*/meminfo (MemTotal of nodes with CPUs)"
+  },
+  "free_gib": {
+   "v": 0.7,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /sys/devices/system/node/node*/meminfo (MemFree now, not a plan figure)"
+  },
+  "nodes": [
+   {
+    "node": 0,
+    "name": "node 0",
+    "cpus": "0-9,20-29",
+    "gib": 92.91,
+    "free_gib": 0.54,
+    "tag": "MEASURED",
+    "src": "probe droopy 2026-10-17T20:27:42Z /sys/devices/system/node/node*/meminfo"
+   },
+   {
+    "node": 1,
+    "name": "node 1",
+    "cpus": "10-19,30-39",
+    "gib": 90.45,
+    "free_gib": 0.15,
+    "tag": "MEASURED",
+    "src": "probe droopy 2026-10-17T20:27:42Z /sys/devices/system/node/node*/meminfo"
+   }
+  ],
+  "available_gib": {
+   "v": 146.44,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /proc/meminfo MemAvailable (whole box, incl. memory-only nodes)"
+  },
+  "dimms": {
+   "v": {
+    "populated": 12,
+    "slots": 22,
+    "gib_each": [
+     16
+    ],
+    "type": "DDR4"
+   },
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z sudo -n dmidecode -t memory (slots = memory devices listed, PMem modules excluded)"
+  },
+  "speed_mts": {
+   "v": 2666,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z sudo -n dmidecode -t memory Configured Memory Speed"
+  },
+  "channels": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "dmidecode bank locators name no channels (CPU0, CPU1); populated DIMMs per socket {\"CPU0\": 6, \"CPU1\": 6}"
+  }
+ },
+ "pmem": {
+  "total_gib": {
+   "v": 246.0,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /sys/devices/system/node/node*/meminfo (MemTotal of memory-only nodes)"
+  },
+  "free_gib": {
+   "v": 5.89,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /sys/devices/system/node/node*/meminfo (MemFree now)"
+  },
+  "nodes": [
+   {
+    "node": 2,
+    "gib": 246.0,
+    "free_gib": 5.89,
+    "kind": "optane",
+    "how": "dax0.0 (kmem: kmem) on NVDIMM region0, 2 modules, NFIT vendor Intel = Intel Optane PMem",
+    "tag": "MEASURED",
+    "src": "probe droopy 2026-10-17T20:27:42Z /sys/devices/system/node/node*/meminfo + /sys/bus/dax + /sys/bus/nd"
+   }
+  ],
+  "modules": {
+   "v": {
+    "count": 2,
+    "gib_each": [
+     126.4
+    ],
+    "mts": [
+     2666
+    ]
+   },
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z sudo -n dmidecode -t memory (non-volatile modules)"
+  }
+ },
+ "gpus": [
+  {
+   "pci": "0000:2d:00.0",
+   "name": "Quadro RTX 6000",
+   "model": {
+    "v": "Quadro RTX 6000",
+    "tag": "MEASURED",
+    "src": "probe droopy 2026-10-17T20:27:42Z nvidia-smi memory.total/free (MiB)"
+   },
+   "vendor": "nvidia",
+   "driver": "nvidia 595.71.05",
+   "vram_gib": {
+    "v": 22.5,
+    "tag": "MEASURED",
+    "src": "probe droopy 2026-10-17T20:27:42Z nvidia-smi memory.total/free (MiB)"
+   },
+   "vram_free_gib": {
+    "v": 13.02,
+    "tag": "MEASURED",
+    "src": "probe droopy 2026-10-17T20:27:42Z nvidia-smi memory.total/free (MiB) (now)"
+   },
+   "discrete": true,
+   "pcie": {
+    "v": {
+     "gen": 3,
+     "width": 16,
+     "max_gen": 3,
+     "max_width": 16
+    },
+    "tag": "MEASURED",
+    "src": "probe droopy 2026-10-17T20:27:42Z sysfs current/max link (current gen can idle down)"
+   }
+  }
+ ],
+ "disks": [
+  {
+   "mount": "/",
+   "kind": "nvme",
+   "fstype": "ext4",
+   "source": "/dev/nvme0n1p3",
+   "size_gib": 589.51,
+   "free_gib": 67.23,
+   "rotational": false,
+   "members": [
+    "nvme0n1"
+   ],
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z findmnt + lsblk ROTA/TRAN: nvme0n1 non-rotational nvme \"SAMSUNG MZVLB1T0HBLR-000H1\""
+  },
+  {
+   "mount": "/dev/shm",
+   "kind": "memory",
+   "fstype": "tmpfs",
+   "source": "tmpfs",
+   "size_gib": 91.68,
+   "free_gib": 91.68,
+   "rotational": null,
+   "members": [],
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z findmnt + lsblk ROTA/TRAN: tmpfs (RAM)"
+  },
+  {
+   "mount": "/tmp",
+   "kind": "memory",
+   "fstype": "tmpfs",
+   "source": "tmpfs",
+   "size_gib": 91.68,
+   "free_gib": 91.58,
+   "rotational": null,
+   "members": [],
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z findmnt + lsblk ROTA/TRAN: tmpfs (RAM)"
+  },
+  {
+   "mount": "/mnt/nvme-p4",
+   "kind": "nvme",
+   "fstype": "btrfs",
+   "source": "/dev/nvme0n1p4",
+   "size_gib": 337.37,
+   "free_gib": 87.9,
+   "rotational": false,
+   "members": [
+    "nvme0n1"
+   ],
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z findmnt + lsblk ROTA/TRAN: nvme0n1 non-rotational nvme \"SAMSUNG MZVLB1T0HBLR-000H1\""
+  },
+  {
+   "mount": "/mnt/datadrive1",
+   "kind": "hdd",
+   "fstype": "fuseblk",
+   "source": "/dev/sda2",
+   "size_gib": 3726.01,
+   "free_gib": 1787.3,
+   "rotational": true,
+   "members": [
+    "sda"
+   ],
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z findmnt + lsblk ROTA/TRAN: sda rotational sata \"HGST HUS726T4TAL\""
+  },
+  {
+   "mount": "/mnt/datadrive1/fab-hot",
+   "kind": "hdd",
+   "fstype": "ext4",
+   "source": "/dev/loop0",
+   "size_gib": 491.08,
+   "free_gib": 286.38,
+   "rotational": true,
+   "members": [
+    "sda"
+   ],
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z findmnt + lsblk ROTA/TRAN: image file /mnt/datadrive1/fab-hot.ext4 on /mnt/datadrive1 (sda rotational sata \"HGST HUS726T4TAL\")"
+  },
+  {
+   "mount": "/mnt/odie-cache",
+   "kind": "network",
+   "fstype": "nfs4",
+   "source": "<server>:/mnt/models-cache",
+   "size_gib": 1906.4,
+   "free_gib": 626.36,
+   "rotational": null,
+   "members": [],
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z findmnt + lsblk ROTA/TRAN: network filesystem nfs4"
+  }
+ ],
+ "system": {
+  "numa_balancing": {
+   "v": 0,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /proc/sys/kernel/numa_balancing"
+  },
+  "demotion": {
+   "v": false,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /sys/kernel/mm/numa/demotion_enabled"
+  },
+  "thp": {
+   "v": "madvise",
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /sys/kernel/mm/transparent_hugepage/enabled"
+  },
+  "thp_defrag": {
+   "v": "madvise",
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /sys/kernel/mm/transparent_hugepage/defrag"
+  },
+  "swappiness": {
+   "v": 60,
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /proc/sys/vm/swappiness"
+  },
+  "swap": {
+   "v": "on",
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /proc/swaps"
+  },
+  "swap_devices": {
+   "v": [
+    {
+     "device": "/dev/nvme0n1p2",
+     "type": "partition",
+     "size_gib": 16.0,
+     "used_gib": 0.0,
+     "priority": -2
+    }
+   ],
+   "tag": "MEASURED",
+   "src": "probe droopy 2026-10-17T20:27:42Z /proc/swaps"
+  }
+ },
+ "probe": {
+  "host": "droopy",
+  "time": "2026-10-17T20:27:42Z",
+  "kernel": "6.17.0-41-generic",
+  "sudo": true,
+  "src": "probe droopy 2026-10-17T20:27:42Z",
+  "unknown": [
+   {
+    "field": "dram.channels",
+    "reason": "dmidecode bank locators name no channels (CPU0, CPU1); populated DIMMs per socket {\"CPU0\": 6, \"CPU1\": 6}"
+   }
+  ],
+  "unreadable_sections": {
+   "xpu": "xpu-smi not installed"
+  },
+  "vitals": {
+   "source": "vitals 2026-10-17T20:37:59Z (41 s old)",
+   "agree": [
+    "/",
+    "/mnt/nvme-p4",
+    "/mnt/datadrive1",
+    "/mnt/datadrive1/fab-hot"
+   ],
+   "disagree": [],
+   "note": "vitals classifies by the top disk only; the probe also resolves btrfs members and loop-image backing files"
+  }
+ }
+}

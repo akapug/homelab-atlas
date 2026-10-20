@@ -1,0 +1,570 @@
+@@meta
+hostname=snoopy
+time=2026-10-17T20:27:45Z
+kernel=6.17.0-41-generic
+sudo=yes
+@@cpuinfo
+processor	: 0
+physical id	: 0
+core id		: 0
+processor	: 1
+physical id	: 0
+core id		: 1
+processor	: 2
+physical id	: 0
+core id		: 2
+processor	: 3
+physical id	: 0
+core id		: 3
+processor	: 4
+physical id	: 0
+core id		: 4
+processor	: 5
+physical id	: 0
+core id		: 5
+processor	: 6
+physical id	: 0
+core id		: 6
+processor	: 7
+physical id	: 0
+core id		: 7
+processor	: 8
+physical id	: 0
+core id		: 8
+processor	: 9
+physical id	: 0
+core id		: 9
+processor	: 10
+physical id	: 0
+core id		: 10
+processor	: 11
+physical id	: 0
+core id		: 11
+processor	: 12
+physical id	: 0
+core id		: 12
+processor	: 13
+physical id	: 0
+core id		: 13
+processor	: 14
+physical id	: 0
+core id		: 14
+processor	: 15
+physical id	: 0
+core id		: 15
+processor	: 16
+physical id	: 0
+core id		: 0
+processor	: 17
+physical id	: 0
+core id		: 1
+processor	: 18
+physical id	: 0
+core id		: 2
+processor	: 19
+physical id	: 0
+core id		: 3
+processor	: 20
+physical id	: 0
+core id		: 4
+processor	: 21
+physical id	: 0
+core id		: 5
+processor	: 22
+physical id	: 0
+core id		: 6
+processor	: 23
+physical id	: 0
+core id		: 7
+processor	: 24
+physical id	: 0
+core id		: 8
+processor	: 25
+physical id	: 0
+core id		: 9
+processor	: 26
+physical id	: 0
+core id		: 10
+processor	: 27
+physical id	: 0
+core id		: 11
+processor	: 28
+physical id	: 0
+core id		: 12
+processor	: 29
+physical id	: 0
+core id		: 13
+processor	: 30
+physical id	: 0
+core id		: 14
+processor	: 31
+physical id	: 0
+core id		: 15
+model name: AMD Ryzen 9 9950X3D 16-Core Processor
+flags: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx_vnni avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid bus_lock_detect movdiri movdir64b overflow_recov succor smca fsrm avx512_vp2intersect flush_l1d amd_lbr_pmc_freeze
+online: 0-31
+Cpus_allowed_list:	0-31
+@@nodes
+node=0 cpus=0-31
+Node 0 MemTotal:       191000208 kB
+Node 0 MemFree:        84544512 kB
+@@meminfo
+MemTotal:       191000208 kB
+MemFree:        84544512 kB
+MemAvailable:   173659024 kB
+SwapTotal:      33554428 kB
+SwapFree:        6668792 kB
+@@sysctl
+numa_balancing=0
+demotion_enabled=false
+thp_enabled=always [madvise] never
+thp_defrag=always defer defer+madvise [madvise] never
+swappiness=60
+@@swaps
+Filename				Type		Size		Used		Priority
+/dev/nvme0n1p4                          partition	33554428	26885636	-2
+@@dax
+@@nd
+@@dmidecode
+Handle 0x000E, DMI type 16, 23 bytes
+	Maximum Capacity: 256 GB
+	Number Of Devices: 4
+Handle 0x0011, DMI type 17, 92 bytes
+Memory Device
+	Size: 48 GB
+	Form Factor: DIMM
+	Locator: DIMM 0
+	Bank Locator: P0 CHANNEL A
+	Type: DDR5
+	Speed: 4800 MT/s
+	Rank: 2
+	Configured Memory Speed: 5200 MT/s
+	Memory Technology: DRAM
+Handle 0x0014, DMI type 17, 92 bytes
+Memory Device
+	Size: 48 GB
+	Form Factor: DIMM
+	Locator: DIMM 1
+	Bank Locator: P0 CHANNEL A
+	Type: DDR5
+	Speed: 4800 MT/s
+	Rank: 2
+	Configured Memory Speed: 5200 MT/s
+	Memory Technology: DRAM
+Handle 0x0017, DMI type 17, 92 bytes
+Memory Device
+	Size: 48 GB
+	Form Factor: DIMM
+	Locator: DIMM 0
+	Bank Locator: P0 CHANNEL B
+	Type: DDR5
+	Speed: 4800 MT/s
+	Rank: 2
+	Configured Memory Speed: 5200 MT/s
+	Memory Technology: DRAM
+Handle 0x001A, DMI type 17, 92 bytes
+Memory Device
+	Size: 48 GB
+	Form Factor: DIMM
+	Locator: DIMM 1
+	Bank Locator: P0 CHANNEL B
+	Type: DDR5
+	Speed: 4800 MT/s
+	Rank: 2
+	Configured Memory Speed: 5200 MT/s
+	Memory Technology: DRAM
+@@nvidia
+0, NVIDIA GeForce RTX 3090 Ti, 00000000:01:00.0, 24564, 1290, 22823, 4, 4, 16, 16, 595.71.05
+@@xpu
+@@drm
+card=card1 pci=0000:01:00.0 path=/sys/devices/pci0000:00/0000:00:01.1/0000:01:00.0 vendor=0x10de device=0x2203 class=0x030000 driver=nvidia boot_vga=1 vram_total= vram_used= vram_vendor= ep_speed=16.0_GT/s_PCIe ep_width=16 ep_max_speed=16.0_GT/s_PCIe ep_max_width=16 rootport=0000:00:01.1 rp_speed=16.0_GT/s_PCIe rp_width=16 rp_max_speed=32.0_GT/s_PCIe rp_max_width=16
+card=card2 pci=0000:79:00.0 path=/sys/devices/pci0000:00/0000:00:08.1/0000:79:00.0 vendor=0x1002 device=0x13c0 class=0x030000 driver=amdgpu boot_vga=0 vram_total=2147483648 vram_used=16650240 vram_vendor= ep_speed=16.0_GT/s_PCIe ep_width=16 ep_max_speed=16.0_GT/s_PCIe ep_max_width=16 rootport=0000:00:08.1 rp_speed=16.0_GT/s_PCIe rp_width=16 rp_max_speed=16.0_GT/s_PCIe rp_max_width=16
+@@mounts
+/sys sysfs sysfs 0 0 
+/proc proc proc 0 0 
+/dev udev devtmpfs 97741021184 97741021184 
+/dev/pts devpts devpts 0 0 
+/run tmpfs tmpfs 19558424576 19549831168 
+/sys/firmware/efi/efivars efivarfs efivarfs 131072 41282 
+/ /dev/nvme0n1p5 ext4 955446611968 89786073088 21254dcb-1067-48f8-abdc-c90e5783a2d9
+/sys/kernel/security securityfs securityfs 0 0 
+/dev/shm tmpfs tmpfs 97792106496 97078521856 
+/sys/fs/cgroup cgroup2 cgroup2 0 0 
+/sys/fs/pstore none pstore 0 0 
+/sys/fs/bpf bpf bpf 0 0 
+/proc/sys/fs/binfmt_misc systemd-1 autofs 0 0 
+/dev/hugepages hugetlbfs hugetlbfs 0 0 
+/dev/mqueue mqueue mqueue 0 0 
+/run/lock tmpfs tmpfs 5242880 5226496 
+/sys/kernel/debug debugfs debugfs 0 0 
+/sys/kernel/tracing tracefs tracefs 0 0 
+/run/credentials/systemd-journald.service tmpfs tmpfs 1048576 1048576 
+/sys/fs/fuse/connections fusectl fusectl 0 0 
+/sys/kernel/config configfs configfs 0 0 
+/run/credentials/systemd-resolved.service tmpfs tmpfs 1048576 1048576 
+/boot/efi /dev/nvme0n1p1 vfat 268435456 225304576 0C5D-100F
+/snap/bare/5 /dev/loop1 squashfs 131072 0 
+/snap/firefox/8995 /dev/loop0 squashfs 274989056 0 
+/snap/core24/2124 /dev/loop2 squashfs 70123520 0 
+/snap/firefox/9036 /dev/loop3 squashfs 275120128 0 
+/snap/firmware-updater/262 /dev/loop4 squashfs 13369344 0 
+/snap/gtk-common-themes/1535 /dev/loop5 squashfs 96206848 0 
+/snap/snap-store/1447 /dev/loop7 squashfs 12582912 0 
+/snap/mesa-2404/1839 /dev/loop6 squashfs 421527552 0 
+/snap/snapd/28254 /dev/loop9 squashfs 46923776 0 
+/snap/gnome-46-2404/168 /dev/loop8 squashfs 645267456 0 
+/snap/snapd-desktop-integration/391 /dev/loop10 squashfs 917504 0 
+/tmp tmpfs tmpfs 97792106496 65699635200 
+/snap/spotify/99 /dev/loop12 squashfs 150863872 0 
+/snap/thunderbird/1282 /dev/loop11 squashfs 233177088 0 
+/scratch /dev/nvme0n1p6 ext4 527279194112 228449910784 709733d5-3eb7-40b3-aed6-68496e3790c9
+/mnt/cold /dev/sda1 ext4 491106512896 491087605760 e793d030-9393-40c4-bc96-763937e46b12
+/run/credentials/systemd-networkd.service tmpfs tmpfs 1048576 1048576 
+/proc/sys/fs/binfmt_misc binfmt_misc binfmt_misc 0 0 
+/run/user/1001 tmpfs tmpfs 19558420480 19558305792 
+/run/user/1000 tmpfs tmpfs 19558420480 19556564992 
+/run/user/1000/doc portal fuse.portal   
+/run/snapd/ns tmpfs[/snapd/ns] tmpfs 19558424576 19549831168 
+/run/snapd/ns/snapd-desktop-integration.mnt nsfs[mnt:[4026533508]] nsfs 0 0 
+/run/docker/netns/default nsfs[net:[4026531833]] nsfs   
+/run/snapd/ns/firefox.mnt nsfs[mnt:[4026533365]] nsfs 0 0 
+/run/snapd/ns/spotify.mnt nsfs[mnt:[4026534188]] nsfs 0 0 
+/run/snapd/ns/firmware-updater.mnt nsfs[mnt:[4026533336]] nsfs 0 0 
+/snap/core22/2955 /dev/loop13 squashfs 77594624 0 
+/snap/discord/314 /dev/loop14 squashfs 284033024 0 
+/snap/gnome-42-2204/263 /dev/loop15 squashfs 557318144 0 
+/run/snapd/ns/discord.mnt nsfs[mnt:[4026534045]] nsfs 0 0 
+/run/user/1000/gvfs gvfsd-fuse fuse.gvfsd-fuse 0 0 
+/run/user/1001/doc portal fuse.portal   
+/run/user/1001/gvfs gvfsd-fuse fuse.gvfsd-fuse   
+@@lsblk
+{
+   "blockdevices": [
+      {
+         "name": "loop0",
+         "kname": "loop0",
+         "path": "/dev/loop0",
+         "size": 274960384,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/firefox/8995"
+      },{
+         "name": "loop1",
+         "kname": "loop1",
+         "path": "/dev/loop1",
+         "size": 4096,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/bare/5"
+      },{
+         "name": "loop2",
+         "kname": "loop2",
+         "path": "/dev/loop2",
+         "size": 70033408,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/core24/2124"
+      },{
+         "name": "loop3",
+         "kname": "loop3",
+         "path": "/dev/loop3",
+         "size": 275025920,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/firefox/9036"
+      },{
+         "name": "loop4",
+         "kname": "loop4",
+         "path": "/dev/loop4",
+         "size": 13320192,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/firmware-updater/262"
+      },{
+         "name": "loop5",
+         "kname": "loop5",
+         "path": "/dev/loop5",
+         "size": 96141312,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/gtk-common-themes/1535"
+      },{
+         "name": "loop6",
+         "kname": "loop6",
+         "path": "/dev/loop6",
+         "size": 421507072,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/mesa-2404/1839"
+      },{
+         "name": "loop7",
+         "kname": "loop7",
+         "path": "/dev/loop7",
+         "size": 12537856,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/snap-store/1447"
+      },{
+         "name": "loop8",
+         "kname": "loop8",
+         "path": "/dev/loop8",
+         "size": 645148672,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/gnome-46-2404/168"
+      },{
+         "name": "loop9",
+         "kname": "loop9",
+         "path": "/dev/loop9",
+         "size": 46882816,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/snapd/28254"
+      },{
+         "name": "loop10",
+         "kname": "loop10",
+         "path": "/dev/loop10",
+         "size": 847872,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/snapd-desktop-integration/391"
+      },{
+         "name": "loop11",
+         "kname": "loop11",
+         "path": "/dev/loop11",
+         "size": 233054208,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/thunderbird/1282"
+      },{
+         "name": "loop12",
+         "kname": "loop12",
+         "path": "/dev/loop12",
+         "size": 150822912,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/spotify/99"
+      },{
+         "name": "loop13",
+         "kname": "loop13",
+         "path": "/dev/loop13",
+         "size": 77574144,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/core22/2955"
+      },{
+         "name": "loop14",
+         "kname": "loop14",
+         "path": "/dev/loop14",
+         "size": 283922432,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/discord/314"
+      },{
+         "name": "loop15",
+         "kname": "loop15",
+         "path": "/dev/loop15",
+         "size": 557309952,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/gnome-42-2204/263"
+      },{
+         "name": "sda",
+         "kname": "sda",
+         "path": "/dev/sda",
+         "size": 500107862016,
+         "type": "disk",
+         "rota": true,
+         "tran": "sata",
+         "model": "HGST HTS725050A7",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "sda1",
+               "kname": "sda1",
+               "path": "/dev/sda1",
+               "size": 500106796544,
+               "type": "part",
+               "rota": true,
+               "tran": null,
+               "model": null,
+               "fstype": "ext4",
+               "uuid": "e793d030-9393-40c4-bc96-763937e46b12",
+               "mountpoint": "/mnt/cold"
+            }
+         ]
+      },{
+         "name": "nvme0n1",
+         "kname": "nvme0n1",
+         "path": "/dev/nvme0n1",
+         "size": 2048408248320,
+         "type": "disk",
+         "rota": false,
+         "tran": "nvme",
+         "model": "Micron MTFDKBA2T0TGD-2BK15ABLT",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "nvme0n1p1",
+               "kname": "nvme0n1p1",
+               "path": "/dev/nvme0n1p1",
+               "size": 272629760,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "vfat",
+               "uuid": "0C5D-100F",
+               "mountpoint": "/boot/efi"
+            },{
+               "name": "nvme0n1p2",
+               "kname": "nvme0n1p2",
+               "path": "/dev/nvme0n1p2",
+               "size": 16777216,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": null,
+               "uuid": null,
+               "mountpoint": null
+            },{
+               "name": "nvme0n1p3",
+               "kname": "nvme0n1p3",
+               "path": "/dev/nvme0n1p3",
+               "size": 505031950336,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "ntfs",
+               "uuid": "D68C66638C663E5D",
+               "mountpoint": null
+            },{
+               "name": "nvme0n1p4",
+               "kname": "nvme0n1p4",
+               "path": "/dev/nvme0n1p4",
+               "size": 34359738880,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "swap",
+               "uuid": "0bb78d8a-efd4-4769-b0c2-764b782b507b",
+               "mountpoint": "[SWAP]"
+            },{
+               "name": "nvme0n1p5",
+               "kname": "nvme0n1p5",
+               "path": "/dev/nvme0n1p5",
+               "size": 971853791744,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "ext4",
+               "uuid": "21254dcb-1067-48f8-abdc-c90e5783a2d9",
+               "mountpoint": "/"
+            },{
+               "name": "nvme0n1p6",
+               "kname": "nvme0n1p6",
+               "path": "/dev/nvme0n1p6",
+               "size": 536871246848,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "ext4",
+               "uuid": "709733d5-3eb7-40b3-aed6-68496e3790c9",
+               "mountpoint": "/scratch"
+            }
+         ]
+      }
+   ]
+}
+@@btrfs
+@@loop
+dev=loop0 backing=/var/lib/snapd/snaps/firefox_8995.snap
+dev=loop1 backing=/var/lib/snapd/snaps/bare_5.snap
+dev=loop10 backing=/var/lib/snapd/snaps/snapd-desktop-integration_391.snap
+dev=loop11 backing=/var/lib/snapd/snaps/thunderbird_1282.snap
+dev=loop12 backing=/var/lib/snapd/snaps/spotify_99.snap
+dev=loop13 backing=/var/lib/snapd/snaps/core22_2955.snap
+dev=loop14 backing=/var/lib/snapd/snaps/discord_314.snap
+dev=loop15 backing=/var/lib/snapd/snaps/gnome-42-2204_263.snap
+dev=loop2 backing=/var/lib/snapd/snaps/core24_2124.snap
+dev=loop3 backing=/var/lib/snapd/snaps/firefox_9036.snap
+dev=loop4 backing=/var/lib/snapd/snaps/firmware-updater_262.snap
+dev=loop5 backing=/var/lib/snapd/snaps/gtk-common-themes_1535.snap
+dev=loop6 backing=/var/lib/snapd/snaps/mesa-2404_1839.snap
+dev=loop7 backing=/var/lib/snapd/snaps/snap-store_1447.snap
+dev=loop8 backing=/var/lib/snapd/snaps/gnome-46-2404_168.snap
+dev=loop9 backing=/var/lib/snapd/snaps/snapd_28254.snap
+@@end

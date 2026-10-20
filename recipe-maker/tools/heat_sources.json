@@ -1,0 +1,554 @@
+{
+ "about": "Every routing-heat file we hold, with the facts the file itself lacks. `python3 tools/heatmap.py convert-all tools/heat_sources.json data/heat` rewrites data/heat/*.json from the sources present on this machine and notes the rest. Relative src paths resolve from the repo root; ~ paths are the research hub's live files.",
+ "models": {
+  "glm53-q4kxl": {
+   "id": "zai-org/GLM-5.3-Flash",
+   "family": "glm-5.3-flash",
+   "checkpoint": "unsloth GLM-5.3-Flash-GGUF UD-Q4_K_XL (6 shards)",
+   "checkpoint_hash": null,
+   "checkpoint_hash_note": "manifest data/heat/manifests/glm53-flash-unsloth-UD-Q4_K_XL.sha256 not found",
+   "quant": "UD-Q4_K_XL (GGUF)",
+   "k": 8
+  },
+  "glm53-exl3": {
+   "id": "zai-org/GLM-5.3-Flash",
+   "family": "glm-5.3-flash",
+   "checkpoint": "GLM-5.3-Flash EXL3 3.05 bpw experts (glm53 image store-3.05 + sparse checkpoint)",
+   "checkpoint_hash": null,
+   "checkpoint_hash_note": "the EXL3 3.05 bpw store has no shard manifest recorded; the engine image is pinned by digest (producer.engine_version)",
+   "quant": "EXL3 3.05 bpw experts",
+   "k": 8
+  },
+  "kimi-k3": {
+   "id": "moonshotai/Kimi-K3",
+   "family": "kimi-k3",
+   "checkpoint": "unsloth Kimi-K3-GGUF UD-Q2_K_XL (19 shards)",
+   "checkpoint_hash": null,
+   "checkpoint_hash_note": "manifest not found",
+   "quant": "UD-Q2_K_XL (GGUF)",
+   "k": 16
+  },
+  "v41-old-q8": {
+   "id": "deepseek-ai/DeepSeek-V4.1-Flash",
+   "family": "deepseek-v4.1-flash",
+   "checkpoint": "DeepSeek-V4.1-Flash (pre-1017 weights) vcruz Q8_0 GGUF, MXFP4 experts",
+   "checkpoint_hash": null,
+   "checkpoint_hash_note": "manifest not found",
+   "quant": "Q8_0 dense + native MXFP4 experts (GGUF)",
+   "k": 6
+  },
+  "v41-1017-q8": {
+   "id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+   "family": "deepseek-v4.1-flash",
+   "checkpoint": "DeepSeek-V4.1-Flash-1017 Q8_0 GGUF, MXFP4 experts",
+   "checkpoint_hash": null,
+   "checkpoint_hash_note": "manifest not found",
+   "quant": "Q8_0 dense + native MXFP4 experts (GGUF)",
+   "k": 6
+  },
+  "v41-old-exl3": {
+   "id": "deepseek-ai/DeepSeek-V4.1-Flash",
+   "family": "deepseek-v4.1-flash",
+   "checkpoint": "DeepSeek-V4.1-Flash (pre-1017 weights) EXL3 3.02 bpw pack (mul1 codebook)",
+   "checkpoint_hash": null,
+   "checkpoint_hash_note": "EXL3 pack shard hashes not recorded at capture time",
+   "quant": "EXL3 3.02 bpw experts",
+   "k": 6
+  },
+  "v40-mxfp4": {
+   "id": "deepseek-ai/DeepSeek-V4-Flash-0731",
+   "family": "deepseek-v4-flash",
+   "checkpoint": "DeepSeek V4 Flash 0731 GGUF, MXFP4 experts",
+   "checkpoint_hash": null,
+   "checkpoint_hash_note": "shard hashes not recorded; V4.0 is retired here (calibration only)",
+   "quant": "Q8_0 dense + MXFP4 experts (GGUF)",
+   "k": 6
+  }
+ },
+ "sources": [
+  {
+   "out": "glm53-flash__skew72__llamacpp-cpu__2026-10-09.heatmap.json",
+   "converter": "from-moe-trace",
+   "model_ref": "glm53-q4kxl",
+   "src": "lab notes",
+   "manifest": {
+    "checkpoint": "data/heat/manifests/glm53-flash-unsloth-UD-Q4_K_XL.sha256"
+   },
+   "opts": {
+    "experts": 288,
+    "categories_from": "lab notes",
+    "default_slice": "decode"
+   },
+   "meta": {
+    "id": "glm53-flash__skew72__llamacpp-cpu__2026-10-09",
+    "title": "GLM-5.3-Flash routing on 72 mixed prompts (code reading, diff review, tool-call JSON, chat), greedy, 48 tokens each",
+    "workload": {
+     "name": "skew72",
+     "description": "72 fixed prompts, 18 each of code reading, diff review, tool-call JSON and chat, interleaved; the model's own chat template; greedy; 48 generated tokens per prompt",
+     "prompt_set_sha256": "78c8ac4589c45a1b87bca642230e78cdc0c6bc1f86ae157a4cb3526826f41e66",
+     "prompt_set_files": [
+      "workload.jsonl (make_workload.py)"
+     ],
+     "decoding": "greedy, 48 tokens"
+    },
+    "producer": {
+     "tool": "moe-trace.cpp (cb_eval hook on ffn_moe_topk-<layer>)",
+     "tool_version": "moe-trace.cpp sha256 9c4e08f2dbf9ef7019f169a0cfdac3daf0a8222f85ef0d11faf3ee62365ba0f8",
+     "engine": "llama.cpp mainline, CPU only, -nr (no repack), weights in tmpfs",
+     "engine_version": "llama.cpp 79e2e74",
+     "box": "lassie (2x EPYC 7601)",
+     "date": "2026-10-09"
+    },
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "expert-skew journal 2026-10-09 (FINDINGS.md): routing statistics valid, every timing in that run invalid (contention)"
+    }
+   }
+  },
+  {
+   "out": "kimi-k3__skew72-prompts0-9__llamacpp-cpu__2026-10-09.heatmap.json",
+   "converter": "from-moe-trace",
+   "model_ref": "kimi-k3",
+   "src": "lab notes",
+   "manifest": {
+    "checkpoint": "data/heat/manifests/kimi-k3-unsloth-UD-Q2_K_XL.sha256"
+   },
+   "opts": {
+    "experts": 896,
+    "categories_from": "lab notes",
+    "default_slice": "decode"
+   },
+   "meta": {
+    "id": "kimi-k3__skew72-prompts0-9__llamacpp-cpu__2026-10-09",
+    "title": "Kimi K3 routing, PRELIMINARY: prompts 0-9 of skew72 (stopped on an owner pause)",
+    "workload": {
+     "name": "skew72-prompts0-9",
+     "description": "the first 10 prompts of skew72 (480 decode tokens per layer); small sample, coverage numbers are inflated",
+     "prompt_set_sha256": "78c8ac4589c45a1b87bca642230e78cdc0c6bc1f86ae157a4cb3526826f41e66",
+     "prompt_set_files": [
+      "workload.jsonl, prompts 0-9"
+     ],
+     "decoding": "greedy, 48 tokens"
+    },
+    "producer": {
+     "tool": "moe-trace.cpp (cb_eval hook on ffn_moe_topk-<layer>)",
+     "tool_version": "moe-trace.cpp sha256 9c4e08f2dbf9ef7019f169a0cfdac3daf0a8222f85ef0d11faf3ee62365ba0f8",
+     "engine": "llama.cpp mainline, CPU only",
+     "engine_version": "llama.cpp 79e2e74",
+     "box": "lassie (2x EPYC 7601)",
+     "date": "2026-10-09"
+    },
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "expert-skew journal 2026-10-09 (FINDINGS.md): K3 routing valid but PRELIMINARY (10 prompts)"
+    }
+   }
+  },
+  {
+   "out": "glm53-flash__coding-kld-agent__glm53-nv2__2026-10-17.heatmap.json",
+   "converter": "from-route-stats",
+   "model_ref": "glm53-exl3",
+   "src": "lab notes",
+   "opts": {
+    "default_slice": "decode"
+   },
+   "meta": {
+    "id": "glm53-flash__coding-kld-agent__glm53-nv2__2026-10-17",
+    "title": "GLM-5.3-Flash coding heat: ~87k tokens of code prefilled in 4096-token chunks + 8 agent briefs decoded 192 tokens each",
+    "workload": {
+     "name": "coding-kld+coding-agent",
+     "description": "prompts/coding-kld.txt prefilled in 4096-token chunks (22 chunks, 86,770 tokens, one generated token each) + the 8 prompts/coding-agent.json briefs decoded greedily 192 tokens each",
+     "prompt_set_sha256": "507a5b4758c1eafd508c761372d4178d8cc4f2eaaa922c966adaab9a35b78154",
+     "prompt_set_note": "prompt_set_sha256 is coding-kld.txt; coding-agent.json is 191bc78af4be3ed6f66e865ad658ec39b8a9a079635a360ea786b57bfbfddf2d",
+     "prompt_set_files": [
+      "coding-kld.txt",
+      "coding-agent.json"
+     ],
+     "decoding": "greedy, 192 tokens"
+    },
+    "producer": {
+     "tool": "route_stats.py (wraps Nv2.layer, counts router picks before lane masking)",
+     "tool_version": "route_stats.py sha256 d3e677223007e4249d026bbca5709ba85effdeb3dbbfb18ec759f3630fc7d931",
+     "engine": "glm53-flash-offload (exllamav3 + nv2 offload), nvme mode, CUDA",
+     "engine_version": "image sha256:6f6dc68521c37d486de9bd1adbecf88f30134dcb328a93eaed8d7752bacba45e",
+     "box": "snoopy (Ryzen 9 9950X3D, RTX 3090 Ti)",
+     "date": "2026-10-17"
+    },
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "route-stats.sh run rs-1340 (2026-10-17 13:40Z): meta prefill_tokens 86770, decode_tokens 1536; decode slice counts single-token calls (prompt tails under the staging threshold count as decode)",
+     "notes": [
+      "decode picks / (42 x 8) = 1,576 tokens vs 1,536 generated: the 40-token excess is short prefill calls below the staging threshold, counted as decode"
+     ]
+    }
+   }
+  },
+  {
+   "out": "dsv41-flash__skew187__dsv41-exl3__2026-10-08.heatmap.json",
+   "converter": "from-sets-json",
+   "model_ref": "v41-old-exl3",
+   "src": "src/counts-v41-decode-20261008.json",
+   "opts": {
+    "layers": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     31,
+     32,
+     33,
+     34,
+     35,
+     36,
+     37,
+     38,
+     39
+    ],
+    "sets": {
+     "coding_odd": {
+      "phase": "decode",
+      "category": "code",
+      "half": "odd"
+     },
+     "coding_even": {
+      "phase": "decode",
+      "category": "code",
+      "half": "even"
+     },
+     "coding_all": {
+      "phase": "decode",
+      "category": "code"
+     },
+     "general_odd": {
+      "phase": "decode",
+      "category": "general",
+      "half": "odd"
+     },
+     "general_even": {
+      "phase": "decode",
+      "category": "general",
+      "half": "even"
+     },
+     "general_all": {
+      "phase": "decode",
+      "category": "general"
+     },
+     "all_all": {
+      "phase": "decode"
+     }
+    },
+    "default_slice": "coding_all"
+   },
+   "meta": {
+    "id": "dsv41-flash__skew187__dsv41-exl3__2026-10-08",
+    "title": "DeepSeek V4.1 Flash (pre-1017) decode routing on 187 requests (code, agent, house, long-context, multilingual)",
+    "workload": {
+     "name": "skew187",
+     "description": "187 requests: code 41, agent 30, house 48, long 18, intl 50; 1,012,187 prompt + 171,068 completion tokens; general = every category but code; odd/even = prompt-index halves",
+     "prompt_set_sha256": null,
+     "prompt_set_note": "prompts generated by dsv41/skew/build_prompts.py (sha256 d7dc83ec22989bb66c21bdec5f5e7a52039af5a0eb14bf1d8a3e8075d657ae40), the generated file was not kept",
+     "prompt_set_files": [
+      "build_prompts.py output"
+     ],
+     "decoding": "served chat completions"
+    },
+    "producer": {
+     "tool": "EXL3_EXPERT_STATS dump (index_add_ per layer, capture-safe patch) + snap2json.py + analyze.py",
+     "tool_version": "patch_expert_stats.py / snap2json.py (dsv41/skew)",
+     "engine": "dsv41 recipe (exllamav3 5be88657 + the recipe's CPU expert tier)",
+     "engine_version": "exllamav3 5be88657",
+     "box": "snoopy (Ryzen 9 9950X3D, RTX 3090 Ti)",
+     "date": "2026-10-08"
+    },
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "dsv41 skew capture 2026-10-08 (summary dsv41/skew/results/2026-10-08.json); planner file src/counts-v41-decode-20261008.json"
+    }
+   }
+  },
+  {
+   "out": "dsv41-flash__a5-docs-51k__ik-imatrix__2026-10-16.heatmap.json",
+   "converter": "from-imatrix-tsv",
+   "model_ref": "v41-old-q8",
+   "src": "src/inputs/a5v41-expert-counts.tsv",
+   "manifest": {
+    "checkpoint": "data/heat/manifests/dsv41-flash-vcruz-Q8_0.sha256"
+   },
+   "opts": {
+    "slice": "prefill",
+    "phase": "prefill"
+   },
+   "meta": {
+    "id": "dsv41-flash__a5-docs-51k__ik-imatrix__2026-10-16",
+    "title": "DeepSeek V4.1 Flash (pre-1017) routing on the A5 docs corpus, 100 imatrix chunks of 512 tokens",
+    "workload": {
+     "name": "a5",
+     "description": "A5 corpus (technical docs and code), 100 chunks x 512 tokens = 51,200 tokens, prefill batches of 512",
+     "prompt_set_sha256": "06cbd97830e89d9fcd3c9151876a16dbdec0d6c72a4e5a893f29a357bc96952e",
+     "prompt_set_files": [
+      "a5-corpus.txt"
+     ],
+     "decoding": "none (imatrix prefill, -c/-b/-ub 512)"
+    },
+    "producer": {
+     "tool": "llama-imatrix + per-expert count patch (patch-imatrix-expert-counts.py)",
+     "tool_version": "patch sha256 118f2ebe606cc58541e4f596cedc864c90c337975d23010f8d8258211fa75f5e",
+     "engine": "ik_llama.cpp CUDA, -ngl 99 -ot exps=CPU",
+     "engine_version": "ik_llama.cpp (droopy ~/src/ik_llama.cpp build-cuda)",
+     "box": "droopy (2x Xeon Gold 5215, RTX 6000)",
+     "date": "2026-10-16"
+    },
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "droopy PMem lane a5v41-expert-counts.tsv (= rebuild-1017/counts/a5v41-old-expert-counts.tsv, same sha256); the counts the B-series hot banks were ranked by"
+    }
+   }
+  },
+  {
+   "out": "dsv41-flash__a5b-heldout__ik-imatrix__2026-10-16.heatmap.json",
+   "converter": "from-imatrix-tsv",
+   "model_ref": "v41-old-q8",
+   "src": "lab notes",
+   "manifest": {
+    "checkpoint": "data/heat/manifests/dsv41-flash-vcruz-Q8_0.sha256"
+   },
+   "opts": {
+    "slice": "prefill",
+    "phase": "prefill"
+   },
+   "meta": {
+    "id": "dsv41-flash__a5b-heldout__ik-imatrix__2026-10-16",
+    "title": "DeepSeek V4.1 Flash (pre-1017) routing on the held-out A5b corpus",
+    "workload": {
+     "name": "a5b",
+     "description": "A5b corpus, held out from A5 (same kind of text), imatrix chunks of 512 tokens",
+     "prompt_set_sha256": "f4836cfde4ecd6864c54aa616a034de70071bcf926ee580f4e2029ae75b79aa3",
+     "prompt_set_files": [
+      "a5b-corpus.txt"
+     ],
+     "decoding": "none (imatrix prefill)"
+    },
+    "producer": {
+     "tool": "llama-imatrix + per-expert count patch (patch-imatrix-expert-counts.py)",
+     "tool_version": "patch sha256 118f2ebe606cc58541e4f596cedc864c90c337975d23010f8d8258211fa75f5e",
+     "engine": "ik_llama.cpp CUDA, -ngl 99 -ot exps=CPU",
+     "engine_version": "ik_llama.cpp (droopy ~/src/ik_llama.cpp build-cuda)",
+     "box": "droopy (2x Xeon Gold 5215, RTX 6000)",
+     "date": "2026-10-16"
+    },
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "droopy PMem lane rebuild-1017/counts/a5v41b-old-expert-counts.tsv"
+    }
+   }
+  },
+  {
+   "out": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17.heatmap.json",
+   "converter": "from-imatrix-tsv",
+   "model_ref": "v41-1017-q8",
+   "src": "lab notes",
+   "manifest": {
+    "checkpoint": "data/heat/manifests/dsv41-flash-1017-Q8_0.sha256"
+   },
+   "opts": {
+    "slice": "prefill",
+    "phase": "prefill"
+   },
+   "meta": {
+    "id": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17",
+    "title": "DeepSeek V4.1 Flash 1017 routing on the A5 docs corpus (first 100 imatrix chunks, comparable with the pre-1017 a5 map)",
+    "workload": {
+     "name": "a5",
+     "description": "the 1017 quant corpus starts with the A5 corpus byte-identical; counts saved after chunk 100 (51,200 tokens)",
+     "prompt_set_sha256": "06cbd97830e89d9fcd3c9151876a16dbdec0d6c72a4e5a893f29a357bc96952e",
+     "prompt_set_files": [
+      "a5-corpus.txt (prefix of v41q-corpus-1017.txt)"
+     ],
+     "decoding": "none (imatrix prefill, -c/-b/-ub 512)"
+    },
+    "producer": {
+     "tool": "llama-imatrix + per-expert count patch (patch-imatrix-expert-counts.py), --save-frequency 100",
+     "tool_version": "patch sha256 118f2ebe606cc58541e4f596cedc864c90c337975d23010f8d8258211fa75f5e",
+     "engine": "ik_llama.cpp CUDA, -ngl 99 -ot exps=CPU -fa 1 --no-mmap -dple",
+     "engine_version": "ik_llama.cpp (droopy ~/src/ik_llama.cpp build-cuda)",
+     "box": "droopy (2x Xeon Gold 5215, RTX 6000)",
+     "date": "2026-10-17"
+    },
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "run-imat-1017-droopy.sh imatrix.dat.at_100.expert-counts.tsv (rebuild-1017/counts); compared with the pre-1017 a5 map: spearman 0.991, layer overlap 0.960 -> hot set KEEP"
+    }
+   }
+  },
+  {
+   "out": "dsv41-flash-1017__v41q-corpus__ik-imatrix__2026-10-17.heatmap.json",
+   "converter": "from-imatrix-tsv",
+   "model_ref": "v41-1017-q8",
+   "src": "lab notes",
+   "manifest": {
+    "checkpoint": "data/heat/manifests/dsv41-flash-1017-Q8_0.sha256"
+   },
+   "opts": {
+    "slice": "prefill",
+    "phase": "prefill"
+   },
+   "meta": {
+    "id": "dsv41-flash-1017__v41q-corpus__ik-imatrix__2026-10-17",
+    "title": "DeepSeek V4.1 Flash 1017 routing on the full quant corpus (A5 + A5b + local code/docs)",
+    "workload": {
+     "name": "v41q-corpus-1017",
+     "description": "the 1017 quant corpus (A5 + A5b + local code and docs, build-qcorpus-1017.py), imatrix chunks of 512 tokens, the whole run",
+     "prompt_set_sha256": "4a79e40e4c01915caccb95c4dbd6c5cc6f5846859b077fb95a0119525b9ea18d",
+     "prompt_set_files": [
+      "v41q-corpus-1017.txt"
+     ],
+     "decoding": "none (imatrix prefill, -c/-b/-ub 512)"
+    },
+    "producer": {
+     "tool": "llama-imatrix + per-expert count patch (patch-imatrix-expert-counts.py)",
+     "tool_version": "patch sha256 118f2ebe606cc58541e4f596cedc864c90c337975d23010f8d8258211fa75f5e",
+     "engine": "ik_llama.cpp CUDA, -ngl 99 -ot exps=CPU -fa 1 --no-mmap -dple",
+     "engine_version": "ik_llama.cpp (droopy ~/src/ik_llama.cpp build-cuda)",
+     "box": "droopy (2x Xeon Gold 5215, RTX 6000)",
+     "date": "2026-10-17"
+    },
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "run-imat-1017-droopy.sh imatrix.dat.expert-counts.tsv (rebuild-1017/counts/a5v41-1017-q512-expert-counts.tsv)"
+    }
+   }
+  },
+  {
+   "out": "dsv4-flash__a5-docs__ik-imatrix__2026-10-14.heatmap.json",
+   "converter": "from-imatrix-tsv",
+   "model_ref": "v40-mxfp4",
+   "src": "src/inputs/a5-expert-counts.tsv",
+   "opts": {
+    "slice": "prefill",
+    "phase": "prefill"
+   },
+   "meta": {
+    "id": "dsv4-flash__a5-docs__ik-imatrix__2026-10-14",
+    "title": "DeepSeek V4 Flash 0731 routing on the A5 docs corpus (calibration only)",
+    "workload": {
+     "name": "a5",
+     "description": "A5 corpus, imatrix chunks of 512 tokens",
+     "prompt_set_sha256": "06cbd97830e89d9fcd3c9151876a16dbdec0d6c72a4e5a893f29a357bc96952e",
+     "prompt_set_files": [
+      "a5-corpus.txt"
+     ],
+     "decoding": "none (imatrix prefill)"
+    },
+    "producer": {
+     "tool": "llama-imatrix + per-expert count patch (patch-imatrix-expert-counts.py)",
+     "tool_version": "patch sha256 118f2ebe606cc58541e4f596cedc864c90c337975d23010f8d8258211fa75f5e",
+     "engine": "ik_llama.cpp CUDA",
+     "engine_version": "ik_llama.cpp (droopy)",
+     "box": "droopy (2x Xeon Gold 5215, RTX 6000)",
+     "date": "2026-10-14"
+    },
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "droopy PMem lane a5-expert-counts.tsv (lab notes placement work)"
+    }
+   }
+  },
+  {
+   "out": "sel__dsv41-flash-1017__hot2p2-w6.selection.json",
+   "converter": "selection-from-banks",
+   "model_ref": "v41-1017-q8",
+   "src": "lab notes",
+   "meta": {
+    "id": "sel__dsv41-flash-1017__hot2p2-w6",
+    "cites": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17",
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "regen-place-1017.sh 86 89 10 (gen-hot-split.py): the GPU banks of the droopy b1017 baseline"
+    }
+   }
+  },
+  {
+   "out": "sel__dsv41-flash-1017__hot2p6-w6.selection.json",
+   "converter": "selection-from-banks",
+   "model_ref": "v41-1017-q8",
+   "src": "lab notes",
+   "meta": {
+    "id": "sel__dsv41-flash-1017__hot2p6-w6",
+    "cites": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17",
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "regen-place-1017.sh (gen-hot-split.py), 2.6 GiB bank variant"
+    }
+   }
+  },
+  {
+   "out": "sel__dsv41-flash-1017__hot3p6-w6.selection.json",
+   "converter": "selection-from-banks",
+   "model_ref": "v41-1017-q8",
+   "src": "lab notes",
+   "meta": {
+    "id": "sel__dsv41-flash-1017__hot3p6-w6",
+    "cites": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17",
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "regen-place-1017.sh (gen-hot-split.py), 3.6 GiB bank variant"
+    }
+   }
+  },
+  {
+   "out": "sel__dsv41-flash-1017__hot3p9-w6.selection.json",
+   "converter": "selection-from-banks",
+   "model_ref": "v41-1017-q8",
+   "src": "lab notes",
+   "meta": {
+    "id": "sel__dsv41-flash-1017__hot3p9-w6",
+    "cites": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17",
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "regen-place-1017.sh (gen-hot-split.py), 3.9 GiB bank variant"
+    }
+   }
+  },
+  {
+   "out": "sel__dsv4-flash__hot6.selection.json",
+   "converter": "selection-from-banks",
+   "model_ref": "v40-mxfp4",
+   "src": "lab notes",
+   "meta": {
+    "id": "sel__dsv4-flash__hot6",
+    "cites": "dsv4-flash__a5-docs__ik-imatrix__2026-10-14",
+    "provenance": {
+     "tag": "MEASURED",
+     "src": "droopy PMem lane place/hot6.tsv (expert_placement.py)"
+    }
+   }
+  }
+ ]
+}

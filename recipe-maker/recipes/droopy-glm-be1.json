@@ -1,0 +1,57 @@
+{
+ "id": "glm-be1",
+ "label": "droopy GLM best-effort arm 1 (quality vs speed beside BE1-Q3): UD-Q4_K_XL as shipped, experts DRAM-first (headroom N0 15 / N1 6), coldest experts on PMem, 5.9 GiB hottest experts by coding-agent decode heat in VRAM (the MTP block's 4.1 GiB experts stay on the GPU), MTP, T40 on all 40 CPUs",
+ "box": "droopy",
+ "model": "glm",
+ "engine": "ik",
+ "engine_build": "h2dstage-b38ad4e2",
+ "store": {
+  "split": false,
+  "types": [
+   "ud_q4kxl"
+  ]
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": 4096,
+ "draft": true,
+ "threads": 40,
+ "banks_gib": 5.9,
+ "numa": {
+  "headroom_gib": [
+   15,
+   6
+  ],
+  "src": "gen-glm-place.py place-glm/glm-be1q4 (HOT_COPY_NODE=2; N0/N1 free 86/89 at plan time): node 0 keeps the load extra (ESTIMATE band 3.58-8.54) plus 6 GiB clear of the spill fallback that put runtime buffers on PMem in b1017 (10-18); node 1 carries no load extra (numa_free other_nodes, MEASURED). The bank experts' host copies sit on PMem (planner hostCopy layout): decode reads them from VRAM",
+  "spill_heal": true
+ },
+ "system": {
+  "numa_balancing": 0,
+  "demotion": false,
+  "swap": "off"
+ },
+ "heat": {
+  "plan": "nv2_code_decode",
+  "score": "nv2_code_decode",
+  "maps": {
+   "plan": {
+    "map_id": "glm53-flash__coding-kld-agent__glm53-nv2__2026-10-17",
+    "digest": "sha256:76f8228f7e2ef23d8777a22ebebc3171ae3f908a005c7926bbb84a4731fa34fa",
+    "slice": "decode"
+   },
+   "score": {
+    "map_id": "glm53-flash__coding-kld-agent__glm53-nv2__2026-10-17",
+    "digest": "sha256:76f8228f7e2ef23d8777a22ebebc3171ae3f908a005c7926bbb84a4731fa34fa",
+    "slice": "decode"
+   }
+  }
+ },
+ "files": [
+  {
+   "path": "/mnt/odie-cache/GLM-5.3-Flash-unsloth-UD-Q4_K_XL-GGUF/GLM-5.3-Flash-UD-Q4_K_XL-00001-of-00006.gguf",
+   "holds": "experts + non-experts (6 shards, NFS from odie, read once at load with --no-mmap)",
+   "access": "loaded"
+  }
+ ],
+ "src": "lab notes GLM best-effort BE1-Q3, arm 1 + glm-be1/run-glm-be1.sh"
+}

@@ -1,0 +1,3 @@
+# arm	kind	model (container path; odie lab notes mounted at /bench): Q4_0 requantized from the Q8_0 files, for the quant-kernel check
+qwen3-1.7b-q4_0	dense	/bench/qwen3-1.7b-q4_0.gguf
+ha8b-q4_0	dense	/bench/ha8b-q4_0.gguf

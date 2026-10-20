@@ -1,0 +1,218 @@
+{
+ "name": "Qwen4ExpForConditionalGeneration",
+ "L": 48,
+ "layer_ids": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+  32,
+  33,
+  34,
+  35,
+  36,
+  37,
+  38,
+  39,
+  40,
+  41,
+  42,
+  43,
+  44,
+  45,
+  46,
+  47
+ ],
+ "E": 512,
+ "k": 10,
+ "P": 4915200,
+ "P_src": "HF Qwen/Qwen3.8-Flash-Next@main config.json + 131 safetensors headers: 3 x hidden 2560 x expert_ff 640",
+ "arch": {
+  "v": "qwen4_exp_text",
+  "tag": "READ",
+  "src": "HF Qwen/Qwen3.8-Flash-Next@main config.json + 131 safetensors headers"
+ },
+ "hidden": {
+  "v": 2560,
+  "tag": "READ",
+  "src": "HF Qwen/Qwen3.8-Flash-Next@main config.json + 131 safetensors headers"
+ },
+ "expert_ff": {
+  "v": 640,
+  "tag": "READ",
+  "src": "HF Qwen/Qwen3.8-Flash-Next@main config.json + 131 safetensors headers"
+ },
+ "n_shared": {
+  "v": 1,
+  "tag": "READ",
+  "src": "HF Qwen/Qwen3.8-Flash-Next@main config.json + 131 safetensors headers"
+ },
+ "layers": {
+  "v": {
+   "main": 48,
+   "moe": 48,
+   "dense": [],
+   "linear_attention": [
+    0,
+    1,
+    2,
+    4,
+    5,
+    6,
+    8,
+    9,
+    10,
+    12,
+    13,
+    14,
+    16,
+    17,
+    18,
+    20,
+    21,
+    22,
+    24,
+    25,
+    26,
+    28,
+    29,
+    30,
+    32,
+    33,
+    34,
+    36,
+    37,
+    38,
+    40,
+    41,
+    42,
+    44,
+    45,
+    46
+   ]
+  },
+  "tag": "READ",
+  "src": "HF Qwen/Qwen3.8-Flash-Next@main config.json + 131 safetensors headers"
+ },
+ "kv_bytes_per_token": {
+  "v": 24576,
+  "tag": "ESTIMATE",
+  "src": "12 attention layers x 2 KV heads x (K 256 + V 256) x 2 B (f16); NOT applied: indexer compress ratio 4 (the engine may store less)"
+ },
+ "mtp": {
+  "v": {
+   "layers_config": 1,
+   "in_this_source": true,
+   "gib": 4.856
+  },
+  "tag": "READ",
+  "src": "HF Qwen/Qwen3.8-Flash-Next@main config.json + 131 safetensors headers"
+ },
+ "intake": {
+  "source": "HF Qwen/Qwen3.8-Flash-Next@main config.json + 131 safetensors headers",
+  "tag": "READ",
+  "files": 131,
+  "total_gib": 335.276,
+  "gib_by_class": {
+   "attention": 1.15,
+   "embedding": 1.184,
+   "expert_down": 75.0,
+   "expert_gate_up": 150.0,
+   "hyper_connection": 1.193,
+   "linear_attention": 3.886,
+   "mtp": 4.856,
+   "ngram_table": 95.368,
+   "output": 1.184,
+   "ple": 0.061,
+   "router": 0.117,
+   "shared_expert": 0.439,
+   "vision": 0.836
+  },
+  "bytes_by_class": {
+   "attention": {
+    "BF16": 1234716672
+   },
+   "embedding": {
+    "BF16": 1271398400
+   },
+   "expert_down": {
+    "BF16": 80530636800
+   },
+   "expert_gate_up": {
+    "BF16": 161061273600
+   },
+   "hyper_connection": {
+    "BF16": 1281249280
+   },
+   "linear_attention": {
+    "BF16": 4173020928
+   },
+   "mtp": {
+    "BF16": 5214301696
+   },
+   "ngram_table": {
+    "BF16": 102400491520
+   },
+   "output": {
+    "BF16": 1271398400
+   },
+   "ple": {
+    "BF16": 65679360,
+    "I64": 280
+   },
+   "router": {
+    "BF16": 126074880
+   },
+   "shared_expert": {
+    "BF16": 471859200
+   },
+   "vision": {
+    "BF16": 897862112
+   }
+  },
+  "experts_gib": 225.0,
+  "dense_gib": 8.032,
+  "lookup_gib": {
+   "ngram_table": 95.368,
+   "embedding": 1.184
+  },
+  "expert_types": {
+   "expert_down": {
+    "BF16": 75.0
+   },
+   "expert_gate_up": {
+    "BF16": 150.0
+   }
+  },
+  "unclassified": [],
+  "expert_bpw": 16.0
+ }
+}

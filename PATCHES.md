@@ -55,6 +55,8 @@ have not run it on that hardware, and the entry says why it may or may not carry
 | [`agent-eval/`](b70/agent-eval/) | no GPU needed | an OpenAI-compatible server, a proxy, Docker | two B70s | [section 6](#agent-eval-can-a-local-model-finish-real-repository-work) |
 | [`bench/`](b70/bench/) | no GPU needed | llama-server or an OpenAI-compatible server | B70 | [section 6](#bench-the-measurements-behind-the-numbers) |
 | [`autoround-dequant-check.py`](b70/vllm-xpu/autoround-dequant-check.py) | no GPU needed | Python with numpy | CPU | [section 6](#autoround-dequant-checkpy-is-a-4-bit-checkpoint-sound) |
+| [`recipe-maker/`](recipe-maker/) | no GPU needed | Python 3 and node, standard library only | four boxes: RTX 3090 Ti, Quadro RTX 6000 + Optane, Arc Pro B70, EPYC CPU-only | [section 6](#recipe-maker-plan-a-moe-layout-before-you-run-it) |
+| `amdgpu` cold-boot wait (`psp_v3_1.c`) | AMD Vega 10 only | Ubuntu kernel 6.8 `amdgpu`, rebuilt | MI25 | [the MI25 entry](mi25/README.md#the-card-and-the-stack) |
 
 ## Our machine
 
@@ -72,7 +74,9 @@ If yours matches, this is the configuration every number below comes from.
 - **An NVIDIA Quadro RTX 6000** (24 GB, Turing) in an HP Z8 G4, running llama.cpp CUDA builds. Nothing
   in this repo was measured on it yet, apart from one fix to another project
   ([below](#nvidia-quadro-rtx-6000-turing-24-gb)).
-- **An NVIDIA GTX 1080 Ti** (11 GB, Pascal). Nothing measured on it yet.
+- **An NVIDIA GTX 1080 Ti** (11 GB, Pascal) and an **AMD Radeon Instinct MI25** (16 GB, Vega 10) in a two-socket
+  EPYC 7601 server with 1 TB of DRAM. Their numbers are in [the MI25 entry](mi25/) and [moe-offload](moe-offload/);
+  none of the patches above was measured on them.
 - **The client**: Claude Code, reaching the local models through an Anthropic-to-OpenAI proxy (a fork
   of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)).
 
@@ -485,8 +489,10 @@ One of our cards, not yet measured for this repo.
 
 ### NVIDIA GTX 1080 Ti (Pascal, 11 GB)
 
-One of our cards; nothing measured on it. It cannot hold the models above on its own: Qwen3.8-27B at
-4 bits is 18 GB of weights before any cache. The [section 1](#1-any-gpu-serving-software-and-chat-template-fixes)
+One of our cards. It cannot hold the models above on its own: Qwen3.8-27B at 4 bits is 18 GB of weights
+before any cache. What we measured on it: small models under llama.cpp Vulkan beside an MI25 ([the MI25
+entry](mi25/)), and DeepSeek V4.1 Flash with only its router, shared experts and output on the card
+([moe-offload](moe-offload/), point 11: V4.1's attention on this card gave garbage text in our build). The [section 1](#1-any-gpu-serving-software-and-chat-template-fixes)
 entries are untested on it, and the [tools](#6-tools-that-need-no-particular-gpu) apply.
 
 ### Other Intel Arc cards
@@ -499,7 +505,8 @@ llm-scaler supports is in Intel's documentation.
 
 ### AMD, Apple and other NVIDIA GPUs
 
-Untested. The [section 1](#1-any-gpu-serving-software-and-chat-template-fixes) entries are not tied to
+The AMD Radeon Instinct MI25 (Vega 10) is measured under llama.cpp Vulkan in [its own entry](mi25/), with a
+kernel-side fix for a card that does not start on a cold boot. Otherwise untested. The [section 1](#1-any-gpu-serving-software-and-chat-template-fixes) entries are not tied to
 a GPU, with the version limits each entry states, and the
 [tools](#6-tools-that-need-no-particular-gpu) apply.
 
@@ -533,6 +540,25 @@ a GPU, with the version limits each entry states, and the
 How we measured, and the rules we kept to: [`bench/`](b70/bench/README.md). Our prompt corpus (our
 own CI logs) is not published; any JSONL file with a `"text"` field works, and speculative speeds
 depend on the text.
+
+### `recipe-maker/`: plan a MoE layout before you run it
+
+- **What it is.** A planner for running a mixture-of-experts model that does not fit in VRAM. It places each part of
+  the model in VRAM, DRAM per NUMA node, Optane PMem or NVMe, predicts decode speed and quality, and refuses a
+  layout that will run out of memory, read from the wrong disk or miss a quality bar, before you start it. Every
+  number it uses says whether we measured it, inferred it or do not know it.
+- **For.** Any Linux box: it probes yours read-only and reads a model's layout from its file headers, never the
+  weights. Needs Python 3 and node, nothing to install.
+- **Measured.** Its decode prediction against our own runs (`node report.js --accuracy`): median error 2.5 % for
+  GLM-5.3-Flash on an RTX 3090 Ti box (8 runs), 13.9 % for DeepSeek V4.1 Flash and 15.6 % for GLM on the Optane
+  workstation (7 and 4 runs), 4.1 % for a block-diffusion model on an Arc Pro B70 (15 runs). Its pre-launch gate
+  failed 31 of the 41 runs that went bad. On published community runs on hardware we do not own, the median error is
+  17-59 % by hardware class.
+- **Run.** `python3 build.py`, open `index.html`; then [use it with your own
+  boxes](recipe-maker/README.md#with-your-own-boxes). Every measured run with its conditions:
+  [`results/RESULTS.md`](recipe-maker/results/RESULTS.md).
+- **Check.** `node report.js --check recipes/regress-droopy-b1017-dry.json --strict` gives the same verdict as ours;
+  the test suite is in [`tests/`](recipe-maker/tests/).
 
 ### `autoround-dequant-check.py`: is a 4-bit checkpoint sound?
 

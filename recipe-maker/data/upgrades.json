@@ -1,0 +1,40 @@
+{
+ "about": "Upgrade advisor (src/advisor.js; owner 2026-10-19: when a recipe gets more out of speeding up a lane, suggest buying it). Per box: the best quality-passing measured recipe per model, its predicted tok/s with each lane made probe_scale x faster or bigger, the binding lane (the probe with the largest gain), and every part row below re-predicted on that recipe. A part is suggested only when its low-end gain >= suggest_min_gain, one of its lanes is the binding lane, and the recipe passes quality. build.py copies this file to data.upgrade; report.js prints and returns the advice (data.json upgrade.advice, report --json upgrades).",
+ "settings": {
+  "suggest_min_gain": 0.20,
+  "suggest_min_gain_src": "lead brief 2026-10-19 (owner ask: suggest an upgrade when a recipe would get real use out of a faster lane): 20 % predicted decode gain at the low end of the part's bracket",
+  "probe_scale": 2.0,
+  "probe_scale_src": "each lane probe makes one lane 2x faster (bandwidth, CPU kernel rate) or 2x bigger (capacity) and nothing else; the probe with the largest gain names the binding lane",
+  "co_binding_min_extra": 0.05,
+  "co_binding_min_extra_src": "a lane pair (DRAM or PMem read ceiling + CPU kernel rate) binds as one lane when (1 + its 2x probe gain) beats the product of its members' (1 + gain) by 5 %: the two sit together, as on snoopy's DDR5 wall (60 % as a pair, 0.1 % apart); lanes on different tiers only compound (droopy V4.1: 1.2 %)",
+  "exclude_tags": ["tainted", "cpu-probe"],
+  "exclude_tags_src": "ledger rows the box map also leaves out (lab notes projected.exclude_tags)"
+ },
+ "lanes": {
+  "vram_bw": "GPU memory bandwidth (every GPU tier's read rate)",
+  "vram_cap": "GPU memory for expert banks (the recipe's banks, or the first GPU's capacity)",
+  "dram_bw": "DRAM read ceiling (the CPU kernel rate is fitted as a fraction of it and read as compute, so this lane moves only where reads hit the ceiling)",
+  "dram_cap": "DRAM for experts (the recipe's RAM tier, node plan or the box usable figure)",
+  "pmem_bw": "Optane PMem read rate",
+  "pmem_cap": "Optane PMem capacity",
+  "nvme_bw": "NVMe read rate",
+  "cpu": "CPU expert-kernel rate (cores, ISA, kernel code)"
+ },
+ "parts": [
+  {"id": "droopy-pmem100-4x128", "box": "droopy",
+   "part": "4x Intel Optane PMem 100 128 GB (NMA1XXD128GPS) into socket 0's second slots (2-2-2, 6-way App Direct)",
+   "lanes": ["pmem_bw", "pmem_cap"], "knobs": {"addOptane": true},
+   "bracket": {"knob": "optaneBwScale", "lo": null, "hi": 3.0, "src": "lo = the box upgrade bw_scale (2.239: 30 GB/s both-socket, lab notes), hi = 3.0 (linear 6-way stripe); lab notes 2026-10-19 PMem 4-stick buy figure"},
+   "qty": 4,
+   "price_each_usd": {"v": [69, 129], "tag": "READ", "src": "used eBay listings read 2026-10-17 (lab notes 2026-10-19 PMem 4-stick buy figure: Core 4 Solutions $89, t-traderz $99, dedicatednetwork $80 reconditioned, others $69-129; the $449.99 outlier left out)"},
+   "price_date": "2026-10-17",
+   "caveat": "needs an ipmctl goal + reboot for the 6-way set and FW 01.02.00.5446 on the new sticks; fills socket 0's last DRAM slots"},
+  {"id": "droopy-ddr4-s1-6x16", "box": "droopy",
+   "part": "6x 16 GB DDR4-2666 RDIMM into socket 1's free slots (2DPC)",
+   "lanes": ["dram_cap"], "lane": {"add_gib": {"dram": 89.4}},
+   "qty": 1,
+   "price_usd": {"v": [110, 250], "tag": "READ", "src": "lab notes 2026-10-19 PMem 4-stick buy figure: used 16 GB DDR4-2666 RDIMMs ~$18-40 each (listing dates unconfirmed) -> ~$110-250 for six; 96 GB = 89.4 GiB"},
+   "price_date": "2026-10-19",
+   "caveat": "the planner is NUMA-layout-blind: socket-1-only DRAM fights the rows layout (half of each expert per socket); 2DPC beside PMem on socket 0 UNKNOWN"}
+ ]
+}

@@ -1,0 +1,8 @@
+.attic/
+__pycache__/
+*.pre-*
+fitviz.local.json
+/harvest/
+/data.json
+/index.html
+/page/

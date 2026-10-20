@@ -1,0 +1,169 @@
+{
+ "name": "Hf",
+ "L": 19,
+ "layer_ids": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19
+ ],
+ "E": 256,
+ "k": 8,
+ "P": 3145728,
+ "P_src": "GGUF headers odie:~/dllm/models/LLaDA2.1-mini-Q4_0.gguf: 3 x hidden 2048 x expert_ff 512",
+ "tensor_names": [
+  "blk.{L}.ffn_down_exps.weight",
+  "blk.{L}.ffn_gate_exps.weight",
+  "blk.{L}.ffn_up_exps.weight"
+ ],
+ "arch": {
+  "v": "llada2",
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/LLaDA2.1-mini-Q4_0.gguf"
+ },
+ "hidden": {
+  "v": 2048,
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/LLaDA2.1-mini-Q4_0.gguf"
+ },
+ "expert_ff": {
+  "v": 512,
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/LLaDA2.1-mini-Q4_0.gguf"
+ },
+ "n_shared": {
+  "v": 1,
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/LLaDA2.1-mini-Q4_0.gguf"
+ },
+ "layers": {
+  "v": {
+   "main": 20,
+   "moe": 19,
+   "dense": [
+    0
+   ],
+   "linear_attention": []
+  },
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/LLaDA2.1-mini-Q4_0.gguf"
+ },
+ "kv_bytes_per_token": {
+  "v": 40960,
+  "tag": "READ",
+  "src": "20 attention layers x 4 KV heads x (K 128 + V 128) x 2 B (f16) (GGUF headers odie:~/dllm/models/LLaDA2.1-mini-Q4_0.gguf)"
+ },
+ "mtp": {
+  "v": {
+   "layers_config": null,
+   "in_this_source": false,
+   "gib": 0.0
+  },
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/LLaDA2.1-mini-Q4_0.gguf"
+ },
+ "intake": {
+  "source": "GGUF headers odie:~/dllm/models/LLaDA2.1-mini-Q4_0.gguf",
+  "tag": "READ",
+  "files": [
+   [
+    "LLaDA2.1-mini-Q4_0.gguf",
+    9267855808,
+    278
+   ]
+  ],
+  "total_gib": 8.625,
+  "gib_by_class": {
+   "attention": 0.11,
+   "embedding": 0.169,
+   "expert_down": 2.672,
+   "expert_gate": 2.672,
+   "expert_up": 2.672,
+   "norm": 0.0,
+   "other": 0.016,
+   "output": 0.246,
+   "router": 0.037,
+   "shared_expert": 0.031
+  },
+  "bytes_by_class": {
+   "attention": {
+    "f32": 184320,
+    "q4_0": 117964800
+   },
+   "embedding": {
+    "q4_0": 181075968
+   },
+   "expert_down": {
+    "q4_0": 2868903936
+   },
+   "expert_gate": {
+    "q4_0": 2868903936
+   },
+   "expert_up": {
+    "q4_0": 2868903936
+   },
+   "norm": {
+    "f32": 172032
+   },
+   "other": {
+    "q4_0": 17694720
+   },
+   "output": {
+    "q6_K": 264069120
+   },
+   "router": {
+    "f32": 39865344
+   },
+   "shared_expert": {
+    "q4_0": 33619968
+   }
+  },
+  "experts_gib": 8.016,
+  "dense_gib": 0.441,
+  "lookup_gib": {
+   "embedding": 0.169
+  },
+  "expert_types": {
+   "expert_down": {
+    "q4_0": 2.672
+   },
+   "expert_gate": {
+    "q4_0": 2.672
+   },
+   "expert_up": {
+    "q4_0": 2.672
+   }
+  },
+  "unclassified": [
+   "blk.0.ffn_down.weight",
+   "blk.0.ffn_gate.weight",
+   "blk.0.ffn_up.weight"
+  ],
+  "expert_bpw": 4.5
+ },
+ "experts_gib": {
+  "v": 8.016,
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/LLaDA2.1-mini-Q4_0.gguf: routed expert tensors"
+ },
+ "dense_gib": {
+  "v": 0.441,
+  "tag": "READ",
+  "src": "GGUF headers odie:~/dllm/models/LLaDA2.1-mini-Q4_0.gguf: all tensors except routed experts, lookup tables, MTP and vision"
+ }
+}

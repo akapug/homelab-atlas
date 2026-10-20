@@ -1,0 +1,449 @@
+{
+ "about": "Measured levers: each before/after names ledger runs (runs.jsonl ids) and the measured fields to show; build.py renders the text from the runs. A plain string is a hand-only cell (no ledger run behind it). show: n4/n0/n3/n4b/c1 = decode phase, prefill, kl, top1, memfree (node MemFree min), vram (post-warm-up GiB), swapin, c8, outcome, draft_x (n4 / n0).",
+ "levers": [
+  {
+   "box": "droopy",
+   "model": "v41",
+   "lever": "split GGUF + dram-fill placement + hot-unrepack (B0, -rtr off) vs E2",
+   "before": [
+    {
+     "run": "droopy-v41-e2",
+     "show": [
+      "n4",
+      "prefill"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "droopy-v41-b0c-nortr",
+     "show": [
+      "n4",
+      "prefill"
+     ]
+    }
+   ]
+  },
+  {
+   "box": "droopy",
+   "model": "v41",
+   "lever": "-rtr (CPU repack) on the split model",
+   "before": [
+    {
+     "run": "droopy-v41-b0c-nortr",
+     "show": [
+      "n4",
+      "prefill"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "droopy-v41-b0c-rtr",
+     "show": [
+      "n4",
+      "n4b",
+      "prefill"
+     ]
+    }
+   ]
+  },
+  {
+   "box": "droopy",
+   "model": "v41",
+   "lever": "engram tables on the HDD instead of NVMe",
+   "before": [
+    {
+     "run": "droopy-v41-b0c-nortr",
+     "show": [
+      "prefill",
+      "n4"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "droopy-v41-b0-1",
+     "show": [
+      "prefill",
+      "prompt1"
+     ]
+    },
+    {
+     "run": "droopy-v41-b0b",
+     "show": [
+      "prefill"
+     ]
+    }
+   ]
+  },
+  {
+   "box": "droopy",
+   "model": "v41",
+   "lever": "DSpark q2 draft n_max 4",
+   "before": [
+    {
+     "run": "droopy-v41-b0c-nortr",
+     "show": [
+      "n0"
+     ]
+    },
+    {
+     "run": "droopy-v41-e2",
+     "show": [
+      "n0"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "droopy-v41-b0c-nortr",
+     "show": [
+      "n4",
+      "draft_x",
+      "accept"
+     ]
+    },
+    {
+     "run": "droopy-v41-e2",
+     "show": [
+      "n4",
+      "draft_x",
+      "accept"
+     ]
+    }
+   ]
+  },
+  {
+   "box": "droopy",
+   "model": "v41",
+   "lever": "-ub 4096 -b 4096 + offload-batch-size (pf)",
+   "before": [
+    {
+     "run": "droopy-v41-e1",
+     "show": [
+      "prefill"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "droopy-v41-e2",
+     "show": [
+      "prefill"
+     ],
+     "note": "costs ~4 GiB VRAM (KV + compute 5.43 vs ~1.4 GiB at ub512)"
+    }
+   ]
+  },
+  {
+   "box": "droopy",
+   "model": "v41",
+   "lever": "dram-fill node headroom 10 GiB with 3.0 GiB banks (B1b)",
+   "before": [
+    {
+     "run": "droopy-v41-b0c-nortr",
+     "show": [
+      "prefill",
+      "n4"
+     ],
+     "note": "2.24 GiB banks"
+    }
+   ],
+   "after": [
+    {
+     "run": "droopy-v41-b1b-1",
+     "show": [
+      "memfree",
+      "prefill",
+      "outcome"
+     ],
+     "note": "kswapd; B1c retries at headroom 16"
+    }
+   ]
+  },
+  {
+   "box": "droopy",
+   "model": "v41",
+   "lever": "dram-fill headroom 16 + 3.0 GiB banks (B1c, swap on)",
+   "before": [
+    {
+     "run": "droopy-v41-b0c-nortr",
+     "show": [
+      "n4",
+      "n4b"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "droopy-v41-b1c",
+     "show": [
+      "n4",
+      "n4b",
+      "prefill",
+      "memfree"
+     ],
+     "note": "PMem share 8.8 %"
+    }
+   ]
+  },
+  {
+   "box": "droopy",
+   "model": "v41",
+   "lever": "swap off + N0 free 74 + 3.0 GiB banks (B1d)",
+   "before": [
+    {
+     "run": "droopy-v41-b0c-nortr",
+     "show": [
+      "n4",
+      "n0",
+      "n4b"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "droopy-v41-b1d",
+     "show": [
+      "n4",
+      "n0",
+      "n4b",
+      "prefill",
+      "swapin"
+     ],
+     "note": "PMem share 9.8 %: slower; bank size vs PMem share unseparated"
+    }
+   ]
+  },
+  {
+   "box": "droopy",
+   "model": "v41",
+   "lever": "hot banks 2.24 -> 3.99 GiB",
+   "before": [
+    {
+     "run": "droopy-v41-b0c-nortr",
+     "show": [
+      "vram",
+      "outcome"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "droopy-v41-b1",
+     "show": [
+      "outcome"
+     ],
+     "note": "on the first timed prompt"
+    }
+   ]
+  },
+  {
+   "box": "snoopy",
+   "model": "glm",
+   "lever": "desktop off the GPU",
+   "before": [
+    {
+     "run": "snoopy-glm-arma-0719",
+     "show": [
+      "c1"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "snoopy-glm-ctl-0922",
+     "show": [
+      "c1"
+     ]
+    },
+    {
+     "run": "snoopy-glm-ctl-0929",
+     "show": [
+      "c1"
+     ],
+     "note": "1408 slots"
+    }
+   ]
+  },
+  {
+   "box": "snoopy",
+   "model": "glm",
+   "lever": "EXCL=0 (non-exclusive RAM tier, all 12,096 experts resident, no write-backs)",
+   "before": [
+    {
+     "run": "snoopy-glm-ctl-0922",
+     "show": [
+      "c1"
+     ]
+    },
+    {
+     "run": "snoopy-glm-ctl-0929",
+     "show": [
+      "c1"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "snoopy-glm-excl0-1137",
+     "show": [
+      "c1"
+     ]
+    }
+   ]
+  },
+  {
+   "box": "snoopy",
+   "model": "glm",
+   "lever": "-cs 32768 (context cap, 1600 VRAM slots)",
+   "before": [
+    {
+     "run": "snoopy-glm-excl0-1137",
+     "show": [
+      "c1"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "snoopy-glm-excl0-1143",
+     "show": [
+      "c1",
+      "c8"
+     ]
+    }
+   ]
+  },
+  {
+   "box": "snoopy",
+   "model": "glm",
+   "lever": "AVX-512 lane kernel (p512, shape 0:128)",
+   "before": [
+    {
+     "run": "snoopy-glm-excl0-1143",
+     "show": [
+      "c1"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "snoopy-glm-k2e-1450",
+     "show": [
+      "c1",
+      "kl",
+      "top1"
+     ]
+    }
+   ]
+  },
+  {
+   "box": "snoopy",
+   "model": "glm",
+   "lever": "CPU lane now DRAM-bound",
+   "before": "AVX2 lane 0.228 ms/expert (compute-bound, 41 GB/s)",
+   "after": "K=3 0.167 / K=2 0.117 ms/expert = 95 % of the 59.5 GB/s roofline",
+   "src": "lab notes (lab notes 14:40Z): AVX-512 lane, 14 threads, cold experts: K=3 best shape 0.1665 ms/expert at 56.7 GB/s, K=2 0.1169 ms at 53.8 GB/s, pure-load roofline 59.5 GB/s; lab notes (kernel benches, not served runs)"
+  },
+  {
+   "box": "snoopy",
+   "model": "glm",
+   "lever": "P3 per-layer K=2 split (middle 30 layers 2.05 bpw)",
+   "before": [
+    {
+     "run": "snoopy-glm-k2e-1450",
+     "show": [
+      "c1"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "snoopy-glm-p3-1503",
+     "show": [
+      "c1",
+      "kl",
+      "top1"
+     ],
+     "note": "QUALITY FAIL"
+    }
+   ]
+  },
+  {
+   "box": "droopy",
+   "model": "-",
+   "lever": "K1 CPU kernel efficiency in DRAM (Cascade Lake)",
+   "before": "odie AVX2 smoke priors",
+   "after": "mxfp4 .46, q2_K:q3_K .53, q4_K .54, iq4_ks .65, iq3_ks .52, iq2_ks .34, iq2_kl .38, mxfp4_r8 .69 (kernel only)",
+   "src": "droopy K1 kernel bench (Cascade Lake, 20 threads on cores 0-19, experts in DRAM first-touch, batch 1; frac of the 144 GB/s read ceiling; lab notes k1-results.jsonl, lab notes 09:4xZ)"
+  },
+  {
+   "box": "snoopy",
+   "model": "glm",
+   "lever": "route trim, decode picks that miss VRAM (lab notes; Maya TRUNK_KEEP_MAP semantics, glmlite expert-trim e1160e7)",
+   "before": [
+    {
+     "run": "snoopy-glm-glm-coder-s1w",
+     "show": [
+      "c1"
+     ]
+    }
+   ],
+   "after": [
+    {
+     "run": "snoopy-glm-glm-coder-s1w-trim-a",
+     "show": [
+      "c1",
+      "kl",
+      "top1"
+     ],
+     "note": "keep 7 on 26 + 4 on 27-44: +19.4 % (27.60), QUALITY FAIL on top-1 by 2 positions of 928"
+    },
+    {
+     "run": "snoopy-glm-glm-coder-s1w-trim-b",
+     "show": [
+      "c1",
+      "kl",
+      "top1"
+     ],
+     "note": "keep 5 on 27-44: +13.1 % (25.65), quality PASS (KL 0.0103, top-1 0.984): first GLM layout over the 25 bar on bench prompts"
+    },
+    {
+     "run": "snoopy-glm-glm-coder-s1w-trim-c",
+     "show": [
+      "c1",
+      "kl",
+      "top1"
+     ],
+     "note": "keep 4 on 29-44 (the map's proposal after A, B): +17.2 % (26.69), quality PASS (KL 0.0154, top-1 0.975): fastest passing GLM point; agent briefs 24.65"
+    }
+   ],
+   "src": "lab notes + trim-0307 + trim-0335 report.txt (same-server interleaved A/B); planner calibration: data/layer-maps.json glm.trim transfer + top1_per_kl MEASURED"
+  }
+ ],
+ "about_next": "next: the planned next step per box and model (box-booking reads it into the box map as next_step / next_lever): step = what runs next, ref = its ledger row, blocker = what stops the lane today when no quality-gate FAIL says it. One entry per box and model; replace it when the step changes.",
+ "next": [
+  {
+   "box": "snoopy",
+   "model": "glm",
+   "step": "adopt route trim C (keep 4 on 29-44, PASS, 26.69 bench / 24.65 agent) as the snoopy GLM coder lane: the recalibrated map proposes nothing faster under the budget (its next point, keep 5 on 29 + 4 on 30-44, scales to ~26.6); the agent-brief bar then needs the MTP/lookahead levers (lab notes)",
+   "ref": "lab notes",
+   "blocker": "agent briefs 24.65 under the 25 bar with C; deeper trims lose top-1 at 1.49 per unit KL and keep-4 KL runs over the map (convex in rank)"
+  },
+  {
+   "box": "droopy",
+   "model": "v41",
+   "step": "none >= 10 % planned: PMem 4-stick buy predicts +15-18 % (10.6 -> 12.1-12.5) and socket-1 DDR4 +25 %, both far below the bar; owner buy decision only for capacity (Kimi-K3 / V4.1 Q8_0)",
+   "ref": "lab notes 2026-10-19 PMem 4-stick buy figure",
+   "blocker": "per-token fixed overhead ~54 ms + CPU expert compute ~50 ms in DRAM; no DRAM room for more PMem experts"
+  },
+  {
+   "box": "odie",
+   "model": "glm",
+   "step": "usage-weighted mixed-bit GLM quant that fits odie's 128 GB",
+   "ref": "lab notes"
+  }
+ ]
+}

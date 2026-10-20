@@ -1,0 +1,334 @@
+{
+ "name": "odie",
+ "cpu": {
+  "model": {
+   "v": "AMD Ryzen Threadripper 3960X 24-Core Processor",
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /proc/cpuinfo"
+  },
+  "sockets": {
+   "v": 1,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /proc/cpuinfo physical id"
+  },
+  "phys": {
+   "v": 24,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /proc/cpuinfo (physical id, core id) pairs"
+  },
+  "threads": {
+   "v": 44,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z Cpus_allowed_list 0-21,24-45 of 48 online (a user process gets these)"
+  },
+  "threads_online": {
+   "v": 48,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /sys/devices/system/cpu/online"
+  },
+  "isa": {
+   "v": {
+    "avx": true,
+    "avx2": true,
+    "fma": true,
+    "f16c": true,
+    "avx512f": false,
+    "avx512bw": false,
+    "avx512vl": false,
+    "avx512_vnni": false,
+    "avx512_bf16": false,
+    "avx512_fp16": false,
+    "avx_vnni": false,
+    "amx_tile": false,
+    "amx_int8": false,
+    "amx_bf16": false
+   },
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /proc/cpuinfo flags"
+  },
+  "smt": {
+   "v": true,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z online CPUs vs physical cores"
+  }
+ },
+ "dram": {
+  "total_gib": {
+   "v": 121.4,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /sys/devices/system/node/node*/meminfo (MemTotal of nodes with CPUs)"
+  },
+  "free_gib": {
+   "v": 1.2,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /sys/devices/system/node/node*/meminfo (MemFree now, not a plan figure)"
+  },
+  "nodes": [
+   {
+    "node": 0,
+    "name": "node 0",
+    "cpus": "0-47",
+    "gib": 121.4,
+    "free_gib": 1.2,
+    "tag": "MEASURED",
+    "src": "probe odie 2026-10-17T20:27:43Z /sys/devices/system/node/node*/meminfo"
+   }
+  ],
+  "available_gib": {
+   "v": 74.0,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /proc/meminfo MemAvailable (whole box, incl. memory-only nodes)"
+  },
+  "dimms": {
+   "v": {
+    "populated": 4,
+    "slots": 8,
+    "gib_each": [
+     32
+    ],
+    "type": "DDR4"
+   },
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z sudo -n dmidecode -t memory (slots = memory devices listed, PMem modules excluded)"
+  },
+  "speed_mts": {
+   "v": 3200,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z sudo -n dmidecode -t memory Configured Memory Speed"
+  },
+  "channels": {
+   "v": 4,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z sudo -n dmidecode -t memory distinct populated channels in Bank Locator"
+  },
+  "bw_peak_gbs": {
+   "v": 102.4,
+   "tag": "ESTIMATE",
+   "src": "nameplate arithmetic: 4 channels x 3200 MT/s x 8 B (not a measured read rate)"
+  }
+ },
+ "pmem": null,
+ "gpus": [
+  {
+   "pci": "0000:23:00.0",
+   "name": "Intel(R) Graphics [0xe223]",
+   "model": {
+    "v": "Intel(R) Graphics [0xe223]",
+    "tag": "MEASURED",
+    "src": "probe odie 2026-10-17T20:27:43Z xpu-smi discovery memory_physical_size_byte / memory_free_size_byte"
+   },
+   "vendor": "intel",
+   "driver": "xe",
+   "vram_gib": {
+    "v": 31.8906,
+    "tag": "MEASURED",
+    "src": "probe odie 2026-10-17T20:27:43Z xpu-smi discovery memory_physical_size_byte / memory_free_size_byte"
+   },
+   "vram_free_gib": {
+    "v": 3.94,
+    "tag": "MEASURED",
+    "src": "probe odie 2026-10-17T20:27:43Z xpu-smi discovery memory_physical_size_byte / memory_free_size_byte (now)"
+   },
+   "discrete": true,
+   "pcie": {
+    "v": {
+     "gen": 4,
+     "width": 16,
+     "max_gen": 4,
+     "max_width": 16
+    },
+    "tag": "MEASURED",
+    "src": "probe odie 2026-10-17T20:27:43Z root-port link (the card sits behind an on-board PCIe switch; its endpoint reports a virtual gen1 x1 link)"
+   }
+  },
+  {
+   "pci": "0000:4c:00.0",
+   "name": "Intel(R) Graphics [0xe223]",
+   "model": {
+    "v": "Intel(R) Graphics [0xe223]",
+    "tag": "MEASURED",
+    "src": "probe odie 2026-10-17T20:27:43Z xpu-smi discovery memory_physical_size_byte / memory_free_size_byte"
+   },
+   "vendor": "intel",
+   "driver": "xe",
+   "vram_gib": {
+    "v": 31.8906,
+    "tag": "MEASURED",
+    "src": "probe odie 2026-10-17T20:27:43Z xpu-smi discovery memory_physical_size_byte / memory_free_size_byte"
+   },
+   "vram_free_gib": {
+    "v": 30.07,
+    "tag": "MEASURED",
+    "src": "probe odie 2026-10-17T20:27:43Z xpu-smi discovery memory_physical_size_byte / memory_free_size_byte (now)"
+   },
+   "discrete": true,
+   "pcie": {
+    "v": {
+     "gen": 4,
+     "width": 16,
+     "max_gen": 4,
+     "max_width": 16
+    },
+    "tag": "MEASURED",
+    "src": "probe odie 2026-10-17T20:27:43Z root-port link (the card sits behind an on-board PCIe switch; its endpoint reports a virtual gen1 x1 link)"
+   }
+  }
+ ],
+ "disks": [
+  {
+   "mount": "/",
+   "kind": "nvme",
+   "fstype": "ext4",
+   "source": "/dev/nvme0n1p5",
+   "size_gib": 767.11,
+   "free_gib": 141.56,
+   "rotational": false,
+   "members": [
+    "nvme0n1"
+   ],
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z findmnt + lsblk ROTA/TRAN: nvme0n1 non-rotational nvme \"WDBRPG0010BNC-WRSN\""
+  },
+  {
+   "mount": "/dev/shm",
+   "kind": "memory",
+   "fstype": "tmpfs",
+   "source": "tmpfs",
+   "size_gib": 60.7,
+   "free_gib": 60.7,
+   "rotational": null,
+   "members": [],
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z findmnt + lsblk ROTA/TRAN: tmpfs (RAM)"
+  },
+  {
+   "mount": "/tmp",
+   "kind": "memory",
+   "fstype": "tmpfs",
+   "source": "tmpfs",
+   "size_gib": 60.7,
+   "free_gib": 54.82,
+   "rotational": null,
+   "members": [],
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z findmnt + lsblk ROTA/TRAN: tmpfs (RAM)"
+  },
+  {
+   "mount": "/models",
+   "kind": "nvme",
+   "fstype": "ext4",
+   "source": "/dev/nvme1n1p1",
+   "size_gib": 1832.7,
+   "free_gib": 489.85,
+   "rotational": false,
+   "members": [
+    "nvme1n1"
+   ],
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z findmnt + lsblk ROTA/TRAN: nvme1n1 non-rotational nvme \"WD_BLACK SN850X 2000GB\""
+  },
+  {
+   "mount": "/mnt/models-cache",
+   "kind": "hdd",
+   "fstype": "ext4",
+   "source": "/dev/sdc1",
+   "size_gib": 1906.4,
+   "free_gib": 626.36,
+   "rotational": true,
+   "members": [
+    "sdc"
+   ],
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z findmnt + lsblk ROTA/TRAN: sdc rotational usb"
+  },
+  {
+   "mount": "/mnt/seagate750",
+   "kind": "hdd",
+   "fstype": "ext4",
+   "source": "/dev/sde1",
+   "size_gib": 686.6,
+   "free_gib": 262.43,
+   "rotational": true,
+   "members": [
+    "sde"
+   ],
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z findmnt + lsblk ROTA/TRAN: sde rotational usb \"ST750LX003-1AC154\""
+  },
+  {
+   "mount": "/mnt/bulk",
+   "kind": "hdd",
+   "fstype": "btrfs",
+   "source": "/dev/sdb1",
+   "size_gib": 7452.04,
+   "free_gib": 1876.33,
+   "rotational": true,
+   "members": [
+    "sda",
+    "sdb"
+   ],
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z findmnt + lsblk ROTA/TRAN: btrfs members sda1 sdb1 -> sda rotational sata \"ST8000DM004-2U91\", sdb rotational sata \"ST8000DM004-2U91\""
+  }
+ ],
+ "system": {
+  "numa_balancing": {
+   "v": 0,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /proc/sys/kernel/numa_balancing"
+  },
+  "demotion": {
+   "v": false,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /sys/kernel/mm/numa/demotion_enabled"
+  },
+  "thp": {
+   "v": "madvise",
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /sys/kernel/mm/transparent_hugepage/enabled"
+  },
+  "thp_defrag": {
+   "v": "madvise",
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /sys/kernel/mm/transparent_hugepage/defrag"
+  },
+  "swappiness": {
+   "v": 60,
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /proc/sys/vm/swappiness"
+  },
+  "swap": {
+   "v": "off",
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /proc/swaps"
+  },
+  "swap_devices": {
+   "v": [],
+   "tag": "MEASURED",
+   "src": "probe odie 2026-10-17T20:27:43Z /proc/swaps"
+  }
+ },
+ "probe": {
+  "host": "odie",
+  "time": "2026-10-17T20:27:43Z",
+  "kernel": "7.0.0-38-generic",
+  "sudo": true,
+  "src": "probe odie 2026-10-17T20:27:43Z",
+  "unknown": [],
+  "unreadable_sections": {
+   "nvidia": "nvidia-smi not installed"
+  },
+  "vitals": {
+   "source": "vitals 2026-10-17T20:37:59Z (41 s old)",
+   "agree": [
+    "/",
+    "/models",
+    "/mnt/models-cache",
+    "/mnt/seagate750",
+    "/mnt/bulk"
+   ],
+   "disagree": [],
+   "note": "vitals classifies by the top disk only; the probe also resolves btrfs members and loop-image backing files"
+  }
+ }
+}

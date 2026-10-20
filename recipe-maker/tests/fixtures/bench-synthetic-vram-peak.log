@@ -1,0 +1,3 @@
+# SYNTHETIC parser input, not a measurement: the line bench.py prints after reading gpu.csv (no recorded run carries one yet)
+C1 decode median 10.00 min 9.00 max 11.00 over 6
+VRAM peak 23552 MiB at 2026-01-01T00:00:00Z (first sample 2026-01-01T00:00:00Z, 10 samples)

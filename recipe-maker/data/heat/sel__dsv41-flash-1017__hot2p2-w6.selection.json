@@ -1,0 +1,68 @@
+{
+ "format": "hot-expert-selection/1",
+ "model": {
+  "id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  "family": "deepseek-v4.1-flash",
+  "checkpoint": "DeepSeek-V4.1-Flash-1017 Q8_0 GGUF, MXFP4 experts",
+  "checkpoint_hash": null,
+  "checkpoint_hash_note": "manifest not found",
+  "quant": "Q8_0 dense + native MXFP4 experts (GGUF)",
+  "k": 6
+ },
+ "id": "sel__dsv41-flash-1017__hot2p2-w6",
+ "cites": {
+  "map_id": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17",
+  "digest": "sha256:ed30967cb0c7992a66b46d5f1f3a3e53bc41f3aa3917bfdd96a491b91fe46497",
+  "slice": "prefill"
+ },
+ "provenance": {
+  "tag": "MEASURED",
+  "src": "regen-place-1017.sh 86 89 10 (gen-hot-split.py): the GPU banks of the droopy b1017 baseline",
+  "converted_from": {
+   "path": "lab notes",
+   "sha256": "07cfef1bb720e84aff3fe3d5f555d91a4e2cf7d9f97b02c22a03accdf939c93d",
+   "converter": "heatmap.py selection-from-banks"
+  }
+ },
+ "rule": "V4.1 split hot banks from a5v41-1017-a5-expert-counts.tsv: 129 experts (119 hot-partition MXFP4, 10 cold q2_K/q3_K), 2.194 GiB of 2.2 GiB, PMem weight W=6.0 (DRAM-fill layout); in-sample share of routed reads on GPU 0.140",
+ "experts": {
+  "1": [85,213],
+  "2": [120],
+  "3": [148,153,224,317],
+  "4": [12,94,195],
+  "5": [136,176],
+  "6": [117,200,275,360],
+  "7": [90,123,154,207,245,337,357],
+  "8": [258,271,361],
+  "9": [263,303],
+  "10": [181,269,292],
+  "11": [14,60,85],
+  "12": [180],
+  "13": [376],
+  "14": [337,383],
+  "16": [20,48,162,206,378],
+  "17": [329,331],
+  "18": [15,90,147],
+  "20": [14,51,282,348],
+  "21": [18,304,367],
+  "22": [228,277,288,314],
+  "23": [155,177],
+  "24": [10,47,187,308],
+  "25": [5,164,238,242,260,323,359],
+  "26": [116,127,147,338,341],
+  "27": [71,105,225,368],
+  "28": [101,105,175,181,249,315,332,352],
+  "29": [72,75,130],
+  "30": [2,99,161,298,379],
+  "31": [28,52,103,276,298],
+  "32": [215,221,248,283,303],
+  "33": [3,69,143,207,359,369],
+  "34": [44,65,183,274,307],
+  "35": [215,335],
+  "36": [1,126,133,322],
+  "37": [151,359],
+  "38": [268],
+  "39": [18,54]
+ },
+ "n_experts": 129
+}

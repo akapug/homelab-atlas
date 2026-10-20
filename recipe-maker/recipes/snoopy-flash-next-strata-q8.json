@@ -1,0 +1,71 @@
+{
+ "id": "qfn-snoopy-strata-q8-example",
+ "box": "snoopy",
+ "model": "fnx",
+ "engine": "strata",
+ "label": "Flash-Next baseline: Strata 477ac13c, unsloth Q8_0 (all experts in RAM), expert cache auto, MTP spec 4, desktop off the GPU (shape of the recipe qfn-e2e.sh writes per run)",
+ "store": {
+  "split": false,
+  "types": [
+   "q8_0"
+  ],
+  "tensor_types": {
+   "ffn_gate_exps": "q8_0",
+   "ffn_up_exps": "q8_0",
+   "ffn_down_exps": "q8_0"
+  }
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": "auto",
+ "threads": 32,
+ "draft": true,
+ "banks_gib": null,
+ "knobs": {
+  "freeDesktop": true
+ },
+ "files": [
+  {
+   "path": "~/qfn/q8/Q8_0/Qwen3.8-Flash-Next-Q8_0-00001-of-00006.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded"
+  },
+  {
+   "path": "~/qfn/q8/Q8_0/Qwen3.8-Flash-Next-Q8_0-00002-of-00006.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded"
+  },
+  {
+   "path": "~/qfn/q8/Q8_0/Qwen3.8-Flash-Next-Q8_0-00004-of-00006.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded"
+  },
+  {
+   "path": "~/qfn/q8/Q8_0/Qwen3.8-Flash-Next-Q8_0-00005-of-00006.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded"
+  },
+  {
+   "path": "~/qfn/q8/Q8_0/Qwen3.8-Flash-Next-Q8_0-00006-of-00006.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded"
+  },
+  {
+   "path": "~/qfn/q8/Q8_0/Qwen3.8-Flash-Next-Q8_0-00003-of-00006.gguf",
+   "holds": "ngram",
+   "access": "on_file",
+   "note": "PLE n-gram table, --ple-io direct; with QFN_PLE_DIR=/scratch/lab notes this reads UNKNOWN until /scratch's device is read"
+  },
+  {
+   "path": "~/qfn/prep/packs/unsloth-q8_0",
+   "holds": "pack index + tokenizer (--compat-bf16)",
+   "access": "loaded"
+  },
+  {
+   "path": "~/qfn/prep/mtp/rt",
+   "holds": "MTP head",
+   "access": "loaded"
+  }
+ ],
+ "src": "example in the shape of lab notes's generated recipe; paths = the kit's default QFN_ROOT (~/qfn on snoopy), placeholders until readlink -f on snoopy"
+}

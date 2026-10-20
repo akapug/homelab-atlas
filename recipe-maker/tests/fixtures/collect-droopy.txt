@@ -1,0 +1,556 @@
+@@meta
+hostname=droopy
+time=2026-10-17T20:27:42Z
+kernel=6.17.0-41-generic
+sudo=yes
+@@cpuinfo
+processor	: 0
+physical id	: 0
+core id		: 0
+processor	: 1
+physical id	: 0
+core id		: 1
+processor	: 2
+physical id	: 0
+core id		: 2
+processor	: 3
+physical id	: 0
+core id		: 3
+processor	: 4
+physical id	: 0
+core id		: 4
+processor	: 5
+physical id	: 0
+core id		: 8
+processor	: 6
+physical id	: 0
+core id		: 9
+processor	: 7
+physical id	: 0
+core id		: 10
+processor	: 8
+physical id	: 0
+core id		: 11
+processor	: 9
+physical id	: 0
+core id		: 12
+processor	: 10
+physical id	: 1
+core id		: 0
+processor	: 11
+physical id	: 1
+core id		: 1
+processor	: 12
+physical id	: 1
+core id		: 2
+processor	: 13
+physical id	: 1
+core id		: 3
+processor	: 14
+physical id	: 1
+core id		: 4
+processor	: 15
+physical id	: 1
+core id		: 8
+processor	: 16
+physical id	: 1
+core id		: 9
+processor	: 17
+physical id	: 1
+core id		: 10
+processor	: 18
+physical id	: 1
+core id		: 11
+processor	: 19
+physical id	: 1
+core id		: 12
+processor	: 20
+physical id	: 0
+core id		: 0
+processor	: 21
+physical id	: 0
+core id		: 1
+processor	: 22
+physical id	: 0
+core id		: 2
+processor	: 23
+physical id	: 0
+core id		: 3
+processor	: 24
+physical id	: 0
+core id		: 4
+processor	: 25
+physical id	: 0
+core id		: 8
+processor	: 26
+physical id	: 0
+core id		: 9
+processor	: 27
+physical id	: 0
+core id		: 10
+processor	: 28
+physical id	: 0
+core id		: 11
+processor	: 29
+physical id	: 0
+core id		: 12
+processor	: 30
+physical id	: 1
+core id		: 0
+processor	: 31
+physical id	: 1
+core id		: 1
+processor	: 32
+physical id	: 1
+core id		: 2
+processor	: 33
+physical id	: 1
+core id		: 3
+processor	: 34
+physical id	: 1
+core id		: 4
+processor	: 35
+physical id	: 1
+core id		: 8
+processor	: 36
+physical id	: 1
+core id		: 9
+processor	: 37
+physical id	: 1
+core id		: 10
+processor	: 38
+physical id	: 1
+core id		: 11
+processor	: 39
+physical id	: 1
+core id		: 12
+model name: Intel(R) Xeon(R) Gold 5215 CPU @ 2.50GHz
+flags: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 cdp_l3 intel_ppin ssbd mba ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm mpx rdt_a avx512f avx512dq rdseed adx smap clflushopt clwb intel_pt avx512cd avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local dtherm ida arat pln pts hwp hwp_act_window hwp_epp hwp_pkg_req vnmi pku ospke avx512_vnni md_clear flush_l1d arch_capabilities
+online: 0-39
+Cpus_allowed_list:	0-39
+@@nodes
+node=0 cpus=0-9,20-29
+Node 0 MemTotal:       97422064 kB
+Node 0 MemFree:          571336 kB
+node=1 cpus=10-19,30-39
+Node 1 MemTotal:       94839208 kB
+Node 1 MemFree:          158244 kB
+node=2 cpus=
+Node 2 MemTotal:       257949696 kB
+Node 2 MemFree:         6178620 kB
+@@meminfo
+MemTotal:       450210968 kB
+MemFree:         6908200 kB
+MemAvailable:   153551724 kB
+SwapTotal:      16777212 kB
+SwapFree:       16777048 kB
+@@sysctl
+numa_balancing=0
+demotion_enabled=false
+thp_enabled=always [madvise] never
+thp_defrag=always defer defer+madvise [madvise] never
+swappiness=60
+@@swaps
+Filename				Type		Size		Used		Priority
+/dev/nvme0n1p2                          partition	16777212	164		-2
+@@dax
+dev=dax0.0 target_node=2 size=266352984064 driver=kmem path=/sys/devices/LNXSYSTM:00/LNXSYBUS:00/ACPI0012:00/ndbus0/region0/dax0.1/dax0.0
+@@nd
+region=region0 devtype=nd_pmem size=270582939648 numa_node=0 target_node=2 mappings=2 persistence=memory_controller
+nmem=nmem0 vendor=0x8089 device=0x5605
+nmem=nmem1 vendor=0x8089 device=0x5605
+@@dmidecode
+Handle 0x000F, DMI type 16, 23 bytes
+	Maximum Capacity: 4608 GB
+	Number Of Devices: 12
+Handle 0x0010, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU0-DIMM1
+	Bank Locator: CPU0
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x0012, DMI type 17, 40 bytes
+Memory Device
+	Size: 129408 MB
+	Form Factor: DIMM
+	Locator: CPU0-DIMM2
+	Bank Locator: CPU0
+	Type: Logical non-volatile device
+	Speed: 2666 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x0014, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU0-DIMM3
+	Bank Locator: CPU0
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x0016, DMI type 17, 40 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: DIMM
+	Locator: CPU0-DIMM4
+	Bank Locator: CPU0
+	Type: Unknown
+Handle 0x0017, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU0-DIMM5
+	Bank Locator: CPU0
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x0019, DMI type 17, 40 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: DIMM
+	Locator: CPU0-DIMM6
+	Bank Locator: CPU0
+	Type: Unknown
+Handle 0x001A, DMI type 17, 40 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: DIMM
+	Locator: CPU0-DIMM7
+	Bank Locator: CPU0
+	Type: Unknown
+Handle 0x001B, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU0-DIMM8
+	Bank Locator: CPU0
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x001D, DMI type 17, 40 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: DIMM
+	Locator: CPU0-DIMM9
+	Bank Locator: CPU0
+	Type: Unknown
+Handle 0x001E, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU0-DIMM10
+	Bank Locator: CPU0
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x0020, DMI type 17, 40 bytes
+Memory Device
+	Size: 129408 MB
+	Form Factor: DIMM
+	Locator: CPU0-DIMM11
+	Bank Locator: CPU0
+	Type: Logical non-volatile device
+	Speed: 2666 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x0022, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU0-DIMM12
+	Bank Locator: CPU0
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x0024, DMI type 16, 23 bytes
+	Maximum Capacity: 4608 GB
+	Number Of Devices: 12
+Handle 0x0025, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU1-DIMM1
+	Bank Locator: CPU1
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x0027, DMI type 17, 40 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: DIMM
+	Locator: CPU1-DIMM2
+	Bank Locator: CPU1
+	Type: Unknown
+Handle 0x0028, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU1-DIMM3
+	Bank Locator: CPU1
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x002A, DMI type 17, 40 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: DIMM
+	Locator: CPU1-DIMM4
+	Bank Locator: CPU1
+	Type: Unknown
+Handle 0x002B, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU1-DIMM5
+	Bank Locator: CPU1
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x002D, DMI type 17, 40 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: DIMM
+	Locator: CPU1-DIMM6
+	Bank Locator: CPU1
+	Type: Unknown
+Handle 0x002E, DMI type 17, 40 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: DIMM
+	Locator: CPU1-DIMM7
+	Bank Locator: CPU1
+	Type: Unknown
+Handle 0x002F, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU1-DIMM8
+	Bank Locator: CPU1
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x0031, DMI type 17, 40 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: DIMM
+	Locator: CPU1-DIMM9
+	Bank Locator: CPU1
+	Type: Unknown
+Handle 0x0032, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU1-DIMM10
+	Bank Locator: CPU1
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+Handle 0x0034, DMI type 17, 40 bytes
+Memory Device
+	Size: No Module Installed
+	Form Factor: DIMM
+	Locator: CPU1-DIMM11
+	Bank Locator: CPU1
+	Type: Unknown
+Handle 0x0035, DMI type 17, 40 bytes
+Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: CPU1-DIMM12
+	Bank Locator: CPU1
+	Type: DDR4
+	Speed: 3200 MT/s
+	Rank: 1
+	Configured Memory Speed: 2666 MT/s
+@@nvidia
+0, Quadro RTX 6000, 00000000:2D:00.0, 23040, 9154, 13337, 3, 3, 16, 16, 595.71.05
+@@xpu
+@@!xpu xpu-smi not installed
+@@drm
+card=card1 pci=0000:2d:00.0 path=/sys/devices/pci0000:2c/0000:2c:00.0/0000:2d:00.0 vendor=0x10de device=0x1e30 class=0x030000 driver=nvidia boot_vga=1 vram_total= vram_used= vram_vendor= ep_speed=8.0_GT/s_PCIe ep_width=16 ep_max_speed=8.0_GT/s_PCIe ep_max_width=16 rootport=0000:2c:00.0 rp_speed=8.0_GT/s_PCIe rp_width=16 rp_max_speed=8.0_GT/s_PCIe rp_max_width=16
+@@mounts
+/sys sysfs sysfs 0 0 
+/proc proc proc 0 0 
+/dev udev devtmpfs 98386702336 98386702336 
+/dev/pts devpts devpts 0 0 
+/run tmpfs tmpfs 19687555072 19684675584 
+/sys/firmware/efi/efivars efivarfs efivarfs 251804 88704 
+/ /dev/nvme0n1p3 ext4 632984600576 72183750656 48488843-6ea3-4ae7-aed5-f5645b6377a0
+/sys/kernel/security securityfs securityfs 0 0 
+/dev/shm tmpfs tmpfs 98437771264 98437763072 
+/sys/fs/cgroup cgroup2 cgroup2 0 0 
+/sys/fs/pstore none pstore 0 0 
+/sys/fs/bpf bpf bpf 0 0 
+/proc/sys/fs/binfmt_misc systemd-1 autofs 0 0 
+/dev/hugepages hugetlbfs hugetlbfs 0 0 
+/dev/mqueue mqueue mqueue 0 0 
+/run/lock tmpfs tmpfs 5242880 5242880 
+/sys/kernel/debug debugfs debugfs 0 0 
+/sys/kernel/tracing tracefs tracefs 0 0 
+/run/credentials/systemd-journald.service tmpfs tmpfs 1048576 1048576 
+/sys/fs/fuse/connections fusectl fusectl 0 0 
+/sys/kernel/config configfs configfs 0 0 
+/run/credentials/systemd-resolved.service tmpfs tmpfs 1048576 1048576 
+/boot/efi /dev/nvme0n1p1 vfat 535805952 478793728 EF24-5077
+/tmp tmpfs tmpfs 98437771264 98330398720 
+/mnt/nvme-p4 /dev/nvme0n1p4 btrfs 362246307840 94386270208 0bf30b87-26b9-414d-a3fb-b0d1ac77857e
+/proc/sys/fs/binfmt_misc binfmt_misc binfmt_misc 0 0 
+/run/credentials/systemd-networkd.service tmpfs tmpfs 1048576 1048576 
+/mnt/datadrive1 /dev/sda2 fuseblk 4000769372160 1919094689792 E2A077BBA077952F
+/run/user/1000 tmpfs tmpfs 19687550976 19687530496 
+/mnt/datadrive1/fab-hot /dev/loop0 ext4 527295578112 307499999232 dde28b65-e151-44b8-a877-b29fe35eafb9
+/run/credentials/getty@tty1.service tmpfs tmpfs 1048576 1048576 
+/run/credentials/serial-getty@ttyS4.service tmpfs tmpfs 1048576 1048576 
+/run/rpc_pipefs sunrpc rpc_pipefs 0 0 
+/mnt/odie-cache 192.0.2.10:/mnt/models-cache nfs4 2046986027008 672546160640 
+@@lsblk
+{
+   "blockdevices": [
+      {
+         "name": "loop0",
+         "kname": "loop0",
+         "path": "/dev/loop0",
+         "size": 536870912000,
+         "type": "loop",
+         "rota": true,
+         "tran": null,
+         "model": null,
+         "fstype": "ext4",
+         "uuid": "dde28b65-e151-44b8-a877-b29fe35eafb9",
+         "mountpoint": "/mnt/datadrive1/fab-hot"
+      },{
+         "name": "sda",
+         "kname": "sda",
+         "path": "/dev/sda",
+         "size": 4000787030016,
+         "type": "disk",
+         "rota": true,
+         "tran": "sata",
+         "model": "HGST HUS726T4TAL",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "sda1",
+               "kname": "sda1",
+               "path": "/dev/sda1",
+               "size": 16759808,
+               "type": "part",
+               "rota": true,
+               "tran": null,
+               "model": null,
+               "fstype": null,
+               "uuid": null,
+               "mountpoint": null
+            },{
+               "name": "sda2",
+               "kname": "sda2",
+               "path": "/dev/sda2",
+               "size": 4000769376256,
+               "type": "part",
+               "rota": true,
+               "tran": null,
+               "model": null,
+               "fstype": "ntfs",
+               "uuid": "E2A077BBA077952F",
+               "mountpoint": "/mnt/datadrive1"
+            }
+         ]
+      },{
+         "name": "sr0",
+         "kname": "sr0",
+         "path": "/dev/sr0",
+         "size": 1073741312,
+         "type": "rom",
+         "rota": false,
+         "tran": "sata",
+         "model": "hp HLDS DVDRW GUD1N",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null
+      },{
+         "name": "nvme0n1",
+         "kname": "nvme0n1",
+         "path": "/dev/nvme0n1",
+         "size": 1024209543168,
+         "type": "disk",
+         "rota": false,
+         "tran": "nvme",
+         "model": "SAMSUNG MZVLB1T0HBLR-000H1",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "nvme0n1p1",
+               "kname": "nvme0n1p1",
+               "path": "/dev/nvme0n1p1",
+               "size": 536870912,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "vfat",
+               "uuid": "EF24-5077",
+               "mountpoint": "/boot/efi"
+            },{
+               "name": "nvme0n1p2",
+               "kname": "nvme0n1p2",
+               "path": "/dev/nvme0n1p2",
+               "size": 17179869184,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "swap",
+               "uuid": "c55f1187-3299-420e-8458-3a83ac3e1d83",
+               "mountpoint": "[SWAP]"
+            },{
+               "name": "nvme0n1p3",
+               "kname": "nvme0n1p3",
+               "path": "/dev/nvme0n1p3",
+               "size": 644245094400,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "ext4",
+               "uuid": "48488843-6ea3-4ae7-aed5-f5645b6377a0",
+               "mountpoint": "/"
+            },{
+               "name": "nvme0n1p4",
+               "kname": "nvme0n1p4",
+               "path": "/dev/nvme0n1p4",
+               "size": 362246307840,
+               "type": "part",
+               "rota": false,
+               "tran": "nvme",
+               "model": null,
+               "fstype": "btrfs",
+               "uuid": "0bf30b87-26b9-414d-a3fb-b0d1ac77857e",
+               "mountpoint": "/mnt/nvme-p4"
+            }
+         ]
+      }
+   ]
+}
+@@btrfs
+uuid=0bf30b87-26b9-414d-a3fb-b0d1ac77857e members=nvme0n1p4 
+@@loop
+dev=loop0 backing=/mnt/datadrive1/fab-hot.ext4
+@@end

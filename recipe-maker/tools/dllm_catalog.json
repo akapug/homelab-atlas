@@ -1,0 +1,40 @@
+{
+ "_doc": "What tools/record_dllm.py needs to turn a llama-dllm-gen run directory into run-ledger rows, beyond the run files themselves. Every entry names its source. lab notes = homelab lab notes section 3a (commits 84fc2974ac1, 0d6af00d685, d64f74684ae, e6ccfae0b54).",
+ "hosts": {
+  "odie": {"box": "odie", "dir": "~/dllm/runs", "backend": "sycl", "src": "scripts/dllm/b70-baseline.sh in lab notes (feat/dllm-block-kv): out=$HOME/dllm/runs, one <prefix>-<cfg>.jsonl + .log per config and one line per config in <prefix>-conditions.jsonl"},
+  "lassie": {"box": "lassie", "dir": "~/dllm/runs", "backend": "cpu", "src": "lab notes 3a: lassie CPU, Q4_0 in RAM via /dev/shm, 32 threads on a box with load around 20"}
+ },
+ "skip_cfgs": {"v": ["warm"], "src": "b70-baseline.sh: the warm config (-n 32) only pays the SYCL JIT before the timed configs"},
+ "models": {
+  "LLaDA2.1-mini-Q4_0.gguf": {"model": "llada21mini", "quant": "q4_0", "decoder": "llada21"},
+  "LLaDA2.1-mini-Q5_K_M.gguf": {"model": "llada21mini_q5km", "quant": "q5_K_M", "decoder": "llada21"},
+  "LLaDA2.2-flash-Q4_0.gguf": {"model": "llada22flash", "quant": "q4_0", "decoder": "llada22-lev"},
+  "Ling-mini-2.0-Q4_0.gguf": {"model": "lingmini2", "quant": "q4_0", "decoder": "ar"},
+  "Dream-Coder-7B-Q4_0.gguf": {"model": "dreamcoder7b", "quant": "q4_0", "decoder": "dream"}
+ },
+ "cards": {"0000:4c:00.0": "b70_1", "0000:23:00.0": "b70_2", "src": "sycl-run.sh: B70 #1 = 0000:4c:00.0 (card1), b70-2-window.sh: B70 #2 = 0000:23:00.0 (card0)"},
+ "stages": {
+  "llama-dllm-268327057348": {"moe_path": "stock", "src": "lab notes 3a: stock SYCL kernels (stage 268327057)"},
+  "llama-dllm-15000de5d352": {"moe_path": "per-pair", "src": "fork commit 15000de5d: fused MoE mat-vec takes small batches, one grid row per token, device-side ids"},
+  "llama-dllm-5c5dd092063e": {"moe_path": "grouped", "src": "fork commit 5c5dd0920: grouped MoE mat-vec, 8 rows per workgroup (default)"},
+  "llama-dllm-8f2c90462d0f": {"moe_path": "grouped", "src": "fork commit 8f2c90462: grouped MoE mat-vec, GGML_SYCL_MMID_ROWS rows per workgroup"}
+ },
+ "prefix_env": {
+  "n1pp": {"moe_path": "per-pair", "env": "GGML_SYCL_MMID_GROUPED=0", "src": "lab notes 3a B70 table row 'Q fuse, per-pair, rerun on stage 8f2c90462' (the conditions line does not record DLLM_ENV)"},
+  "n1g4": {"moe_path": "grouped", "env": "GGML_SYCL_MMID_ROWS=4", "src": "lab notes 3a B70 table rows 'grouped MoE (4 rows per workgroup)' (the conditions line does not record DLLM_ENV)"}
+ },
+ "workloads": {
+  "fixed.jsonl": {"key": "fixed4x256", "prompt_kind": "4 fixed prompts (code_fib, math, code_crc, explain), one chat user message each", "cached_depth": 0, "gen_tokens": 256, "eos_stop": false},
+  "humaneval33.jsonl": {"key": "he33x512eos", "prompt_kind": "HumanEval every 5th problem (33), one chat user message each", "cached_depth": 0, "gen_tokens": 512, "eos_stop": true}
+ },
+ "reasoning_effort": {"v": "thinking off: the model chat template default (LLaDA2/Ling thinking_option 'off'), applied by llama-dllm-gen; no request sets it", "src": "GGUF tokenizer.chat_template ({% set thinking_option = 'off' %}) in every run log; dllm-gen format_prompt applies the template"},
+ "extra_runs": [
+  {"id": "lassie-dllm-flash-q4-s-cache", "host": "lassie", "file": "lassie-flash-q4-s-cache.jsonl", "gguf": "LLaDA2.2-flash-Q4_0.gguf", "cfg": "lev-s-cache", "args": "--lev --thr 0.5 --edit-thr 0.0 --mode cache -t 32", "stage": "llama-dllm-8623acc24355", "prompts": "fixed.jsonl", "ctx": 512, "threads": 32, "placement": "cpu_only", "corunner": "box load around 20 during the run (lab notes 3a)", "src": "lab notes 3a 'LLaDA2.2-flash (100B-A6B) runs' (lassie CPU, Q4_0 in /dev/shm, 32 threads, S thresholds, --lev, fixed prompts, 256 tokens)"},
+  {"id": "lassie-dllm-flash-q4-s-fuse", "host": "lassie", "file": "lassie-flash-q4-s-fuse.jsonl", "gguf": "LLaDA2.2-flash-Q4_0.gguf", "cfg": "lev-s-fuse", "args": "--lev --thr 0.5 --edit-thr 0.0 --mode fuse -t 32", "stage": "llama-dllm-8623acc24355", "prompts": "fixed.jsonl", "ctx": 512, "threads": 32, "placement": "cpu_only", "corunner": "box load around 20 during the run (lab notes 3a)", "src": "lab notes 3a 'LLaDA2.2-flash (100B-A6B) runs'"}
+ ],
+ "cli_runs": [
+  {"id": "odie-dllm-n1-forkcli-mini-q4", "host": "odie", "log": "n1-forkcli.log", "gguf": "LLaDA2.1-mini-Q4_0.gguf", "cfg": "forkcli-b32-s256", "args": "llama-diffusion-cli, block 32, 256 steps, 1 token per step, -ub 512, CRC32 prompt", "stage": "llama-dllm-268327057348", "gen_tokens": 256, "tpf": 1.0, "card": "0000:23:00.0", "prompt_kind": "1 prompt (code_crc), raw", "src": "lab notes 3a B70 table row 'the fork's llama-diffusion-cli on mini'"},
+  {"id": "odie-dllm-n1-dream-q4-s256", "host": "odie", "log": "n1-dream-q4-s256.log", "gguf": "Dream-Coder-7B-Q4_0.gguf", "cfg": "forkcli-s256", "args": "llama-diffusion-cli, 256 tokens in 256 steps (dense, no KV reuse)", "stage": "llama-dllm-268327057348", "gen_tokens": 256, "tpf": 1.0, "card": "0000:23:00.0", "prompt_kind": "1 prompt (code_fib)", "src": "lab notes 3a B70 table row 'Dream-Coder 7B Q4_0, fork CLI, 256 tokens in 256 steps'"},
+  {"id": "odie-dllm-n1-dream-q4-s64", "host": "odie", "log": "n1-dream-q4-s64.log", "gguf": "Dream-Coder-7B-Q4_0.gguf", "cfg": "forkcli-s64", "args": "llama-diffusion-cli, 256 tokens in 64 steps (4 tokens per step)", "stage": "llama-dllm-268327057348", "gen_tokens": 256, "tpf": 4.0, "card": "0000:23:00.0", "prompt_kind": "1 prompt (code_fib)", "src": "lab notes 3a B70 table row 'Dream-Coder 7B, 64 steps (4 tokens per step)'"}
+ ]
+}

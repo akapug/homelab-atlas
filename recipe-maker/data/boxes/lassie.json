@@ -1,0 +1,300 @@
+{
+ "name": "lassie",
+ "cpu": {
+  "model": {
+   "v": "AMD EPYC 7601 32-Core Processor",
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /proc/cpuinfo"
+  },
+  "sockets": {
+   "v": 2,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /proc/cpuinfo physical id"
+  },
+  "phys": {
+   "v": 64,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /proc/cpuinfo (physical id, core id) pairs"
+  },
+  "threads": {
+   "v": 128,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z online CPUs"
+  },
+  "threads_online": {
+   "v": 128,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /sys/devices/system/cpu/online"
+  },
+  "isa": {
+   "v": {
+    "avx": true,
+    "avx2": true,
+    "fma": true,
+    "f16c": true,
+    "avx512f": false,
+    "avx512bw": false,
+    "avx512vl": false,
+    "avx512_vnni": false,
+    "avx512_bf16": false,
+    "avx512_fp16": false,
+    "avx_vnni": false,
+    "amx_tile": false,
+    "amx_int8": false,
+    "amx_bf16": false
+   },
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /proc/cpuinfo flags"
+  },
+  "smt": {
+   "v": true,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z online CPUs vs physical cores"
+  }
+ },
+ "dram": {
+  "total_gib": {
+   "v": 1007.73,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /sys/devices/system/node/node*/meminfo (MemTotal of nodes with CPUs)"
+  },
+  "free_gib": {
+   "v": 746.59,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /sys/devices/system/node/node*/meminfo (MemFree now, not a plan figure)"
+  },
+  "nodes": [
+   {
+    "node": 0,
+    "name": "node 0",
+    "cpus": "0-7,64-71",
+    "gib": 125.82,
+    "free_gib": 53.68,
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z /sys/devices/system/node/node*/meminfo"
+   },
+   {
+    "node": 1,
+    "name": "node 1",
+    "cpus": "8-15,72-79",
+    "gib": 125.99,
+    "free_gib": 98.38,
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z /sys/devices/system/node/node*/meminfo"
+   },
+   {
+    "node": 2,
+    "name": "node 2",
+    "cpus": "16-23,80-87",
+    "gib": 125.99,
+    "free_gib": 100.68,
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z /sys/devices/system/node/node*/meminfo"
+   },
+   {
+    "node": 3,
+    "name": "node 3",
+    "cpus": "24-31,88-95",
+    "gib": 125.95,
+    "free_gib": 100.72,
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z /sys/devices/system/node/node*/meminfo"
+   },
+   {
+    "node": 4,
+    "name": "node 4",
+    "cpus": "32-39,96-103",
+    "gib": 125.99,
+    "free_gib": 100.78,
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z /sys/devices/system/node/node*/meminfo"
+   },
+   {
+    "node": 5,
+    "name": "node 5",
+    "cpus": "40-47,104-111",
+    "gib": 125.99,
+    "free_gib": 100.89,
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z /sys/devices/system/node/node*/meminfo"
+   },
+   {
+    "node": 6,
+    "name": "node 6",
+    "cpus": "48-55,112-119",
+    "gib": 125.99,
+    "free_gib": 94.33,
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z /sys/devices/system/node/node*/meminfo"
+   },
+   {
+    "node": 7,
+    "name": "node 7",
+    "cpus": "56-63,120-127",
+    "gib": 125.99,
+    "free_gib": 97.14,
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z /sys/devices/system/node/node*/meminfo"
+   }
+  ],
+  "available_gib": {
+   "v": 971.61,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /proc/meminfo MemAvailable (whole box, incl. memory-only nodes)"
+  },
+  "dimms": {
+   "v": {
+    "populated": 16,
+    "slots": 16,
+    "gib_each": [
+     64
+    ],
+    "type": "DDR4"
+   },
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z sudo -n dmidecode -t memory (slots = memory devices listed, PMem modules excluded)"
+  },
+  "speed_mts": {
+   "v": 2400,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z sudo -n dmidecode -t memory Configured Memory Speed"
+  },
+  "channels": {
+   "v": 16,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z sudo -n dmidecode -t memory distinct populated channels in Bank Locator"
+  },
+  "bw_peak_gbs": {
+   "v": 307.2,
+   "tag": "ESTIMATE",
+   "src": "nameplate arithmetic: 16 channels x 2400 MT/s x 8 B (not a measured read rate)"
+  }
+ },
+ "pmem": null,
+ "gpus": [
+  {
+   "pci": "0000:21:00.0",
+   "name": "NVIDIA GeForce GTX 1080 Ti",
+   "model": {
+    "v": "NVIDIA GeForce GTX 1080 Ti",
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z nvidia-smi memory.total/free (MiB)"
+   },
+   "vendor": "nvidia",
+   "driver": "nvidia 580.178.04",
+   "vram_gib": {
+    "v": 11.0,
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z nvidia-smi memory.total/free (MiB)"
+   },
+   "vram_free_gib": {
+    "v": 10.9,
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z nvidia-smi memory.total/free (MiB) (now)"
+   },
+   "discrete": true,
+   "pcie": {
+    "v": {
+     "gen": 1,
+     "width": 16,
+     "max_gen": 3,
+     "max_width": 16
+    },
+    "tag": "MEASURED",
+    "src": "probe lassie 2026-10-17T20:27:46Z sysfs current/max link (current gen can idle down)"
+   }
+  }
+ ],
+ "disks": [
+  {
+   "mount": "/",
+   "kind": "sata-ssd",
+   "fstype": "ext4",
+   "source": "/dev/mapper/ubuntu--vg-ubuntu--lv",
+   "size_gib": 442.37,
+   "free_gib": 96.15,
+   "rotational": false,
+   "members": [
+    "sda"
+   ],
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z findmnt + lsblk ROTA/TRAN: sda non-rotational sata \"MTFDDAK512MBF-1A\""
+  },
+  {
+   "mount": "/dev/shm",
+   "kind": "memory",
+   "fstype": "tmpfs",
+   "source": "tmpfs",
+   "size_gib": 503.86,
+   "free_gib": 503.85,
+   "rotational": null,
+   "members": [],
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z findmnt + lsblk ROTA/TRAN: tmpfs (RAM)"
+  }
+ ],
+ "system": {
+  "numa_balancing": {
+   "v": 1,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /proc/sys/kernel/numa_balancing"
+  },
+  "demotion": {
+   "v": false,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /sys/kernel/mm/numa/demotion_enabled"
+  },
+  "thp": {
+   "v": "madvise",
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /sys/kernel/mm/transparent_hugepage/enabled"
+  },
+  "thp_defrag": {
+   "v": "madvise",
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /sys/kernel/mm/transparent_hugepage/defrag"
+  },
+  "swappiness": {
+   "v": 60,
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /proc/sys/vm/swappiness"
+  },
+  "swap": {
+   "v": "on",
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /proc/swaps"
+  },
+  "swap_devices": {
+   "v": [
+    {
+     "device": "/swap.img",
+     "type": "file",
+     "size_gib": 8.0,
+     "used_gib": 0.0,
+     "priority": -2
+    }
+   ],
+   "tag": "MEASURED",
+   "src": "probe lassie 2026-10-17T20:27:46Z /proc/swaps"
+  }
+ },
+ "probe": {
+  "host": "lassie",
+  "time": "2026-10-17T20:27:46Z",
+  "kernel": "6.8.0-139-generic",
+  "sudo": true,
+  "src": "probe lassie 2026-10-17T20:27:46Z",
+  "unknown": [],
+  "unreadable_sections": {
+   "xpu": "xpu-smi not installed"
+  },
+  "vitals": {
+   "source": "vitals 2026-10-17T20:37:59Z (41 s old)",
+   "agree": [
+    "/"
+   ],
+   "disagree": [],
+   "note": "vitals classifies by the top disk only; the probe also resolves btrfs members and loop-image backing files"
+  }
+ }
+}

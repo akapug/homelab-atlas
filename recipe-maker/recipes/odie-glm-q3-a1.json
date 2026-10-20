@@ -1,0 +1,64 @@
+{
+ "id": "odie-glm-q3-a1",
+ "label": "GLM-5.3-Flash UD-Q3_K_XL on both B70s (layer split, VRAM filled with whole expert blocks), rest of the experts pinned in host RAM, op offload for prefill",
+ "box": "odie",
+ "model": "glm",
+ "engine": "sycl",
+ "engine_build": "b11706-f74e2fa6a",
+ "store": {
+  "split": false,
+  "types": [
+   "ud_q3kxl"
+  ]
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": 2048,
+ "threads": 22,
+ "draft": false,
+ "knobs": {
+  "freeHousehold": true
+ },
+ "banks_gib": 41.72,
+ "files": [
+  {
+   "path": "/models/glm53-gguf/UD-Q3_K_XL/GLM-5.3-Flash-UD-Q3_K_XL-00001-of-00004.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded",
+   "note": "4 shards on the SN850X; -lm none: CPU experts in the SYCL pinned host buffer"
+  }
+ ],
+ "src": "lab notes arm A1",
+ "note": "-sm layer over SYCL0/SYCL1; routed experts of blocks 3-9 on SYCL0 and 23-29 on SYCL1 (7 x 3.133 GB each), every other block in pinned host RAM; fixed parts (dense, KV + compute) split ~evenly by layer",
+ "gpu_split": {
+  "banks_gib": [
+   20.86,
+   20.86
+  ],
+  "fixed_share": [
+   0.5,
+   0.5
+  ],
+  "note": "banks at the planner mean layer size (134.40 GB / 42); blocks 3-9 / 23-29 are 7 x 3.133 GB = 20.42 GiB each"
+ },
+ "placement": {
+  "mode": "gpu_layers",
+  "layers": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   20,
+   21,
+   22,
+   23,
+   24,
+   25,
+   26
+  ],
+  "note": "MoE layer index = GGUF block - 3: blocks 3-9 on SYCL0, 23-29 on SYCL1"
+ }
+}

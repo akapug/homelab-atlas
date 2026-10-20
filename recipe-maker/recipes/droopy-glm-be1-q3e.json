@@ -1,0 +1,59 @@
+{
+ "id": "glm-be1q3e",
+ "label": "droopy GLM best-effort full box: UD-Q3_K_XL as shipped, every routed expert in DRAM interleaved N0/N1 (64.2 GiB each, no PMem), 6.9 GiB hottest experts by coding-agent decode heat in VRAM (cut from 8.7 after the 07:46Z VRAM failure: the MTP block's 3.2 GiB experts stay on the GPU), MTP, T40 on all 40 CPUs | (e) mtpub-cd004c44, LLAMA_MTP_UBATCH=128, -ub/-b 2048: Q3d MEASURED a CUDA pool OOM (cuMemCreate in ggml_cuda_op_mul_mat) at the first prefill with 574 MiB free after load; -ub 2048 halves the 2484 MiB compute buffer and the per-op pool temporaries",
+ "box": "droopy",
+ "model": "glm",
+ "engine": "ik",
+ "engine_build": "h2dstage-b38ad4e2",
+ "store": {
+  "split": false,
+  "types": [
+   "ud_q3kxl"
+  ]
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": 2048,
+ "draft": true,
+ "threads": 40,
+ "banks_gib": 6.9,
+ "numa": {
+  "headroom_gib": [
+   20,
+   20
+  ],
+  "src": "gen-glm-place.py place-glm/glm-be1q3 (N0/N1 free 86/89 at plan time, headroom 20): routed 125.17 GiB + MTP 3.20 GiB interleaved, 64.19 GiB per node, 0 on PMem; N0 keeps ~21.8 GiB and N1 ~24.8 GiB free, above the load extra (ESTIMATE band 3.58-8.54) and clear of the spill fallback that put runtime buffers on PMem in b1017 (10-18)",
+  "spill_heal": true
+ },
+ "system": {
+  "numa_balancing": 0,
+  "demotion": false,
+  "swap": "off"
+ },
+ "heat": {
+  "plan": "nv2_code_decode",
+  "score": "nv2_code_decode",
+  "maps": {
+   "plan": {
+    "map_id": "glm53-flash__coding-kld-agent__glm53-nv2__2026-10-17",
+    "digest": "sha256:76f8228f7e2ef23d8777a22ebebc3171ae3f908a005c7926bbb84a4731fa34fa",
+    "slice": "decode"
+   },
+   "score": {
+    "map_id": "glm53-flash__coding-kld-agent__glm53-nv2__2026-10-17",
+    "digest": "sha256:76f8228f7e2ef23d8777a22ebebc3171ae3f908a005c7926bbb84a4731fa34fa",
+    "slice": "decode"
+   }
+  }
+ },
+ "files": [
+  {
+   "path": "/mnt/datadrive1/models/GLM-5.3-Flash-UD-Q3_K_XL/GLM-5.3-Flash-UD-Q3_K_XL-00001-of-00004.gguf",
+   "holds": "experts + non-experts (4 shards, 137.4 GiB, copied from odie /models/glm53-gguf/UD-Q3_K_XL to droopy's local HDD: local NVMe has 48 + 38 GiB free; read once at load with --no-mmap)",
+   "access": "loaded"
+  }
+ ],
+ "src": "lab notes GLM best-effort BE1-Q3 + glm-be1/run-glm-be1q3.sh",
+ "engine_pkg": "mtpub-cd004c44",
+ "mtp_ubatch": 128
+}

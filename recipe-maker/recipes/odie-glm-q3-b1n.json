@@ -1,0 +1,70 @@
+{
+ "id": "odie-glm-q3-b1n",
+ "label": "B1 without the moe cache: both cards filled with static expert blocks (8 on SYCL1, 7 on SYCL0)",
+ "box": "odie",
+ "model": "glm",
+ "engine": "sycl",
+ "engine_build": "b11706-f74e2fa6a",
+ "store": {
+  "split": false,
+  "types": [
+   "ud_q3kxl"
+  ]
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": 4096,
+ "threads": 24,
+ "draft": true,
+ "knobs": {
+  "freeHousehold": true
+ },
+ "banks_gib": 44.7,
+ "files": [
+  {
+   "path": "/models/glm53-gguf/UD-Q3_K_XL/GLM-5.3-Flash-UD-Q3_K_XL-00001-of-00004.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded",
+   "note": "4 shards on the SN850X; -lm none: CPU experts in the SYCL pinned host buffer"
+  }
+ ],
+ "src": "lab notes best-effort B1",
+ "note": "ONE change vs B1: no --moe-cache-mib; its VRAM holds 5 more static blocks (blocks 3-9 SYCL0, 23-30 SYCL1), 27 blocks pinned host",
+ "gpu_split": {
+  "banks_gib": [
+   23.84,
+   20.86
+  ],
+  "fixed_share": [
+   0.48,
+   0.52
+  ],
+  "note": "planner card order: [B70 4c:00.0 = SYCL1, B70 23:00.0 = SYCL0]. banks = static expert blocks at the planner mean layer size + half the moe cache each (--moe-cache-mib splits like the layers); GPU0 carries the op-offload uploads (all host-expert prefill runs there), so it gets fewer static blocks and the larger fixed share",
+  "fixed_note": "MEASURED b1n 07:02Z: fixed parts (dense + KV/RS + compute) SYCL1 (4c) 8235 MiB, SYCL0 (23) 8988 MiB"
+ },
+ "placement": {
+  "mode": "gpu_layers",
+  "layers": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   20,
+   21,
+   22,
+   23,
+   24,
+   25,
+   26,
+   27
+  ],
+  "note": "blocks 3-9 on SYCL0, 23-30 on SYCL1"
+ },
+ "split_mode": "layer",
+ "op_offload": true,
+ "no_host": false,
+ "moe_cache_gib": 0
+}

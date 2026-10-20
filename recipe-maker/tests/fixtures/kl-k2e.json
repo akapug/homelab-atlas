@@ -1,0 +1,35 @@
+{
+ "mode": "var",
+ "tokens_per_prompt": 160,
+ "prompts": 6,
+ "served_Aref_vs_Bvar": {
+  "positions": 928,
+  "kl_mean": 0.004399741229629829,
+  "kl_p99": 0.0742405578494072,
+  "kl_max": 0.44280195236206055,
+  "top1_agree": 0.9849137931034483,
+  "max_abs_dlogit": 0.0
+ },
+ "verdict": {
+  "identity": "EXACT",
+  "served": "PASS",
+  "direct_le_0.005": false,
+  "direct_vs_floor": 1.24,
+  "overall": "PASS",
+  "thresholds": {
+   "served_kl": "<= max(0.005, 1.25 x ref 0.00446)",
+   "top1": ">= ref 0.9914 - 0.01",
+   "identity": "max|dlogit| 0 or KL <= 0.0001"
+  }
+ },
+ "ref": {
+  "served_A_vs_B1": {
+   "positions": 928,
+   "kl_mean": 0.004458961710889558,
+   "kl_p99": 0.06595053523778915,
+   "kl_max": 0.7516292333602905,
+   "top1_agree": 0.9913793103448276,
+   "max_abs_dlogit": 0.0
+  }
+ }
+}

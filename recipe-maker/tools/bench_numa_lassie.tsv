@@ -1,0 +1,16 @@
+# arm	cpus (physical cores only)	numactl memory policy	note
+# lassie: 2x EPYC 7601, 8 NUMA nodes of 8 cores; socket 0 = nodes 0-3, socket 1 = nodes 4-7; node 0 is nearly full of page
+# cache, so the one-node and one-socket arms use socket 1
+N1h-bind4	32-35	membind=4	one node, 4 cores: is 7 threads bandwidth-bound?
+N1-bind4	32-39	membind=4	one node, local
+S2-il45	32-47	interleave=4,5	two nodes, same socket
+S2-bind4	32-47	membind=4	two nodes of threads, weights on one
+X2-il34	24-39	interleave=3,4	two nodes, one per socket
+X2-bind4	24-39	membind=4	one node per socket, weights on node 4
+S4-il47	32-35,40-43,48-51,56-59	interleave=4-7	one socket, 4 cores per node
+S4-bind4	32-35,40-43,48-51,56-59	membind=4	one socket, weights on one node
+X4-il25	16-19,24-27,32-35,40-43	interleave=2-5	two nodes per socket, 4 cores per node (matches S4 density)
+S4-ft	32-35,40-43,48-51,56-59	first_touch	one socket, default policy
+X8-il	0-1,8-9,16-17,24-25,32-33,40-41,48-49,56-57	interleave=0-7	all 8 nodes, 2 cores per node
+X8-bind4	0-1,8-9,16-17,24-25,32-33,40-41,48-49,56-57	membind=4	all 8 nodes of threads, weights on one
+X8-ft	0-1,8-9,16-17,24-25,32-33,40-41,48-49,56-57	first_touch	all 8 nodes, default policy (the loader's node)

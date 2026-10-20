@@ -1,0 +1,144 @@
+== glm-be1q3e start 2026-10-18T12:16:01Z PK=~/optane-bin/mtpub-cd004c44 PLACE=glm-be1q3.placement.tsv HOT=glm-be1q3b-hot6p9.tsv CPUS=0-39 T=40 OFFLOAD=100000 PLACE_EXPECT=N0:68,N1:64,N2:0
+GLM Q3 already staged + verified at /mnt/datadrive1/models/GLM-5.3-Flash-UD-Q3_K_XL
+P0: swap off (0 active)
+P0: numa_balancing 0 demotion false
+== GLM-5.3-Flash UD-Q3_K_XL from /mnt/datadrive1/models/GLM-5.3-Flash-UD-Q3_K_XL/GLM-5.3-Flash-UD-Q3_K_XL-00001-of-00004.gguf
+node0 MemFree 86 GiB
+node1 MemFree 89 GiB
+== PSI 12:17:47Z cpu some avg10=0.02 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=84.58 full avg10=84.34  
+== PSI 12:18:17Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=90.22 full avg10=90.16  
+== PSI 12:18:48Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=64.83 full avg10=63.26  
+== PSI 12:19:18Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=90.29 full avg10=89.97  
+== PSI 12:19:49Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=90.45 full avg10=90.27  
+== PSI 12:20:19Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=91.05 full avg10=90.96  
+== PSI 12:20:49Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=85.68 full avg10=85.57  
+== PSI 12:21:20Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=89.68 full avg10=89.50  
+== PSI 12:21:50Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=86.52 full avg10=86.30  
+== PSI 12:22:20Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=90.26 full avg10=90.19  
+== PSI 12:22:51Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=94.14 full avg10=94.03  
+== PSI 12:23:21Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=92.41 full avg10=92.41  
+== PSI 12:23:51Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=73.07 full avg10=71.18  
+== PSI 12:24:22Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=77.80 full avg10=77.35  
+== PSI 12:24:52Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=82.63 full avg10=82.60  
+== PSI 12:25:22Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=83.84 full avg10=83.74  
+== PSI 12:25:53Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=77.04 full avg10=76.90  
+== PSI 12:26:23Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=80.77 full avg10=80.70  
+== PSI 12:26:53Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=82.96 full avg10=82.96  
+== PSI 12:27:24Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=82.27 full avg10=81.99  
+== PSI 12:27:54Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=81.36 full avg10=81.16  
+== PSI 12:28:24Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=83.28 full avg10=83.01  
+== PSI 12:28:55Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=90.38 full avg10=90.36  
+== PSI 12:29:25Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=66.37 full avg10=64.17  
+== PSI 12:29:56Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=83.95 full avg10=83.57  
+== PSI 12:30:26Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=85.37 full avg10=85.17  
+== PSI 12:30:56Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=88.45 full avg10=88.40  
+== PSI 12:31:27Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=90.34 full avg10=90.22  
+== PSI 12:31:57Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=82.78 full avg10=82.40  
+== PSI 12:32:27Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=86.82 full avg10=86.58  
+== PSI 12:32:58Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=90.15 full avg10=90.14  
+== PSI 12:33:28Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=84.99 full avg10=84.87  
+== PSI 12:33:58Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=88.33 full avg10=88.14  
+== PSI 12:34:29Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=73.25 full avg10=71.53  
+== PSI 12:34:59Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=86.20 full avg10=85.95  
+== PSI 12:35:30Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=85.98 full avg10=85.56  
+== PSI 12:36:00Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=87.64 full avg10=87.48  
+== PSI 12:36:30Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=91.79 full avg10=91.78  
+== PSI 12:37:01Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=89.27 full avg10=89.26  
+== PSI 12:37:31Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=90.05 full avg10=89.91  
+== PSI 12:38:01Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.69 full avg10=0.69  io some avg10=85.23 full avg10=85.07  
+== PSI 12:38:32Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.23 full avg10=0.23  io some avg10=83.00 full avg10=82.85  
+== PSI 12:39:02Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.01 full avg10=0.01  io some avg10=92.91 full avg10=92.78  
+== PSI 12:39:32Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.08 full avg10=0.08  io some avg10=75.72 full avg10=74.43  
+== PSI 12:40:03Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=79.19 full avg10=78.49  
+== PSI 12:40:33Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=85.96 full avg10=85.93  
+== PSI 12:41:03Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=91.77 full avg10=91.75  
+== PSI 12:41:34Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=90.88 full avg10=90.84  
+== PSI 12:42:04Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.09 full avg10=0.09  io some avg10=87.71 full avg10=87.70  
+== PSI 12:42:34Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=89.89 full avg10=89.85  
+== PSI 12:43:05Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=86.40 full avg10=86.40  
+== PSI 12:43:35Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=75.85 full avg10=75.67  
+== PSI 12:44:06Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.06 full avg10=0.06  io some avg10=81.79 full avg10=81.65  
+== PSI 12:44:36Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.08 full avg10=0.08  io some avg10=72.28 full avg10=71.68  
+== PSI 12:45:06Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=73.36 full avg10=72.95  
+== PSI 12:45:37Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=1.28 full avg10=1.28  io some avg10=69.07 full avg10=68.92  
+== PSI 12:46:08Z cpu some avg10=0.51 full avg10=0.00  memory some avg10=0.10 full avg10=0.10  io some avg10=16.39 full avg10=16.31  
+== PSI 12:46:39Z cpu some avg10=0.49 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.81 full avg10=0.81  
+== PSI 12:47:09Z cpu some avg10=0.01 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.03 full avg10=0.03  
+== PSI 12:47:40Z cpu some avg10=0.06 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+spill-heal pid 3230164: 89 mappings, 17323 MiB on CPU-less nodes [2], moved 17323 MiB to node 0, failed 0 pages
+== PSI 12:48:10Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:48:41Z cpu some avg10=0.30 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:49:12Z cpu some avg10=0.01 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:49:42Z cpu some avg10=1.71 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:50:13Z cpu some avg10=1.10 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:50:43Z cpu some avg10=1.80 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:51:14Z cpu some avg10=0.19 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:51:45Z cpu some avg10=0.46 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:52:15Z cpu some avg10=0.10 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:52:46Z cpu some avg10=0.12 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:53:16Z cpu some avg10=0.12 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:53:47Z cpu some avg10=0.74 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:54:17Z cpu some avg10=0.40 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.17 full avg10=0.00  
+== PSI 12:54:48Z cpu some avg10=1.36 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:55:19Z cpu some avg10=0.96 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:55:49Z cpu some avg10=2.31 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:56:20Z cpu some avg10=0.14 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:56:50Z cpu some avg10=0.15 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:57:21Z cpu some avg10=0.20 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:57:51Z cpu some avg10=0.44 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:58:22Z cpu some avg10=1.42 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:58:53Z cpu some avg10=2.27 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:59:23Z cpu some avg10=2.01 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 12:59:54Z cpu some avg10=5.26 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 13:00:24Z cpu some avg10=1.96 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 13:00:55Z cpu some avg10=1.09 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 13:01:25Z cpu some avg10=0.09 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 13:01:56Z cpu some avg10=0.85 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 13:02:26Z cpu some avg10=0.04 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 13:02:57Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 13:03:28Z cpu some avg10=0.00 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+== PSI 13:03:58Z cpu some avg10=0.65 full avg10=0.00  memory some avg10=0.00 full avg10=0.00  io some avg10=0.00 full avg10=0.00  
+{"arm": "glm-be1q3e-hot6p9-t40-ub2k", "extra": "-cr 0-39 --numa numactl --cpu-moe --spec-type mtp:n_max=3,p_min=0.0 -ub 2048 -b 2048 -cuda offload-batch-size=100000", "client_rc": 1, "vram_after_warmup": {"used_mib": 22106, "total_mib": 23040}, "phases": [{"phase": "m3", "n_max": 3, "decode_tps": [11.09, 7.47, 6.45], "prefill_tps": [71.5, 75.0, 77.4], "draft_n": [240, 288, 273], "draft_acc": [219, 202, 208], "texts_sha": ["2e580eb5bf", "c72fd04e99", "ed6e1781db"], "decode_mean": 8.34, "prefill_mean": 74.6}, {"phase": "m1", "n_max": 1, "decode_tps": [9.92, 9.54, 8.21], "prefill_tps": [71.1, 75.2, 81.6], "draft_n": [150, 155, 155], "draft_acc": [148, 144, 144], "texts_sha": ["a4c0135bcc", "271fdbcff3", "631a0bf686"], "decode_mean": 9.22, "prefill_mean": 76.0}, {"phase": "m2", "n_max": 2, "decode_tps": [8.64, 10.14, 10.12], "prefill_tps": [71.6, 59.1, 81.7], "draft_n": [204, 210, 214], "draft_acc": [197, 193, 192], "texts_sha": ["a4c0135bcc", "06fd2170bc", "e27bcebd0c"], "decode_mean": 9.63, "prefill_mean": 70.8}, {"phase": "m0", "n_max": 0, "decode_tps": [8.69, 3.1, 8.79], "prefill_tps": [71.7, 73.5, 62.6], "draft_n": [0, 0, 0], "draft_acc": [0, 0, 0], "texts_sha": ["a4c0135bcc", "868b492bd3", "84bdd41c0f"], "decode_mean": 6.86, "prefill_mean": 69.3}, {"phase": "m3b", "n_max": 3, "decode_tps": [11.01, 9.08, 9.35], "prefill_tps": [71.5, 75.5, 81.4], "draft_n": [240, 288, 273], "draft_acc": [219, 202, 208], "texts_sha": ["2e580eb5bf", "c72fd04e99", "ed6e1781db"], "decode_mean": 9.81, "prefill_mean": 76.1}], "vram_end": {"used_mib": 22200, "total_mib": 23040}, "resident_GiB_by_node": {"other_N0": 79.2, "other_N1": 51.49, "other_N2": 0.0, "spill_cpuless_GiB": 0.0}, "spill_ok": true, "placement_ok": false, "placement_off_GiB": {"N0": 11.2, "N1": -12.5, "N2": 0.0}, "gpu_sm_busy_pct_mean": 17.2, "union_cap_log_lines": 0}
+== glm-be1q3e-hot6p9-t40-ub2k rc=1 13:04:27Z
+m3 prompt0 decode 11.09 prefill 71.5 draft 240/219 wall 49s
+m3 prompt1 decode 7.47 prefill 75.0 draft 288/202 wall 69s
+m3 prompt2 decode 6.45 prefill 77.4 draft 273/208 wall 72s
+m1 prompt0 decode 9.92 prefill 71.1 draft 150/148 wall 53s
+m1 prompt1 decode 9.54 prefill 75.2 draft 155/144 wall 61s
+m1 prompt2 decode 8.21 prefill 81.6 draft 155/144 wall 61s
+m2 prompt0 decode 8.64 prefill 71.6 draft 204/197 wall 57s
+m2 prompt1 decode 10.14 prefill 59.1 draft 210/193 wall 67s
+m2 prompt2 decode 10.12 prefill 81.7 draft 214/192 wall 54s
+m0 prompt0 decode 8.69 prefill 71.7 draft 0/0 wall 57s
+m0 prompt1 decode 3.1 prefill 73.5 draft 0/0 wall 127s
+m0 prompt2 decode 8.79 prefill 62.6 draft 0/0 wall 66s
+m3b prompt0 decode 11.01 prefill 71.5 draft 240/219 wall 50s
+m3b prompt1 decode 9.08 prefill 75.5 draft 288/202 wall 62s
+m3b prompt2 decode 9.35 prefill 81.4 draft 273/208 wall 57s
+Traceback (most recent call last):
+  File "~/glm-kl/kl-gate.py", line 54, in <module>
+    q = top_logprobs(r)
+  File "~/glm-kl/kl-gate.py", line 34, in top_logprobs
+    return {x["id"]: (x["logprob"] if "logprob" in x else math.log(max(x["prob"], 1e-45))) for x in rows}
+            ~^^^^^^
+KeyError: 'id'
+  vram {'used_mib': 22106, 'total_mib': 23040} {'used_mib': 22200, 'total_mib': 23040} resident {'other_N0': 79.2, 'other_N1': 51.49, 'other_N2': 0.0, 'spill_cpuless_GiB': 0.0} spill_ok True placement_ok False {'N0': 11.2, 'N1': -12.5, 'N2': 0.0} sm 17.2
+   m3 decode 8.34 [11.09, 7.47, 6.45] prefill 74.6 [71.5, 75.0, 77.4] draft [240, 288, 273] [219, 202, 208] ['2e580eb5bf', 'c72fd04e99', 'ed6e1781db']
+   m1 decode 9.22 [9.92, 9.54, 8.21] prefill 76.0 [71.1, 75.2, 81.6] draft [150, 155, 155] [148, 144, 144] ['a4c0135bcc', '271fdbcff3', '631a0bf686']
+   m2 decode 9.63 [8.64, 10.14, 10.12] prefill 70.8 [71.6, 59.1, 81.7] draft [204, 210, 214] [197, 193, 192] ['a4c0135bcc', '06fd2170bc', 'e27bcebd0c']
+   m0 decode 6.86 [8.69, 3.1, 8.79] prefill 69.3 [71.7, 73.5, 62.6] draft [0, 0, 0] [0, 0, 0] ['a4c0135bcc', '868b492bd3', '84bdd41c0f']
+   m3b decode 9.81 [11.01, 9.08, 9.35] prefill 76.1 [71.5, 75.5, 81.4] draft [240, 288, 273] [219, 202, 208] ['2e580eb5bf', 'c72fd04e99', 'ed6e1781db']
+0
+statistics mtp: #calls(b,g,a) = 7 593 593, #gen drafts = 593, #acc drafts = 549, #gen tokens = 1169, #acc tokens = 970, dur(b,g,a) = 0.008, 1393.567, 0.378 ms
+statistics mtp: #calls(b,g,a) = 8 748 748, #gen drafts = 748, #acc drafts = 693, #gen tokens = 1324, #acc tokens = 1114, dur(b,g,a) = 0.010, 1402.888, 0.481 ms
+statistics mtp: #calls(b,g,a) = 9 850 850, #gen drafts = 850, #acc drafts = 793, #gen tokens = 1528, #acc tokens = 1311, dur(b,g,a) = 0.011, 1664.830, 0.538 ms
+statistics mtp: #calls(b,g,a) = 10 955 955, #gen drafts = 955, #acc drafts = 892, #gen tokens = 1738, #acc tokens = 1504, dur(b,g,a) = 0.012, 1928.696, 0.600 ms
+statistics mtp: #calls(b,g,a) = 11 1062 1062, #gen drafts = 1062, #acc drafts = 993, #gen tokens = 1952, #acc tokens = 1696, dur(b,g,a) = 0.014, 2196.465, 0.657 ms
+statistics mtp: #calls(b,g,a) = 12 1062 1062, #gen drafts = 1062, #acc drafts = 993, #gen tokens = 1952, #acc tokens = 1696, dur(b,g,a) = 0.015, 2196.465, 0.657 ms
+statistics mtp: #calls(b,g,a) = 13 1062 1062, #gen drafts = 1062, #acc drafts = 993, #gen tokens = 1952, #acc tokens = 1696, dur(b,g,a) = 0.016, 2196.465, 0.657 ms
+statistics mtp: #calls(b,g,a) = 14 1062 1062, #gen drafts = 1062, #acc drafts = 993, #gen tokens = 1952, #acc tokens = 1696, dur(b,g,a) = 0.017, 2196.465, 0.657 ms
+statistics mtp: #calls(b,g,a) = 15 1142 1142, #gen drafts = 1142, #acc drafts = 1069, #gen tokens = 2192, #acc tokens = 1915, dur(b,g,a) = 0.018, 2576.141, 0.708 ms
+statistics mtp: #calls(b,g,a) = 16 1238 1238, #gen drafts = 1238, #acc drafts = 1149, #gen tokens = 2480, #acc tokens = 2117, dur(b,g,a) = 0.019, 3032.995, 0.761 ms
+statistics mtp: #calls(b,g,a) = 17 1329 1329, #gen drafts = 1329, #acc drafts = 1231, #gen tokens = 2753, #acc tokens = 2325, dur(b,g,a) = 0.020, 3465.175, 0.813 ms
+statistics mtp: #calls(b,g,a) = 18 1329 1329, #gen drafts = 1329, #acc drafts = 1231, #gen tokens = 2753, #acc tokens = 2325, dur(b,g,a) = 0.021, 3465.175, 0.813 ms
+== glm-be1q3e done 2026-10-18T13:04:27Z

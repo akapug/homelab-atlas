@@ -1,0 +1,108 @@
+{
+ "label": "excl0-1143",
+ "started": "2026-10-17T11:45:03Z",
+ "c1": [
+  {
+   "prompt": 0,
+   "rep": 0,
+   "ttft_s": 4.389146199973766,
+   "decode_tps": 20.339511404461373,
+   "e2e_tps": 15.715365270522568,
+   "prefill_tps_proxy": 15.492762578837414,
+   "finish": "length",
+   "usage": {
+    "prompt_tokens": 68,
+    "completion_tokens": 300,
+    "total_tokens": 368
+   }
+  },
+  {
+   "prompt": 1,
+   "rep": 0,
+   "ttft_s": 4.2134639419964515,
+   "decode_tps": 20.225611751545934,
+   "e2e_tps": 15.792216252718983,
+   "prefill_tps_proxy": 15.426736978126664,
+   "finish": "length",
+   "usage": {
+    "prompt_tokens": 65,
+    "completion_tokens": 300,
+    "total_tokens": 365
+   }
+  },
+  {
+   "prompt": 2,
+   "rep": 0,
+   "ttft_s": 4.504294459999073,
+   "decode_tps": 20.36316026277669,
+   "e2e_tps": 15.635037799319207,
+   "prefill_tps_proxy": 34.411604609000605,
+   "finish": "length",
+   "usage": {
+    "prompt_tokens": 155,
+    "completion_tokens": 300,
+    "total_tokens": 455
+   }
+  },
+  {
+   "prompt": 0,
+   "rep": 1,
+   "ttft_s": 4.223718077002559,
+   "decode_tps": 20.418998673611792,
+   "e2e_tps": 15.90082677574413,
+   "prefill_tps_proxy": 16.099559383531933,
+   "finish": "length",
+   "usage": {
+    "prompt_tokens": 68,
+    "completion_tokens": 300,
+    "total_tokens": 368
+   }
+  },
+  {
+   "prompt": 1,
+   "rep": 1,
+   "ttft_s": 4.214500559028238,
+   "decode_tps": 22.80365145180052,
+   "e2e_tps": 17.3145824273008,
+   "prefill_tps_proxy": 15.422942550276332,
+   "finish": "length",
+   "usage": {
+    "prompt_tokens": 65,
+    "completion_tokens": 300,
+    "total_tokens": 365
+   }
+  },
+  {
+   "prompt": 2,
+   "rep": 1,
+   "ttft_s": 4.220934353012126,
+   "decode_tps": 20.35582189773967,
+   "e2e_tps": 15.864951786889765,
+   "prefill_tps_proxy": 36.721727237806846,
+   "finish": "length",
+   "usage": {
+    "prompt_tokens": 155,
+    "completion_tokens": 300,
+    "total_tokens": 455
+   }
+  }
+ ],
+ "prefill": [
+  {
+   "ttft_s": 21.393252570996992,
+   "decode_tps": 20.28950833716477,
+   "prefill_tps_proxy": 593.3646582198239
+  },
+  {
+   "ttft_s": 4.236887006962206,
+   "decode_tps": 22.447187191737815,
+   "prefill_tps_proxy": 2996.067626807314
+  }
+ ],
+ "c8": {
+  "tokens": 2400,
+  "span_s": 136.30976990394993,
+  "aggregate_tps": 17.606955111810027
+ },
+ "finished": "2026-10-17T11:49:41Z"
+}

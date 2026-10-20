@@ -1,0 +1,807 @@
+@@meta
+hostname=lassie
+time=2026-10-17T20:27:46Z
+kernel=6.8.0-139-generic
+sudo=yes
+@@cpuinfo
+processor	: 0
+physical id	: 0
+core id		: 0
+processor	: 1
+physical id	: 0
+core id		: 1
+processor	: 2
+physical id	: 0
+core id		: 2
+processor	: 3
+physical id	: 0
+core id		: 3
+processor	: 4
+physical id	: 0
+core id		: 4
+processor	: 5
+physical id	: 0
+core id		: 5
+processor	: 6
+physical id	: 0
+core id		: 6
+processor	: 7
+physical id	: 0
+core id		: 7
+processor	: 8
+physical id	: 0
+core id		: 8
+processor	: 9
+physical id	: 0
+core id		: 9
+processor	: 10
+physical id	: 0
+core id		: 10
+processor	: 11
+physical id	: 0
+core id		: 11
+processor	: 12
+physical id	: 0
+core id		: 12
+processor	: 13
+physical id	: 0
+core id		: 13
+processor	: 14
+physical id	: 0
+core id		: 14
+processor	: 15
+physical id	: 0
+core id		: 15
+processor	: 16
+physical id	: 0
+core id		: 16
+processor	: 17
+physical id	: 0
+core id		: 17
+processor	: 18
+physical id	: 0
+core id		: 18
+processor	: 19
+physical id	: 0
+core id		: 19
+processor	: 20
+physical id	: 0
+core id		: 20
+processor	: 21
+physical id	: 0
+core id		: 21
+processor	: 22
+physical id	: 0
+core id		: 22
+processor	: 23
+physical id	: 0
+core id		: 23
+processor	: 24
+physical id	: 0
+core id		: 24
+processor	: 25
+physical id	: 0
+core id		: 25
+processor	: 26
+physical id	: 0
+core id		: 26
+processor	: 27
+physical id	: 0
+core id		: 27
+processor	: 28
+physical id	: 0
+core id		: 28
+processor	: 29
+physical id	: 0
+core id		: 29
+processor	: 30
+physical id	: 0
+core id		: 30
+processor	: 31
+physical id	: 0
+core id		: 31
+processor	: 32
+physical id	: 1
+core id		: 0
+processor	: 33
+physical id	: 1
+core id		: 1
+processor	: 34
+physical id	: 1
+core id		: 2
+processor	: 35
+physical id	: 1
+core id		: 3
+processor	: 36
+physical id	: 1
+core id		: 4
+processor	: 37
+physical id	: 1
+core id		: 5
+processor	: 38
+physical id	: 1
+core id		: 6
+processor	: 39
+physical id	: 1
+core id		: 7
+processor	: 40
+physical id	: 1
+core id		: 8
+processor	: 41
+physical id	: 1
+core id		: 9
+processor	: 42
+physical id	: 1
+core id		: 10
+processor	: 43
+physical id	: 1
+core id		: 11
+processor	: 44
+physical id	: 1
+core id		: 12
+processor	: 45
+physical id	: 1
+core id		: 13
+processor	: 46
+physical id	: 1
+core id		: 14
+processor	: 47
+physical id	: 1
+core id		: 15
+processor	: 48
+physical id	: 1
+core id		: 16
+processor	: 49
+physical id	: 1
+core id		: 17
+processor	: 50
+physical id	: 1
+core id		: 18
+processor	: 51
+physical id	: 1
+core id		: 19
+processor	: 52
+physical id	: 1
+core id		: 20
+processor	: 53
+physical id	: 1
+core id		: 21
+processor	: 54
+physical id	: 1
+core id		: 22
+processor	: 55
+physical id	: 1
+core id		: 23
+processor	: 56
+physical id	: 1
+core id		: 24
+processor	: 57
+physical id	: 1
+core id		: 25
+processor	: 58
+physical id	: 1
+core id		: 26
+processor	: 59
+physical id	: 1
+core id		: 27
+processor	: 60
+physical id	: 1
+core id		: 28
+processor	: 61
+physical id	: 1
+core id		: 29
+processor	: 62
+physical id	: 1
+core id		: 30
+processor	: 63
+physical id	: 1
+core id		: 31
+processor	: 64
+physical id	: 0
+core id		: 0
+processor	: 65
+physical id	: 0
+core id		: 1
+processor	: 66
+physical id	: 0
+core id		: 2
+processor	: 67
+physical id	: 0
+core id		: 3
+processor	: 68
+physical id	: 0
+core id		: 4
+processor	: 69
+physical id	: 0
+core id		: 5
+processor	: 70
+physical id	: 0
+core id		: 6
+processor	: 71
+physical id	: 0
+core id		: 7
+processor	: 72
+physical id	: 0
+core id		: 8
+processor	: 73
+physical id	: 0
+core id		: 9
+processor	: 74
+physical id	: 0
+core id		: 10
+processor	: 75
+physical id	: 0
+core id		: 11
+processor	: 76
+physical id	: 0
+core id		: 12
+processor	: 77
+physical id	: 0
+core id		: 13
+processor	: 78
+physical id	: 0
+core id		: 14
+processor	: 79
+physical id	: 0
+core id		: 15
+processor	: 80
+physical id	: 0
+core id		: 16
+processor	: 81
+physical id	: 0
+core id		: 17
+processor	: 82
+physical id	: 0
+core id		: 18
+processor	: 83
+physical id	: 0
+core id		: 19
+processor	: 84
+physical id	: 0
+core id		: 20
+processor	: 85
+physical id	: 0
+core id		: 21
+processor	: 86
+physical id	: 0
+core id		: 22
+processor	: 87
+physical id	: 0
+core id		: 23
+processor	: 88
+physical id	: 0
+core id		: 24
+processor	: 89
+physical id	: 0
+core id		: 25
+processor	: 90
+physical id	: 0
+core id		: 26
+processor	: 91
+physical id	: 0
+core id		: 27
+processor	: 92
+physical id	: 0
+core id		: 28
+processor	: 93
+physical id	: 0
+core id		: 29
+processor	: 94
+physical id	: 0
+core id		: 30
+processor	: 95
+physical id	: 0
+core id		: 31
+processor	: 96
+physical id	: 1
+core id		: 0
+processor	: 97
+physical id	: 1
+core id		: 1
+processor	: 98
+physical id	: 1
+core id		: 2
+processor	: 99
+physical id	: 1
+core id		: 3
+processor	: 100
+physical id	: 1
+core id		: 4
+processor	: 101
+physical id	: 1
+core id		: 5
+processor	: 102
+physical id	: 1
+core id		: 6
+processor	: 103
+physical id	: 1
+core id		: 7
+processor	: 104
+physical id	: 1
+core id		: 8
+processor	: 105
+physical id	: 1
+core id		: 9
+processor	: 106
+physical id	: 1
+core id		: 10
+processor	: 107
+physical id	: 1
+core id		: 11
+processor	: 108
+physical id	: 1
+core id		: 12
+processor	: 109
+physical id	: 1
+core id		: 13
+processor	: 110
+physical id	: 1
+core id		: 14
+processor	: 111
+physical id	: 1
+core id		: 15
+processor	: 112
+physical id	: 1
+core id		: 16
+processor	: 113
+physical id	: 1
+core id		: 17
+processor	: 114
+physical id	: 1
+core id		: 18
+processor	: 115
+physical id	: 1
+core id		: 19
+processor	: 116
+physical id	: 1
+core id		: 20
+processor	: 117
+physical id	: 1
+core id		: 21
+processor	: 118
+physical id	: 1
+core id		: 22
+processor	: 119
+physical id	: 1
+core id		: 23
+processor	: 120
+physical id	: 1
+core id		: 24
+processor	: 121
+physical id	: 1
+core id		: 25
+processor	: 122
+physical id	: 1
+core id		: 26
+processor	: 123
+physical id	: 1
+core id		: 27
+processor	: 124
+physical id	: 1
+core id		: 28
+processor	: 125
+physical id	: 1
+core id		: 29
+processor	: 126
+physical id	: 1
+core id		: 30
+processor	: 127
+physical id	: 1
+core id		: 31
+model name: AMD EPYC 7601 32-Core Processor
+flags: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl nonstop_tsc cpuid extd_apicid amd_dcm aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb hw_pstate ssbd ibpb vmmcall fsgsbase bmi1 avx2 smep bmi2 rdseed adx smap clflushopt sha_ni xsaveopt xsavec xgetbv1 xsaves clzero xsaveerptr arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif overflow_recov succor smca ibpb_exit_to_user
+online: 0-127
+Cpus_allowed_list:	0-127
+@@nodes
+node=0 cpus=0-7,64-71
+Node 0 MemTotal:       131930288 kB
+Node 0 MemFree:        56282424 kB
+node=1 cpus=8-15,72-79
+Node 1 MemTotal:       132114308 kB
+Node 1 MemFree:        103164144 kB
+node=2 cpus=16-23,80-87
+Node 2 MemTotal:       132114308 kB
+Node 2 MemFree:        105567336 kB
+node=3 cpus=24-31,88-95
+Node 3 MemTotal:       132069956 kB
+Node 3 MemFree:        105612124 kB
+node=4 cpus=32-39,96-103
+Node 4 MemTotal:       132114308 kB
+Node 4 MemFree:        105674836 kB
+node=5 cpus=40-47,104-111
+Node 5 MemTotal:       132114308 kB
+Node 5 MemFree:        105792340 kB
+node=6 cpus=48-55,112-119
+Node 6 MemTotal:       132114308 kB
+Node 6 MemFree:        98907196 kB
+node=7 cpus=56-63,120-127
+Node 7 MemTotal:       132107876 kB
+Node 7 MemFree:        101858920 kB
+@@meminfo
+MemTotal:       1056679660 kB
+MemFree:        782847084 kB
+MemAvailable:   1018807412 kB
+SwapTotal:       8388604 kB
+SwapFree:        8388604 kB
+@@sysctl
+numa_balancing=1
+demotion_enabled=false
+thp_enabled=always [madvise] never
+thp_defrag=always defer defer+madvise [madvise] never
+swappiness=60
+@@swaps
+Filename				Type		Size		Used		Priority
+/swap.img                               file		8388604		0		-2
+@@dax
+@@nd
+@@dmidecode
+Handle 0x001F, DMI type 16, 23 bytes
+	Maximum Capacity: 2 TB
+	Number Of Devices: 16
+Handle 0x002B, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P1-DIMMA1
+	Bank Locator: P0_Node0_Channel0_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x002E, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P1-DIMMB1
+	Bank Locator: P0_Node0_Channel1_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x0031, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P1-DIMMC1
+	Bank Locator: P0_Node0_Channel2_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x0034, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P1-DIMMD1
+	Bank Locator: P0_Node0_Channel3_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x0037, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P1-DIMME1
+	Bank Locator: P0_Node0_Channel4_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x003A, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P1-DIMMF1
+	Bank Locator: P0_Node0_Channel5_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x003D, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P1-DIMMG1
+	Bank Locator: P0_Node0_Channel6_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x0040, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P1-DIMMH1
+	Bank Locator: P0_Node0_Channel7_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x0043, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P2-DIMMA1
+	Bank Locator: P1_Node0_Channel0_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x0046, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P2-DIMMB1
+	Bank Locator: P1_Node0_Channel1_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x0049, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P2-DIMMC1
+	Bank Locator: P1_Node0_Channel2_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x004C, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P2-DIMMD1
+	Bank Locator: P1_Node0_Channel3_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x004F, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P2-DIMME1
+	Bank Locator: P1_Node0_Channel4_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x0052, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P2-DIMMF1
+	Bank Locator: P1_Node0_Channel5_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x0055, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P2-DIMMG1
+	Bank Locator: P1_Node0_Channel6_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+Handle 0x0058, DMI type 17, 40 bytes
+Memory Device
+	Size: 64 GB
+	Form Factor: DIMM
+	Locator: P2-DIMMH1
+	Bank Locator: P1_Node0_Channel7_Dimm0
+	Type: DDR4
+	Speed: 2400 MT/s
+	Rank: 4
+	Configured Memory Speed: 2400 MT/s
+@@nvidia
+0, NVIDIA GeForce GTX 1080 Ti, 00000000:21:00.0, 11264, 3, 11164, 1, 3, 16, 16, 580.178.04
+@@xpu
+@@!xpu xpu-smi not installed
+@@drm
+card=card0 pci=0000:12:00.0 path=/sys/devices/pci0000:10/0000:10:01.1/0000:11:00.0/0000:12:00.0 vendor=0x1a03 device=0x2000 class=0x030000 driver=ast boot_vga=1 vram_total= vram_used= vram_vendor= ep_speed= ep_width= ep_max_speed= ep_max_width= rootport=0000:10:01.1 rp_speed=2.5_GT/s_PCIe rp_width=1 rp_max_speed=2.5_GT/s_PCIe rp_max_width=2
+card=card1 pci=0000:21:00.0 path=/sys/devices/pci0000:20/0000:20:03.1/0000:21:00.0 vendor=0x10de device=0x1b06 class=0x030000 driver=nvidia boot_vga=0 vram_total= vram_used= vram_vendor= ep_speed=2.5_GT/s_PCIe ep_width=16 ep_max_speed=8.0_GT/s_PCIe ep_max_width=16 rootport=0000:20:03.1 rp_speed=2.5_GT/s_PCIe rp_width=16 rp_max_speed=8.0_GT/s_PCIe rp_max_width=16
+@@mounts
+/sys sysfs sysfs 0 0 
+/proc proc proc 0 0 
+/dev udev devtmpfs 540937977856 540937977856 
+/dev/pts devpts devpts 0 0 
+/run tmpfs tmpfs 108203999232 108201132032 
+/sys/firmware/efi/efivars efivarfs efivarfs 131072 113787 
+/ /dev/mapper/ubuntu--vg-ubuntu--lv ext4 474991181824 103235235840 a66772b7-db09-4063-904a-3a24dc787465
+/sys/kernel/security securityfs securityfs 0 0 
+/dev/shm tmpfs tmpfs 541019983872 541008027648 
+/run/lock tmpfs tmpfs 5242880 5242880 
+/sys/fs/cgroup cgroup2 cgroup2 0 0 
+/sys/fs/pstore pstore pstore 0 0 
+/sys/fs/bpf bpf bpf 0 0 
+/proc/sys/fs/binfmt_misc systemd-1 autofs 0 0 
+/dev/hugepages hugetlbfs hugetlbfs 0 0 
+/dev/mqueue mqueue mqueue 0 0 
+/sys/kernel/debug debugfs debugfs 0 0 
+/sys/kernel/tracing tracefs tracefs 0 0 
+/sys/fs/fuse/connections fusectl fusectl 0 0 
+/sys/kernel/config configfs configfs 0 0 
+/run/qemu tmpfs tmpfs 541019983872 541019758592 
+/snap/core20/2866 /dev/loop0 squashfs 66977792 0 
+/snap/core20/2922 /dev/loop1 squashfs 66977792 0 
+/snap/prometheus/86 /dev/loop2 squashfs 74579968 0 
+/snap/snapd/27406 /dev/loop3 squashfs 52559872 0 
+/snap/snapd/28254 /dev/loop4 squashfs 46923776 0 
+/boot /dev/sda2 ext4 2040373248 1705590784 24b504bc-14eb-4cc5-b4c8-4d7338b10b5a
+/boot/efi /dev/sda1 vfat 1124995072 1118556160 183A-DF53
+/proc/sys/fs/binfmt_misc binfmt_misc binfmt_misc 0 0 
+/run/user/1000 tmpfs tmpfs 108203995136 108203446272 
+/run/snapd/ns tmpfs[/snapd/ns] tmpfs 108203999232 108201132032 
+/run/snapd/ns/prometheus.mnt nsfs[mnt:[4026533001]] nsfs 0 0 
+@@lsblk
+{
+   "blockdevices": [
+      {
+         "name": "loop0",
+         "kname": "loop0",
+         "path": "/dev/loop0",
+         "size": 66879488,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/core20/2866"
+      },{
+         "name": "loop1",
+         "kname": "loop1",
+         "path": "/dev/loop1",
+         "size": 66883584,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/core20/2922"
+      },{
+         "name": "loop2",
+         "kname": "loop2",
+         "path": "/dev/loop2",
+         "size": 74489856,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/prometheus/86"
+      },{
+         "name": "loop3",
+         "kname": "loop3",
+         "path": "/dev/loop3",
+         "size": 52531200,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/snapd/27406"
+      },{
+         "name": "loop4",
+         "kname": "loop4",
+         "path": "/dev/loop4",
+         "size": 46882816,
+         "type": "loop",
+         "rota": false,
+         "tran": null,
+         "model": null,
+         "fstype": "squashfs",
+         "uuid": null,
+         "mountpoint": "/snap/snapd/28254"
+      },{
+         "name": "sda",
+         "kname": "sda",
+         "path": "/dev/sda",
+         "size": 512110190592,
+         "type": "disk",
+         "rota": false,
+         "tran": "sata",
+         "model": "MTFDDAK512MBF-1A",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "sda1",
+               "kname": "sda1",
+               "path": "/dev/sda1",
+               "size": 1127219200,
+               "type": "part",
+               "rota": false,
+               "tran": null,
+               "model": null,
+               "fstype": "vfat",
+               "uuid": "183A-DF53",
+               "mountpoint": "/boot/efi"
+            },{
+               "name": "sda2",
+               "kname": "sda2",
+               "path": "/dev/sda2",
+               "size": 2147483648,
+               "type": "part",
+               "rota": false,
+               "tran": null,
+               "model": null,
+               "fstype": "ext4",
+               "uuid": "24b504bc-14eb-4cc5-b4c8-4d7338b10b5a",
+               "mountpoint": "/boot"
+            },{
+               "name": "sda3",
+               "kname": "sda3",
+               "path": "/dev/sda3",
+               "size": 508833038336,
+               "type": "part",
+               "rota": false,
+               "tran": null,
+               "model": null,
+               "fstype": "LVM2_member",
+               "uuid": "OSwPxF-uSkQ-94JQ-mGue-808r-62Z8-l41AdX",
+               "mountpoint": null,
+               "children": [
+                  {
+                     "name": "ubuntu--vg-ubuntu--lv",
+                     "kname": "dm-0",
+                     "path": "/dev/mapper/ubuntu--vg-ubuntu--lv",
+                     "size": 483183820800,
+                     "type": "lvm",
+                     "rota": false,
+                     "tran": null,
+                     "model": null,
+                     "fstype": "ext4",
+                     "uuid": "a66772b7-db09-4063-904a-3a24dc787465",
+                     "mountpoint": "/"
+                  }
+               ]
+            }
+         ]
+      },{
+         "name": "sdb",
+         "kname": "sdb",
+         "path": "/dev/sdb",
+         "size": 1000204886016,
+         "type": "disk",
+         "rota": true,
+         "tran": "sata",
+         "model": "SAMSUNG HD103SI",
+         "fstype": null,
+         "uuid": null,
+         "mountpoint": null,
+         "children": [
+            {
+               "name": "sdb1",
+               "kname": "sdb1",
+               "path": "/dev/sdb1",
+               "size": 1000202043392,
+               "type": "part",
+               "rota": true,
+               "tran": null,
+               "model": null,
+               "fstype": null,
+               "uuid": null,
+               "mountpoint": null
+            }
+         ]
+      }
+   ]
+}
+@@btrfs
+@@loop
+dev=loop0 backing=/var/lib/snapd/snaps/core20_2866.snap
+dev=loop1 backing=/var/lib/snapd/snaps/core20_2922.snap
+dev=loop2 backing=/var/lib/snapd/snaps/prometheus_86.snap
+dev=loop3 backing=/var/lib/snapd/snaps/snapd_27406.snap
+dev=loop4 backing=/var/lib/snapd/snaps/snapd_28254.snap
+@@end
