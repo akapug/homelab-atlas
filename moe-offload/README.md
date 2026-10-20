@@ -21,15 +21,15 @@ hand an agent's work to.
 
 ## Best measured result per model
 
-All decode figures are one request at a time, greedy, thinking off, short coding prompts (about 300 tokens out),
-median of the requests in the run.
+All decode figures are one request at a time, greedy, thinking off, on coding prompts. How each row aggregates its
+requests is named in the row.
 
 | model | box | engine | weights | decode tok/s | quality check |
 |---|---|---|---|---|---|
-| GLM-5.3-Flash | A | the `glm53-flash-offload` image (ghcr.io/sybil-solutions, exllamav3-based): a VRAM expert cache of 1,600 slots, the other experts computed on 14 CPU cores from a 107 GiB RAM tier | EXL3 3.05 bpw | **23.08** (22.20 without layer-ahead warm-up) | served vs the same weights computed exactly on the GPU: KL 0.0044, top-1 0.985 (928 positions) |
-| GLM-5.3-Flash | B | ik_llama.cpp with our patches: hot experts on the GPU, each CPU expert's rows split between the two sockets, MTP draft 3 tokens, p_min 0.75 | unsloth UD-Q4_K_XL | **15.73** | KL 0.030, top-1 0.960 against the EXL3 3.05 bpw store above (925 positions). See [the reference problem](#the-quality-reference-problem) |
-| DeepSeek V4.1 Flash | B | ik_llama.cpp with our patches: as above, plus the DSpark draft model at n_max 4 (acceptance 0.95) | MXFP4 for hot experts, q2_K for cold ones | **10.6** (8.75 without the draft) | KL 0.0169, top-1 0.975 against the all-MXFP4 store (1,376 positions) |
-| Qwen3.8 Flash-Next | C | XeStrata (the SYCL port of Strata), one B70, about 10,900 experts in VRAM, the rest on the CPU from RAM, MTP 4, int8 KV, 262,144-token window | ISTA-DASLab GSQ-RCO IQ3_S | **87.1** on a code prompt, XeStrata xe0.1.45 with `--prefill auto` (80.9 on xe0.1.40) | not measured yet |
+| GLM-5.3-Flash | A | the `glm53-flash-offload` image (ghcr.io/sybil-solutions, exllamav3-based): a VRAM expert cache of 1,600 slots, the other experts computed on 14 CPU cores from a 107 GiB RAM tier | EXL3 3.05 bpw | **23.08**, upper median of 6 requests of 300 tokens (22.20 without layer-ahead warm-up) | served vs the same weights computed exactly on the GPU: KL 0.0044, top-1 0.985 (928 positions) |
+| GLM-5.3-Flash | B | ik_llama.cpp with our patches: hot experts on the GPU, each CPU expert's rows split between the two sockets, MTP draft 3 tokens, p_min 0.75 | unsloth UD-Q4_K_XL | **15.73**, mean of 4 prompts (median 15.81) | KL 0.030, top-1 0.960 against the EXL3 3.05 bpw store above (925 positions). See [the reference problem](#the-quality-reference-problem) |
+| DeepSeek V4.1 Flash | B | ik_llama.cpp with our patches: as above, plus the DSpark draft model at n_max 4 (acceptance 0.95) | MXFP4 for hot experts, q2_K for cold ones | **10.6**, mean of two runs (10.58, 10.62), each over 3 prompts of 300 tokens (8.75 without the draft) | KL 0.0169, top-1 0.975 against the all-MXFP4 store (1,376 positions) |
+| Qwen3.8 Flash-Next | C | XeStrata (the SYCL port of Strata), one B70, about 10,900 experts in VRAM, the rest on the CPU from RAM, MTP 4, int8 KV, 262,144-token window | ISTA-DASLab GSQ-RCO IQ3_S | **87.1**, median of 3 runs (88.5, 87.1, 86.7) of 512 tokens on one code prompt, XeStrata xe0.1.45 with `--prefill auto` | not measured yet |
 
 Box A and box B each miss 25 tok/s for GLM; box C clears it with a smaller model.
 
@@ -92,9 +92,9 @@ Box A and box B each miss 25 tok/s for GLM; box C clears it with a smaller model
 Our GLM quality gate compares against the EXL3 3.05 bpw store computed exactly on the GPU, because a BF16
 reference of a 321B model fits none of our cards.
 
-That makes the gate unable to pass a store better than its reference. A 4-bit GGUF that is closer to BF16 still
-disagrees with the 3-bit reference's own errors. So read the box B GLM line as "KL 0.030 against a 3-bit
-reference", not as a failure against the original weights.
+So the gate measures agreement with a 3-bit store, not fidelity to the original weights. A store that is closer
+to BF16 can be penalized for disagreeing with the reference's own errors. The box B GLM line is a measured
+miss against that reference (KL 0.02997, top-1 0.960, 925 positions); its fidelity to BF16 is unmeasured.
 
 For scale, unsloth reports KL against BF16 of 0.049 for UD-Q4_K_XL and 0.160 for UD-Q3_K_XL, on their own prompts.
 A near-lossless reference (Q8_0 on a large-memory CPU box) is the next step.
