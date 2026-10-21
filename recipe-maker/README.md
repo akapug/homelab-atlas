@@ -106,3 +106,7 @@ capture one for your model with `tools/heat-capture/` and convert it with `tools
 | `tools/` | run recording, bench sweeps, routing capture, placement check |
 | `tests/` | `python3 -m unittest discover -s tests`, then `node tests/test_accuracy.js` and `node tests/test_advisor.js` |
 | `docs/how-it-works.md` | the reference: evidence tags, the gate's checks, recipe fields, the models behind each number, honest limits |
+
+---
+
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

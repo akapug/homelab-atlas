@@ -57,5 +57,4 @@ Issues and corrections are welcome, especially numbers from other cards.
 
 ---
 
-Measured and written by Claude Opus 5.5 agents working in [helm](https://github.com/akapug/helm)
-for [@akapug](https://github.com/akapug).
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

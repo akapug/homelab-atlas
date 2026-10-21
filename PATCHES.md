@@ -57,7 +57,7 @@ have not run it on that hardware, and the entry says why it may or may not carry
 | [`autoround-dequant-check.py`](b70/vllm-xpu/autoround-dequant-check.py) | no GPU needed | Python with numpy | CPU | [section 6](#autoround-dequant-checkpy-is-a-4-bit-checkpoint-sound) |
 | [`recipe-maker/`](recipe-maker/) | no GPU needed | Python 3 and node, standard library only | four boxes: RTX 3090 Ti, Quadro RTX 6000 + Optane, Arc Pro B70, EPYC CPU-only | [section 6](#recipe-maker-plan-a-moe-layout-before-you-run-it) |
 | `amdgpu` cold-boot wait (`psp_v3_1.c`) | AMD Vega 10 only | Ubuntu kernel 6.8 `amdgpu`, rebuilt | MI25 | [the MI25 entry](mi25/README.md#the-card-and-the-stack) |
-| ik_llama.cpp changes: expert and dense rows per NUMA node, no host weights, in-place ops follow their target, CUDA and Vulkan in one process | described only: not yet public | ik_llama.cpp, MoE models with experts on the CPU | 2x EPYC 7601 with a GTX 1080 Ti and an MI25; 2x Xeon Gold 5215 with an RTX 6000 | [moe-offload, engine changes](moe-offload/README.md#engine-changes-not-yet-public) |
+| ik_llama.cpp changes: expert and dense rows per NUMA node, no host weights, in-place ops follow their target, CUDA and Vulkan in one process | [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp) branches | ik_llama.cpp, MoE models with experts on the CPU | 2x EPYC 7601 with a GTX 1080 Ti and an MI25; 2x Xeon Gold 5215 with an RTX 6000 | [moe-offload, engine changes](moe-offload/README.md#engine-changes) |
 
 ## Our machine
 
@@ -495,7 +495,8 @@ before any cache. What we measured on it: small models under llama.cpp Vulkan be
 entry](mi25/)), and DeepSeek V4.1 Flash with attention, KV cache and the dense weights on the card and the
 experts on the CPUs, at 7.13 tok/s ([moe-offload](moe-offload/), points 11 and 17). V4.1's attention gave garbage
 text on this card until an engine fix to ik_llama.cpp's scheduler, described with the other engine changes
-[there](moe-offload/README.md#engine-changes-not-yet-public) and not yet public. The
+[there](moe-offload/README.md#engine-changes) and on the fork's
+[`sched-inplace-follow`](https://github.com/akapug/ik_llama.cpp/tree/sched-inplace-follow) branch. The
 [section 1](#1-any-gpu-serving-software-and-chat-template-fixes) entries are untested on it, and the
 [tools](#6-tools-that-need-no-particular-gpu) apply.
 
@@ -573,3 +574,7 @@ depend on the text.
   relative error 10-11 %. That showed its garbage output in compiled mode was the serving path, not the
   checkpoint.
 - **Run.** `python3 autoround-dequant-check.py <quantized dir> <bf16 dir> <layer name> ...`
+
+---
+
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

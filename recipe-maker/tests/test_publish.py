@@ -248,10 +248,10 @@ class Curate(unittest.TestCase):
     def test_manifest_strips_agent_names_and_ledger_prefixes(self):
         with open(os.path.join(ROOT, 'publish', 'manifest.json')) as f:
             R = self.C.rules(json.load(f), '')
-        agent = 'homelab-' + 'cla' + 'ude'
-        self.assertEqual(self.C.rewrite('package (ik ' + 'hl' + '332-stack 8d4d0f39)', R), 'package (ik stack 8d4d0f39)')
+        agent = 'lab-' + 'cla' + 'ude'
+        self.assertEqual(self.C.rewrite('package (ik ' + 'hl' + '332-stack 0123abcd)', R), 'package (ik stack 0123abcd)')
         self.assertEqual(self.C.rewrite('stopped (' + agent + ' GO 10-20 23:12Z); x', R), 'stopped (approved); x')
-        self.assertEqual(self.C.rewrite('asked by local-ai-' + 'cla' + 'ude', R), 'asked by an agent')
+        self.assertEqual(self.C.rewrite('asked by gpu-box-' + 'cla' + 'ude', R), 'asked by an agent')
 
     def test_every_home_path_becomes_tilde(self):
         R = self.C.rules({'rewrite': []}, '/home/' + 'someone')
@@ -306,6 +306,24 @@ class Scan(unittest.TestCase):
         self.assertIn('q.txt:2: internal id', p.stdout)
         self.assertIn('q.txt:3: lab notes pointer', p.stdout)
         self.assertIn('r.txt:1: internal id', p.stdout)
+
+    def test_scan_admits_only_the_manifest_signoff(self):
+        with open(os.path.join(ROOT, 'publish', 'manifest.json')) as f:
+            signoff = json.load(f)['signoff']
+        d = tempfile.mkdtemp(prefix='scan-')
+        self.addCleanup(shutil.rmtree, d)
+        terms = os.path.join(d, 'terms.txt')
+        open(terms, 'w').close()
+        planted = os.path.join(d, 'planted')
+        os.makedirs(planted)
+        with open(os.path.join(planted, 'README.md'), 'w') as f:
+            f.write('# x\n\n---\n\n' + signoff + '\n')
+        run = lambda: subprocess.run(['bash', os.path.join(ROOT, 'tools', 'export_atlas.sh'), '--scan-only', planted, '--terms', terms],
+                                     capture_output=True, text=True)
+        self.assertEqual(run().returncode, 0, run().stdout)
+        with open(os.path.join(planted, 'README.md'), 'a') as f:
+            f.write('written by ' + 'cla' + 'ude\n')
+        self.assertEqual(run().returncode, 1)
 
 
 class Page(unittest.TestCase):

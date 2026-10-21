@@ -126,7 +126,7 @@ Status: the text is correct, the speed is not there yet, and the fixes are in pr
 running DeepSeek V4.1 Flash as in [moe-offload point 17](../moe-offload/#what-we-learned-measured): the GTX 1080 Ti
 holds attention, KV cache and the dense weights, the CPUs hold the routed experts. The MI25 is added to hold the
 most-routed experts, in the same process. That needed an engine change: a CUDA build of ik_llama.cpp that also opens
-Vulkan devices and puts expert banks on one of them ([engine changes](../moe-offload/#engine-changes-not-yet-public)).
+Vulkan devices and puts expert banks on one of them ([engine changes](../moe-offload/#engine-changes)).
 
 **Device checks first.** The engine's op tests on the MI25 under Vulkan: 35 of 36 required ops and 43 of 44 V4.1
 cases pass, all 8 full-bank cases among them. The one failure is sorting the router's scores over 384 experts
@@ -215,3 +215,7 @@ is 95 C, the junction's 105 C):
 - Decode at 32k depth and beyond.
 - Whether a WX9100 vBIOS (a 170 W cap) helps. Decode mostly reads memory, so the 110 W cap may cost little there,
   but we have not measured it.
+
+---
+
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

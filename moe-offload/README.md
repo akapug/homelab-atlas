@@ -33,8 +33,8 @@ requests is named in the row.
 |---|---|---|---|---|---|
 | GLM-5.3-Flash | A | the `glm53-flash-offload` image (ghcr.io/sybil-solutions, exllamav3-based): a VRAM expert cache of 1,600 slots, the other experts computed on 14 CPU cores from a 107 GiB RAM tier | EXL3 3.05 bpw | **23.08**, upper median of 6 requests of 300 tokens (22.20 without layer-ahead warm-up) | served vs the same weights computed exactly on the GPU: KL 0.0044, top-1 0.985 (928 positions) |
 | GLM-5.3-Flash | B | ik_llama.cpp with our patches: hot experts on the GPU, each CPU expert's rows split between the two sockets, MTP draft 3 tokens with the reduced draft vocabulary (point 6), p_min 0.75, built with expert chunking off (point 13) | unsloth UD-Q4_K_XL | **16.06**, mean of 4 prompts, 3 rounds each (15.95 with the full draft vocabulary; 15.73 on our earlier build of the same recipe) | KL 0.030, top-1 0.960 against the EXL3 3.05 bpw store above (925 positions). See [the reference problem](#the-quality-reference-problem) |
-| DeepSeek V4.1 Flash | B | ik_llama.cpp with our patches, including the newer ones ([below](#engine-changes-not-yet-public)): hot experts on the GPU (7.0 GiB), each CPU expert's rows split between the two sockets, the draft model's experts on the CPU, the DSpark draft model at n_max 4 (acceptance 0.90) | MXFP4 for hot experts, q2_K for cold ones | **11.88**, mean of 3 prompts of 300 tokens, one load (12.88, 12.62, 10.13); 9.72 without the draft (point 21). Before the newer changes: 10.6 and 8.75 | KL 0.0169, top-1 0.975 against the all-MXFP4 store (1,376 positions), measured with the earlier build; not re-measured on the new one |
-| DeepSeek V4.1 Flash | D | ik_llama.cpp with our patches ([below](#engine-changes-not-yet-public)): the GTX 1080 Ti holds attention, KV cache, the dense and shared-expert weights and the output head; the routed experts stay on the CPUs, each expert's rows split across all 8 NUMA nodes; 64 threads; the DSpark draft model (Q2_K, on the CPU) at n_max 4 (acceptance 0.92) | routed experts at release precision (MXFP4, as DeepSeek released them), other tensors Q8_0 | **7.13**, mean of 3 prompts of 300 tokens, one request each (7.24, 7.46, 6.70); 6.97 without the draft (point 17). CPU only: 7.02 and 5.16 (point 16) | not measured on box D. The routed experts are as released (only the other tensors are quantized, to Q8_0); this store is the reference the box B row is measured against |
+| DeepSeek V4.1 Flash | B | ik_llama.cpp with our patches, including the newer ones ([below](#engine-changes)): hot experts on the GPU (7.0 GiB), each CPU expert's rows split between the two sockets, the draft model's experts on the CPU, the DSpark draft model at n_max 4 (acceptance 0.90) | MXFP4 for hot experts, q2_K for cold ones | **11.88**, mean of 3 prompts of 300 tokens, one load (12.88, 12.62, 10.13); 9.72 without the draft (point 21). Before the newer changes: 10.6 and 8.75 | KL 0.0169, top-1 0.975 against the all-MXFP4 store (1,376 positions), measured with the earlier build; not re-measured on the new one |
+| DeepSeek V4.1 Flash | D | ik_llama.cpp with our patches ([below](#engine-changes)): the GTX 1080 Ti holds attention, KV cache, the dense and shared-expert weights and the output head; the routed experts stay on the CPUs, each expert's rows split across all 8 NUMA nodes; 64 threads; the DSpark draft model (Q2_K, on the CPU) at n_max 4 (acceptance 0.92) | routed experts at release precision (MXFP4, as DeepSeek released them), other tensors Q8_0 | **7.13**, mean of 3 prompts of 300 tokens, one request each (7.24, 7.46, 6.70); 6.97 without the draft (point 17). CPU only: 7.02 and 5.16 (point 16) | not measured on box D. The routed experts are as released (only the other tensors are quantized, to Q8_0); this store is the reference the box B row is measured against |
 | Qwen3.8 Flash-Next | C | XeStrata (the SYCL port of Strata), one B70, about 10,900 experts in VRAM, the rest on the CPU from RAM, MTP 4, int8 KV, 262,144-token window | ISTA-DASLab GSQ-RCO IQ3_S | **87.1**, median of 3 runs (88.5, 87.1, 86.7) of 512 tokens on one code prompt, XeStrata xe0.1.45 with `--prefill auto` | not measured yet |
 | Ornith-1.5-122B | B | ik_llama.cpp with our patches: the RTX 6000 holds attention, the dense and shared-expert weights, the MTP layer's non-expert weights and the routed experts of layers 0-8; the other routed experts (the MTP layer's too) in DRAM, each expert's rows split between the two sockets; 39 threads; its own MTP layer at n_max 3, p_min 0.75; 49,152-token window | ornith-ai's Q4_K_M GGUF (70.6 GiB) | **31.6** at 4,000 tokens of context and 31.0 at 600, mean of 3 prompts of 300 tokens (33.72, 29.84, 31.23 at 4,000); 27.1-27.3 without the draft | code-review screens: both planted defects found only with an 8k thinking budget; agent tasks 0 of 3 (points 19 and 20) |
 
@@ -140,14 +140,14 @@ store (MXFP4 hot experts, q2_K cold ones); "release" is the store in the table a
   flash attention (head size 512 with sinks), so that op runs on the CPU and writes its output into host memory. The
   in-place inverse rope that follows was scheduled on the GPU, and the next GPU step had already copied its input
   from host memory before that write landed, so the projection read the un-rotated values. The fix is in the
-  engine's scheduler ([below](#engine-changes-not-yet-public)). With it the per-op sums agree to within rounding,
+  engine's scheduler ([below](#engine-changes)). With it the per-op sums agree to within rounding,
   and the greedy text matches the CPU run (identical on 2 of 3 prompts in point 17, the third forking at a near-tie).
   Our reading, not measured: any device that cannot run this attention kernel would hit the same bug, not only
   Pascal.
 - A crash at warm-up. With weights loaded without mmap, the placed layout plus the GPU crashed with a GPU memory fault
   on host memory (Xid 31). Our build had pinned 79 GiB of weight buffers up to its pin cap, so the compute buffer
   the GPU reads directly stayed unpinned. With weights kept in plain, never-pinned host memory
-  ([below](#engine-changes-not-yet-public)) the same arm ran with no fault. Every fault we logged was a GPU write to
+  ([below](#engine-changes)) the same arm ran with no fault. Every fault we logged was a GPU write to
   host memory, which is also the in-place bug's signature, so which of the two caused each crash is not settled.
 - With both fixed, the gains of points 9 and 11 stack: point 17.
 
@@ -234,7 +234,7 @@ add SMT siblings):
   for long generation without a draft.
 
 **16. Place the dense weights per NUMA node too: +9 % with the draft, +17 % without.**
-- An engine change ([below](#engine-changes-not-yet-public)) lets a placement rule name any weight, not only routed
+- An engine change ([below](#engine-changes)) lets a placement rule name any weight, not only routed
   experts, and split a dense matrix into 8 row slices, one per node. With `-cr` listing the cores in node order, the
   engine's static row split then has each node's threads read its own slice.
 - We placed the attention projections, the shared experts and the output head this way, beside the row-split
@@ -283,7 +283,7 @@ weights on the CPU. Micro-batch 1024 with attention on the GPU, 2048 in the row 
 **18. The MI25 as a hot-expert store for V4.1: correct text, currently slower. Fixes in progress.**
 - The 16 GB MI25 in the same box holds the 799 hottest routed experts (14 GiB, 31.6 % of the routed picks on
   held-out coding text) under Vulkan, in the same process as the CUDA 1080 Ti (an engine change,
-  [below](#engine-changes-not-yet-public)). The rest is the layout of point 17.
+  [below](#engine-changes)). The rest is the layout of point 17.
 - Measured on one prompt: 2.66 tok/s with the draft and 4.08 without, against 7.24 and 6.95 for that prompt without
   the MI25. The text is identical to the run without it, with and without the draft.
 - Why, and what we are changing: [the MI25 entry](../mi25/#as-a-hot-expert-store-for-deepseek-v41-in-progress).
@@ -371,10 +371,22 @@ miss against that reference (KL 0.02997, top-1 0.960, 925 positions); its fideli
 For scale, unsloth reports KL against BF16 of 0.049 for UD-Q4_K_XL and 0.160 for UD-Q3_K_XL, on their own prompts.
 A near-lossless reference (Q8_0 on a large-memory CPU box) is the next step.
 
-## Engine changes (not yet public)
+## Engine changes
 
-Our changes to ik_llama.cpp behind the box B and box D numbers. Our fork with these branches is being published;
-fork link to follow, with build steps. Each is off by default unless it says otherwise, so a build with them and no switches set runs as before.
+Our changes to ik_llama.cpp behind the box B and box D numbers are public in our fork, [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp).
+Each branch contains the one before it, so the last one carries them all:
+
+| branch | commit | adds |
+|---|---|---|
+| [`mtp-draft-vocab`](https://github.com/akapug/ik_llama.cpp/tree/mtp-draft-vocab) | `ee53cdd6` | expert rows per node, the reduced draft vocabulary, hot-expert placement |
+| [`expert-placement-dense-rows`](https://github.com/akapug/ik_llama.cpp/tree/expert-placement-dense-rows) | `3e3c25b1` | dense rows per node |
+| [`no-host-weights`](https://github.com/akapug/ik_llama.cpp/tree/no-host-weights) | `d93aeb48` | no host weights |
+| [`sched-inplace-follow`](https://github.com/akapug/ik_llama.cpp/tree/sched-inplace-follow) | `5716ef61` | in-place ops follow their target (the V4.1 attention fix for sm_61 cards) |
+| [`mixed-cuda-vulkan-expert-banks`](https://github.com/akapug/ik_llama.cpp/tree/mixed-cuda-vulkan-expert-banks) | `a8b82a70` | CUDA and Vulkan in one process, with the MI25 bank fixes so far |
+
+The fork's [PATCHES.md](https://github.com/akapug/ik_llama.cpp/blob/mixed-cuda-vulkan-expert-banks/PATCHES.md) gives each switch, its default, the
+measured effect and the known limits. Its box letters are its own: its box A is our box D, and its box B is our box B.
+Each change is off by default unless it says otherwise, so a build with them and no switches set runs as before.
 
 | change | what it does | switch | measured effect |
 |---|---|---|---|
@@ -390,3 +402,7 @@ On box B, the newer changes together lift V4.1 by 11-12 % (point 21); how much e
 measured.
 
 Build option, upstream's and not ours: `-DGGML_EXPERT_CHUNKING=OFF` (point 13).
+
+---
+
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)
