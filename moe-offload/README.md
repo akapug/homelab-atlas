@@ -35,11 +35,11 @@ requests is named in the row.
 | GLM-5.3-Flash | B | ik_llama.cpp with our patches: hot experts on the GPU, each CPU expert's rows split between the two sockets, MTP draft 3 tokens with the reduced draft vocabulary (point 6), p_min 0.75, built with expert chunking off (point 13) | unsloth UD-Q4_K_XL | **16.06**, mean of 4 prompts, 3 rounds each (15.95 with the full draft vocabulary; 15.73 on our earlier build of the same recipe) | KL 0.030, top-1 0.960 against the EXL3 3.05 bpw store above (925 positions). See [the reference problem](#the-quality-reference-problem) |
 | DeepSeek V4.1 Flash | B | ik_llama.cpp with our patches, including the newer ones ([below](#engine-changes)): hot experts on the GPU (7.0 GiB), each CPU expert's rows split between the two sockets, the draft model's experts on the CPU, the DSpark draft model at n_max 4 (acceptance 0.90) | MXFP4 for hot experts, q2_K for cold ones | **11.88**, mean of 3 prompts of 300 tokens, one load (12.88, 12.62, 10.13); 9.72 without the draft (point 21). Before the newer changes: 10.6 and 8.75 | KL 0.0169, top-1 0.975 against the all-MXFP4 store (1,376 positions), measured with the earlier build; not re-measured on the new one |
 | DeepSeek V4.1 Flash | D | ik_llama.cpp with our patches ([below](#engine-changes)): the GTX 1080 Ti holds attention, KV cache, the dense and shared-expert weights and the output head; the routed experts stay on the CPUs, each expert's rows split across all 8 NUMA nodes; 64 threads; the DSpark draft model (Q2_K, on the CPU) at n_max 4 (acceptance 0.92) | routed experts at release precision (MXFP4, as DeepSeek released them), other tensors Q8_0 | **7.13**, mean of 3 prompts of 300 tokens, one request each (7.24, 7.46, 6.70); 6.97 without the draft (point 17). CPU only: 7.02 and 5.16 (point 16) | not measured on box D. The routed experts are as released (only the other tensors are quantized, to Q8_0); this store is the reference the box B row is measured against |
-| Qwen3.8 Flash-Next | C | XeStrata (the SYCL port of Strata), one B70, about 10,900 experts in VRAM, the rest on the CPU from RAM, MTP 4, int8 KV, 262,144-token window | ISTA-DASLab GSQ-RCO IQ3_S | **87.1**, median of 3 runs (88.5, 87.1, 86.7) of 512 tokens on one code prompt, XeStrata xe0.1.45 with `--prefill auto` | not measured yet |
-| Ornith-1.5-122B | B | ik_llama.cpp with our patches: the RTX 6000 holds attention, the dense and shared-expert weights, the MTP layer's non-expert weights and the routed experts of layers 0-8; the other routed experts (the MTP layer's too) in DRAM, each expert's rows split between the two sockets; 39 threads; its own MTP layer at n_max 3, p_min 0.75; 49,152-token window | ornith-ai's Q4_K_M GGUF (70.6 GiB) | **31.6** at 4,000 tokens of context and 31.0 at 600, mean of 3 prompts of 300 tokens (33.72, 29.84, 31.23 at 4,000); 27.1-27.3 without the draft | code-review screens: both planted defects found only with an 8k thinking budget; agent tasks 0 of 3 (points 19 and 20) |
+| Qwen3.8 Flash-Next | C | XeStrata (the SYCL port of Strata), one B70, about 10,900 experts in VRAM, the rest on the CPU from RAM, MTP 4, int8 KV, 262,144-token window | ISTA-DASLab GSQ-RCO IQ3_S | **87.1**, median of 3 runs (88.5, 87.1, 86.7) of 512 tokens on one code prompt, XeStrata xe0.1.45 with `--prefill auto` | our 12 agent tasks 11 of 12, and 3 of 3 real repository changes (IQ3_S, point 22); IQ3_XXS served since 2026-10-20 |
+| Ornith-1.5-122B | B | ik_llama.cpp with our patches: the RTX 6000 holds attention, the dense and shared-expert weights, the MTP layer's non-expert weights and the routed experts of layers 0-8; the other routed experts (the MTP layer's too) in DRAM, each expert's rows split between the two sockets; 39 threads; its own MTP layer at n_max 3, p_min 0.75; 49,152-token window | ornith-ai's Q4_K_M GGUF (70.6 GiB) | **31.6** at 4,000 tokens of context and 31.0 at 600, mean of 3 prompts of 300 tokens (33.72, 29.84, 31.23 at 4,000); 27.1-27.3 without the draft | code-review screens: both planted defects found only with an 8k thinking budget; agent tasks 0 of 3 in a configuration that limited it, so not yet a verdict on the model (points 19 and 20) |
 
 Box A and box B each miss 25 tok/s for GLM; box C clears it with a smaller model. Box B clears it with
-Ornith-1.5-122B, which then failed our agent tasks. Box D runs V4.1 at under a third of the bar.
+Ornith-1.5-122B; its first agent runs failed in a configuration of ours that limited it (point 20). Box D runs V4.1 at under a third of the bar.
 
 ## What we learned, measured
 
@@ -314,7 +314,7 @@ and to 4,000 tokens, 300 greedy tokens each; each figure is the mean of the 3 pr
 - Our planner predicted 20.7 tok/s with the draft and 15.9 without; it borrows its per-token host cost from GLM,
   and for this model that is 35-42 % low.
 
-**20. But Ornith-1.5-122B failed as a reviewer and as an agent on box B.**
+**20. Ornith-1.5-122B as a reviewer and as an agent on box B: our configuration failed first.**
 
 These use our own private tests, not published here.
 - Code-review screens: three diffs of our own code, two with one planted defect each and one clean control. Card
@@ -336,8 +336,13 @@ These use our own private tests, not published here.
     layers of experts on the GPU (its memory use had crept from 22,098 to 22,474 of 23,040 MiB), and a cuBLAS
     internal error after 85 minutes with 7. Two more runs were void because of the first crash.
   - Qwen3.8 Flash-Next on box C ran the same tasks at 60-68 tok/s, 38-101 turns in the same wall.
-- Our reading: on box B it is too slow under agent context to act inside the wall, and a 262k window on a 24 GB card
-  is not stable past about 65k. We do not run it as a coder.
+- Our reading: these runs judge our configuration more than the model.
+  - At 18-19 tok/s, every turn that ran to the 8,192-token budget took about 8 minutes, so a 45-minute wall left
+    room for only a few such turns.
+  - The 262,144-token window with a Q8_0 KV cache does not fit beside these weights on a 24 GB card: both crashes
+    came in prefills past 65k.
+  - A re-run with a configuration fixed for both is queued. Until then, the model's agent ability on this box is
+    not measured.
 
 **21. The same engine changes on box B: V4.1 from 10.6 to 11.9 tok/s.**
 
@@ -358,6 +363,36 @@ prompts, 300 greedy tokens each, one load; each figure is the mean of the 3 prom
 - This run changed several things at once, so which change buys how much is not measured yet; runs that leave out
   one change at a time are queued.
 - Our planner predicted 8.88 and 7.05, 25-27 % low.
+
+**22. Flash-Next on one B70 does real agent work, and a smaller quant was as good and faster.**
+
+Flash-Next on box C as a standing server: XeStrata xe0.1.40.2.2, the GSQ-RCO IQ3_S store, about 10,900
+experts in VRAM, MTP 4, int8 KV. The agent client is Claude Code in a sandbox on another box, with the model card's
+thinking sampling. These use our own private tests, not published here. One pass of each unless noted.
+- **Our 12-task battery** (the tasks of the [B70 agent eval](../b70/agent-eval/), 1,200 s per task, a
+  229,376-token window): 11 of 12, median 410 s a task (2026-10-18).
+  - The one failure is the same task that Strata with a Q8_0 store missed on box A.
+  - Two tasks reached the 1,200 s limit and still passed their checks.
+- **Three real changes from our own repositories**, replayed from their parent commit and judged by the change's
+  own tests (1,800 s each), with the box's normal build load beside the server: 3 of 3, 22-30 minutes each.
+- **Speed on the installed server**, cold page cache:
+  - quiet box: decode 79.9 tok/s at a short prompt, 77.4 after a cold 33.8k prompt, 70.4 after 67.6k;
+  - beside normal build load: a cold 135,454-token prompt prefilled in 65 s (2,094 tok/s), with decode 71.2 after it.
+- **A harder tier** (8 harder tasks at 1,200 s, and 3 multi-file changes at 2,700 s): the wall decides.
+  - At the highest reasoning effort (`xhigh`), 8 of 11 runs were stopped by the limit and 4 of 11 passed, mean
+    1,463 s a task. Hosted DeepSeek V4.1 Flash and GLM-5.3-Flash took 550 and 744 s on the same tasks.
+  - At medium effort, 5 of 11 were stopped. 5 of the 6 runs that finished in time passed.
+  - On the three multi-file changes it passed none at medium or `xhigh`, nor in a low-effort probe on one of them.
+    96-99 % of its output tokens were thinking, and at medium it made no edit at all on two of them.
+  - With a cap on thinking per turn and a nudge to act (our client-side scaffold): 2 of the 3 passed, n = 1 each.
+    One of them no other model we ran has passed, hosted ones included. The third ended when a capped turn
+    produced text and no tool call, which ends a headless run.
+- **IQ3_XXS against IQ3_S** (2026-10-20, XeStrata xe0.1.45, the two multi-file changes, 2,700 s, one run per
+  quant per change): one pass each. The failing run always made many capped turns (14 and 27) and the passing
+  one few (1 and 2): the capping tracked the change, not the quant.
+  - Per-request decode medians on this agent traffic were 64-69 tok/s for IQ3_XXS against 60-61 for IQ3_S, about
+    8 % faster. The depths were not matched.
+  - With quality equal at this sample size and speed better, we serve IQ3_XXS, the smaller file.
 
 ## The quality reference problem
 

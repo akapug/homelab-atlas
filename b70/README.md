@@ -44,6 +44,9 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
 - [`qwen36-35b-a3b.md`](qwen36-35b-a3b.md): the MoE model our agents run on (Qwen3.6-35B-A3B): vLLM
   at 2.1-5.1x llama.cpp Vulkan on one card, its full 262k window, a silent load hang to watch for,
   and running Claude Code on it.
+- [`ornith-35b-a3b.md`](ornith-35b-a3b.md): Ornith-1.5-35B-A3B, a fine-tune of the MoE above, serving a household
+  assistant and a coding agent from one card with the house first: it coded 17 of 24 against Qwen3.6's 13, a
+  speculative-decoding bug that garbled 3 % of replies and its repro, thinking with a budget, photos, and voice on CPUs.
 - [`agent-eval/`](agent-eval/): can a local model finish real repository work? Twelve tasks with
   hidden checks, a sandboxed runner, and 72 runs: on all twelve, the dense 27B finished 22 of 24
   and the MoE 15 of 24 (p = 0.036), at little more speed once the tasks got hard.
@@ -66,3 +69,7 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
 - For NVIDIA cards, [syv-ai/HyperQwen](https://github.com/syv-ai/HyperQwen) serves the same model
   family on vLLM with many patches; we measured it on a Turing Quadro RTX 6000 and sent the one
   fix it needed there ([HyperQwen#188](https://github.com/syv-ai/HyperQwen/pull/188)).
+
+---
+
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)
