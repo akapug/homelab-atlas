@@ -170,8 +170,9 @@ its 128 experts per layer in MI25 banks, the engine's op profiler, milliseconds 
 - On V4.1, moving the sum to the CUDA card ran the 1080 Ti out of memory at warm-up (+1.7 GiB of compute buffer), so
   there the sum stays on the MI25. The next V4.1 run has the other fixes on.
 - A model whose experts carry biases (gpt-oss-20b) skips the bank path in this build, so it is no test of the banks.
-- Our ceiling estimate, not measured: if the MI25's work hid completely behind the CPU's, it would remove at most the
-  31.6 % of CPU expert reads it holds, about 8 tok/s without the draft on V4.1.
+- Our ceiling estimate, not measured: the MI25 holds the experts behind 31.6 % of CPU expert reads. If its work hid
+  completely behind the CPU's, that would save about 21 ms of the 143 ms a token takes without the draft on V4.1
+  without the MI25, so about 8 tok/s at most.
 
 ## Heat and power
 

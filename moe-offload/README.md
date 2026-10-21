@@ -287,8 +287,9 @@ weights on the CPU. Micro-batch 1024 with attention on the GPU, 2048 in the row 
 - Measured on one prompt: 2.66 tok/s with the draft and 4.08 without, against 7.24 and 6.95 for that prompt without
   the MI25. The text is identical to the run without it, with and without the draft.
 - Why, and what we are changing: [the MI25 entry](../mi25/#as-a-hot-expert-store-for-deepseek-v41-in-progress).
-  Our ceiling estimate, not measured: if the MI25's work hid entirely behind the CPU's, it would save at most the
-  31.6 % of CPU expert reads, about 8 tok/s without the draft.
+  Our ceiling estimate, not measured: the MI25 holds the experts behind 31.6 % of CPU expert reads. If its work
+  hid entirely behind the CPU's, that would save about 21 ms of the 143 ms a token takes without the draft in the
+  layout without the MI25 (6.97 tok/s, point 17), so about 8 tok/s at most.
 
 **19. Ornith-1.5-122B on box B: the first model above 25 tok/s on that box.**
 
@@ -392,7 +393,8 @@ thinking sampling. These use our own private tests, not published here. One pass
   one few (1 and 2): the capping tracked the change, not the quant.
   - Per-request decode medians on this agent traffic were 64-69 tok/s for IQ3_XXS against 60-61 for IQ3_S, about
     8 % faster. The depths were not matched.
-  - With quality equal at this sample size and speed better, we serve IQ3_XXS, the smaller file.
+  - Equal pass counts at n = 1 per change show no quality difference either way; they do not show equality. We
+    serve IQ3_XXS, the faster and smaller file, on that basis.
 
 ## The quality reference problem
 

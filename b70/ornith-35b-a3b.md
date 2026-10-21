@@ -72,9 +72,10 @@ or text that looked like the prompt. A follow-up such as "huh?" got a normal ans
 | prefix caching off, MTP on | 0 of 157 |
 | the same load without the short requests beside it | 0 of ~450 |
 
-- **Cause.** Speculative decoding together with vLLM's prefix-cache mode for this hybrid model's DeltaNet
-  state (the "align" mode). Every garbled reply had 0 cached tokens, so it is the state path, not a cache
-  hit. Upstream vLLM has reports of the same class.
+- **Trigger.** The switch tests isolate it to speculative decoding and prefix caching together: turning off
+  either one removed it. Every garbled reply had 0 cached tokens, so it is not a stale cache hit.
+  - Our guess, not shown: vLLM's prefix-cache mode for this hybrid model's DeltaNet state (the "align" mode),
+    where upstream vLLM has reports of the same class.
 - **Our fix: MTP off, prefix caching kept.** The coding agent needs the prefix cache: its prompts are 50-160k tokens.
 - **What it cost.**
   - One stream fell from ~190 to ~118 tok/s. Measured on Qwen3.6-35B-A3B, the same architecture, on this
