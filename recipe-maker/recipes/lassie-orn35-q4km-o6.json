@@ -1,0 +1,67 @@
+{
+ "id": "lassie-orn35-q4km-o6",
+ "box": "lassie",
+ "model": "orn35",
+ "engine": "ik",
+ "label": "lassie Ornith-1.5-35B-A3B Q4_K_M on both GPUs (lab notes): o1 + every routed expert in whole-layer hot banks: 30 main layers on the MI25 (blk 9 + 11-39, Vulkan, 13.49 GiB) and 10 on the GTX 1080 Ti (blk 0-8 + 10, CUDA0, 4.67 GiB), per-layer device column (ik be71aea2), no host rest split; GGML_VK_ASYNC_GRAPH=1 GGML_VK_STAGED_INPUTS=1 LLAMA_HOT_BANK_FIRST=1 GGML_VK_MMVID_MAX_TOKENS=8; prefill keeps the CPU experts; native MTP head (--spec-type mtp:n_max=3,p_min=0.75; heat file orn35-vk14-cu5-mtp.tsv omits blk.40, whose experts MTP keeps device-resident); m3, m2, n0",
+ "store": {
+  "split": false,
+  "types": [
+   "q4_K",
+   "q6_K"
+  ],
+  "hot_type": "q4_K",
+  "cold_type": "q4_K"
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": 1024,
+ "draft": true,
+ "banks_gib": 4.6,
+ "threads": 64,
+ "numa": {
+  "headroom_gib": 40.0,
+  "layout": "rows",
+  "spill_heal": false,
+  "src": "routed experts rows:0..7 + GGML_MOE_GROUPS=8 (MAIN_NO_MOE: thread 0 issues CUDA); placement generated from the GGUF expert tensors (run-lv41.sh STORE=model)",
+  "verify": "LLAMA_EXPERT_PLACEMENT_VERIFY=1 + numa_maps per node after load",
+  "pinned_host": false
+ },
+ "system": {
+  "numa_balancing": 0,
+  "demotion": false,
+  "swap": "on (7 GiB, unused)"
+ },
+ "files": [
+  {
+   "path": "~/models/mi25/Ornith-1.5-35B-Q4_K_M.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded"
+  }
+ ],
+ "src": "lab notes STORE=model MODEL=Ornith-1.5-35B-Q4_K_M.gguf B=pkg-be71aea2 arm hso6 HOT=orn35-vk14-cu5-mtp.tsv DRAFT= XARGS='--spec-type mtp:n_max=3,p_min=0.75' PHASES_STD=m3:3,m2:2,n0:0 + the hso2 Vulkan XENV",
+ "conditions": {
+  "ctx": "8192 (-c 8192)",
+  "kv_type": "f16 (ik default), KV on the 1080 Ti",
+  "draft_n": "native MTP head (n_max 3, p_min 0.75); per request m3, m2, n0",
+  "sampling": {
+   "temperature": 0,
+   "set_by": "client"
+  },
+  "reasoning_effort": "none (raw /completion, no chat template)",
+  "workload": {
+   "prompt_kind": "coding-agent.json first 3 briefs (std); per prompt n4 first (carries the prefill), then n0 with cache_prompt true",
+   "gen_tokens": 300,
+   "ignore_eos": true,
+   "cache_prompt": true
+  },
+  "threads": 64,
+  "cpu_reserve": "64 SMT siblings left to the system",
+  "cpu_order": "-cr 0-63"
+ },
+ "gate_note": "variant of lassie-orn35-q4km-o2 (its pre-launch check passed); recorded with --no-check",
+ "knobs": {
+  "draft": true
+ },
+ "gate_waiver": "banks_gib counts only the 4.6 GiB of banks on the GTX 1080 Ti (10 layers); the other 31 layers (14.0 GiB) sit on the MI25 (16 GiB HBM), which the planner does not model as a second GPU. Expected CUDA0 ~8.5 of 11 GiB; OOM at load is the stated risk, and the load refuses cleanly"
+}

@@ -84,6 +84,7 @@
   // Tries 8 positions round the mark, then vertical nudges with a leader line; scores each spot by how many curve samples
   // (pts) it covers. A label that cannot fit without overlapping a placed label or a mark is dropped unless 'must'; its text
   // stays on hover and in the table. Nothing is placed outside bx, so no text is clipped at the chart edge.
+  const LABEL_GAP = 2;   // px between two chart labels
   function placeLabels(labels, marks, pts, bx) {
     const placed = [];
     const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -94,7 +95,8 @@
       const near = [[g, -h / 2], [g, -h], [g, 0], [-g - w, -h / 2], [-g - w, -h], [-g - w, 0], [-w / 2, -g - h], [-w / 2, g]];
       const cands = near.map(([dx, dy], i) => ({ x: lb.x + dx, y: lb.y + dy, w, h, cost: i * 0.2 }));
       for (let k = 1; k <= 7; k++) [-1, 1].forEach(sg => [g + 10, -g - 10 - w].forEach(dx => cands.push({ x: lb.x + dx, y: lb.y - h / 2 + sg * k * (h + 1), w, h, cost: 2 + k, lead: true })));
-      const free = r => inside(r) && !placed.some(p => hit(r, p));
+      const pad = r => ({ x: r.x - LABEL_GAP, y: r.y - LABEL_GAP, w: r.w + 2 * LABEL_GAP, h: r.h + 2 * LABEL_GAP });
+      const free = r => inside(r) && !placed.some(p => hit(pad(r), p));
       const clear = cands.filter(r => free(r) && !marks.some(m => m.own !== lb.own && hit(r, m)));
       // a label sitting closer to another series' mark than to its own reads as that series' label: penalise it
       const dist = (r, x, y) => Math.hypot(Math.max(r.x - x, 0, x - r.x - r.w), Math.max(r.y - y, 0, y - r.y - r.h));
@@ -127,6 +129,7 @@
   }
 
   // ---------- compute ----------
+  const DEFAULT_MIN_RUNS = 2;   // measured runs on a box before its model is the page's first layout there
   let R = null;
   function compute() {
     const t0 = performance.now();
@@ -152,7 +155,7 @@
       }
     }
     R = { curves, owner, ms: performance.now() - t0 };
-    // keep the selection if it still exists, else pick the best V4.1 point at 20 (or the first curve's fastest)
+    // keep the selection if it still exists, else pick a model we measured on this box (DEFAULT_MIN_RUNS runs or more), then one that reaches 20 tok/s
     let pick = null;
     if (st.sel) {
       const c = curves.find(c => c.mk === st.sel.mk && c.eng === st.sel.eng);
@@ -160,7 +163,10 @@
       else if (c) pick = st.sel;
     }
     if (!pick) {
-      const order = curves.slice().sort((a, b) => (b.b20 ? 1 : 0) - (a.b20 ? 1 : 0) || (a.mk === 'v41' ? -1 : 1));
+      const runs = {};
+      data.cal.rows.filter(r => r.box === st.box).forEach(r => { runs[r.model] = (runs[r.model] || 0) + 1; });
+      const rank = c => ((runs[c.mk] || 0) >= DEFAULT_MIN_RUNS ? 4 : 0) + (c.b20 ? 2 : 0) + (c.mk === 'v41' ? 1 : 0);
+      const order = curves.slice().sort((a, b) => rank(b) - rank(a));
       const c = order[0];
       if (c) pick = { mk: c.mk, eng: c.eng, kind: c.b20 ? 't20' : 'fast' };
     }
@@ -172,7 +178,7 @@
     const s = st.sel;
     R.selected = null;
     if (!s) return;
-    if (s.kind === 'owner') { R.selected = Object.assign({ label: 'Owner layout (droopy): hottest coding experts MXFP4 in VRAM, other coding experts q3_K in DRAM, the rest MXFP4 in Optane', needsCode: true }, R.owner); return; }
+    if (s.kind === 'owner') { R.selected = Object.assign({ label: 'Our per-expert plan (droopy): hottest coding experts MXFP4 in VRAM, other coding experts q3_K in DRAM, the rest MXFP4 in Optane', needsCode: true }, R.owner); return; }
     const c = curveOf(s);
     if (!c) return;
     let r = null, label = '';
@@ -259,12 +265,13 @@
       const x = X(R.owner.ev.tokps), y = Y(R.owner.ev.quality);
       body += `<path d="${shapePath('star', x, y, 7)}" fill="var(--text-primary)" stroke="var(--surface-1)" stroke-width="1.5" data-k="owner" style="cursor:pointer"/>`;
       mark(x, y, 7, 'own');
-      labels.push({ text: 'owner layout', x, y, r: 7, pri: 2, must: true, own: 'own', ser: 'own' });
-      nav.push({ owner: true, name: 'owner layout', pts: [{ x, y, tokps: R.owner.ev.tokps, quality: R.owner.ev.quality, kld: R.owner.ev.kld }] });
+      labels.push({ text: 'our per-expert plan', x, y, r: 7, pri: 2, must: true, own: 'own', ser: 'own' });
+      nav.push({ owner: true, name: 'our per-expert plan', pts: [{ x, y, tokps: R.owner.ev.tokps, quality: R.owner.ev.quality, kld: R.owner.ev.kld }] });
     }
     // the loaded layout gets a ring, so the chart says which point the panels below describe
     const sel = R.selected;
     if (sel && sel.ev) body += `<circle cx="${X(sel.ev.tokps)}" cy="${Y(sel.ev.quality)}" r="11" fill="none" stroke="var(--text-primary)" stroke-width="1.5" pointer-events="none"/>`;
+    [20, 25].forEach(x => { for (let y = T; y <= H - B; y += 4) samp.push([X(x), y]); });   // a label over a reference line reads as crossed out
     placeLabels(labels, marks, samp, { x0: L + 2, x1: W - 2, y0: T, y1: H - B - 2 });
     s += body + labels.map(lb => labelSVG(lb, lb.pri === 3 ? 'val' : 'ink')).join('');
     s += `<circle id="fcur" r="12" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-dasharray="3 2" visibility="hidden" pointer-events="none"/>`;
@@ -444,15 +451,22 @@
   }
 
   // ---------- main render ----------
-  const NAV = [['box', 'Box'], ['whatif', 'What if'], ['chart', 'Chart'], ['layout', 'Layout'], ['bytes', 'Byte map'], ['bits', 'Bits by heat'],
-    ['trust', 'Trust'], ['checks', 'Checks'], ['calibration', 'Calibration'], ['types', 'Types'], ['idea', 'Idea'], ['sources', 'Sources']];
+  // the page in tabs: [id = its first section, tab name, the one-line summary first, every section on it]; a link to any section opens its tab
+  const PAGES = [
+    ['box', 'Plan', 'Pick a box, then a large marker on the chart. The layout card sums that layout up.', ['box', 'whatif', 'chart', 'layout']],
+    ['bytes', 'Where it lives', 'The loaded layout, byte by byte: one bar per memory tier, then how many bits each expert gets by how often it is used.', ['bytes', 'bits']],
+    ['trust', 'Trust', 'How far each number goes: its evidence class, the hard checks each recorded run met or failed, and how close the model came to every measured run. Each card opens one level deeper.', ['trust', 'checks', 'calibration']],
+    ['types', 'Edit', 'Change the quant type numbers the model uses, and write down an idea to download with the current view.', ['types', 'idea']],
+    ['sources', 'Sources', 'The community recipe rules and priors behind the defaults, and how the model works.', ['sources']]];
+  const pageOf = id => (PAGES.find(p => p[0] === id || p[3].indexOf(id) >= 0) || PAGES[0])[0];
+  st.page = pageOf(location.hash.slice(1));
   // a card as a landmark section with its h2 as the name and an id the nav and deep links use
   const sec = (id, html) => html.replace(/^<div class="card"><h2>/, `<section class="card" id="${id}" aria-labelledby="${id}-h"><h2 id="${id}-h">`).replace(/<\/div>$/, '</section>');
   function introHTML() {
-    return `<details class="intro" id="intro" ${load('intro', true) ? 'open' : ''}><summary>How to read this page</summary><ol>
+    return `<details class="intro" id="intro" ${load('intro', false) ? 'open' : ''}><summary>How to read this page</summary><ol>
 <li>Choose a box. The chart shows every model that fits on it: how closely each layout matches the full model (up) against how fast it decodes (right). Up and to the right is better.</li>
 <li>Each curve keeps only the best layouts. The large markers are the best layout at 20 and at 25 tokens per second; hollow diamonds are runs we measured, with a line to what the model predicted for them.</li>
-<li>Click a point to load its layout, or tab to the chart and use the arrow keys and Enter. <a href="#layout">Selected layout</a> and <a href="#bytes">Where every byte sits</a> then show where each part of the model lives: one bar per memory tier, from the GPU down to disk.</li>
+<li>Click a point to load its layout, or tab to the chart and use the arrow keys and Enter. <a href="#layout">Selected layout</a> sums it up; the <a href="#bytes">Where it lives</a> tab shows where each part of the model sits: one bar per memory tier, from the GPU down to disk.</li>
 <li>The small tags say how far to trust a number: <b>seen</b> (we measured it), <b>inferred</b> (fitted, or from a spec or a community post) or <b>unknown</b>. Hover a tag for its source.</li>
 <li>The address bar keeps the box and the layout, so a copied link opens the same view.</li></ol></details>`;
   }
@@ -462,12 +476,14 @@
     const kn = st.knobs;
     let h = '';
     h += `<header class="top"><h1>Recipe Maker</h1><p class="sub">Plan where each part of a big mixture-of-experts model lives on a box, and see the smartest layout it can run at 20+ or 25+ tok/s. Built ${esc(data.meta.built)} from measured runs and community priors.</p>`;
+    h += `<p class="lead">The boxes here are our own four machines (boxes A to D in the Atlas). <b>To start:</b> pick a box below, then click a large marker on the chart; the layout card sums that layout up, and the tabs go one level deeper each: where every byte lives, how far to trust each number.${data.meta.home ? ` <b>For your own box:</b> clone the folder and run the probe, as in <a href="${esc(data.meta.home)}#with-your-own-boxes">With your own boxes</a>.` : ''}</p>`;
     const EV = data.meta.evidence;
     h += `<div class="legend" style="margin-top:6px">${Object.keys(EV.classes).map(k => `<span>${gradeChip(k, EV.classes[k])} ${esc(EV.classes[k])} (${EV.counts[k] || 0} values)</span>`).join('')}</div>${introHTML()}</header>`;
-    h += `<nav class="toc" aria-label="Sections"><ul>${NAV.map(([id, t]) => `<li><a href="#${id}">${t}</a></li>`).join('')}</ul></nav><main id="main">`;
+    h += `<nav class="toc" aria-label="Pages"><ul>${PAGES.map(([id, t]) => `<li><a href="#${id}" ${id === st.page ? 'aria-current="page"' : ''}>${t}</a></li>`).join('')}</ul></nav><main id="main">`;
+    const page = id => `<div class="page" id="pg-${id}" ${id === st.page ? '' : 'hidden'}><p class="pagesum">${esc(PAGES.find(p => p[0] === id)[2])}</p>`;
     // controls
-    h += `<section class="card" id="box" aria-labelledby="box-h"><h2 id="box-h" class="sr-only">Box and routing data</h2><div class="row">`;
-    h += `<label class="boxpick">Box <select id="c-box">${Object.keys(data.boxes).map(b => `<option value="${b}" ${b === st.box ? 'selected' : ''}>${esc(data.boxes[b].name)}</option>`).join('')}</select></label>`;
+    h += page('box') + `<section class="card" id="box" aria-labelledby="box-h"><h2 id="box-h" class="sr-only">Box and routing data</h2><div class="row">`;
+    h += `<label class="boxpick">Box <select id="c-box">${Object.keys(data.boxes).map(b => `<option value="${b}" ${b === st.box ? 'selected' : ''}>${esc(data.boxes[b].name)}${data.boxes[b].atlas ? ' = box ' + esc(data.boxes[b].atlas) : ''}</option>`).join('')}</select></label>`;
     h += `<span class="small" role="group" aria-label="Theme">Theme ${['auto', 'light', 'dark'].map(t => `<button id="t-${t}" data-theme-b="${t}" aria-pressed="${st.theme === t}" class="${st.theme === t ? 'on' : ''}">${t}</button>`).join(' ')}</span>`;
     h += `</div><p class="small muted" style="margin:6px 0 0">${esc(box.role)}.</p>`;
     h += `<details id="heatd" ${load('heatd', false) ? 'open' : ''}><summary>Routing data behind each model</summary><div class="small muted">Plan heat = the routing counts a layout is built from; scored on = the counts used to project its speed and quality (a held-out half avoids grading the plan on its own data).</div><div class="heatgrid">`;
@@ -479,7 +495,8 @@
     h += '</div></details></section>';
     // what-if
     const upD = box.upgrades && box.upgrades.dram, upP = box.upgrades && box.upgrades.pmem;
-    h += '<section class="card" id="whatif" aria-labelledby="whatif-h"><h2 id="whatif-h">What if</h2><div class="row">';
+    const changed = Object.keys(defaults).filter(k => JSON.stringify(kn[k]) !== JSON.stringify(defaults[k])).length;
+    h += `<section class="card" id="whatif" aria-labelledby="whatif-h"><details id="whatifd" ${load('whatifd', false) || changed ? 'open' : ''}><summary><h2 id="whatif-h">What if</h2> <span class="small muted">${changed ? changed + ' setting' + (changed > 1 ? 's' : '') + ' changed from the defaults' : 'add DRAM or Optane, move a GPU, change engine settings; the chart follows'}</span></summary><div class="row">`;
     const cb = (k, label, title, dis) => `<label title="${esc(title || '')}"><input type="checkbox" id="k-${k}" data-knob="${k}" ${kn[k] ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${label}</label>`;
     h += cb('perExpertTypes', 'per-expert types', 'Today a GGUF stores one type per layer tensor. Per-expert types need the split-expert ik build (lab notes).');
     h += cb('freeDesktop', 'free the snoopy desktop VRAM', 'the compositor leaves the 3090 Ti (display off, or the desktop moved to the iGPU)', st.box !== 'snoopy');
@@ -499,47 +516,44 @@
     h += `<label title="VRAM transient margin above the post-warm-up reading. safe = the measured upper bound (droopy ik split: ${data.checks.vram_peak.margin.ik_split.hi} GiB; B1b ran prompts at 21.56 of 23.04 in nvidia-smi MiB / 1000 without OOM); likely = the B0 #1 graph-growth candidate">VRAM peak margin <select id="k-vramMargin" data-knob-s="vramMargin">${['safe', 'likely'].map(x => `<option ${kn.vramMargin === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>`;
     h += `<button id="c-reset">reset knobs</button><span class="busy" id="busy" role="status">computed in ${Math.round(R.ms)} ms</span></div>`;
     if (kn.moveB70 !== 'none') h += `<div class="warnline">${esc(data.b70move.gpu.note)}</div>`;
-    h += '</section>';
+    h += '</details></section>';
     // frontier + selection summary
     const fr = frontierSVG();
     h += '<div class="grid2"><section class="card" id="chart" aria-labelledby="chart-h"><h2 id="chart-h">Quality vs speed on ' + esc(box.name) + '</h2>';
     h += '<div class="legend">' + R.curves.map(c => `<span>${keySVG(c.color, modelShape(c.mk), c.dash)}${esc(data.models[c.mk].short + ' ' + engShort(c.eng))}</span>`).join('') +
-      `<span>${keySVG('var(--text-secondary)', 'diamond')}measured run</span>` + (R.owner ? `<span>${keySVG('var(--text-primary)', 'star')}owner layout</span>` : '') + '</div>';
+      `<span>${keySVG('var(--text-secondary)', 'diamond')}measured run</span>` + (R.owner ? `<span>${keySVG('var(--text-primary)', 'star')}our per-expert plan (needs a split-expert build)</span>` : '') + '</div>';
     h += `<div class="plot" id="plot" tabindex="0" role="group" aria-roledescription="interactive chart" aria-label="Quality against speed, one curve per model" aria-describedby="chart-sum chart-keys">${fr.svg}</div>`;
     h += `<p class="sr-only" id="chart-sum">${esc(frontierSummary())}</p>`;
     h += `<p class="small muted" id="chart-keys">Each curve sweeps the speed target from slow to fast and keeps the best-quality layout. Large markers = best at 20 and at 25 tok/s; the ring marks the loaded layout. Click a point to load it, or focus the chart: arrow keys move along a curve (up and down switch curves), Enter loads, Escape leaves.</p>`;
     h += `<details id="chart-table" ${st.table ? 'open' : ''}><summary>Chart as a table</summary>${frontierTable(fr.anc)}</details>`;
-    h += '</section><section class="card" id="layout" aria-labelledby="layout-h">' + selectionHTML(sel) + '</section></div>';
+    h += '</section><section class="card" id="layout" aria-labelledby="layout-h">' + selectionHTML(sel) + '</section></div></div>';
     // waterfall
-    h += '<section class="card" id="bytes" aria-labelledby="bytes-h"><h2 id="bytes-h">Where every byte sits</h2>' + (sel ? `<div class="sub">${esc(sel.label)}</div>` : '') + wfLegend(sel) + `<p class="small muted">One bar per memory tier, to scale within the tier. Hover a segment, or tab to a bar and use the arrow keys, for its full name and size.</p>` + waterfallHTML(sel) + '</section>';
+    h += page('bytes') + '<section class="card" id="bytes" aria-labelledby="bytes-h"><h2 id="bytes-h">Where every byte sits</h2>' + (sel ? `<div class="sub">${esc(sel.label)}</div>` : '') + wfLegend(sel) + `<p class="small muted">One bar per memory tier, to scale within the tier. Hover a segment, or tab to a bar and use the arrow keys, for its full name and size.</p>` + waterfallHTML(sel) + '</section>';
     if (sel) {
       const bh = bitsByHeatSVG(sel);
       h += `<section class="card" id="bits" aria-labelledby="bits-h"><h2 id="bits-h">Bits per weight by how often an expert is used</h2>${bh.leg}${bh.svg}<div class="callout small" id="bits-call">${bh.call}</div></section>`;
     }
-    h += sec('trust', trustHTML()) + sec('checks', checksCardHTML()) + sec('calibration', calHTML()) + sec('types', tablesHTML()) + sec('idea', ideaHTML()) + sec('sources', sourcesHTML()) + '</main>';
+    h += '</div>' + page('trust') + sec('trust', trustHTML()) + sec('checks', checksCardHTML()) + sec('calibration', calHTML()) + '</div>' + page('types') + sec('types', tablesHTML()) + sec('idea', ideaHTML()) + '</div>' + page('sources') + sec('sources', sourcesHTML()) + '</div></main>';
     const fid = document.activeElement && document.activeElement.id;
     app.innerHTML = h;
     bind(fr.anc);
     fitBarLabels();
     syncURL();
-    watchNav();
     const f = fid && document.getElementById(fid);
     if (f) { f.focus({ preventScroll: true }); if (fid === 'plot') showCursor(); }
   }
-  // the nav marks the section in view (aria-current) as the page scrolls
-  let navObs = null;
-  function watchNav() {
-    if (navObs) navObs.disconnect();
-    if (!window.IntersectionObserver) return;
-    const links = {};
-    app.querySelectorAll('nav.toc a').forEach(a => { links[a.getAttribute('href').slice(1)] = a; });
-    navObs = new IntersectionObserver(es => es.forEach(e => {
-      if (!e.isIntersecting) return;
-      Object.values(links).forEach(a => a.removeAttribute('aria-current'));
-      if (links[e.target.id]) links[e.target.id].setAttribute('aria-current', 'true');
-    }), { rootMargin: '-45% 0px -50% 0px' });
-    NAV.forEach(([id]) => { const x = document.getElementById(id); if (x) navObs.observe(x); });
+  // a #section link (tab, deep link, in-page link) shows that section's tab without a re-render; the tab's own link starts it
+  // just under the sticky tabs, a link to a section further down scrolls to that section
+  function showPage(id) {
+    st.page = pageOf(id);
+    PAGES.forEach(([p]) => { const x = document.getElementById('pg-' + p); if (x) x.hidden = p !== st.page; });
+    app.querySelectorAll('nav.toc a').forEach(a => { if (a.getAttribute('href') === '#' + st.page) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    fitBarLabels();
+    const nav = app.querySelector('nav.toc'), t = document.getElementById(id);
+    if (t && id !== st.page) t.scrollIntoView();
+    else if (nav && window.scrollY > nav.offsetTop) window.scrollTo(0, nav.offsetTop);
   }
+  window.addEventListener('hashchange', () => showPage(location.hash.slice(1)));
 
   function selectionHTML(sel) {
     if (!sel) return '<h2 id="layout-h">Selected layout</h2><p class="muted">Nothing reaches a feasible layout on this box with these knobs. Try another box, or turn on a What if upgrade.</p>';
@@ -560,6 +574,7 @@
     if (ctx.notes.length) h += `<div class="small muted">${ctx.notes.map(esc).join(' ')}</div>`;
     h += checksHTML(FM.checksFor(ctx, sel.lay, ev));
     h += `<div class="row" style="margin-top:8px"><button id="c-export">download expert map (JSON)</button><span class="small muted">tier + type for every routed expert, for a loader or a --custom-q recipe</span></div>`;
+    h += `<p class="nextlink"><a href="#bytes">Where every byte of this layout sits</a> · <a href="#trust">how far to trust these numbers</a></p>`;
     return h;
   }
   // every named layout on this box (best at 20, best at 25, fastest per curve, and the owner layout) as one select;
@@ -572,11 +587,13 @@
       if (c.b25) opts.push([selCode({ mk: c.mk, eng: c.eng, kind: 't25' }), nm + ': best at 25 tok/s']);
       opts.push([selCode({ mk: c.mk, eng: c.eng, kind: 'fast' }), nm + ': fastest']);
     });
-    if (R.owner) opts.push(['owner', 'owner layout (V4.1, per-expert types)']);
+    if (R.owner) opts.push(['owner', 'our per-expert plan (V4.1, per-expert types)']);
     if (st.sel && !opts.some(o => o[0] === cur)) opts.push([cur, data.models[st.sel.mk].short + ' ' + engShort(st.sel.eng) + ': point at ' + f1(st.sel.tokps) + ' tok/s']);
     return `<label class="small">Layout <select id="c-layout">${opts.map(o => `<option value="${esc(o[0])}" ${o[0] === cur ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
   }
   const CHKCOL = { PASS: 'var(--good)', FAIL: 'var(--crit)', UNKNOWN: 'var(--neutral)' };
+  // status as text: the same hues, dark enough for small text on the card (AA)
+  const CHKTXT = { PASS: 'var(--good-text)', FAIL: 'var(--crit-text)', UNKNOWN: 'var(--neutral-text)' };
   function checksHTML(cs) {
     return '<div class="small" style="margin-top:6px"><b>Hard checks</b> ' + cs.map(c => `<span title="${esc(c.detail || '')}" style="display:inline-block;margin:2px 6px 2px 0;padding:1px 6px;border-radius:3px;border:1px solid ${CHKCOL[c.status]}">${esc(c.id)} ${esc(c.status)}</span>`).join('') +
       cs.filter(c => c.status !== 'PASS').map(c => `<div class="${c.status === 'FAIL' ? 'warnline' : 'muted'}">${esc(c.id)}: ${esc(c.detail)}</div>`).join('') + '</div>';
@@ -605,30 +622,36 @@
     const EV = data.meta.evidence, S = FM.externalSummary(data), B = data.bench || {};
     let h = '<div class="card"><h2>Which numbers to trust</h2><div class="small muted">Every number has one evidence field: <b>seen</b> = our own measurement (a run, bench or probe on our boxes, or a read of our own file), <b>inferred</b> = fitted, estimated, or from a spec or community post, <b>unknown</b> = not modelled. Hover a chip for its tag and source. Each prediction below takes the weakest class of the terms it rests on; open it for every term.</div>';
     h += `<div class="small" style="margin:6px 0">Catalog: ${Object.keys(EV.classes).map(k => `${EV.counts[k] || 0} ${gradeChip(k, EV.classes[k])}`).join(' · ')}</div>`;
-    h += '<h3>Recipe predictions (trust lines)</h3>';
-    trustRows().forEach(({ r, ev, why }) => {
+    const tr = trustRows();
+    h += `<details><summary>Predictions for ${tr.length} recorded runs, ${tr.filter(x => !x.ev.length).length} not modelled</summary>`;
+    tr.forEach(({ r, ev, why }) => {
       h += `<div style="margin:6px 0"><div><b>${esc(r.box)}</b> ${esc(r.label || r.recipe.id)}</div>` + (ev.length ? ev.map(rollupHTML).join('') : `<div class="small muted">UNMODELLED: ${esc(why || 'no prediction')}</div>`) + '</div>';
     });
-    h += '<h3>Bench-fitted terms (runs/bench.jsonl)</h3><div class="scroll"><table><tr><th>backend</th><th>cards</th><th class="n">reach of nameplate</th><th class="n">host ms/token</th><th class="n">MoE ms per layer</th></tr>';
+    h += `</details><details><summary>Bench-fitted terms: ${Object.keys(B.gpu || {}).length} GPU backends, ${Object.keys(B.numa || {}).reduce((a, b) => a + Object.keys(B.numa[b]).length, 0)} NUMA placements (runs/bench.jsonl)</summary><div class="scroll"><table><tr><th>backend</th><th>cards</th><th class="n">reach of nameplate</th><th class="n">host ms/token</th><th class="n">MoE ms per layer</th></tr>`;
     Object.keys(B.gpu || {}).forEach(k => { const g = B.gpu[k]; h += `<tr><td>${esc(k)}</td><td>${esc(g.cards.join(', ') || 'borrowed from ' + g.borrowed_from)}</td><td class="n">${f2(v(g.eta))}${chip(g.eta)}</td><td class="n">${f2(v(g.host_ms))}${chip(g.host_ms)}</td><td class="n">${v(g.moe_layer_ms) === null ? '-' : v(g.moe_layer_ms).toFixed(3)}${chip(g.moe_layer_ms)}</td></tr>`; });
     h += '</table></div><div class="scroll"><table><tr><th>box</th><th>NUMA placement (policy, weight nodes, thread nodes, sockets, threads)</th><th class="n">decode vs one local node</th></tr>';
     Object.keys(B.numa || {}).forEach(b => Object.keys(B.numa[b]).forEach(k => { h += `<tr><td>${esc(b)}</td><td>${esc(k)}</td><td class="n">${f2(v(B.numa[b][k]))}x${chip(B.numa[b][k])}</td></tr>`; }));
-    h += '</table></div><h3>External check (community rows: never a fitted term)</h3><div class="scroll"><table><tr><th>class / placement</th><th class="n">rows</th><th class="n">median |error|</th><th class="n">bias</th></tr>';
+    const all = S.by_class_placement.reduce((a, g) => a + g.n, 0);
+    h += `</table></div></details><details><summary>External check: ${all} community rows, never a fitted term</summary><div class="scroll">`;
+    h += '<table><tr><th>class / placement</th><th class="n">rows</th><th class="n">median |error|</th><th class="n">bias</th></tr>';
     S.by_class_placement.forEach(g => { h += `<tr><td>${esc(g.key)}</td><td class="n">${g.n}</td><td class="n">${g.median_abs_pct.toFixed(0)} %</td><td class="n">${(g.bias_pct >= 0 ? '+' : '') + g.bias_pct.toFixed(0)} %</td></tr>`; });
-    h += `</table></div><div class="small muted">${S.unmodelled.length} rows UNMODELLED: ${esc(S.unmodelled.map(u => u.id + ' (' + u.why + ')').join('; '))}</div>`;
+    h += `</table></div><div class="small muted">${S.unmodelled.length} rows UNMODELLED: ${esc(S.unmodelled.map(u => u.id + ' (' + u.why + ')').join('; '))}</div></details>`;
     return h + '</div>';
   }
   function checksCardHTML() {
-    let h = '<div class="card"><h2>Hard checks against the 10-17 runs</h2><div class="small muted">Each recipe is checked for: storage tier of on-file tensors (never a rotational disk), VRAM peak (post-warm-up + transient margin, not the warm-up reading), the -rtr prefill penalty on split models, DRAM headroom per NUMA node (node MemFree after experts + non-expert interleave + host buffers + page cache must stay >= 3 GiB), the box P0 settings (numa_balancing, demotion, swap), and the 2-bit read-share quality gate. Recorded windows show what a run cost.</div>';
+    let h = '<div class="card"><h2>Hard checks on every recorded run</h2><div class="small muted">Each recipe is checked for: storage tier of on-file tensors (never a rotational disk), VRAM peak (post-warm-up + transient margin, not the warm-up reading), the -rtr prefill penalty on split models, DRAM headroom per NUMA node (node MemFree after experts + non-expert interleave + host buffers + page cache must stay >= 3 GiB), the box P0 settings (numa_balancing, demotion, swap), and the 2-bit read-share quality gate. Recorded windows show what a run cost.</div>';
+    const recs = FM.checkRecipes(data), failed = recs.filter(r => r.checks.some(c => c.status === 'FAIL')).length;
+    h += `<p class="small" style="margin:6px 0">${recs.length} recorded runs checked; ${failed} fail at least one check.</p><details><summary>Every run, check by check</summary>`;
     h += '<div class="scroll"><table><tr><th>when</th><th>run</th><th>outcome</th><th>storage</th><th>VRAM peak</th><th>NUMA free</th><th>P0</th><th>-rtr</th><th>quality</th><th>cost</th></tr>';
-    FM.checkRecipes(data).forEach(r => {
+    recs.forEach(r => {
       const by = Object.fromEntries(r.checks.map(c => [c.id, c]));
-      const cell = id => { const c = by[id]; return c ? `<td title="${esc(c.detail || '')}" style="color:${CHKCOL[c.status]};font-weight:${c.status === 'FAIL' ? 700 : 400}">${esc(c.status)}</td>` : '<td>-</td>'; };
+      const cell = id => { const c = by[id]; return c ? `<td title="${esc(c.detail || '')}" style="color:${CHKTXT[c.status]};font-weight:${c.status === 'FAIL' ? 700 : 400}">${esc(c.status)}</td>` : '<td>-</td>'; };
       h += `<tr><td>${esc(r.when)}</td><td>${esc(r.box + ' ' + r.label)}</td><td class="small">${esc(r.outcome)}</td>${cell('storage')}${cell('vram_peak')}${cell('numa_free')}${cell('system')}${cell('rtr')}${cell('quality')}<td class="small muted">${esc(r.wasted || '')}</td></tr>`;
     });
-    h += '</table></div><h3>Measured levers (10-17)</h3><div class="scroll"><table><tr><th>box</th><th>lever</th><th>before</th><th>after</th><th>source</th></tr>';
+    h += `</table></div></details><details><summary>Measured levers (10-17): ${(data.levers || []).length}</summary><div class="scroll">`;
+    h += '<table><tr><th>box</th><th>lever</th><th>before</th><th>after</th><th>source</th></tr>';
     (data.levers || []).forEach(l => { h += `<tr><td>${esc(l.box + ' ' + l.model)}</td><td>${esc(l.lever)}</td><td>${esc(l.before)}</td><td>${esc(l.after)}${tagChip(l.tag, l.src)}</td><td class="small muted">${esc(l.src)}</td></tr>`; });
-    return h + '</table></div></div>';
+    return h + '</table></div></details></div>';
   }
   function frontierTable(anc) {
     let h = '<div class="scroll"><table><caption class="sr-only">Quality vs speed: every point on each curve, the best layouts at 20 and 25 tok/s, and the measured runs</caption><tr><th>curve</th><th class="n">tok/s</th><th class="n">top-1 %</th><th class="n">KLD</th><th>kind</th></tr>';
@@ -648,9 +671,10 @@
       const c = data.cal.boxes[bk];
       h += `<tr><td>${esc(bk)}</td><td>${f2(v(c.f))}${chip(c.f)}</td><td>${Object.keys(c.host).filter(m => MODELS.indexOf(m) >= 0 || m === 'v40').map(m => esc(m) + ' ' + f1(v(c.host[m])) + chip(c.host[m])).join(' ')}${c.split_ms ? ' · split GGUF +' + f1(v(c.split_ms)) + chip(c.split_ms) : ''}</td><td>${Object.keys(c.draft).map(m => esc(m) + ' x' + f2(v(c.draft[m])) + chip(c.draft[m])).join(' ') || '-'}</td><td>${c.pmem_bw ? f1(v(c.pmem_bw)) + ' GB/s' + chip(c.pmem_bw) : '-'}</td><td class="n">${c.rms !== undefined ? c.rms.toFixed(3) : '-'}</td></tr>`;
     });
-    h += '</table></div><div class="scroll"><table><tr><th>run</th><th>use</th><th class="n">measured tok/s</th><th class="n">model</th><th class="n">residual</th><th>source</th></tr>';
+    h += `</table></div><details><summary>Every measured run against the model (${data.cal.rows.length} rows)</summary><div class="scroll"><table><tr><th>run</th><th>use</th><th class="n">measured tok/s</th>`;
+    h += '<th class="n">model</th><th class="n">residual</th><th>source</th></tr>';
     data.cal.rows.forEach(r => { h += `<tr><td>${esc(r.label)}</td><td>${esc(r.fit)}</td><td class="n">${f2(r.meas)}${tagChip(r.tag, r.src)}</td><td class="n">${f2(r.pred)}</td><td class="n">${(100 * r.resid).toFixed(1)} %</td><td class="small muted">${esc(r.src)}${r.mult_src ? ' · speed-up ' + f2(r.mult) + ' = ' + esc(r.mult_src) : ''}</td></tr>`; });
-    return h + '</table></div></div>';
+    return h + '</table></div></details></div>';
   }
   function tablesHTML() {
     const tk = Object.keys(data.types);
@@ -714,7 +738,7 @@
     app.querySelectorAll('[data-knob-n]').forEach(x => x.addEventListener('change', () => { const n = parseFloat(x.value); st.knobs[x.dataset.knobN] = isFinite(n) && n > 0 ? n : null; save('knobs', st.knobs); schedule(); }));
     on('c-reset', 'click', () => { st.knobs = JSON.parse(JSON.stringify(defaults)); save('knobs', st.knobs); schedule(); });
     on('c-layout', 'change', e => { st.sel = parseSel(e.target.value); loadSelection(); render(); });
-    [['intro', o => save('intro', o)], ['heatd', o => save('heatd', o)], ['chart-table', o => { st.table = o; }]].forEach(([id, fn]) => on(id, 'toggle', e => fn(e.target.open)));
+    [['intro', o => save('intro', o)], ['heatd', o => save('heatd', o)], ['whatifd', o => save('whatifd', o)], ['chart-table', o => { st.table = o; }]].forEach(([id, fn]) => on(id, 'toggle', e => fn(e.target.open)));
     bindKeys();
     app.querySelectorAll('[data-kappa]').forEach(x => x.addEventListener('change', () => { const n = parseFloat(x.value); if (isFinite(n) && n > 0) data.overrides.kappa[x.dataset.kappa] = n; else delete data.overrides.kappa[x.dataset.kappa]; save('overrides', data.overrides); schedule(); }));
     app.querySelectorAll('[data-kld]').forEach(x => x.addEventListener('change', () => { const n = parseFloat(x.value), fam = x.dataset.kld; data.overrides.kld[fam] = data.overrides.kld[fam] || {}; if (isFinite(n) && n >= 0) data.overrides.kld[fam][x.dataset.q] = n; else delete data.overrides.kld[fam][x.dataset.q]; save('overrides', data.overrides); schedule(); }));
@@ -734,7 +758,7 @@
         if (k === 'pt') { const c = R.curves[+n.dataset.c]; showTip(e, `<b>${esc(data.models[c.mk].short + ' ' + engShort(c.eng))}</b><br>${f2(+n.dataset.x)} tok/s · top-1 ${f2(+n.dataset.q)} % · KLD ${(+n.dataset.kld).toFixed(4)}<br><span class="muted">click to load this layout</span>`); }
         else if (k === 't20' || k === 't25') { const c = R.curves[+n.dataset.c], b = c['b' + k.slice(1)]; showTip(e, `<b>Best at ${k.slice(1)} tok/s: ${esc(data.models[c.mk].short + ' ' + engShort(c.eng))}</b><br>${f2(b.ev.tokps)} tok/s · top-1 ${f2(b.ev.quality)} % · KLD ${b.ev.kld.toFixed(4)}`); }
         else if (k === 'anc') { const a = anc[+n.dataset.a]; showTip(e, `<b>${esc(a.label)}</b><br>measured ${f2(a.meas)} tok/s (MEASURED) · model ${f2(a.pred)} · residual ${(100 * a.resid).toFixed(1)} %<br><span class="muted">${esc(a.src)}</span>`); }
-        else if (k === 'owner') { const o = R.owner.ev; showTip(e, `<b>Owner layout (droopy)</b><br>hottest coding experts MXFP4 in VRAM, other coding experts q3_K in DRAM, the rest MXFP4 in Optane<br>${f2(o.tokps)} tok/s · top-1 ${f2(o.quality)} %<br><span class="muted">needs per-expert types (split-expert build); click to load</span>`); }
+        else if (k === 'owner') { const o = R.owner.ev; showTip(e, `<b>Our per-expert plan (droopy)</b><br>hottest coding experts MXFP4 in VRAM, other coding experts q3_K in DRAM, the rest MXFP4 in Optane<br>${f2(o.tokps)} tok/s · top-1 ${f2(o.quality)} %<br><span class="muted">needs per-expert types (split-expert build); click to load</span>`); }
         else if (k === 'seg') { const rows = tierRows(R.selected), g = rows[+n.dataset.tier].segs[+n.dataset.seg]; showTip(e, `<b>${esc(g.label)}</b><br>${f2(g.gib)} GiB${g.tag ? ' ' + tagChip(g.tag, g.src || '') : ''}${g.src ? '<br><span class="muted">' + esc(g.src) + '</span>' : ''}`); }
         else if (k === 'time') { const p = timeSplitHTML(R.selected).parts[+n.dataset.p]; showTip(e, `<b>${esc(p[0])}</b><br>${f1(p[1])} ms per token`); }
         else if (k === 'bh') { const t = R.selected.ctx.tiers[+n.dataset.t]; showTip(e, `<b>${esc(t.name)}</b><br>heat bin ${+n.dataset.b + 1}: ${n.dataset.n} experts at ${(+n.dataset.bpw).toFixed(2)} bpw on average`); }
@@ -793,7 +817,7 @@
           e.preventDefault();
           st.sel = cur.grp.owner ? { kind: 'owner', mk: 'v41', eng: 'ik' } : { mk: R.curves[cur.grp.ci].mk, eng: R.curves[cur.grp.ci].eng, kind: 'pt', tokps: p.tokps };
           loadSelection(); render();
-          say('Loaded ' + (R.selected ? R.selected.label : 'nothing') + '. The layout and byte map below now show it.');
+          say('Loaded ' + (R.selected ? R.selected.label : 'nothing') + '. The layout card and the Where it lives tab now show it.');
           return;
         } else if (e.key === 'Escape') { plot.blur(); return; }
         else return;
@@ -826,6 +850,6 @@
 
   let rz = null, lastW = 0;
   window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (Math.abs(app.clientWidth - lastW) > 40) { lastW = app.clientWidth; render(); } else fitBarLabels(); }, 200); });
-  try { compute(); render(); lastW = app.clientWidth; const t = location.hash && document.getElementById(location.hash.slice(1)); if (t) t.scrollIntoView(); } catch (e) { app.innerHTML = '<pre>' + esc(e.stack || e) + '</pre>'; throw e; }
+  try { compute(); render(); lastW = app.clientWidth; const t = location.hash.slice(1) !== st.page && document.getElementById(location.hash.slice(1)); if (t) t.scrollIntoView(); } catch (e) { app.innerHTML = '<pre>' + esc(e.stack || e) + '</pre>'; throw e; }
   window.FIT_APP = { st, get R() { return R; }, compute, render };
 })();

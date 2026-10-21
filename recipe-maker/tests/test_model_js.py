@@ -16,6 +16,12 @@ class ModelJs(unittest.TestCase):
         self.assertRegex(p.stdout, r'\d+ tests passed')
 
     @unittest.skipUnless(shutil.which('node'), 'node not installed')
+    def test_decode_fit_js(self):
+        p = subprocess.run(['node', os.path.join('tests', 'test_decode_fit.js')], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stdout[-3000:] + p.stderr[-3000:])
+        self.assertRegex(p.stdout, r'\d+ tests passed')
+
+    @unittest.skipUnless(shutil.which('node'), 'node not installed')
     def test_advisor_js(self):
         """tests/test_advisor.js: the layer map, the route-trim proposer and the upgrade advisor"""
         p = subprocess.run(['node', os.path.join('tests', 'test_advisor.js')], cwd=ROOT, capture_output=True, text=True)

@@ -1,0 +1,15 @@
+# Scoped decode fits
+
+`decode_reads` supplies sourced fractions of **all routed reads** by tier. The fractions must sum to one, name existing populated tiers, and carry a tag and source. They price the existing tier/type bandwidth and kernel rates. They do not change expert placement, capacity, quality heat, prefill heat or VRAM. The unmeasured within-tier type mix is still estimated from the score map. Dynamic caches and route trim are not composed with aggregate tier shares.
+
+`decode_profile` explicitly opts a recipe into a measured envelope from `decode-fits.json`. The profile checks hardware, model, engine, store, thread and batch settings, NUMA settings, routing maps and workload conditions. Only measured combined bank/draft/placement/lever cells are admitted. Missing or changed operands return UNMODELLED, not a silently extrapolated calibration. Recipe names, labels, package names and placement prose are not selectors.
+
+The catalog carries the routed-read operands by retained run id. Builds need only that data and the ledger, not the optional standalone recipe directory. The producer overlays only these two new fields onto generated current-replay recipes. The append-only run ledger and its original prelaunch predictions remain unchanged. The CLI, report and page use the same solver. Holdout measurements are omitted from the calibration payload, and holdout ids are excluded from the older box/model draft-twin fit too.
+
+## Droopy V4.1 coding window
+
+Training is fs1c and the five measured leave-one-out/combined arms. fs1p is held out. The target GPU/PMem shares come from retained q512 routing counts projected through the actual bank and placement maps, recomputed with gen-bankaware.py. They are not live per-expert decode measurements. PMem shares exclude GPU-banked experts but use **all reads**, not CPU reads, as denominator.
+
+The old 54.50 ms host-plus-split term includes an old one-point split residual confounded with T40. After applying real tier shares, training no-host-on residuals are 25.18–25.98 ms. The refit uses a common residual across training arms, with the matched fs1c/nohost-off residual difference, 7.74 ms, subtracted before averaging. This residual is **not identified host compute**: placement and pinned-buffer differences are confounded. The combined alloff arm has a smaller observed residual than additive extrapolation predicts; that disagreement remains a fitting error, not another arm constant.
+
+Draft multipliers are measured n4/n4b-to-n0 twins, pooled only within the measured combined bank/draft/placement configuration. The draft-on-GPU arm also reduces main-model banks; neither the fit nor its evidence claims isolated draft-compute acceleration. Inplace-follow stays flat. There is no bank-aware multiplier, build-speed constant, or coefficient inferred from fs1p's zero off-target placement. The held-out discrepancy remains validation error. The unrun isolated 2.2 GiB CPU-draft and 7.6 GiB bank configurations stay UNMODELLED under this profile.

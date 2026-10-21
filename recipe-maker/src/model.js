@@ -525,7 +525,7 @@
   }
 
   // evaluate a per-expert layout with a heat array
-  function evaluate(ctx, lay, heat) {
+  function evaluate(ctx, lay, heat, readHeat) {
     const { data, mk, tiers, types } = ctx;
     const h = heat || ctx.score;
     const nT = tiers.length;
@@ -542,10 +542,10 @@
     const w = layerWeights(data, mk), Ex = ctx.m.E;
     for (let e = 0; e < N; e++) {
       const t = lay.tier[e], q = lay.type[e];
-      const b = h[e] * sz[q];
+      const b = (readHeat || h)[e] * sz[q];
       if (split && tiers[t].kind === 'gpu') { timeT[t] += r * b * rawInv[t][q]; timeT[ctx.missTi] += (1 - r) * b * rawInv[ctx.missTi][q]; bytesTok[t] += r * b; bytesTok[ctx.missTi] += (1 - r) * b; }
       else { bytesTok[t] += b; timeT[t] += b * inv[t][q]; }
-      capUse[t] += sz[q]; heatT[t] += h[e]; cnt[t]++;
+      capUse[t] += sz[q]; heatT[t] += (readHeat || h)[e]; cnt[t]++;
       bitsW[t] += v(data.types[types[q]].bpw);
       byType[t][q] += sz[q];
       if (tiers[t].kind === 'gpu' && copyIdx >= 0) { capUse[copyIdx] += sz[q]; }
@@ -1658,6 +1658,71 @@
     return { checks, facts: { box: r.box, model: r.model, kind: 'dllm' }, notes: [], bad_input: false, prediction: predictDllm(data, r) };
   }
 
+  // Explicit tier-read fractions price the existing kernels, not storage or quality. The within-tier type mix still comes
+  // from the heat map: aggregate routing counts do not identify a new per-expert layout or KL distribution.
+  function recipeReadHeat(ctx, tier, reads) {
+    if (reads === undefined) return {};
+    if (!reads || !reads.shares || !reads.src || !reads.tag) return { why: 'decode_reads needs tagged, sourced all-read tier fractions' };
+    if (ctx.hitR < 1) return { why: 'decode_reads with a dynamic GPU cache is not modelled' };
+    const shares = reads.shares, ids = ctx.tiers.map(t => t.id), sums = new Float64Array(ids.length);
+    if (Object.keys(shares).some(k => !ids.includes(k) || typeof shares[k] !== 'number' || !Number.isFinite(shares[k]) || shares[k] < 0 || shares[k] > 1))
+      return { why: 'decode_reads has an unknown tier or invalid fraction' };
+    if (Math.abs(Object.values(shares).reduce((a, x) => a + x, 0) - 1) > Number.EPSILON * tier.length)
+      return { why: 'decode_reads fractions must sum to one over ALL routed reads' };
+    for (let e = 0; e < tier.length; e++) sums[tier[e]] += ctx.score[e];
+    if (ids.some((id, i) => (sums[i] && shares[id] === undefined) || (!sums[i] && shares[id] > 0)))
+      return { why: 'decode_reads omits a populated tier or assigns reads to an empty tier' };
+    return { heat: Float64Array.from(tier, (t, e) => sums[t] ? ctx.score[e] * shares[ids[t]] * ctx.kL / sums[t] : 0) };
+  }
+
+  const atPath = (x, path) => path.split('.').reduce((o, k) => o && typeof o === 'object' ? o[k] : undefined, x);
+  const ordered = x => Array.isArray(x) ? x.map(ordered) : x && typeof x === 'object'
+    ? Object.fromEntries(Object.keys(x).sort().map(k => [k, ordered(x[k])])) : x;
+  const sameValue = (a, b) => JSON.stringify(ordered(a)) === JSON.stringify(ordered(b));
+  const hasValues = x => x && typeof x === 'object' ? Object.values(x).some(hasValues) : x !== undefined;
+  const draftGroup = (spec, r) => JSON.stringify(spec.draft_group.map(k => ordered(k === 'mtp_experts' ? storeKnobs(r).mtpExperts : atPath(r, k))));
+
+  function recipeDecodeFit(data, r) {
+    if (r.decode_profile === undefined) return {};
+    const specs = data.decode_fits || {}, fits = data.cal && data.cal.recipe_decode || {};
+    if (typeof r.decode_profile !== 'string' || !Object.prototype.hasOwnProperty.call(specs, r.decode_profile) ||
+        !Object.prototype.hasOwnProperty.call(fits, r.decode_profile)) return { why: 'decode profile is unknown or not calibrated' };
+    const spec = specs[r.decode_profile], fit = fits[r.decode_profile];
+    if (!spec || !fit) return { why: 'decode profile is unknown or not calibrated' };
+    if (typeof r.draft !== 'boolean' || hasValues(data.overrides) || spec.same.some(k => !sameValue(atPath(r, k), atPath(fit.reference, k))) ||
+        (r.knobs && Object.keys(r.knobs).length) || !sameValue(data.knobs, fit.knobs) || !sameValue(data.overrides, fit.overrides))
+      return { why: 'decode profile is outside its measured recipe/workload/knob envelope' };
+    const group = draftGroup(spec, r), flag = atPath(r, spec.lever), flat = atPath(r, spec.flat_lever);
+    if (!fit.observed.some(x => x.group === group && x.flag === flag) || !fit.flat.includes(flat))
+      return { why: 'decode profile bank/draft/placement/lever combination has not been measured' };
+    return { host: { v: fit.host + (flag === spec.baseline ? 0 : fit.penalty), tag: 'FIT', src: spec.src + '; ' + spec.train.join(', ') },
+      draft: { v: fit.draft[group], tag: 'FIT', src: 'in-load n4/n4b versus n0 twins for the measured combined bank/draft/placement configuration; ' + fit.group_runs[group].join(', ') } };
+  }
+
+  function fitRecipeDecode(data) {
+    return Object.fromEntries(Object.entries(data.decode_fits || {}).filter(([, spec]) => spec.knobs && typeof spec.knobs === 'object' && !Array.isArray(spec.knobs) && Object.keys(spec.knobs).length && !hasValues(data.overrides) && sameValue(data.knobs, spec.knobs)).map(([key, spec]) => {
+      const rows = spec.training.map(x => {
+        const p = predictRecipe(data, Object.assign({}, x.recipe, { decode_profile: undefined }));
+        const d = x.decode_tps, on = [d.n4, d.n4b].filter(x => x !== undefined);
+        if (p.status !== 'PREDICTED' || !Number.isFinite(d.n0) || d.n0 <= 0 || !on.length || on.some(x => !Number.isFinite(x) || x <= 0))
+          throw new Error('invalid decode fit training point: ' + x.id);
+        return { id: x.id, recipe: x.recipe, residual: 1000 / d.n0 - p.ms_per_token.total + p.ms_per_token.host,
+          flag: atPath(x.recipe, spec.lever), group: draftGroup(spec, x.recipe), mult: on.reduce((a, x) => a + x, 0) / on.length / d.n0 };
+      });
+      const pair = spec.pair.map(id => rows.find(x => x.id === id));
+      if (pair.some(x => !x) || pair[0].flag !== spec.baseline || pair[1].flag === spec.baseline)
+        throw new Error('invalid decode fit residual pair: ' + key);
+      const penalty = pair[1].residual - pair[0].residual;
+      const host = rows.reduce((a, x) => a + x.residual - (x.flag === spec.baseline ? 0 : penalty), 0) / rows.length;
+      if (!Number.isFinite(host) || host < 0) throw new Error('invalid decode fit residual: ' + key);
+      const groups = [...new Set(rows.map(x => x.group))];
+      return [key, { host, penalty, reference: JSON.parse(JSON.stringify(rows[0].recipe)), knobs: JSON.parse(JSON.stringify(data.knobs)), overrides: data.overrides === undefined ? undefined : JSON.parse(JSON.stringify(data.overrides)),
+        draft: Object.fromEntries(groups.map(g => { const xs = rows.filter(x => x.group === g); return [g, xs.reduce((a, x) => a + x.mult, 0) / xs.length]; })),
+        group_runs: Object.fromEntries(groups.map(g => [g, rows.filter(x => x.group === g).map(x => x.id)])),
+        observed: rows.map(x => ({ group: x.group, flag: x.flag })), flat: [...new Set(rows.map(x => atPath(x.recipe, spec.flat_lever)))] }];
+    }));
+  }
+
   // ---------- prediction of ONE concrete recipe ----------
   // Maps the recipe onto the planner: per-expert types from the store, per-expert tiers from banks + placement, then evaluate().
   // Returns decode tok/s (with and without the draft), VRAM post-warm-up and peak range, predicted node MemFree, and every
@@ -1681,13 +1746,15 @@
     const split = r.engine === 'ik' && !!st.split;
     const nf = r.numa || {};
     if (nf.headroom_gib !== undefined && nf.headroom_gib !== null) A.push('dram-fill at headroom ' + nf.headroom_gib + ' GiB per node: DRAM experts = sum(node free at plan time - headroom)');
+    const df = recipeDecodeFit(data, r);
+    if (df.why) return un(df.why);
     const { ctx } = recipeContext(data, r);
     A.push('heat: hot order by ' + ctx.planName + ', reads scored on ' + ctx.scoreName + (ctx.planName === ctx.scoreName
       ? ' (the same map: in sample, so the CPU and PMem read shares are a floor; live routes read the cold tiers more, e.g. the GLM q4x route dump: PMem read share 2.9 % measured vs 1.2 % scored in sample)' : ''));
     out.heat_maps = { plan: heatCite(m, ctx.planName), score: heatCite(m, ctx.scoreName) };
     if (ctx.bad) return un('non-expert weights + KV do not fit ' + ctx.g0.name);
     if (r.draft && !ctx.draftOn) A.push('draft requested but off in the planner: ' + ctx.notes.filter(x => /draft|MTP/.test(x)).join(' '));
-    if (ctx.draftOn) A.push('draft speed-up x' + ctx.mult.toFixed(3) + ' (box x model fit)');
+    if (ctx.draftOn) A.push('draft speed-up x' + (df.draft ? df.draft.v : ctx.mult).toFixed(3) + (df.draft ? ' (measured combined configuration twins)' : ' (box x model fit)'));
     const N = m.L * m.E;
     const ty = storeTypes(data, r, ctx);
     if (ty.why) return un(ty.why);
@@ -1777,11 +1844,16 @@
       out.trim = { kl: tk.kl, why: tk.why, reads_dropped: drop, miss_by_layer: Array.from(miss, x => +x.toFixed(4)), engine: ts };
       A.push('route trim ' + r.trim.map(t => 'keep ' + t.keep + ' on ' + t.layers.join('-')).join(', ') + ' (picks off the GPU only): ' + (100 * drop).toFixed(1) + ' % of routed reads dropped; trim KL ' + (tk.kl === null ? 'UNKNOWN (' + tk.why + ')' : tk.kl.toFixed(4) + ' PREDICTED from the layer map'));
     }
-    const ev = evaluate(ctx, { tier, type }, hEval);
+    if (r.decode_reads !== undefined && (r.trim || cacheGiB)) return un('decode_reads with route trim or a MoE cache is not modelled');
+    const routing = recipeReadHeat(ctx, tier, r.decode_reads);
+    if (routing.why) return un(routing.why);
+    if (routing.heat) A.push('decode timing uses sourced all-read tier fractions; within-tier type mix remains an estimate from ' + ctx.scoreName + '; storage, quality and prefill heat are unchanged');
+    const ev = evaluate(ctx, { tier, type }, hEval, routing.heat);
     const RR = E.recipe_rates || {}, rr = k => RR[k] ? v(RR[k]) : null;
     const h = ctx.score, gbw = ctx.g0.bw * ctx.g0.eta;
     // a trimmed cache miss is not read: evaluate() read every GPU-tier pick's miss share from DRAM, so take the dropped part out
-    let gpuT = ev.gpuT, cpuT = ev.cpuT - trimMissT, hostT = ctx.host;
+    let gpuT = ev.gpuT, cpuT = ev.cpuT - trimMissT, hostT = df.host ? df.host.v / 1000 : ctx.host;
+    if (df.host) { out.decode_fit = { profile: r.decode_profile, host: df.host, draft: df.draft }; A.push('scoped residual replaces BOTH old host and split terms; placement/pinning remains confounded, not an identified host-compute penalty'); }
     if (cacheGiB) {
       // every host-expert MUL_MAT_ID of a decode batch (<= 32 tokens) runs on the GPU: hits read the cache, misses are uploaded
       // first (PR #29887, READ); the cache holds the hottest host experts it can, realizing cache_realize of their heat (ESTIMATE)
@@ -1806,13 +1878,13 @@
     }
     const T = hostT + (ctx.overlap ? Math.max(gpuT, cpuT) + (1 - ctx.overlap) * Math.min(gpuT, cpuT) : gpuT + cpuT);
     out.status = 'PREDICTED';
-    out.decode_tps = ctx.mult / T;
+    out.decode_tps = (df.draft && ctx.draftOn ? df.draft.v : ctx.mult) / T;
     out.decode_tps_nodraft = 1 / T;
     out.ms_per_token = { host: 1000 * hostT, gpu: 1000 * gpuT, cpu: 1000 * cpuT, total: 1000 * T };
     // the token's time per hardware lane (before GPU/CPU overlap; src/advisor.js): GPU reads on the VRAM lane; each CPU-side
     // tier's expert bytes on its read ceiling (<tier>_bw) or on the CPU kernel rate (cpu), whichever is slower, scaled to cpuT
     {
-      const he = hEval || h, lane = { vram_bw: 1000 * gpuT, dram_bw: 0, pmem_bw: 0, nvme_bw: 0, cpu: 0 };
+      const he = routing.heat || hEval || h, lane = { vram_bw: 1000 * gpuT, dram_bw: 0, pmem_bw: 0, nvme_bw: 0, cpu: 0 };
       const at = (t, q, b) => { const tt = ctx.tiers[t]; lane[ctx.cpuRate(ctx.types[q]) < tt.bw ? 'cpu' : tt.id + '_bw'] += b / ctx.rawRate(tt, ctx.types[q]); };
       for (let e = 0; e < N; e++) {
         const b = he[e] * sz[type[e]], t = tier[e];
@@ -1903,8 +1975,12 @@
       if (ctx.score[e] > 0) { used.add(t.id); if (t.kind !== 'gpu') cpuTypes.add(q); }
     }
     const gpuUsed = [...used].some(id => /^gpu/.test(id)), cpuUsed = cpuTypes.size > 0;
-    const D = [T('host overhead ms/token', hostSrc(data, r.box, r.model, r.engine))];
-    const spT = ctx.split ? splitSrc(data, r.box, r.model) : null;
+    const D = [out.decode_fit ? T('scoped decode residual ms/token (placement/pinning confounded)', out.decode_fit.host) : T('host overhead ms/token', hostSrc(data, r.box, r.model, r.engine))];
+    const spT = !out.decode_fit && ctx.split ? splitSrc(data, r.box, r.model) : null;
+    if (r.decode_reads) {
+      Object.entries(r.decode_reads.shares).forEach(([id, share]) => D.push(T('all-read fraction on ' + id, { v: share, tag: r.decode_reads.tag, src: r.decode_reads.src })));
+      D.push(T('within-tier expert type mix', { v: 1, tag: 'ESTIMATE', src: 'aggregate tier fractions preserve the score map type mix inside each tier; not measured per-expert decode routes' }));
+    }
     if (spT) D.push(T('split GGUF host ms/token (' + r.model + ')', spT));
     D.push(T('GPU nameplate bandwidth GB/s (' + ctx.g0.name + ')', ctx.g0.gpu && ctx.g0.gpu.bw), T('GPU decode efficiency (share of nameplate)', data.assume.gpu_eta));
     D.push(T('non-expert GiB', denseSrc(E, m, ctx.kn)));
@@ -1929,7 +2005,7 @@
     if (out.moe_cache) D.push(T('MoE cache realization', RR.cache_realize), T('MoE cache upload GB/s', RR.cache_link_gbs));
     if (r.split_mode === 'tensor') D.push(T('-sm tensor reduction ms', RR.allreduce_ms), T('layers', RR.layers_total));
     const nodraft = D.slice();
-    if (ctx.draftOn) D.push(T('draft speed-up', ctx.kn.draftMult !== undefined && ctx.kn.draftMult !== null ? { v: ctx.kn.draftMult, tag: 'ESTIMATE', src: 'recipe knob draftMult (given, not measured)' } : draftSrc(data, r.box, r.model)));
+    if (ctx.draftOn) D.push(T('draft speed-up', out.decode_fit ? out.decode_fit.draft : ctx.kn.draftMult !== undefined && ctx.kn.draftMult !== null ? { v: ctx.kn.draftMult, tag: 'ESTIMATE', src: 'recipe knob draftMult (given, not measured)' } : draftSrc(data, r.box, r.model)));
     // prefill
     const pf = out.prefill, P = [];
     if (out.prefill_tps === null || out.prefill_tps === undefined) P.push({ term: 'prefill rate', value: null, evidence: 'unknown', tag: 'UNKNOWN', src: out.prefill_why });
@@ -2244,6 +2320,7 @@
 
   function applyCal(data) {
     data.cal = calibrate(data);
+    data.cal.recipe_decode = fitRecipeDecode(data);
     return data.cal;
   }
 

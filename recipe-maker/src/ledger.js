@@ -1,4 +1,4 @@
-// The run ledger on disk (node): sealed segments runs/runs.NNNN.jsonl.gz, or plain runs.NNNN.jsonl in a public copy
+// The run ledger on disk (node): sealed plain segments runs/runs.NNNN.jsonl (the older ones runs.NNNN.jsonl.gz)
 // (oldest first), then the open file
 // runs/runs.jsonl. Same layout and order as src/ledger.py, which also packs it.
 'use strict';

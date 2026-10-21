@@ -10,6 +10,8 @@ launch (with the planner's prediction), and what the run measured. Every measure
 
 --check C.json is `node report.js --check R.json --json` saved before the launch. --no-check records a run whose
 gate output was not captured (backfill); its prediction is then computed now and marked post-hoc.
+Pinned metadata-only intakes can be recorded with --no-check for a known box and engine. Their exact
+intake bytes (including biases) travel with an UNMODELLED prediction; this does not admit a launch.
 
 Log kinds for --from-log KIND:PATH (PATH may be host:path, read with `ssh host cat path`, read-only):
   kit         droopy run-kit log (== <kit> start / JSON arm lines / == <arm> rc=N / prompt lines / N0 LOW watch)
@@ -406,7 +408,22 @@ def merge(a, b):
 
 
 def predict(recipe):
-    """the gate's own output for the recipe (node report.js --check R --json), used post hoc when no launch capture exists."""
+    """Post-hoc prediction, or pinned intake facts without planner admission."""
+    with open(os.path.join(ROOT, 'data.json')) as f:
+        data = json.load(f)
+    key = recipe.get('model')
+    if isinstance(key, str) and ID_RE.fullmatch(key) and key not in data['models'] \
+            and recipe.get('box') in data['boxes'] and recipe.get('engine') in data['engines']:
+        path = os.path.join(ROOT, 'data', 'models', key + '.json')
+        if os.path.isfile(path):
+            with open(path) as f:
+                model = json.load(f)
+            intake = model.get('intake') or {}
+            if intake.get('source') and intake.get('bytes_by_class'):
+                return {'prediction': {'status': 'UNMODELLED',
+                        'why': 'pinned intake only; no planner model for ' + key,
+                        'decode_tps': None, 'decode_tps_nodraft': None, 'prefill_tps': None,
+                        'intake': intake}}
     p = subprocess.run(['node', os.path.join(ROOT, 'report.js'), '--check', '/dev/stdin', '--json'], input=json.dumps(recipe),
                        capture_output=True, text=True, timeout=300)
     if p.returncode == 2:

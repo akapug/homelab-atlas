@@ -5,6 +5,7 @@ import datetime
 import gzip
 import json
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -59,13 +60,13 @@ class Ledger(unittest.TestCase):
 
     def test_pack_seals_the_older_leading_rows_and_keeps_order(self):
         k, seg = L.pack(self.p, max_bytes=100, keep_days=1, now=NOW)
-        self.assertEqual((k, os.path.basename(seg)), (5, 'runs.0001.jsonl.gz'))   # 14..19 at 10:00Z are older than 1 day
+        self.assertEqual((k, os.path.basename(seg)), (5, 'runs.0001.jsonl'))   # 14..19 at 10:00Z are older than 1 day
         self.assertEqual(self.ids(), [r['id'] for r in self.rows])
         with open(self.p) as f:
             self.assertEqual([json.loads(x)['id'] for x in f], ['r05', 'r06'])
         write_rows(self.p, self.rows[5:] + [row(7, 21)])   # a later append, then a second pack seals into segment 2
         k2, seg2 = L.pack(self.p, max_bytes=100, keep_days=0, now=datetime.datetime(2026, 10, 21, 12, 0, tzinfo=UTC))
-        self.assertEqual((k2, os.path.basename(seg2)), (3, 'runs.0002.jsonl.gz'))
+        self.assertEqual((k2, os.path.basename(seg2)), (3, 'runs.0002.jsonl'))
         self.assertEqual(self.ids(), [r['id'] for r in self.rows] + ['r07'])
         self.assertEqual(node_rows(self.p), self.ids(), 'node reads the same rows in the same order')
 
@@ -75,17 +76,55 @@ class Ledger(unittest.TestCase):
         self.assertEqual(L.pack(self.p, max_bytes=10, keep_days=1, now=NOW)[0], 1)
         self.assertEqual([r['id'] for r in L.rows(self.p)], ['r00', 'nodate', 'r02'])
 
+    def test_young_rows_still_fit_in_git(self):
+        rows = [row(i, 20) for i in range(40)]   # all younger than keep_days, together over the limit
+        write_rows(self.p, rows)
+        size = os.path.getsize(self.p)
+        limit = size // 3
+        k, seg = L.pack(self.p, max_bytes=100, keep_days=1, now=NOW, limit=limit)
+        self.assertLessEqual(os.path.getsize(self.p), limit)
+        self.assertGreater(os.path.getsize(self.p) + len(json.dumps(rows[k - 1])) + 1, limit, 'only the fewest rows seal')
+        self.assertEqual(self.ids(), [r['id'] for r in rows], 'contents and order kept')
+        with open(seg) as f:
+            self.assertEqual([json.loads(x) for x in f], rows[:k])
+        write_rows(self.p, rows)
+        for f in L.segments(self.p):
+            os.remove(f)
+        self.assertEqual(L.pack(self.p, max_bytes=100, keep_days=1, now=NOW, limit=size)[0], 0, 'under the limit young rows stay')
+
+    def test_soft_pack_threshold_cannot_override_the_hard_limit(self):
+        rows = [row(i, 20) for i in range(40)]
+        write_rows(self.p, rows)
+        size = os.path.getsize(self.p)
+        limit = size // 3
+        k, seg = L.pack(self.p, max_bytes=size + 1, keep_days=1, now=NOW, limit=limit)
+        self.assertLessEqual(os.path.getsize(self.p), limit)
+        self.assertGreater(k, 0)
+        self.assertTrue(os.path.isfile(seg))
+        self.assertEqual(self.ids(), [r['id'] for r in rows])
+
     def test_pack_all_and_a_ledger_of_segments_only(self):
         self.assertEqual(L.pack(self.p, everything=True)[0], len(self.rows))
         os.remove(self.p)
         self.assertTrue(L.exists(self.p))
         self.assertEqual(self.ids(), [r['id'] for r in self.rows])
         self.assertEqual(node_rows(self.p), self.ids())
-        with gzip.open(L.segments(self.p)[0], 'rb') as f:
+        with open(L.segments(self.p)[0], 'rb') as f:
             self.assertEqual(len(f.read().splitlines()), len(self.rows))
 
+    def test_older_gzip_segments_still_read_before_new_plain_ones(self):
+        with gzip.open(os.path.join(self.d, 'runs.0001.jsonl.gz'), 'wt') as f:
+            f.writelines(json.dumps(r) + '\n' for r in self.rows[:2])
+        write_rows(self.p, self.rows[2:])
+        k, seg = L.pack(self.p, max_bytes=100, keep_days=1, now=NOW)
+        self.assertEqual((k, os.path.basename(seg)), (3, 'runs.0002.jsonl'))
+        with open(seg, 'rb') as f:
+            self.assertNotEqual(f.read(2), b'\x1f\x8b', 'new segments are plain text')
+        self.assertEqual(self.ids(), [r['id'] for r in self.rows])
+        self.assertEqual(node_rows(self.p), self.ids())
+
     def test_plain_pack_for_a_public_copy(self):
-        k, seg = L.pack(self.p, everything=True, gz=False)
+        k, seg = L.pack(self.p, everything=True)
         segs = L.segments(self.p)
         self.assertEqual(k, len(self.rows))
         self.assertEqual([os.path.basename(x) for x in segs], ['runs.0001.jsonl'])
@@ -99,13 +138,30 @@ class Ledger(unittest.TestCase):
         keep = L.MAX_OPEN_BYTES
         L.MAX_OPEN_BYTES = 600   # each row is about 260 bytes: two per segment
         self.addCleanup(setattr, L, 'MAX_OPEN_BYTES', keep)
-        L.pack(self.p, everything=True, gz=False)
+        L.pack(self.p, everything=True)
         segs = L.segments(self.p)
         self.assertEqual([os.path.basename(x) for x in segs], ['runs.%04d.jsonl' % i for i in range(1, 5)])
         self.assertTrue(all(os.path.getsize(x) <= 600 for x in segs))
         self.assertEqual(self.ids(), [r['id'] for r in self.rows])
         self.assertEqual(node_rows(self.p), self.ids())
         self.assertEqual(L.chunks([b'x' * 700, b'y'], 600), [[b'x' * 700], [b'y']], 'a longer line is a group of its own')
+
+    def test_oversized_later_row_refusal_leaves_the_ledger_unchanged(self):
+        write_rows(os.path.join(self.d, 'runs.0001.jsonl'), [row(9, 14)])
+        write_rows(self.p, [row(0, 14), dict(row(1, 14), pad='x' * L.GIT_FILE_LIMIT)])
+        def snapshot():
+            return {name: Path(self.d, name).read_bytes() for name in sorted(os.listdir(self.d))}
+        before = snapshot()
+        ids = self.ids()
+        self.assertEqual(node_rows(self.p), ids)
+        with self.assertRaisesRegex(SystemExit, r'ledger pack: a row of \d+ bytes is over \d+'):
+            L.pack(self.p, everything=True)
+        with self.subTest(conservation='inventory and exact bytes'):
+            self.assertTrue(snapshot() == before, 'refused packing must not install any earlier chunk')
+        with self.subTest(conservation='Python logical order'):
+            self.assertEqual(self.ids(), ids)
+        with self.subTest(conservation='Node logical order'):
+            self.assertEqual(node_rows(self.p), ids)
 
     def test_record_run_append_packs_the_open_file(self):
         import record_run as RR
@@ -115,7 +171,7 @@ class Ledger(unittest.TestCase):
         L.MAX_OPEN_BYTES = 10
         self.addCleanup(setattr, L, 'MAX_OPEN_BYTES', keep)
         RR.append(dict(real, id='new', when=datetime.datetime.now(UTC).strftime('%Y-%m-%dT%H:%MZ')), self.p)
-        self.assertEqual([os.path.basename(s) for s in L.segments(self.p)], ['runs.0001.jsonl.gz'])
+        self.assertEqual([os.path.basename(s) for s in L.segments(self.p)], ['runs.000%d.jsonl' % i for i in (1, 2, 3)], 'a 10-byte cap seals each row alone')
         self.assertEqual([r['id'] for r in L.rows(self.p)], ['old-0', 'old-1', 'old-2', 'new'])
         with open(self.p) as f:
             self.assertEqual([json.loads(x)['id'] for x in f], ['new'])
@@ -206,6 +262,18 @@ class IkBuildIds(unittest.TestCase):
                              s['up'][:8], s['new'][:8], s['new'][:12], 'ab12cd34ef56'))
         row = self.C.rewrite_json({'id': 'r-' + s['gone'][:8], 'engine_build': 'h2dmain-' + s['mapped'][:8]}, R)
         self.assertEqual(row, {'id': 'r-' + s['gone'][:8], 'engine_build': 'h2dmain-' + s['new'][:8]}, 'ids are never rewritten')
+
+    def test_uniform_character_build_ids_use_the_commit_map(self):
+        with open(self.cmap, 'a') as f:
+            for old in ('2' * 40, 'a' * 40):
+                f.write('%s %s\n' % (old, self.sha['new']))
+        R = self.C.rules({'rewrite': [], 'ik_builds': self.cfg}, '')
+        for old in ('2' * 8, 'a' * 8):
+            with self.subTest(old=old):
+                self.assertEqual(self.C.rewrite('stack ' + old, R), 'stack ' + self.sha['new'][:8])
+                self.assertEqual(self.C.rewrite('dvocab-' + old + '-nc', R), 'dvocab-' + self.sha['new'][:8] + '-nc')
+        text = 'date 20261017; digest sha256:1234567890; digest sha256:abcdefabcdef'
+        self.assertEqual(self.C.rewrite(text, R), text)
 
     def test_shipped_tests_get_the_same_build_names(self):
         man = {'rewrite': [['\\bdocs/\\d+', 'lab notes', 'a doc']], 'ik_builds': self.cfg}

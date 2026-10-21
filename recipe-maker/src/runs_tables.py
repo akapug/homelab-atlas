@@ -6,6 +6,7 @@ levers_from_runs: the measured-lever table; each cell names ledger runs and the 
 """
 import datetime
 import json
+import os
 
 import ledger
 
@@ -72,7 +73,7 @@ def cost_text(run):
     bad = went_bad(run)
     if not bad:
         return ''
-    t0 = datetime.datetime.strptime(run['when'], '%Y-%m-%dT%H:%MZ')
+    t0 = datetime.datetime.strptime(run['when'][:16], '%Y-%m-%dT%H:%M')   # the ledger allows seconds (record_run WHEN_RE)
     w = run['measured'].get('wall_min')
     return '%s-%s, ~%d min (%s)' % (t0.strftime('%H:%M'), (t0 + datetime.timedelta(minutes=w)).strftime('%H:%MZ'), round(w), bad[0]) if w else '%s (%s)' % (t0.strftime('%H:%MZ'), bad[0])
 
@@ -93,12 +94,14 @@ def observed(run):
 DRAFT_TWINS = ((('m3', 'm3b'), 'm0', 'MTP n_max 3'), (('n4', 'n4b'), 'n0', 'DSpark n_max 4'))
 
 
-def draft_twins(runs):
+def draft_twins(runs, exclude=()):
     """{box|model: [twin]} per ledger run that decoded the served draft width and no draft in one load. A twin is left out when a
     degraded note names one of its phases ("m0 prompt1 ... 3.10 tok/s"); a note about the whole load (placement, MemFree) hits
     both phases alike and stays."""
     out = {}
     for run in runs:
+        if run['id'] in exclude:
+            continue
         d = run['measured'].get('decode_tps')
         if not isinstance(d, dict):
             continue
@@ -116,6 +119,24 @@ def recipes_from_runs(runs):
     return [{'id': r['id'], 'run_id': r['id'], 'when': r['when'][11:16] + 'Z', 'box': r['box'], 'model': r['model'], 'engine': r['engine'],
              'label': r['recipe'].get('label', r['id']), 'outcome': outcome_text(r), 'wasted': cost_text(r), 'recipe': r['recipe'], 'observed': observed(r),
              'src': '; '.join(r['sources'])} for r in sorted(runs, key=lambda r: r['when'])]
+
+
+def decode_fits(root, runs, recipes):
+    """Replay current decode operands without changing ledger recipes or saved launch predictions. Holdout measurements never
+    enter the solver's fit table; the holdout ids also exclude their twins from the older box-wide fit."""
+    specs = json.load(open(os.path.join(root, 'data', 'decode-fits.json')))
+    by = {r['id']: r for r in runs}
+    replay = {r['run_id']: r for r in recipes}
+    for key, spec in specs.items():
+        if not isinstance(spec.get('knobs'), dict) or not spec['knobs']:
+            raise ValueError('decode fit measured knob envelope is missing: ' + key)
+        if set(spec['train']) & set(spec['holdout']):
+            raise ValueError('decode fit training overlaps holdout: ' + key)
+        for rid, reads in spec['recipes'].items():
+            replay[rid]['recipe'] = dict(by[rid]['recipe'], decode_profile=key, decode_reads=reads)
+        spec['training'] = [{'id': rid, 'recipe': replay[rid]['recipe'], 'decode_tps': by[rid]['measured']['decode_tps']}
+                            for rid in spec['train']]
+    return specs
 
 
 def levers_from_runs(defs, runs, tag):

@@ -3,6 +3,17 @@
 Research snapshot: 2026-10-20 owner date (collection continued on 2026-10-21 UTC).
 This is a model-selection report, not a new benchmark. No box, service or model state was changed for this research.
 
+**Outcome, measured after this report (2026-10-21):** both candidates then ran on lassie, with 3 coding-agent prompts
+of about 1.5-2.2k tokens, 300 greedy tokens each, an 8,192-token window and 64 threads, no draft unless named.
+- Ornith-1.5-35B-A3B Q4_K_M: 41.99 tok/s with every routed expert on the CPUs (the table below put it at 29.4,
+  range 18.4-42.5); 44.62 with all of them in banks on the MI25 and the GTX 1080 Ti; 59.13 with that layout and the
+  model's own MTP head drafting 3 tokens (acceptance 85 %).
+- gpt-oss-120b MXFP4: 31.0 tok/s with experts on the CPUs (the table: 14.2, range 9.4-19.1), 34.6 with expert
+  layers 0-2 on the 1080 Ti.
+- Layouts, switches and conditions: the ik_llama.cpp fork's
+  [PATCHES.md](https://github.com/akapug/ik_llama.cpp/blob/mixed-cuda-vulkan-expert-banks/PATCHES.md). Both rates
+  beat this report's scenarios, so the bandwidth-efficiency assumption below is too low for lassie.
+
 ## Recommendation
 
 The next two bounded qualification candidates are **Ornith-1.5-35B-A3B Q4_K_M** and

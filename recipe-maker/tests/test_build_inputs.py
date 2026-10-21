@@ -13,7 +13,7 @@ COPY = ['build.py', 'src', 'data', 'runs', 'probe', 'tools', 'quant-priors.json'
 
 
 class FreshClone(unittest.TestCase):
-    def build(self, drop_snapshots=()):
+    def build(self, drop_snapshots=(), replacements=()):
         d = tempfile.mkdtemp(prefix='fitviz-build-')
         self.addCleanup(shutil.rmtree, d)
         for f in COPY:
@@ -24,6 +24,13 @@ class FreshClone(unittest.TestCase):
                 shutil.copy(src, d)
         for f in drop_snapshots:
             os.remove(os.path.join(d, f))
+        for name, old, new in replacements:
+            path = os.path.join(d, name)
+            with open(path) as f:
+                text = f.read()
+            self.assertEqual(text.count(old), 1, 'build-default mutation must hit the real producer exactly once')
+            with open(path, 'w') as f:
+                f.write(text.replace(old, new))
         env = dict(os.environ, FITVIZ_DIR_PMEM_LANE=os.path.join(d, 'absent-lane'), FITVIZ_DIR_HOMELAB=os.path.join(d, 'absent-homelab'),
                    FITVIZ_CONFIG=os.path.join(d, 'absent.json'))
         p = subprocess.run([sys.executable, 'build.py'], cwd=d, env=env, capture_output=True, text=True, timeout=600)
@@ -44,6 +51,25 @@ class FreshClone(unittest.TestCase):
         self.assertIn('gsq_iq3xxs', data['engines']['strata']['types'])
         self.assertIn('strata', data['types']['gsq_iq3xxs']['engines'])
         self.assertEqual(q3['kld']['glm']['tag'], 'PRIOR')
+
+    def test_build_default_change_cannot_reauthorize_the_measured_decode_envelope(self):
+        _, data = self.build(replacements=(('build.py', "'kernel2x': False", "'kernel2x': True"),))
+        self.assertTrue(data['knobs']['kernel2x'])
+        with open(os.path.join(ROOT, 'data', 'decode-fits.json')) as f:
+            catalog = json.load(f)
+        for key, spec in data['decode_fits'].items():
+            self.assertIs(spec['knobs']['kernel2x'], False, 'mutable defaults must not become measured fit authority')
+            self.assertEqual(spec.get('knobs'), catalog[key].get('knobs'))
+        js = ("const fs=require('fs'), FM=require(process.argv[1]), d=JSON.parse(fs.readFileSync(0,'utf8'));"
+              "FM.applyCal(d); const r=Object.values(d.decode_fits)[0].training[0].recipe;"
+              "console.log(JSON.stringify(FM.predictRecipe(d,r)));")
+        p = subprocess.run(['node', '-e', js, os.path.join(ROOT, 'src', 'model.js')], input=json.dumps(data),
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        prediction = json.loads(p.stdout)
+        self.assertEqual(prediction['status'], 'UNMODELLED', 'changed build physics must refuse the measured profile')
+        self.assertIsNone(prediction['decode_tps'])
+        self.assertIsNone(prediction['decode_tps_nodraft'])
 
     def test_missing_inputs_are_notes_not_crashes(self):
         # the imatrix heat sets come from their hot-expert maps (data/heat); the snapshots only feed convert-all

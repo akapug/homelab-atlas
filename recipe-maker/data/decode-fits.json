@@ -1,0 +1,23 @@
+{
+  "droopy-v41-v41fs": {
+    "src": "V41FS coding-agent n4/n4b/n0 twins, fs1c and leave-one-out arms; fs1p held out. Residual includes unmodelled placement/pinning, not identified host compute. No build or inplace-follow coefficient.",
+    "knobs": {"freeDesktop": false, "moveB70": "none", "addDRAM": false, "addOptane": false, "optaneBwScale": null, "kernel2x": false, "draft": true, "draftMult": null, "smt": false, "densePrec": "q8_0", "hostCopy": true, "allowCodeTypes": false, "perExpertTypes": false, "rtr": false, "ub": "auto", "vramMargin": "safe", "freeHousehold": false, "numaHeadroom": 10},
+    "same": ["box", "model", "engine", "store", "rtr", "ub", "threads", "system", "files", "heat", "lowbit_share", "numa.layout", "numa.headroom_gib", "numa.nodes", "numa.pinned_host", "numa.spill_heal", "numa.verify", "conditions.ctx", "conditions.kv_type", "conditions.sampling", "conditions.reasoning_effort", "conditions.draft_n", "conditions.workload", "conditions.cpu_order", "conditions.threads", "conditions.cpu_reserve", "conditions.maint_timers", "conditions.coten", "conditions.levers.expert_chunking", "ctx", "banks_experts", "gpu_split", "ram_tier_gib", "trim", "moe_cache_gib", "split_mode", "mtp_ubatch", "kind", "engine_build", "placement", "expert_chunking", "prefill_tokens", "offload_batch", "op_offload"],
+    "draft_group": ["banks_gib", "mtp_experts", "decode_reads.shares", "conditions.draft_node"],
+    "lever": "conditions.levers.LLAMA_NO_HOST_WEIGHTS",
+    "flat_lever": "conditions.levers.GGML_SCHED_INPLACE_FOLLOW",
+    "baseline": 1,
+    "pair": ["droopy-v41-v41fs-fs1c-0213", "droopy-v41-v41fs-lo-nohost-0309"],
+    "train": ["droopy-v41-v41fs-fs1c-0213", "droopy-v41-v41fs-lo-nohost-0309", "droopy-v41-v41fs-lo-follow-0406", "droopy-v41-v41fs-lo-ba-0503", "droopy-v41-v41fs-lo-draftgpu-0559", "droopy-v41-v41fs-alloff-0758"],
+    "holdout": ["droopy-v41-v41fs-fs1p-0848"],
+    "recipes": {
+      "droopy-v41-v41fs-fs1c-0213": {"shares": {"gpu0": 0.200, "dram": 0.730, "pmem": 0.070}, "tag": "READ", "src": "gen-bankaware.py retained q512 routed counts projected through exact hot7p0 banks and bank-aware placement; bankaware-shares.tsv 2026-10-21; fractions of ALL reads, not a live decode sample"},
+      "droopy-v41-v41fs-lo-nohost-0309": {"shares": {"gpu0": 0.200, "dram": 0.730, "pmem": 0.070}, "tag": "READ", "src": "gen-bankaware.py retained q512 counts projected through hot7p0 banks and bank-aware target placement; bankaware-shares.tsv 2026-10-21; ALL-read fractions; actual placement/pinning differences remain confounded in scoped residual"},
+      "droopy-v41-v41fs-lo-follow-0406": {"shares": {"gpu0": 0.200, "dram": 0.730, "pmem": 0.070}, "tag": "READ", "src": "gen-bankaware.py retained q512 routed counts projected through exact hot7p0 banks and bank-aware placement; bankaware-shares.tsv 2026-10-21; fractions of ALL reads, not a live decode sample"},
+      "droopy-v41-v41fs-lo-ba-0503": {"shares": {"gpu0": 0.200, "dram": 0.711, "pmem": 0.089}, "tag": "READ", "src": "gen-bankaware.py retained q512 routed counts projected through exact hot7p0 banks and plain placement; bankaware-shares.tsv 2026-10-21; fractions of ALL reads, not a live decode sample"},
+      "droopy-v41-v41fs-lo-draftgpu-0559": {"shares": {"gpu0": 0.137, "dram": 0.785, "pmem": 0.078}, "tag": "READ", "src": "gen-bankaware.py retained q512 routed counts projected through exact hot3p7 banks and bank-aware placement; bankaware-shares.tsv 2026-10-21; fractions of ALL reads, not a live decode sample"},
+      "droopy-v41-v41fs-alloff-0758": {"shares": {"gpu0": 0.097, "dram": 0.814, "pmem": 0.089}, "tag": "READ", "src": "gen-bankaware.py retained q512 counts projected through hot2p2 banks and plain target placement; bankaware-shares.tsv 2026-10-21; ALL-read fractions; placement/pinning and combined switches remain confounded"},
+      "droopy-v41-v41fs-fs1p-0848": {"shares": {"gpu0": 0.200, "dram": 0.730, "pmem": 0.070}, "tag": "READ", "src": "gen-bankaware.py retained q512 routed counts projected through exact hot7p0 banks and bank-aware placement; bankaware-shares.tsv 2026-10-21; fractions of ALL reads, not a live decode sample"}
+    }
+  }
+}

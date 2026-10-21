@@ -1,0 +1,150 @@
+{
+ "id": "v41fs-lo-follow-0406",
+ "box": "droopy",
+ "model": "v41",
+ "engine": "ik",
+ "decode_profile": "droopy-v41-v41fs",
+ "decode_reads": {"shares": {"gpu0": 0.200, "dram": 0.730, "pmem": 0.070}, "tag": "READ", "src": "gen-bankaware.py retained q512 routed counts projected through exact hot7p0 banks and bank-aware placement; bankaware-shares.tsv 2026-10-21; fractions of ALL reads, not a live decode sample"},
+ "label": "V41FS v41fs-lo-follow-0406: fs1c with FOLLOW=0",
+ "store": {
+  "split": true,
+  "types": [
+   "mxfp4",
+   "q2_K"
+  ],
+  "hot_type": "mxfp4",
+  "cold_type": "q2_K"
+ },
+ "lowbit_share": 0.225,
+ "rtr": false,
+ "ub": 4096,
+ "draft": true,
+ "banks_gib": 7.0,
+ "threads": 39,
+ "numa": {
+  "headroom_gib": [
+   7,
+   13
+  ],
+  "spill_heal": true,
+  "layout": "rows",
+  "src": "bank-aware rows-ba-hot7p0 (+ the draft rules of DRAFT=cpumoe)",
+  "pinned_host": false,
+  "verify": "fail"
+ },
+ "system": {
+  "numa_balancing": 0,
+  "demotion": false,
+  "swap": "off"
+ },
+ "files": [
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00001-of-00010.gguf",
+   "holds": "experts + non-experts shard 1",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00002-of-00010.gguf",
+   "holds": "experts + non-experts shard 2",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00003-of-00010.gguf",
+   "holds": "experts + non-experts shard 3",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00004-of-00010.gguf",
+   "holds": "experts + non-experts shard 4",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00005-of-00010.gguf",
+   "holds": "experts + non-experts shard 5",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00006-of-00010.gguf",
+   "holds": "experts + non-experts shard 6",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00007-of-00010.gguf",
+   "holds": "experts + non-experts shard 7",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/nvme-p4/v41-1017/DeepSeek-V4.1-Flash-1017-Q8_0-00008-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file"
+  },
+  {
+   "path": "/mnt/nvme-p4/v41-1017/DeepSeek-V4.1-Flash-1017-Q8_0-00009-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file"
+  },
+  {
+   "path": "/mnt/datadrive1/models/v41-1017-split/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00010-of-00010.gguf",
+   "holds": "experts + non-experts shard 10",
+   "access": "loaded"
+  },
+  {
+   "path": "~/models/drafts/DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf",
+   "holds": "DSpark q2 draft (1017): cpumoe: -ngld 99 -draft \"-ncmoe 3\": draft experts (4.15 GiB Q2_K) on the CPU as rows:0,1, draft dense on CUDA0",
+   "access": "loaded"
+  }
+ ],
+ "src": "run-v41fs.sh (seat b70-rig/droopy-v41)",
+ "conditions": {
+  "ctx": "server default (-c unset, as b1017)",
+  "kv_type": "f16 (ik default)",
+  "draft_n": "DSpark q2 draft (1017), --spec-type dspark:n_max=4,conf_cum_min=0.5; per request: n4 (0.5), c75 (n_max 4, conf_cum_min 0.75), c90 (0.9), n0 (no draft), n4b (0.5 again)",
+  "sampling": {
+   "temperature": 0,
+   "set_by": "e1-client.py"
+  },
+  "reasoning_effort": "none (raw /completion, no chat template)",
+  "workload": {
+   "e1": {
+    "prompt_kind": "~/prompts/coding-agent.json first 3 briefs, raw /completion",
+    "gen_tokens": 300,
+    "ignore_eos": true,
+    "cache_prompt": false,
+    "phases": [
+     "n4",
+     "n3",
+     "n0",
+     "n4b"
+    ]
+   }
+  },
+  "threads": 39,
+  "cpu_reserve": "1 (~/.config/optane-kit/settings.env: CPU 39, every other task pinned to it by sys-pin.py)",
+  "maint_timers": "paused for the load (srv-arm.sh MAINT_PAUSE=1), restored on exit",
+  "cpu_order": "-cr 0-9,20-29,10-19,30-38 (threads 0-19 socket 0, 20-38 socket 1; GGML_MOE_GROUPS=2 -> group g = socket g)",
+  "package": "optane-bin/droopy-stack-cf2b2b86 (ik stack cf2b2b86: dense-rows + no-host + inplace-follow + mixed banks; sm_75, cascadelake, EXPERT_CHUNKING OFF)",
+  "draft_placement": "cpumoe: -ngld 99 -draft \"-ncmoe 3\": draft experts (4.15 GiB Q2_K) on the CPU as rows:0,1, draft dense on CUDA0",
+  "levers": {
+   "LLAMA_NO_HOST_WEIGHTS": 1,
+   "GGML_SCHED_INPLACE_FOLLOW": 0,
+   "expert_chunking": "OFF (build)"
+  },
+  "coten": "homelab-embed + homelab-classify-cpu stopped for the window (approved); arc-relevance on droopy inactive",
+  "draft_node": "1",
+  "loo_knobs": [
+   "FOLLOW=0"
+  ]
+ },
+ "heat": {
+  "plan": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17:prefill",
+  "src": "1017 a5 routing counts lab notes (sha256 6fc394af...): regen-place-1017.sh ranked the B1017 hot banks with gen-hot-split.py at W=6, excluding the cold experts dram-fill put in DRAM",
+  "maps": {
+   "plan": {
+    "map_id": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17",
+    "digest": "sha256:ed30967cb0c7992a66b46d5f1f3a3e53bc41f3aa3917bfdd96a491b91fe46497",
+    "slice": "prefill"
+   }
+  }
+ },
+ "mtp_experts": "cpu"
+}

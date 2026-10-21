@@ -21,6 +21,8 @@ UNITS = 'lab notes/PLAN VRAM readings are nvidia-smi MiB / 1000, converted here 
 # snapshot (a later commit carries the new numbers); when it does not, the build prints a note and uses the snapshot.
 # Source directories are settings: env FITVIZ_DIR_<NAME> (e.g. FITVIZ_DIR_PMEM_LANE), else the "dirs" object of the JSON
 # file named by FITVIZ_CONFIG (default: fitviz.local.json beside this file, untracked), else the named default below.
+# where a reader of the page finds the public copy (the page links it for "use it on your own box"); env FITVIZ_PUBLIC_HOME
+PUBLIC_HOME = os.environ.get('FITVIZ_PUBLIC_HOME') or 'https://github.com/akapug/homelab-atlas/tree/main/recipe-maker'
 INPUT_DIRS = {
     'pmem_lane': ('lab notes', 'droopy PMem research lane (imatrix expert-count TSVs)'),
     'homelab': ('lab notes', 'homelab repo (dsv41/skew routing results)'),
@@ -746,7 +748,7 @@ D01 = 'lab notes'
 PROBE = 'read-only probe 2026-10-17 ~01:10Z'
 boxes = {
     'droopy': {
-        'name': 'droopy (HP Z8 G4)', 'role': 'research box (Optane tier)',
+        'name': 'droopy (HP Z8 G4)', 'atlas': 'B', 'role': 'research box (Optane tier)',
         'cpu': {'desc': '2x Xeon Gold 5215 (Cascade Lake, AVX-512 VNNI)', 'threads': n(40, M, PROBE + ' nproc'), 'phys': n(20, R, 'lab notes Box'),
                 'used': n(20, R, 'best recipe -t 20 -cr 0-19 (lab notes checkpoint 03:45Z)'), 'smt_mult': n(1.0, E, 'unmeasured on droopy: every arm ran 20 threads on 20 cores'),
                 'f_default': n(0.5, E, 'prior before fit')},
@@ -772,7 +774,7 @@ boxes = {
         'host_default': {}, 'threads_note': 'ik expert kernel: 20 threads on 20 physical cores; 20 SMT siblings idle',
     },
     'snoopy': {
-        'name': 'snoopy (AM5)', 'role': 'gaming desktop + test box',
+        'name': 'snoopy (AM5)', 'atlas': 'A', 'role': 'gaming desktop + test box',
         'cpu': {'desc': 'Ryzen 9 9950X3D (16 cores, AVX-512)', 'threads': n(32, M, PROBE + ' nproc'), 'phys': n(16, M, PROBE + ' lscpu'),
                 'used': n(16, R, 'ik p16 layout (lab notes S1); glm-lite: 14 lane + main + ctl, readers on SMT siblings (NOTES)'),
                 'smt_mult': n(0.88, M, 'lab notes S1: s32 (SMT on) 11.40 vs p16 12.93 tok/s on V4.0'), 'f_default': n(0.9, E, 'prior before fit')},
@@ -788,7 +790,7 @@ boxes = {
         'host_default': {}, 'threads_note': 'ik: 16 threads on 16 cores (SMT measured -12 %); glm-lite: 14 lane + 2 control + 14 readers',
     },
     'odie': {
-        'name': 'odie (TRX40)', 'role': 'build primary + central storage + resident model service',
+        'name': 'odie (TRX40)', 'atlas': 'C', 'role': 'build primary + central storage + resident model service',
         'cpu': {'desc': 'Threadripper 3960X (24 cores, Zen 2, AVX2)', 'threads': n(44, M, PROBE + ' user.slice cpuset 0-21,24-45'), 'phys': n(24, R, D01),
                 'used': n(24, E, 'ESTIMATE'), 'smt_mult': n(1.0, E, 'unmeasured'), 'f_default': n(0.8, E, 'ESTIMATE: the kernel-efficiency table itself was measured on odie (4 threads)'), 'f_fixed': True},
         'gpus': [{'id': 'b70_1', 'name': 'Arc Pro B70 #1 (4c:00.0, PCIe 4 x16)', 'vram_gib': n(29.8, R, D01 + ' 32 GB per card'), 'bw': n(608, R, D01 + ' 608 GB/s'), 'engines': ['sycl', 'strata'],
@@ -805,7 +807,7 @@ boxes = {
         'host_default': {}, 'threads_note': 'builds share this box (odie = build primary)',
     },
     'lassie': {
-        'name': 'lassie (H11DSi)', 'role': 'instrument / build box',
+        'name': 'lassie (H11DSi)', 'atlas': 'D', 'role': 'instrument / build box',
         'cpu': {'desc': '2x EPYC 7601 (64 cores, Zen 1, AVX2, 8 NUMA nodes)', 'threads': n(128, M, PROBE + ' nproc'), 'phys': n(64, M, PROBE + ' lscpu'),
                 'used': n(64, E, 'ESTIMATE'), 'smt_mult': n(1.0, E, 'unmeasured'), 'f_default': n(0.2, E, 'prior before fit')},
         'gpus': [{'id': '1080ti', 'name': 'GTX 1080 Ti (sm_61, PCIe 3)', 'vram_gib': n(10.9, M, D01 + ' 11 GB'), 'bw': n(484, R, 'lab notes (484 GB/s)'), 'engines': ['ik'],
@@ -1154,7 +1156,8 @@ sys.path.insert(0, SRC)
 import runs_tables  # noqa: E402
 RUNS = runs_tables.load_runs(os.path.join(HERE, 'runs', 'runs.jsonl'))
 recipes = runs_tables.recipes_from_runs(RUNS)
-draft_twins = runs_tables.draft_twins(RUNS)
+decode_fits = runs_tables.decode_fits(HERE, RUNS, recipes)
+draft_twins = runs_tables.draft_twins(RUNS, {rid for spec in decode_fits.values() for rid in spec['holdout']})
 levers = runs_tables.levers_from_runs(json.load(open(os.path.join(HERE, 'runs', 'levers.json'))), RUNS, M)
 # the planner's glm-lite rates (host ms, lane GB/s) were measured on this build only; other builds are UNMODELLED in predictions
 engines['glmlite']['calibrated_builds'] = ['p512-lane']
@@ -1574,10 +1577,10 @@ layer_maps = json.load(open(os.path.join(HERE, 'data', 'layer-maps.json')))
 upgrade = json.load(open(os.path.join(HERE, 'data', 'upgrades.json')))
 
 data = {
-    'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py',
+    'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py', 'home': PUBLIC_HOME,
              'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}},
     'types': types, 'engines': engines, 'models': models, 'boxes': boxes, 'b70move': b70move, 'anchors': anchors, 'assume': assume, 'knobs': knobs, 'conditions': conditions, 'accuracy': accuracy, 'causes': causes, 'external': external, 'bench': bench,
-    'checks': checks, 'levers': levers, 'recipes': recipes, 'draft_twins': draft_twins, 'prefill': prefill, 'dllm': dllm, 'layer_maps': layer_maps, 'upgrade': upgrade,
+    'checks': checks, 'levers': levers, 'recipes': recipes, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'layer_maps': layer_maps, 'upgrade': upgrade,
     'alloc3': {'src': 'homelab dsv41/skew/results/2026-10-08-alloc-3bpw.json (' + alloc['rule'] + ')', 'layers': alloc_layers, 'count': sum(len(x) for x in alloc_layers)} if alloc else None,
     'siblings': {'quant_priors': sibling('quant-priors.json'), 'quant_recipes': sibling('quant-recipes.json'),
                  'quant_priors_md': sibling_md('QUANT-PRIORS.md'), 'quant_recipes_md': sibling_md('QUANT-RECIPES.md')},

@@ -1,17 +1,19 @@
 """The run ledger on disk: sealed segments plus one open file that runs are appended to.
 
-A ledger named runs/runs.jsonl is read as runs/runs.0001.jsonl.gz, runs/runs.0002.jsonl.gz, ... (oldest first), then
-runs/runs.jsonl. A segment is gzip here; a public copy, which holds no archives, seals into plain-text segments
-(runs.0001.jsonl, ...; pack(gz=False)), each at most MAX_OPEN_BYTES. Writers append to the open file only; after each append tools/record_run.py calls pack(), which seals
+A ledger named runs/runs.jsonl is read as runs/runs.0001.jsonl, runs/runs.0002.jsonl, ... (oldest first), then
+runs/runs.jsonl. pack() seals plain-text segments, each at most MAX_OPEN_BYTES: no archive enters git (the never-track
+guard refuses one), so the ledger stays diffable here and in a public copy. The gzip segments sealed before 2026-10-21
+(runs.0001.jsonl.gz ... runs.0008.jsonl.gz) are still read in their place; history is never rewritten. Writers append to the open file only; after each append tools/record_run.py calls pack(), which seals
 the rows older than KEEP_DAYS into the next segment once the open file passes MAX_OPEN_BYTES, so a checkout never
 holds a ledger file over GIT_FILE_LIMIT. Sealed segments are never rewritten. src/ledger.js reads the same layout for
 node.
-  python3 src/ledger.py pack [LEDGER] [--max-bytes N] [--keep-days D] [--all] [--plain]   seal rows (see pack())
+  python3 src/ledger.py pack [LEDGER] [--max-bytes N] [--keep-days D] [--all]           seal rows (see pack())
   python3 src/ledger.py count [LEDGER]                                         rows per file
 """
 import datetime
 import glob
 import gzip
+import itertools
 import json
 import os
 import re
@@ -73,30 +75,34 @@ def chunks(lines, cap):
     return out
 
 
-def pack(path, max_bytes=None, keep_days=None, everything=False, now=None, gz=True):
-    """Seal the open file's oldest rows into the next segment. Without everything: only when the open file is larger than
-    max_bytes, and only the leading rows older than keep_days (append order is kept, so packing stops at the first younger
-    row). gz=False seals into plain-text segments of at most MAX_OPEN_BYTES each, as many as the rows need. Returns
+def pack(path, max_bytes=None, keep_days=None, everything=False, now=None, limit=None):
+    """Seal the open file's oldest rows into the next segment. Without everything: when the open file is larger than
+    max_bytes, seal only the leading rows older than keep_days (append order is kept, so packing stops at the first younger
+    row). Independently, if the rows left would still pass limit (GIT_FILE_LIMIT), the fewest further leading rows are sealed,
+    young ones too, so the open file always fits in git. Sealed rows go into plain-text segments of at most MAX_OPEN_BYTES each, as many as the rows need. Returns
     (rows sealed, the last segment written or None)."""
     max_bytes = MAX_OPEN_BYTES if max_bytes is None else max_bytes
     keep_days = KEEP_DAYS if keep_days is None else keep_days
-    if not os.path.exists(path) or (not everything and os.path.getsize(path) <= max_bytes):
+    limit = GIT_FILE_LIMIT if limit is None else limit
+    if not os.path.exists(path) or (not everything and os.path.getsize(path) <= min(max_bytes, limit)):
         return 0, None
     with open(path, encoding='utf-8') as h:
         raw = [x for x in h if x.strip()]
     cut = (now or datetime.datetime.now(datetime.timezone.utc)) - datetime.timedelta(days=keep_days)
     old = lambda x: (when(json.loads(x)) or cut) < cut   # a row without a time stays open
     k = len(raw) if everything else next((i for i, x in enumerate(raw) if not old(x)), len(raw))
+    left = list(itertools.accumulate((len(x.encode('utf-8')) for x in reversed(raw)), initial=0))[::-1]   # bytes from row i on
+    k = max(k, next(i for i, n in enumerate(left) if n <= limit))
     if not k:
         return 0, None
     sealed = [(x if x.endswith('\n') else x + '\n').encode('utf-8') for x in raw[:k]]
-    groups = [sealed] if gz else chunks(sealed, MAX_OPEN_BYTES)
-    first = len(segments(path)) + 1
-    for i, g in enumerate(groups):
-        body = gzip.compress(b''.join(g), 9, mtime=0) if gz else b''.join(g)
+    bodies = [b''.join(g) for g in chunks(sealed, MAX_OPEN_BYTES)]
+    for body in bodies:
         if len(body) > GIT_FILE_LIMIT:
-            raise SystemExit('ledger pack: %d rows take %d bytes, over %d; seal fewer (a larger --keep-days)' % (len(g), len(body), GIT_FILE_LIMIT))
-        seg = '%s.%0*d.jsonl%s' % (base(path), SEGMENT_DIGITS, first + i, '.gz' if gz else '')
+            raise SystemExit('ledger pack: a row of %d bytes is over %d' % (len(body), GIT_FILE_LIMIT))
+    first = len(segments(path)) + 1
+    for i, body in enumerate(bodies):
+        seg = '%s.%0*d.jsonl' % (base(path), SEGMENT_DIGITS, first + i)
         with open(seg, 'wb') as h:
             h.write(body)
     tmp = path + '.pack-tmp'
@@ -114,10 +120,9 @@ def main(argv):
     ap.add_argument('--max-bytes', type=int, default=MAX_OPEN_BYTES)
     ap.add_argument('--keep-days', type=float, default=KEEP_DAYS)
     ap.add_argument('--all', action='store_true', help='seal every row now (a published snapshot)')
-    ap.add_argument('--plain', action='store_true', help='seal into plain-text segments, not gzip (a public copy holds no archives)')
     a = ap.parse_args(argv)
     if a.cmd == 'pack':
-        k, seg = pack(a.ledger, a.max_bytes, a.keep_days, a.all, gz=not a.plain)
+        k, seg = pack(a.ledger, a.max_bytes, a.keep_days, a.all)
         print('ledger pack: %s' % ('sealed %d rows into %s' % (k, seg) if k else 'nothing to seal'))
     for f in files(a.ledger):
         print('%s: %d bytes' % (f, os.path.getsize(f)))

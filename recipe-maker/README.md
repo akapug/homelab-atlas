@@ -7,8 +7,8 @@ a quality bar.
 
 - **Predicts before you run:** decode tokens per second with and without a draft model, VRAM peak, free memory per
   NUMA node, and the share of routed reads at low bit widths, for each layout it proposes or each recipe you write.
-- **Refuses bad launches:** `node report.js --check RECIPE.json` is a pre-launch gate. On our 134 recorded runs it
-  failed 31 of the 41 runs that later went bad.
+- **Refuses bad launches:** `node report.js --check RECIPE.json` is a pre-launch gate. On our 167 recorded runs it
+  failed 31 of the 46 runs that later went bad.
 - **Says what each number rests on:** every number is tagged `seen` (we measured it), `inferred` (fitted, estimated or
   read from a spec) or `unknown`, with its source. A prediction prints how many of its terms are each kind.
 - **Measures itself:** every real run goes into a run ledger with the prediction made at launch, and
@@ -32,20 +32,22 @@ Every measured run, the fastest clean run per box and model with its conditions,
 
 ## How close are its predictions?
 
-From `node report.js --accuracy` on the shipped ledger (2026-10-20). Error = (predicted - measured) / measured, scored
+From `node report.js --accuracy` on the shipped ledger (2026-10-21). Error = (predicted - measured) / measured, scored
 only on runs that finished cleanly and were not disturbed; a negative bias means the planner predicted slower.
 
 | Box / model / engine | Decode (draft on) | Decode (no draft) |
 | --- | ---: | ---: |
 | snoopy, GLM-5.3-Flash, glmlite | 2.5 % (8 runs, bias -0.8 %) | |
-| droopy, DeepSeek V4.1 Flash, ik_llama.cpp | 13.9 % (7 runs, bias -7.2 %) | 13.1 % (4 runs, bias +1.4 %) |
+| droopy, DeepSeek V4.1 Flash, ik_llama.cpp | 20.8 % (14 runs, bias -20.0 %) | 23.3 % (11 runs, bias -23.3 %) |
 | droopy, GLM-5.3-Flash, ik_llama.cpp | 15.6 % (4 runs, bias -10.7 %) | 19.8 % (8 runs, bias -19.8 %) |
 | droopy, Ornith-1.5-122B, ik_llama.cpp (a new family: its host term is borrowed from GLM) | 33.0 % (1 run, bias -33.0 %) | |
+| lassie, DeepSeek V4.1 Flash, ik_llama.cpp | 24.5 % (10 runs, bias +24.5 %) | |
+| lassie, Ornith-1.5-35B-A3B, ik_llama.cpp | 39.1 % (7 runs, bias -19.3 %) | |
 | odie, LLaDA2.1-mini (block diffusion), one Arc Pro B70 | 4.1 % (15 runs) | |
 | odie / lassie, other block-diffusion models | 1.6-43.8 % (2-4 runs each) | |
 
 The pre-launch gate, over the same ledger: 31 runs it failed went bad (10 of them for the cause the failing check
-names), 10 runs went bad with no check failing, and 21 runs it failed ran fine. On a box it has never seen, expect the
+names), 15 runs went bad with no check failing, and 24 runs it failed ran fine. On a box it has never seen, expect the
 gap it shows on published community measurements (17-59 % by hardware class, `node report.js --external`) until your
 own runs are in the ledger. Where it is still weak: [docs/how-it-works.md#honest-limits](docs/how-it-works.md#honest-limits).
 
@@ -68,7 +70,8 @@ node report.js --accuracy            # predicted vs measured over the run ledger
 node report.js --external            # our physics on published community measurements
 ```
 
-Open `index.html` after the build. It shows our boxes, models and runs.
+Open `index.html` after the build. It shows our boxes, models and runs. The same page, built from this folder, is at
+https://akapug.github.io/homelab-atlas/ (nothing to install).
 
 ### With your own boxes
 
