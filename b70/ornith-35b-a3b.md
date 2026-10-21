@@ -51,7 +51,8 @@ One stream, MTP 3 with the [smaller drafter vocabulary](vllm-xpu/), 1,200-token 
 
 - Short MoE steps are CPU-bound, so the host matters as much as the card. The
   [CPU guard](vllm-xpu/#the-hosts-cpu-keep-other-work-off-the-servers-ccd) keeps other work off the server's CCD.
-- Qwen3.6-35B-A3B on this card with 6 cores and the same speculation: 189.8 tok/s.
+- For scale: Qwen3.6-35B-A3B with the same speculation measured 189.8 tok/s on this card (2026-09-24, before the
+  CPU guard existed).
 - MTP is off on the live server today; see the next section for why and what it cost.
 
 ## A bug: MTP garbled about 3 % of replies from the first token
