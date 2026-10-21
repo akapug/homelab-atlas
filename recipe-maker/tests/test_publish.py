@@ -344,7 +344,15 @@ class Curate(unittest.TestCase):
     def test_left_out_names_the_skipped_model_per_box(self):
         with open(os.path.join(self.out, 'runs', 'left_out.json')) as f:
             self.assertEqual(json.load(f), {'zz9': {'why': 'held back', 'runs': {'b1': 1}}})
-        self.assertEqual(self.C.left_out([{'model': 'ok1', 'box': 'b1'}], {'zz9': 'x'}), {}, 'nothing skipped, no file')
+        self.assertEqual(self.C.left_out([{'model': 'ok1', 'box': 'b1'}], {'skip_models': {'zz9': 'x'}}), {}, 'nothing skipped, no file')
+
+    def test_a_kept_run_of_a_skipped_model_ships(self):
+        # keep_runs names a run the public text already cites: it ships (as a measured marker), the model's other runs stay out
+        cfg = dict(self.man['runs'], keep_runs={'cited': 'the README cites it'})
+        rows = [{'id': 'cited', 'box': 'b1', 'model': 'zz9', 'measured': {}}, {'id': 'other', 'box': 'b1', 'model': 'zz9', 'measured': {}},
+                {'id': 'plain', 'box': 'b1', 'model': 'ok1', 'measured': {}}]
+        self.assertEqual([r['id'] for r in self.C.curate_rows(rows, dict(self.man, runs=cfg), {}, [])], ['cited', 'plain'])
+        self.assertEqual(self.C.left_out(rows, cfg), {'zz9': {'why': 'held back', 'runs': {'b1': 1}}}, 'the kept run is not counted as left out')
 
     def test_ledger_is_curated(self):
         rows = L.rows(os.path.join(self.out, 'runs', 'runs.jsonl'))

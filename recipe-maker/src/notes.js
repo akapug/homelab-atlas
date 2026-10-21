@@ -264,8 +264,8 @@ about 8-9 tok/s for GLM. Averaged over the tier, DRAM still holds more bits, bec
 - Host overhead is fitted per model family (V4.0 and V4.1 share one value; fitting V4.1 alone hit the 0 ms bound).
   Boxes with no anchor for a model borrow droopy's host (ESTIMATE).
 - odie's only GLM point (lab notes G12, 7.5 tok/s) is CONTAMINATED (experts partly not resident): shown as a reference, not fitted.
-- lassie's GTX 1080 Ti: nvidia-smi reported "Driver/library version mismatch" on the probe; the projections assume the
-  driver is fixed (the G2 anchors used the card).
+- lassie's GTX 1080 Ti: the 10-17 probe hit an nvidia-smi "Driver/library version mismatch"; the 10-21 probe reads the
+  card again (driver 580.178.04).
 - ik_llama.cpp cannot drive a B70 (CUDA/CPU only): ik with a moved B70 needs a SYCL/XPU expert worker (code). glm-lite cannot
   use a B70. Mainline SYCL can drive a B70 alone; DeepSeek V4.1 support in mainline SYCL is UNKNOWN.
 - Per-expert types need the split-expert ik build (lab notes). Per-expert TIER placement (hot cache + Optane

@@ -155,7 +155,8 @@
       }
     }
     R = { curves, owner, ms: performance.now() - t0 };
-    // keep the selection if it still exists, else pick a model we measured on this box (DEFAULT_MIN_RUNS runs or more), then one that reaches 20 tok/s
+    // keep the selection if it still exists, else the box's showcase model (data.boxes[box].showcase: the model it runs best,
+    // with its source), else a model we measured on this box (DEFAULT_MIN_RUNS runs or more), then one that reaches 20 tok/s
     let pick = null;
     if (st.sel) {
       const c = curves.find(c => c.mk === st.sel.mk && c.eng === st.sel.eng);
@@ -165,7 +166,8 @@
     if (!pick) {
       const runs = {};
       data.cal.rows.filter(r => r.box === st.box).forEach(r => { runs[r.model] = (runs[r.model] || 0) + 1; });
-      const rank = c => ((runs[c.mk] || 0) >= DEFAULT_MIN_RUNS ? 4 : 0) + (c.b20 ? 2 : 0) + (c.mk === 'v41' ? 1 : 0);
+      const show = (data.boxes[st.box].showcase || {}).model;
+      const rank = c => (c.mk === show ? 8 : 0) + ((runs[c.mk] || 0) >= DEFAULT_MIN_RUNS ? 4 : 0) + (c.b20 ? 2 : 0) + (c.mk === 'v41' ? 1 : 0);
       const order = curves.slice().sort((a, b) => rank(b) - rank(a));
       const c = order[0];
       if (c) pick = { mk: c.mk, eng: c.eng, kind: c.b20 ? 't20' : 'fast' };
@@ -600,7 +602,6 @@
     if (ctx.perExpert || sel.needsCode) needs.push('per-expert types need the split-expert ik build');
     ctx.tiers.forEach((t, i) => { if (t.gpu && t.gpu.needs_code && t.gpu.needs_code[ctx.eng] && sel.ev.cnt[i] > 0) needs.push(t.gpu.needs_code[ctx.eng]); });
     if (ctx.eng === 'sycl' && ctx.mk === 'v41') needs.push('V4.1 support in mainline llama.cpp SYCL is UNKNOWN');
-    if (st.box === 'lassie') needs.push('lassie 1080 Ti: nvidia-smi reports a driver/library mismatch (probe 2026-10-17); fix the driver first');
     if (needs.length) h += `<div class="warnline">Needs: ${needs.map(esc).join('; ')}.</div>`;
     if (ctx.notes.length) h += `<div class="small muted">${ctx.notes.map(esc).join(' ')}</div>`;
     h += checksHTML(FM.checksFor(ctx, sel.lay, ev));
