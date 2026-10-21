@@ -1337,6 +1337,26 @@
     if (nf.layout) kn.numaLayout = nf.layout;
     return { kn, ctx: prepare(context(data, r.box, r.model, r.engine, kn), (r.heat && r.heat.plan) || m.heat.plan_default, (r.heat && r.heat.score) || m.heat.score_default) };
   }
+  // projected top-1 agreement of a ledger recipe's stored weights: its store type rule laid out on the score heat, read-weighted
+  // KLD (layer weights as in evaluate) plus the dense part; the chart places a measured run at this height,
+  // projected on the same scale as the curves (a measured top-1 is against its own reference, so it stays in the tooltip).
+  // Falls back to the first named type's KLD when the store rule cannot be laid out; null for a model with no KLD family.
+  function recipeQuality(data, r) {
+    const st = r.store || {}, m = data.models[r.model];
+    if (!m || !m.kld_family) return null;
+    const rc = data.engines[r.engine] && recipeContext(data, r);
+    const ty = rc ? storeTypes(data, r, rc.ctx) : { why: r.engine + ' has no planner model' };
+    if (!ty.why) {
+      const ctx = rc.ctx, w = layerWeights(data, r.model), kl = ctx.types.map(q => typeKld(data, r.model, q));
+      let k = 0;
+      for (let e = 0; e < ty.type.length; e++) k += ctx.score[e] * kl[ty.type[e]] * (w ? w[(e / m.E) | 0] : 1);
+      const kld = k / ctx.kL + ctx.kldDense;
+      return { quality: qualityOf(data, kld), kld, how: ty.note };
+    }
+    const q = (st.types || []).concat(st.hot_type || []).find(x => data.types[x] && typeKld(data, r.model, x) !== null && typeKld(data, r.model, x) !== undefined) || m.base_type;
+    const kld = typeKld(data, r.model, q) || 0;
+    return { quality: qualityOf(data, kld), kld, how: 'every routed expert ' + q + ' (' + ty.why + ')' };
+  }
   // 2-bit share of routed reads for the quality check: the recipe's own figure if it gives one (lowbit_share, read_share_by_type),
   // else the share of the layout predictRecipe would place (storeTypes on the score heat). 0 when no store type is 2-bit;
   // { share: null, why } when a 2-bit type is named but the layout cannot be built
@@ -1880,6 +1900,13 @@
     out.status = 'PREDICTED';
     out.decode_tps = (df.draft && ctx.draftOn ? df.draft.v : ctx.mult) / T;
     out.decode_tps_nodraft = 1 / T;
+    // an external draft file served to a model whose planner draft is its own MTP head: another draft, its speed-up unmodelled
+    const xd = ctx.draftOn && m.draft.kind === 'mtp' ? (r.files || []).filter(fl => /draft/i.test(fl.holds || '')) : [];
+    if (xd.length) {
+      out.decode_tps = null;
+      out.draft_why = 'the recipe serves an external draft (' + xd.map(x => x.holds).join(', ') + '); the planner draft of ' + m.short + ' is its own MTP head, so the speed-up of this draft is unmodelled (the no-draft prediction stands)';
+      A.push('draft: ' + out.draft_why);
+    }
     out.ms_per_token = { host: 1000 * hostT, gpu: 1000 * gpuT, cpu: 1000 * cpuT, total: 1000 * T };
     // the token's time per hardware lane (before GPU/CPU overlap; src/advisor.js): GPU reads on the VRAM lane; each CPU-side
     // tier's expert bytes on its read ceiling (<tier>_bw) or on the CPU kernel rate (cpu), whichever is slower, scaled to cpuT
@@ -2288,7 +2315,8 @@
     Object.keys(tw).forEach(k => { dm[k] = tw[k]; });
     // in-load twins from the run ledger (the served draft width vs no draft, same load and prompts) win over anchors when there are 2+
     const LT = data.draft_twins || {}, ltSrc = {};
-    Object.keys(LT).filter(k => LT[k].length >= 2 && cal.boxes[k.split('|')[0]]).forEach(k => {
+    // one twin is enough where no anchor measured the draft at all (it replaces the model's mult_default ESTIMATE)
+    Object.keys(LT).filter(k => (LT[k].length >= 2 || !dm[k]) && cal.boxes[k.split('|')[0]]).forEach(k => {
       dm[k] = LT[k].map(x => x.mult);
       ltSrc[k] = 'draft speed-up: mean of ' + LT[k].length + ' in-load twins in the run ledger (' + LT[k][0].what + ' vs no draft, same load and prompts; a twin whose phase a degraded note names is left out): ' + LT[k].map(x => x.id + ' x' + x.mult.toFixed(3)).join(', ');
     });
@@ -2318,8 +2346,33 @@
     return cal;
   }
 
+  // Host ms/token from the run ledger where no anchor fits it: a box x model whose host is only borrowed or estimated takes the
+  // mean residual of its clean ledger runs (measured no-draft ms/token minus the modelled GPU + CPU expert time of the run's own
+  // recipe). A run counts only when it went fine, is not a decode-fit holdout, carries no gate waiver (a waiver records a part
+  // of the recipe the planner does not describe, e.g. experts on a GPU it does not model) and is PREDICTED today; a fitted,
+  // fixed or decode-profile host never moves. Changes nothing for a box x model without such a run.
+  function ledgerHosts(data) {
+    const cal = data.cal, by = {};
+    (data.recipes || []).forEach(row => {
+      const m = row.measured, r = row.recipe || {}, res = cal.boxes[row.box];
+      if (!m || m.bad || m.holdout || !(m.off > 0) || r.gate_waiver || r.kind === 'dllm' || r.decode_profile !== undefined || !res || !data.models[row.model]) return;
+      const h = res.host[row.model], fx = data.boxes[row.box].host_fixed;
+      if ((h && h.tag !== 'ESTIMATE') || (fx && fx[data.models[row.model].host_group || row.model] !== undefined)) return;
+      const p = predictRecipe(data, r);
+      if (p.status !== 'PREDICTED' || !p.ms_per_token) return;
+      (by[row.box + '|' + row.model] = by[row.box + '|' + row.model] || []).push({ id: row.run_id, host: 1000 / m.off - (p.ms_per_token.total - p.ms_per_token.host), off: m.off, phase: m.off_phase });
+    });
+    Object.keys(by).forEach(k => {
+      const [bk, mk] = k.split('|'), xs = by[k], hv = xs.reduce((a, x) => a + x.host, 0) / xs.length;
+      if (!(hv >= 0)) return;
+      cal.boxes[bk].host[mk] = { v: hv, tag: 'FIT', runs: xs.map(x => x.id), src: 'host overhead ms/token fitted on ' + xs.length + ' clean run(s) in the run ledger on ' + bk + ' (no anchor): measured no-draft decode minus the modelled GPU and CPU expert time of each run\'s own recipe: ' +
+        xs.map(x => x.id + ' ' + x.phase + ' ' + x.off.toFixed(2) + ' tok/s -> ' + x.host.toFixed(1) + ' ms').join('; ') };
+    });
+  }
+
   function applyCal(data) {
     data.cal = calibrate(data);
+    ledgerHosts(data);
     data.cal.recipe_decode = fitRecipeDecode(data);
     return data.cal;
   }
@@ -2374,6 +2427,6 @@
     }, extra || {});
   }
 
-  const api = { layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, exportMap, LAMS };
+  const api = { layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

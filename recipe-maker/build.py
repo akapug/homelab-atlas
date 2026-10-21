@@ -602,7 +602,7 @@ models = {
                          'why': 'kept on file (-dple / split shards 8-9), random row reads every token: B0 with the shards linked to the droopy HDD ran prefill 3.51 / decode 3.05 tok/s (lab notes 12:47Z + root cause 13:4xZ); the same recipe on NVMe ran ~50 / 8.39 (15:52Z)'}],
             'kv_gib': n(round(MK(20.79 - 2.24) - v41dense - 5.14e9 / GiB, 2), M, 'KV + compute buffers at -ub 4096, post-warm-up: B0 nortr (lab notes 15:52Z) VRAM 20.79 of 23.04 with 2.24 hot banks (= %.2f GiB without banks), DSpark q2 draft 4.79 GiB, non-experts %.2f GiB (header). %s; the B0 nortr kit log reads the same post-warm-up as 20,790 MiB = 20.30 GiB' % (MK(20.79 - 2.24), v41dense, UNITS)),
             'kv_gib_ub512': n(1.4, 'INFERRED-BY-US', 'INFERRED from d1g q2d-p0 (-ub 512): ~21 GiB used = 8.3 weights + 6.5 hot + 4.8 draft + ~1.4'),
-            'draft': {'label': 'DSpark draft (q2_K experts)', 'vram_gib': n(round(5.14e9 / GiB - 9 * 472.5 / 1024, 3), M, 'lab notes 01:14Z: q2 V4.1 draft 5.14 GB (v41r1b CUDA0 draft buffer 4898.66 MiB) minus its routed experts (experts_gib)'),
+            'draft': {'kind': 'external', 'label': 'DSpark draft (q2_K experts)', 'vram_gib': n(round(5.14e9 / GiB - 9 * 472.5 / 1024, 3), M, 'lab notes 01:14Z: q2 V4.1 draft 5.14 GB (v41r1b CUDA0 draft buffer 4898.66 MiB) minus its routed experts (experts_gib)'),
                       'experts_gib': {'mxfp4': n(round(9 * 472.5 / 1024, 3), R, 'droopy ~/models/drafts/DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf header: blk.0-2 ffn_gate/up/down_exps Q2_K [5120, 2304, 128] 472.5 MiB each')},
                       'experts_on_gpu': n(True, M, 'v41r1b (-draft "-ncmoe 0"): the draft CUDA0 buffer 4898.66 MiB holds its experts. Recipe mtp_experts "cpu" (-draft "-ncmoe 3", run-v41fs.sh DRAFT=cpumoe) moves them to the host'),
                       'acceptance': n(0.90, M, 'B0 rtr 14:58Z: 221 of 242 drafted tokens accepted (91 %); B0 nortr 15:52Z ~90 %; n_max 4, conf_cum_min 0.5'),
@@ -627,7 +627,7 @@ models = {
             'dense_gib_by_type': {'ud_q3kxl': n(round(glmq3dense, 3), R, HGLMQ3 + ': non-expert tensors without token_embd and block 45')},
             'kv_gib': n(round((GLM_CTX_MIB + GLM_KV_MIB + GLM_CB4096_MIB) / 1024, 3), M, 'CUDA context %d + KV %.2f + compute buffer %d MiB at -ub 4096 (%s; the compute buffer is the allocation that failed). The old ESTIMATE 4.38 was high; the miss was the MTP experts (draft)' % (GLM_CTX_MIB, GLM_KV_MIB, GLM_CB4096_MIB, GLM_VRAM_SRC)),
             'kv_gib_ub512': n(round((GLM_CTX_MIB + GLM_KV_MIB + GLM_CB4096_MIB * 512 / 4096) / 1024, 3), E, 'INFERRED: context + KV as at -ub 4096, compute buffer scaled linearly with ub (2484 x 512/4096 MiB)'),
-            'draft': {'label': 'MTP head (block 45: attention and, under ik --cpu-moe, its routed experts on the GPU)',
+            'draft': {'kind': 'mtp', 'label': 'MTP head (block 45: attention and, under ik --cpu-moe, its routed experts on the GPU)',
                       'vram_gib': n(round(glm_mtp_ne, 3), R, HGLM + ': block 45 non-expert tensors (191 MiB in both the Q4 and Q3 headers)'),
                       'experts_gib': {'ud_q4kxl': n(round(glm_mtp_ex, 3), R, HGLM + ': blk.45 ffn_*_exps'), 'ud_q3kxl': n(round(glmq3_mtp_ex, 3), R, HGLMQ3 + ': blk.45 ffn_*_exps')},
                       'experts_on_gpu': n(True, M, GLM_VRAM_SRC + ': CUDA0 model buffer 11871 MiB includes the 3276 MiB block 45 experts; llama_expert_numa_apply skips them as not host-resident. Recipe mtp_experts "cpu" (-ot blk.45 exps=CPU) moves them'),
@@ -650,7 +650,7 @@ models = {
             'P_src': 'placement-engine.md: ffn_*_exps [4096, 2048, 256] MXFP4, 13.37 MB per expert', 'show': False,
             'dense_gib': n(7.0, R, 'lab notes: attention and shared experts on the GPU (7.0 GiB)'), 'dense_bpw': n(8.5, R, 'Q8_0'),
             'base_type': 'mxfp4', 'kld_family': 'v41', 'lookups': [], 'kv_gib': n(1.5, E, 'ESTIMATE'),
-            'draft': {'label': 'DSpark q2 draft', 'vram_gib': n(6.9e9 / GiB, M, 'lab notes P16c 6.9 GB'), 'mult_default': n(1.28, M, 'snoopy S1 16.55 / 12.93')},
+            'draft': {'kind': 'external', 'label': 'DSpark q2 draft', 'vram_gib': n(6.9e9 / GiB, M, 'lab notes P16c 6.9 GB'), 'mult_default': n(1.28, M, 'snoopy S1 16.55 / 12.93')},
             'heat': {'floor': common_heat_floor, 'anchor_score': 'imatrix', 'anchor_sel': 'imatrix', 'plan_default': 'imatrix', 'score_default': 'imatrix',
                      'sets': heat_sets({'imatrix': (V40_IMAT, 'prefill', 'imatrix routing counts, A5 corpus')}, list(range(43)), 256)}},
 }
@@ -710,7 +710,7 @@ models['fnx'] = {
                  'cls': 'ngram', 'on_file': True, 'why': 'kept on file (--defer-ple): random row reads every token, the same access shape as the V4.1 engram tables (B0 on HDD: prefill 3.51 / decode 3.05)'}],
     'kv_gib': n(2.0, E, 'ESTIMATE (scout): only the 12 QSA layers hold full KV; Gated DeltaNet layers keep a fixed state'),
     'kv_gib_ub512': n(1.2, E, 'ESTIMATE'),
-    'draft': {'label': 'MTP head (1 layer, own 512-expert MoE, IQ4_KT)', 'vram_gib': n(2.2, E, 'ESTIMATE (scout): MTP head IQ4_KT ~2.2 GiB (unsloth Q8 head 4.1 GB)'),
+    'draft': {'kind': 'mtp', 'label': 'MTP head (1 layer, own 512-expert MoE, IQ4_KT)', 'vram_gib': n(2.2, E, 'ESTIMATE (scout): MTP head IQ4_KT ~2.2 GiB (unsloth Q8 head 4.1 GB)'),
               'acceptance': n(0.90, 'M-ext', 'ji-farthing IQ4_KT MTP head: ~90 % on code; collapses near 131k depth (' + SC + ')'),
               'mult_default': n(1.5, E, 'ESTIMATE, conservative: analogs 45 -> 90 (5090 ik + MTP + ngram, code) and 39 no-MTP vs 47-50 MTP3 (3090 hot-32 fork); scout 45-75 with MTP vs 35-45 raw')},
     'host_engine': {'sycl': n(2.0, E, 'ESTIMATE: GPU-resident SYCL decode has little host work (a 35B-A3B MoE served on a B70: 198 tok/s at ~2 GB/token leaves <~1 ms beyond the read; vLLM, not llama.cpp)')},
@@ -742,6 +742,12 @@ FAMILY_QUALITY = {}
 for _fn in sorted(os.listdir(FAMILY_DIR)) if os.path.isdir(FAMILY_DIR) else []:
     if _fn.endswith('.py'):
         exec(compile(Path(FAMILY_DIR, _fn).read_text(), os.path.join(FAMILY_DIR, _fn), 'exec'), globals())
+
+# draft.kind = which draft the planner's speed-up stands for: 'mtp' = the model's own MTP head (in the model file), 'external' =
+# a separate draft model file. A recipe that serves an external draft file to an 'mtp' model measured another draft: its draft
+# speed is UNMODELLED (the no-draft prediction stands)
+_nokind = [mk for mk, m in models.items() if m.get('draft') and m['draft'].get('kind') not in ('mtp', 'external')]
+assert not _nokind, 'draft.kind (mtp or external) missing for ' + ', '.join(_nokind)
 
 # ---------------- boxes ----------------
 D01 = 'lab notes'
@@ -1155,9 +1161,10 @@ import sys
 sys.path.insert(0, SRC)
 import runs_tables  # noqa: E402
 RUNS = runs_tables.load_runs(os.path.join(HERE, 'runs', 'runs.jsonl'))
-recipes = runs_tables.recipes_from_runs(RUNS)
+_holdout = {rid for spec in json.load(open(os.path.join(HERE, 'data', 'decode-fits.json'))).values() for rid in spec['holdout']}
+recipes = runs_tables.recipes_from_runs(RUNS, _holdout)
 decode_fits = runs_tables.decode_fits(HERE, RUNS, recipes)
-draft_twins = runs_tables.draft_twins(RUNS, {rid for spec in decode_fits.values() for rid in spec['holdout']})
+draft_twins = runs_tables.draft_twins(RUNS, _holdout)
 levers = runs_tables.levers_from_runs(json.load(open(os.path.join(HERE, 'runs', 'levers.json'))), RUNS, M)
 # the planner's glm-lite rates (host ms, lane GB/s) were measured on this build only; other builds are UNMODELLED in predictions
 engines['glmlite']['calibrated_builds'] = ['p512-lane']
@@ -1575,10 +1582,13 @@ external['rows'] = external_rows(os.path.join(HERE, EXT_SRC), list(conditions['f
 # upgrade advisor's settings and part catalog (src/advisor.js)
 layer_maps = json.load(open(os.path.join(HERE, 'data', 'layer-maps.json')))
 upgrade = json.load(open(os.path.join(HERE, 'data', 'upgrades.json')))
+# a public copy names the models whose runs it leaves out, per box (tools/curate.py writes the file; our own repo has none)
+_lo = os.path.join(HERE, 'runs', 'left_out.json')
+left_out = json.load(open(_lo)) if os.path.exists(_lo) else {}
 
 data = {
     'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py', 'home': PUBLIC_HOME,
-             'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}},
+             'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}, 'left_out': left_out},
     'types': types, 'engines': engines, 'models': models, 'boxes': boxes, 'b70move': b70move, 'anchors': anchors, 'assume': assume, 'knobs': knobs, 'conditions': conditions, 'accuracy': accuracy, 'causes': causes, 'external': external, 'bench': bench,
     'checks': checks, 'levers': levers, 'recipes': recipes, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'layer_maps': layer_maps, 'upgrade': upgrade,
     'alloc3': {'src': 'homelab dsv41/skew/results/2026-10-08-alloc-3bpw.json (' + alloc['rule'] + ')', 'layers': alloc_layers, 'count': sum(len(x) for x in alloc_layers)} if alloc else None,

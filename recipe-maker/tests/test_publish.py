@@ -338,8 +338,13 @@ class Curate(unittest.TestCase):
     def test_what_ships(self):
         have = sorted(os.path.relpath(os.path.join(a, f), self.out) for a, _, fs in os.walk(self.out) for f in fs)
         # recipes: r3 is both the fastest clean run of (b1, ok1) and named by a test; r0 is neither; secret.txt is 'never'
-        self.assertEqual(have, ['README.md', 'build.py', 'recipes/r3.json', 'runs/labels.json', 'runs/levers.json',
+        self.assertEqual(have, ['README.md', 'build.py', 'recipes/r3.json', 'runs/labels.json', 'runs/left_out.json', 'runs/levers.json',
                                 'runs/runs.jsonl', 'tests/t.js'])
+
+    def test_left_out_names_the_skipped_model_per_box(self):
+        with open(os.path.join(self.out, 'runs', 'left_out.json')) as f:
+            self.assertEqual(json.load(f), {'zz9': {'why': 'held back', 'runs': {'b1': 1}}})
+        self.assertEqual(self.C.left_out([{'model': 'ok1', 'box': 'b1'}], {'zz9': 'x'}), {}, 'nothing skipped, no file')
 
     def test_ledger_is_curated(self):
         rows = L.rows(os.path.join(self.out, 'runs', 'runs.jsonl'))

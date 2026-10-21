@@ -1,0 +1,10 @@
+{
+ "fnx": {
+  "why": "Flash-Next quant runs stay out until its reliability study ends",
+  "runs": {
+   "snoopy": 1,
+   "droopy": 1,
+   "odie": 12
+  }
+ }
+}

@@ -957,4 +957,47 @@ t('externalSummary: per class median |error| and bias over the predicted rows; e
   assert.strictEqual(L.rows.length, rows.length); assert.ok(L.by_class.every(x => /median \|error\| \d+ %, bias [+-]\d+ %/.test(x)));
 });
 
+t('ledger hosts: a box x model with only a borrowed host fits it on its clean ledger runs; waiver, bad and holdout runs do not count', () => {
+  const h = data.cal.boxes.droopy.host.orn122;
+  assert.strictEqual(h.tag, 'FIT');
+  assert.ok(/clean run\(s\) in the run ledger/.test(h.src) && h.runs.length >= 1, h.src);
+  const rows = data.recipes.filter(r => h.runs.indexOf(r.run_id) >= 0);
+  assert.ok(rows.every(r => !r.measured.bad && !r.measured.holdout && !r.recipe.gate_waiver && r.measured.off > 0), h.runs.join(','));
+  const r = rows[0], p = FM.predictRecipe(data, r.recipe);
+  assert.ok(Math.abs(p.decode_tps_nodraft / r.measured.off - 1) < 0.1, 'the fitted host replays its own run: ' + [p.decode_tps_nodraft, r.measured.off]);
+  const D = JSON.parse(JSON.stringify(data)); D.recipes = D.recipes.filter(x => !(x.box === 'droopy' && x.model === 'orn122'));
+  assert.notStrictEqual(FM.applyCal(D).boxes.droopy.host.orn122.tag, 'FIT', 'no clean run, no fit');
+  const lw = data.cal.boxes.lassie.host.orn35;
+  assert.ok(lw.tag === 'FIT' && lw.runs.every(id => !data.recipes.find(x => x.run_id === id).recipe.gate_waiver), JSON.stringify(lw.runs));
+});
+
+t('external draft: an MTP-head model serving a draft file has no modelled draft speed (no-draft prediction stands)', () => {
+  const row = data.recipes.find(x => x.run_id === 'lassie-orn35-q4km-o3');
+  const p = FM.predictRecipe(data, row.recipe);
+  assert.strictEqual(p.status, 'PREDICTED');
+  assert.strictEqual(p.decode_tps, null);
+  assert.ok(p.decode_tps_nodraft > 0 && /external draft/.test(p.draft_why), p.draft_why);
+  const mtp = FM.predictRecipe(data, data.recipes.find(x => x.run_id === 'lassie-orn35-q4km-o5').recipe);
+  assert.ok(mtp.decode_tps > mtp.decode_tps_nodraft, 'its own MTP head keeps the fitted speed-up');
+});
+
+t('accuracy pairs: a prefixed draft group pairs with its own no-draft phase (std-m3 with std-n0)', () => {
+  const run = { id: 'x', box: 'lassie', model: 'orn35', engine: 'ik', recipe: { draft: true }, measured: { decode_tps: { 'std-m3': 47.0, 'std-n0': 42.0 } } };
+  const ps = ACC.pairs(run, { status: 'PREDICTED', decode_tps: 50, decode_tps_nodraft: 40 });
+  const d = ps.find(x => x.metric === 'decode_tps'), o = ps.find(x => x.metric === 'decode_tps_nodraft');
+  assert.ok(d && d.phase === 'std-m3' && d.meas === 47.0 && d.pred === 50, JSON.stringify(ps));
+  assert.ok(o && o.phase === 'std-n0' && o.meas === 42.0 && o.pred === 40, JSON.stringify(ps));
+});
+
+t('recipeQuality: a hot/cold store is read-weighted on the score heat, one type is that type, an unknown engine falls back', () => {
+  const fs1 = data.recipes.find(x => x.run_id === 'droopy-v41-v41fs-fs1c-0213').recipe;
+  const q = FM.recipeQuality(data, fs1), hot = FM.qualityOf(data, FM.typeKld(data, 'v41', 'mxfp4')), cold = FM.qualityOf(data, FM.typeKld(data, 'v41', 'q2_K'));
+  assert.ok(q.quality < hot && q.quality > cold && /alloc3/.test(q.how), JSON.stringify(q));
+  const one = FM.recipeQuality(data, Object.assign({}, fs1, { store: { split: false, types: ['q2_K'] }, lowbit_share: undefined }));
+  assert.ok(one.quality < q.quality && /every routed expert q2_K/.test(one.how), JSON.stringify(one));
+  const ext = FM.recipeQuality(data, Object.assign({}, fs1, { engine: 'nope' }));
+  assert.ok(ext && /every routed expert/.test(ext.how), JSON.stringify(ext));
+  assert.strictEqual(FM.recipeQuality(data, Object.assign({}, fs1, { model: 'zz' })), null);
+});
+
 console.log(`${n} tests passed`);

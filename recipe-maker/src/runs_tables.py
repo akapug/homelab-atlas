@@ -7,6 +7,7 @@ levers_from_runs: the measured-lever table; each cell names ledger runs and the 
 import datetime
 import json
 import os
+import re
 
 import ledger
 
@@ -92,12 +93,33 @@ def observed(run):
 
 # in-load draft twins: the served draft width vs no draft, same load and prompts (the b phase repeats the first: ABA)
 DRAFT_TWINS = ((('m3', 'm3b'), 'm0', 'MTP n_max 3'), (('n4', 'n4b'), 'n0', 'DSpark n_max 4'))
+# kits that run one workload per phase group name MTP phases with the workload around the width: std-m3 / std-n0,
+# d600_m3_mean / d600_n0_mean. The no-draft phase of such a group is m0 or n0 (the draft is off either way). Only the MTP
+# family is read this way: a prefixed n4 phase names an external draft whose kit we never recorded as a served width
+MTP_TOKEN = re.compile(r'(?:^|(?<=[-_]))(m3b?)(?=$|[-_])')
+DSPARK_TOKEN = re.compile(r'(?:^|(?<=[-_]))(n4b?)(?=$|[-_])')
+OFF_TOKENS = ('m0', 'n0')
+
+
+def _groups(d, rx=MTP_TOKEN):
+    """[(on keys, off key)] per workload group of prefixed draft phases; per-prompt keys yield to the group's _mean key"""
+    out = {}
+    for k in d:
+        m = rx.search(k)
+        if not m or k == m.group(1):
+            continue
+        pre, post = k[:m.start()], k[m.end():]
+        off = next((pre + o + post for o in OFF_TOKENS if pre + o + post in d), None)
+        if off:
+            out.setdefault((pre, post), ([], off))[0].append(k)
+    means = {g: x for g, x in out.items() if g[1].endswith('_mean')}
+    return list((means or out).values())
 
 
 def draft_twins(runs, exclude=()):
     """{box|model: [twin]} per ledger run that decoded the served draft width and no draft in one load. A twin is left out when a
     degraded note names one of its phases ("m0 prompt1 ... 3.10 tok/s"); a note about the whole load (placement, MemFree) hits
-    both phases alike and stays."""
+    both phases alike and stays. A run with prefixed MTP phase groups (std-m3 / std-n0) gives one twin: the mean over its groups"""
     out = {}
     for run in runs:
         if run['id'] in exclude:
@@ -106,19 +128,72 @@ def draft_twins(runs, exclude=()):
         if not isinstance(d, dict):
             continue
         notes = ' '.join(run['measured'].get('degraded', []))
+        found = False
         for on, off, what in DRAFT_TWINS:
             xs = [d[k] for k in on if k in d]
             hit = [k for k in on + (off,) if k + ' prompt' in notes]
             if xs and d.get(off) and not hit:
+                found = True
                 out.setdefault(run['box'] + '|' + run['model'], []).append(
                     {'id': run['id'], 'what': what, 'mult': round(sum(xs) / len(xs) / d[off], 4),
                      'phases': ' / '.join('%s %s' % (k, _g(d[k])) for k in on + (off,) if k in d)})
+        groups = [] if found else [g for g in _groups(d) if not any(k + ' prompt' in notes for k in g[0] + [g[1]]) and d[g[1]]]
+        if groups:
+            ms = [sum(d[k] for k in on) / len(on) / d[off] for on, off in groups]
+            out.setdefault(run['box'] + '|' + run['model'], []).append(
+                {'id': run['id'], 'what': 'MTP n_max 3', 'mult': round(sum(ms) / len(ms), 4),
+                 'phases': ' / '.join('%s %s' % (k, _g(d[k])) for on, off in groups for k in on + [off])})
     return out
 
-def recipes_from_runs(runs):
+
+def served(run):
+    """the run's measured decode for the page's measured-run markers: {on, on_phase, off, off_phase, other, other_phase}.
+    on = the served draft width (n4/m3 and the b repeats, or their prefixed groups std-n4, d600_m3_mean), off = no draft in
+    the same load (n0/m0 or the group's), other = the primary phase of a run with neither (measured.primary_phase, else
+    c1 / all / a *_c1 phase, else its first phase with guess=True: the page lists it but compares nothing). None = no decode
+    measured"""
+    m = run['measured']
+    d = m.get('decode_tps')
+    if not isinstance(d, dict) or not d:
+        return None
+    mean = lambda ks: round(sum(d[k] for k in ks) / len(ks), 3) if ks else None
+    out = {}
+    for on, off, _ in DRAFT_TWINS:
+        if any(k in d for k in on):
+            out['on_phase'] = [k for k in on if k in d]
+            if off in d:
+                out['off_phase'] = [off]
+            break
+    else:
+        gs = _groups(d) or _groups(d, DSPARK_TOKEN)
+        if gs:
+            out = {'on_phase': [k for g in gs for k in g[0]], 'off_phase': [g[1] for g in gs]}
+        else:
+            lone = [k for k in d if DSPARK_TOKEN.search(k) or MTP_TOKEN.search(k)]
+            out = {'on_phase': lone} if lone else {}
+    if 'off_phase' not in out:
+        off = [k for k in OFF_TOKENS if k in d] or [k for k in d if re.search(r'(?:^|(?<=[-_]))[mn]0(?=$|[-_])', k) and not k.endswith(('_p0', '_p1', '_p2'))]
+        if off:
+            out['off_phase'] = off
+    guess = False
+    if not out:
+        ph = m.get('primary_phase') if m.get('primary_phase') in d else next((k for k in ('c1', 'all') if k in d), None) \
+            or next((k for k in d if re.search(r'(?:^|[-_])c1$', k)), None)
+        guess = ph is None   # per-prompt or per-pass phases (DV0_p0, M3_p0, V0_0): no single served decode to compare
+        out = {'other_phase': [ph or next(iter(d))]}
+    r = {k: v for x in ('on', 'off', 'other') if out.get(x + '_phase') for k, v in ((x, mean(out[x + '_phase'])), (x + '_phase', '/'.join(out[x + '_phase'])))}
+    return dict(r, guess=True) if guess else r
+
+
+def recipes_from_runs(runs, holdout=()):
+    """one row per run; 'measured' is what the page's measured-run markers read: the served decode (served()), whether the run
+    went bad (outcome or a degraded note: its speed is not the recipe's), its measured top-1, and whether a decode fit holds it out"""
+    def meas(r):
+        s = served(r)
+        return s and dict(s, bad=bool(went_bad(r)), top1=r['measured'].get('top1'), holdout=r['id'] in holdout)
     return [{'id': r['id'], 'run_id': r['id'], 'when': r['when'][11:16] + 'Z', 'box': r['box'], 'model': r['model'], 'engine': r['engine'],
              'label': r['recipe'].get('label', r['id']), 'outcome': outcome_text(r), 'wasted': cost_text(r), 'recipe': r['recipe'], 'observed': observed(r),
-             'src': '; '.join(r['sources'])} for r in sorted(runs, key=lambda r: r['when'])]
+             'measured': meas(r), 'src': '; '.join(r['sources'])} for r in sorted(runs, key=lambda r: r['when'])]
 
 
 def decode_fits(root, runs, recipes):

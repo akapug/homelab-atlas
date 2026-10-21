@@ -231,7 +231,7 @@ Left out of this copy: fnx runs (Flash-Next quant runs stay out until its reliab
 The output of `node report.js --accuracy` on this ledger: predicted against measured decode per box, model and engine, and how the pre-launch gate did on the runs that went bad.
 
 ```
-== Run ledger accuracy (167 runs from runs/runs.jsonl; planner data built 2026-10-21T16:29Z) ==
+== Run ledger accuracy (167 runs from runs/runs.jsonl; planner data built 2026-10-21T17:25Z) ==
 decode: the draft prediction pairs with the primary draft phase (n4), the no-draft prediction with n0. post-hoc = predicted today from the recorded recipe; in-sample = the run is a calibration anchor.
 
 -- per run --
@@ -355,49 +355,49 @@ snoopy-glm-glm-coder-s1w-trim-c decode_tps[c1] 25.83 vs 26.69 -3.2% [launch]
 droopy-glm-glm-be1kc-1025      decode_tps_nodraft[M3_p0] 9.34 vs 16.72 -44.1% [post-hoc]
 droopy-v41-v41kc-1111          decode_tps[M4_p0] 8.40 vs 9.87 -14.9% [post-hoc]
 droopy-glm-glm-be1dvnc-1202    decode_tps[DV0_p0] 11.59 vs 16.88 -31.3% [post-hoc]
-lassie-v41-split-mm7           UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 5.16 [launch]
-lassie-v41-split-rows8         UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 6.53 [launch]
+lassie-v41-split-mm7           UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 5.16, std-n0 4.06 [launch]
+lassie-v41-split-rows8         UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 6.53, std-n0 4.39 [launch]
 droopy-glm-glm-be1dvpm-1304    decode_tps[nospec0_p0] 11.59 vs 12.53 -7.5% [post-hoc]
-lassie-v41-split-mm7ga         UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 5.58 [launch]
-lassie-v41-q8-mm7              UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 5.31 [launch]
-lassie-v41-q8-rows8            UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 6.64 [launch]
-lassie-v41-q8-mm7-t32          UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 5.45 [post-hoc]
-lassie-v41-q8-mm7-t48          UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 4.86 [post-hoc]
-lassie-v41-q8-mm7-t64          UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 5.21 [post-hoc]
-lassie-v41-q8-mm7-t96          UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 4.89 [post-hoc]
-lassie-v41-q8-mm7-t128         UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 4.63 [post-hoc]
-droopy-orn122-orn122-r0g9-1557 decode_tps[d600_m3_p0] 20.71 vs 30.93 -33.0%, prefill_tps - vs 165.50 (UNMODELLED) [post-hoc]
-lassie-v41-q8-rows8-pair-t64   UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 6.45 [launch]
-lassie-v41-q8-rows8-pair-t32   UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 6.55 [launch]
-lassie-v41-q8-rows8-dense-t64  UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 7.02 [launch]
+lassie-v41-split-mm7ga         UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 5.58, std-n0 4.56 [launch]
+lassie-v41-q8-mm7              UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 5.31, std-n0 4.12 [launch]
+lassie-v41-q8-rows8            UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 6.64, std-n0 4.45 [launch]
+lassie-v41-q8-mm7-t32          UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 5.45, std-n0 4.15 [post-hoc]
+lassie-v41-q8-mm7-t48          UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 4.86, std-n0 4.04 [post-hoc]
+lassie-v41-q8-mm7-t64          UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 5.21, std-n0 4.00 [post-hoc]
+lassie-v41-q8-mm7-t96          UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 4.89, std-n0 3.86 [post-hoc]
+lassie-v41-q8-mm7-t128         UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 4.63, std-n0 3.42 [post-hoc]
+droopy-orn122-orn122-r0g9-1557 decode_tps[d600_m3_p0] 31.32 vs 30.93 +1.3%, decode_tps_nodraft[d600_n0_p0] 27.22 vs 27.32 -0.4%, prefill_tps - vs 165.50 (UNMODELLED) [post-hoc]
+lassie-v41-q8-rows8-pair-t64   UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 6.45, std-n0 4.05 [launch]
+lassie-v41-q8-rows8-pair-t32   UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 6.55, std-n0 4.73 [launch]
+lassie-v41-q8-rows8-dense-t64  UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 7.02, std-n0 5.16 [launch]
 droopy-orn122-orn122-r0g9-1847-rb8k nothing measured [post-hoc]
-lassie-v41-q8-rows8ga-dense-nohost UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 6.59 [launch]
-lassie-v41-q8-fs1              UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 3.35 [launch]
-lassie-v41-q8-fs2              decode_tps[std-n4] 7.39 vs 3.39 +117.9%, prefill_tps - vs 48.60 (UNMODELLED) [launch]
-lassie-v41-q8-fs3              decode_tps[std-n4] 7.39 vs 7.13 +3.6%, prefill_tps - vs 48.20 (UNMODELLED) [launch]
-lassie-v41-q8-fs4              decode_tps[std-n4] 7.39 vs 7.05 +4.8%, prefill_tps - vs 48.80 (UNMODELLED) [launch]
+lassie-v41-q8-rows8ga-dense-nohost UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 6.59, std-n0 5.60 [launch]
+lassie-v41-q8-fs1              UNMODELLED: non-expert weights + KV do not fit GTX 1080 Ti (sm_61, PCIe 3) | measured std-n4 3.35, std-n0 6.93 [launch]
+lassie-v41-q8-fs2              decode_tps[std-n4] 7.39 vs 3.39 +117.9%, decode_tps_nodraft[std-n0] 7.39 vs 6.72 +9.9%, prefill_tps - vs 48.60 (UNMODELLED) [launch]
+lassie-v41-q8-fs3              decode_tps[std-n4] 7.39 vs 7.13 +3.6%, decode_tps_nodraft[std-n0] 7.39 vs 6.97 +6.0%, prefill_tps - vs 48.20 (UNMODELLED) [launch]
+lassie-v41-q8-fs4              decode_tps[std-n4] 7.39 vs 7.05 +4.8%, decode_tps_nodraft[std-n0] 7.39 vs 6.67 +10.8%, prefill_tps - vs 48.80 (UNMODELLED) [launch]
 droopy-orn122-orn122-r0g7-agent-2124 decode_tps[agent_c1_r-h12_median] 20.51 vs 22.30 -8.0%, prefill_tps - vs 129.80 (UNMODELLED) [launch; went bad: crash]
-lassie-v41-q8-fs5              decode_tps[std-n4] 7.39 vs 5.57 +32.6%, prefill_tps - vs 46.70 (UNMODELLED) [launch]
-lassie-v41-q8-hs1              decode_tps[std-n4] 7.39 vs 2.66 +177.7%, prefill_tps - vs 46.60 (UNMODELLED) [launch; went bad: stopped]
+lassie-v41-q8-fs5              decode_tps[std-n4] 7.39 vs 5.57 +32.6%, decode_tps_nodraft[std-n0] 7.39 vs 6.90 +7.1%, prefill_tps - vs 46.70 (UNMODELLED) [launch]
+lassie-v41-q8-hs1              decode_tps[std-n4] 7.39 vs 2.66 +177.7%, decode_tps_nodraft[std-n0] 7.39 vs 4.08 +81.1%, prefill_tps - vs 46.60 (UNMODELLED) [launch; went bad: stopped]
 droopy-v41-v41fs-fs1c-0213     decode_tps[n4] 8.88 vs 11.88 -25.2%, decode_tps_nodraft[n0] 7.05 vs 9.72 -27.4%, prefill_tps - vs 64.90 (UNMODELLED), vram_post_gib 20.96 vs 21.01 -0.2% [launch]
 droopy-v41-v41fs-lo-nohost-0309 decode_tps[n4] 8.85 vs 10.99 -19.4%, decode_tps_nodraft[n0] 7.05 vs 9.04 -22.0%, prefill_tps - vs 63.60 (UNMODELLED), vram_post_gib 20.96 vs 21.01 -0.2% [launch]
 lassie-v41-q8-hs2              nothing measured [post-hoc; went bad: oom]
 lassie-v41-q8-hs3              nothing measured [post-hoc; went bad: oom]
-lassie-v41-q8-hs3b             decode_tps[std-n4] 7.39 vs 2.52 +193.2%, prefill_tps - vs 47.40 (UNMODELLED) [post-hoc]
-lassie-v41-q8-hs4              decode_tps[std-n4] 7.39 vs 6.05 +22.1%, prefill_tps - vs 48.10 (UNMODELLED) [post-hoc]
-lassie-v41-q8-hs4p             decode_tps[std-n4] 7.39 vs 5.82 +26.9%, prefill_tps - vs 48.80 (UNMODELLED) [post-hoc]
-lassie-v41-q8-fs3p             decode_tps[std-n4] 7.39 vs 6.12 +20.7%, prefill_tps - vs 48.60 (UNMODELLED) [post-hoc]
+lassie-v41-q8-hs3b             decode_tps[std-n4] 7.39 vs 2.52 +193.2%, decode_tps_nodraft[std-n0] 7.39 vs 4.41 +67.5%, prefill_tps - vs 47.40 (UNMODELLED) [post-hoc]
+lassie-v41-q8-hs4              decode_tps[std-n4] 7.39 vs 6.05 +22.1%, decode_tps_nodraft[std-n0] 7.39 vs 5.46 +35.3%, prefill_tps - vs 48.10 (UNMODELLED) [post-hoc]
+lassie-v41-q8-hs4p             decode_tps[std-n4] 7.39 vs 5.82 +26.9%, decode_tps_nodraft[std-n0] 7.39 vs 5.64 +31.0%, prefill_tps - vs 48.80 (UNMODELLED) [post-hoc]
+lassie-v41-q8-fs3p             decode_tps[std-n4] 7.39 vs 6.12 +20.7%, decode_tps_nodraft[std-n0] 7.39 vs 6.76 +9.3%, prefill_tps - vs 48.60 (UNMODELLED) [post-hoc]
 lassie-v41-q8-hs4z             decode_tps[std-n4] 7.39 vs 4.42 +67.1%, prefill_tps - vs 47.70 (UNMODELLED) [post-hoc]
 droopy-v41-v41fs-lo-follow-0406 decode_tps[n4] 8.83 vs 11.92 -25.9%, decode_tps_nodraft[n0] 7.05 vs 9.78 -27.9%, prefill_tps - vs 64.90 (UNMODELLED), vram_post_gib 20.96 vs 21.01 -0.2% [launch]
 droopy-v41-v41fs-lo-ba-0503    decode_tps[n4] 8.83 vs 11.31 -21.9%, decode_tps_nodraft[n0] 7.05 vs 9.31 -24.3%, prefill_tps - vs 64.40 (UNMODELLED), vram_post_gib 20.96 vs 21.01 -0.2% [launch]
-lassie-v41-q8-hs5              decode_tps[std-n4] 7.39 vs 6.19 +19.4%, prefill_tps - vs 48.40 (UNMODELLED) [launch]
-lassie-orn35-q4km-o1           decode_tps[std-n4] 31.31 vs 11.46 +173.2%, prefill_tps - vs 369.50 (UNMODELLED) [launch]
-lassie-orn35-q4km-o2           decode_tps[std-n0] 35.99 vs 44.62 -19.3%, prefill_tps - vs 367.60 (UNMODELLED) [launch]
-lassie-orn35-q4km-o3           decode_tps[std-n4] 31.31 vs 15.28 +104.9%, prefill_tps - vs 381.60 (UNMODELLED) [post-hoc]
-lassie-orn35-q4km-o4           decode_tps[short-n4] 31.31 vs 19.93 +57.1%, prefill_tps - vs 328.90 (UNMODELLED) [post-hoc]
-lassie-orn35-q4km-o5           decode_tps[std-m3] 31.31 vs 47.34 -33.9%, prefill_tps - vs 319.80 (UNMODELLED) [post-hoc]
-lassie-orn35-q4km-o6           decode_tps[std-m3] 35.99 vs 59.13 -39.1%, prefill_tps - vs 330.90 (UNMODELLED) [post-hoc]
-lassie-orn35-q4km-q6           decode_tps[screen-lanesuite] 35.99 vs 45.73 -21.3% [post-hoc]
+lassie-v41-q8-hs5              decode_tps[std-n4] 7.39 vs 6.19 +19.4%, decode_tps_nodraft[std-n0] 7.39 vs 5.61 +31.7%, prefill_tps - vs 48.40 (UNMODELLED) [launch]
+lassie-orn35-q4km-o1           decode_tps[std-n4] 31.31 vs 11.46 +173.2%, decode_tps_nodraft[std-n0] 31.31 vs 41.99 -25.4%, prefill_tps - vs 369.50 (UNMODELLED) [launch]
+lassie-orn35-q4km-o2           decode_tps_nodraft[std-n0] 35.99 vs 44.62 -19.3%, prefill_tps - vs 367.60 (UNMODELLED) [launch]
+lassie-orn35-q4km-o3           decode_tps[std-n4] - vs 15.28 (UNMODELLED), prefill_tps - vs 381.60 (UNMODELLED) [post-hoc]
+lassie-orn35-q4km-o4           decode_tps[short-n4] - vs 19.93 (UNMODELLED), prefill_tps - vs 328.90 (UNMODELLED) [post-hoc]
+lassie-orn35-q4km-o5           decode_tps[std-m3] 51.51 vs 47.34 +8.8%, decode_tps_nodraft[std-n0] 41.97 vs 41.95 +0.0%, prefill_tps - vs 319.80 (UNMODELLED) [post-hoc]
+lassie-orn35-q4km-o6           decode_tps[std-m3] 62.37 vs 59.13 +5.5%, decode_tps_nodraft[std-n0] 50.82 vs 44.59 +14.0%, prefill_tps - vs 330.90 (UNMODELLED) [post-hoc]
+lassie-orn35-q4km-q6           decode_tps[screen-lanesuite] 62.37 vs 45.73 +36.4% [post-hoc]
 droopy-v41-v41fs-lo-draftgpu-0559 decode_tps[n4] 8.52 vs 11.65 -26.9%, decode_tps_nodraft[n0] 6.80 vs 9.40 -27.6%, prefill_tps - vs 64.70 (UNMODELLED), vram_post_gib 21.82 vs 21.86 -0.2% [launch]
 droopy-v41-v41fs-alloff-0758   decode_tps[n4] 8.45 vs 10.70 -21.0%, decode_tps_nodraft[n0] 6.75 vs 8.80 -23.3%, prefill_tps 50.50 vs 63.90 -21.0%, vram_post_gib 20.32 vs 20.36 -0.2% [launch]
 droopy-v41-v41fs-fs1p-0848     decode_tps[n4] 8.83 vs 12.13 -27.2%, decode_tps_nodraft[n0] 7.05 vs 10.00 -29.5%, prefill_tps - vs 65.50 (UNMODELLED), vram_post_gib 20.96 vs 21.01 -0.2% [launch]
@@ -405,10 +405,10 @@ droopy-orn122-r0g8-pt-agent-1021 decode_tps[agent_c1_r-h12_median] 20.60 vs 21.2
 
 -- decode error per box / model / engine (runs that went fine; error = (pred - meas) / meas) --
 decode_tps          droopy/glm/ik          n  4  median |err|  15.6 %  bias -10.7 %
-decode_tps          droopy/orn122/ik       n  1  median |err|  33.0 %  bias -33.0 %
+decode_tps          droopy/orn122/ik       n  1  median |err|   1.3 %  bias +1.3 %
 decode_tps          droopy/v41/ik          n 14  median |err|  20.8 %  bias -20.0 %
 decode_tps          lassie/llada22flash/llama-dllm-gen n  2  median |err|  14.5 %  bias -14.5 %
-decode_tps          lassie/orn35/ik        n  7  median |err|  39.1 %  bias -19.3 %
+decode_tps          lassie/orn35/ik        n  4  median |err|  22.6 %  bias +22.6 %
 decode_tps          lassie/v41/ik          n 10  median |err|  24.5 %  bias +24.5 %
 decode_tps          odie/lingmini2/llama-dllm-gen n  2  median |err|  43.8 %  bias +43.8 %
 decode_tps          odie/llada21mini/llama-dllm-gen n 15  median |err|   4.1 %  bias -1.5 %
@@ -416,13 +416,37 @@ decode_tps          odie/llada21mini_q5km/llama-dllm-gen n  3  median |err|   1.
 decode_tps          odie/llada22flash/llama-dllm-gen n  4  median |err|   4.8 %  bias +4.8 %
 decode_tps          snoopy/glm/glmlite     n  8  median |err|   2.5 %  bias -0.8 %
 decode_tps_nodraft  droopy/glm/ik          n  8  median |err|  19.8 %  bias -19.8 %
+decode_tps_nodraft  droopy/orn122/ik       n  1  median |err|   0.4 %  bias -0.4 %
 decode_tps_nodraft  droopy/v41/ik          n 11  median |err|  23.3 %  bias -23.3 %
+decode_tps_nodraft  lassie/orn35/ik        n  4  median |err|  16.7 %  bias -9.7 %
+decode_tps_nodraft  lassie/v41/ik          n  9  median |err|  10.8 %  bias +10.8 %
 prefill_tps         droopy/glm/ik          n  1  median |err|   8.4 %  bias +8.4 %
 prefill_tps         droopy/v41/ik          n  4  median |err|   3.5 %  bias -3.5 %
 vram_post_gib       droopy/glm/ik          n  1  median |err|   0.4 %  bias +0.4 %
 vram_post_gib       droopy/v41/ik          n 11  median |err|   0.2 %  bias -0.2 %
+
+-- the same with today's planner on every run (launch-time rows replayed post hoc) --
+decode_tps          droopy/glm/ik          n  4  median |err|  17.4 %  bias -10.7 %
+decode_tps          droopy/orn122/ik       n  1  median |err|   1.3 %  bias +1.3 %
+decode_tps          droopy/v41/ik          n 14  median |err|  20.8 %  bias -20.4 %
+decode_tps          lassie/llada22flash/llama-dllm-gen n  2  median |err|  14.5 %  bias -14.5 %
+decode_tps          lassie/orn35/ik        n  3  median |err|   8.8 %  bias +8.8 %
+decode_tps          lassie/v41/ik          n 11  median |err|  26.9 %  bias +26.9 %
+decode_tps          odie/lingmini2/llama-dllm-gen n  2  median |err|  43.8 %  bias +43.8 %
+decode_tps          odie/llada21mini/llama-dllm-gen n 15  median |err|   4.1 %  bias -1.5 %
+decode_tps          odie/llada21mini_q5km/llama-dllm-gen n  3  median |err|   1.6 %  bias +0.0 %
+decode_tps          odie/llada22flash/llama-dllm-gen n  4  median |err|   4.8 %  bias +4.8 %
+decode_tps          snoopy/glm/glmlite     n  8  median |err|   2.5 %  bias -0.8 %
+decode_tps_nodraft  droopy/glm/ik          n  8  median |err|  19.8 %  bias -19.8 %
+decode_tps_nodraft  droopy/orn122/ik       n  1  median |err|   0.4 %  bias -0.4 %
+decode_tps_nodraft  droopy/v41/ik          n 11  median |err|  23.3 %  bias -23.3 %
+decode_tps_nodraft  lassie/orn35/ik        n  4  median |err|   7.0 %  bias +7.0 %
+decode_tps_nodraft  lassie/v41/ik          n 10  median |err|  10.3 %  bias +10.3 %
 draft speed-up droopy/glm/ik          measured in-load x1.198 median of 4 (glm-glm-be1q3f-1314 1.29, glm-glm-be1q3a2f-1342 1.24, glm-glm-be1q3m-1720 1.16, glm-glm-be1q4d-1939 1.05) vs planner x1.203
+draft speed-up droopy/orn122/ik       measured in-load x1.132 median of 1 (orn122-orn122-r0g9-1557 1.13) vs planner x1.151
 draft speed-up droopy/v41/ik          measured in-load x1.216 median of 15 (v41-e1 1.22, v41-e2 1.19, v41-b0c-rtr 1.16, v41-b0c-nortr 1.23, v41-b1c 0.99, v41-b1d 1.16, v41-b1017-0042 1.45, v41-v41r1b-1354 1.21, v41-v41fs-fs1c-0213 1.22, v41-v41fs-lo-nohost-0309 1.22, v41-v41fs-lo-follow-0406 1.22, v41-v41fs-lo-ba-0503 1.21, v41-v41fs-lo-draftgpu-0559 1.24, v41-v41fs-alloff-0758 1.22, v41-v41fs-fs1p-0848 1.21) vs planner x1.244
+draft speed-up lassie/orn35/ik        measured in-load x1.128 median of 3 (lassie-orn35-q4km-o1 0.27, lassie-orn35-q4km-o5 1.13, lassie-orn35-q4km-o6 1.33) vs planner x1.227
+draft speed-up lassie/v41/ik          measured in-load x1.203 median of 25 (lassie-v41-split-mm7 1.27, lassie-v41-split-rows8 1.49, lassie-v41-split-mm7ga 1.22, lassie-v41-q8-mm7 1.29, lassie-v41-q8-rows8 1.49, lassie-v41-q8-mm7-t32 1.31, lassie-v41-q8-mm7-t48 1.20, lassie-v41-q8-mm7-t64 1.30, lassie-v41-q8-mm7-t96 1.27, lassie-v41-q8-mm7-t128 1.35, lassie-v41-q8-rows8-pair-t64 1.59, lassie-v41-q8-rows8-pair-t32 1.38, lassie-v41-q8-rows8-dense-t64 1.36, lassie-v41-q8-rows8ga-dense-nohost 1.18, lassie-v41-q8-fs1 0.48, lassie-v41-q8-fs2 0.50, lassie-v41-q8-fs3 1.02, lassie-v41-q8-fs4 1.06, lassie-v41-q8-fs5 0.81, lassie-v41-q8-hs1 0.65, lassie-v41-q8-hs3b 0.57, lassie-v41-q8-hs4 1.11, lassie-v41-q8-hs4p 1.03, lassie-v41-q8-fs3p 0.91, lassie-v41-q8-hs5 1.10) vs planner x1.000
 excluded as disturbed (runs/labels.json, from the run notes): 5 (droopy-glm-glm-be1q3e-1215 m0, droopy-glm-glm-be1q4c-1831 m1/m0, droopy-glm-glm-be1q4l-2246 V0_A2/V1_B1, droopy-glm-glm-be1q4i-0121 V0_4/V0C_5/V0_6/V0C_7, droopy-glm-glm-be1q4j-0230 V0R_0/V0R_1/V0R_2/V0R_3)
 
 -- pre-launch checks vs outcome --
@@ -533,26 +557,26 @@ bucket        runs launch | decode_tps               decode_tps_nodraft       pr
 2026-10-17      30      0 | n 6 8.1% (+4.1)          n 3 12.3% (+12.3)        n 2 0.6% (-0.6)          n 3 0.0% (+0.0)          | 11/3/2/14
 2026-10-18      27     20 | n 1 17.3% (+17.3)        n 1 2.1% (+2.1)          n 1 8.4% (+8.4)          n 1 0.4% (+0.4)          | 18/2/5/2
 2026-10-19      57     13 | n 32 7.9% (-0.1)         n 7 22.9% (-22.9)        n 1 5.8% (-5.8)          n 1 0.2% (-0.2)          | 2/5/2/48
-2026-10-20      29     18 | n 11 7.5% (-3.2)         n 1 44.1% (-44.1)        -                        -                        | 0/1/15/13
-2026-10-21      24     12 | n 20 26.4% (-19.4)       n 7 27.4% (-27.4)        n 1 21.0% (-21.0)        n 7 0.2% (-0.2)          | 0/4/0/20
+2026-10-20      29     18 | n 11 4.8% (-1.8)         n 6 8.5% (+6.5)          -                        -                        | 0/1/15/13
+2026-10-21      24     12 | n 17 25.2% (+8.8)        n 16 26.4% (-20.7)       n 1 21.0% (-21.0)        n 7 0.2% (-0.2)          | 0/4/0/20
 verdict, all rows:
-   decode_tps          NOT shrinking: 2026-10-17 8.1% n6 -> 2026-10-18 17.3% n1 -> 2026-10-19 7.9% n32 -> 2026-10-20 7.5% n11 -> 2026-10-21 26.4% n20
-   decode_tps_nodraft  NOT shrinking: 2026-10-17 12.3% n3 -> 2026-10-18 2.1% n1 -> 2026-10-19 22.9% n7 -> 2026-10-20 44.1% n1 -> 2026-10-21 27.4% n7
+   decode_tps          NOT shrinking: 2026-10-17 8.1% n6 -> 2026-10-18 17.3% n1 -> 2026-10-19 7.9% n32 -> 2026-10-20 4.8% n11 -> 2026-10-21 25.2% n17
+   decode_tps_nodraft  NOT shrinking: 2026-10-17 12.3% n3 -> 2026-10-18 2.1% n1 -> 2026-10-19 22.9% n7 -> 2026-10-20 8.5% n6 -> 2026-10-21 26.4% n16
    prefill_tps         NOT shrinking: 2026-10-17 0.6% n2 -> 2026-10-18 8.4% n1 -> 2026-10-19 5.8% n1 -> 2026-10-21 21.0% n1
    vram_post_gib       NOT shrinking: 2026-10-17 0.0% n3 -> 2026-10-18 0.4% n1 -> 2026-10-19 0.2% n1 -> 2026-10-21 0.2% n7
    gate miss share     NOT shrinking: 2026-10-17 21.4% n14 -> 2026-10-18 10.0% n20 -> 2026-10-19 71.4% n7 -> 2026-10-20 100.0% n1 -> 2026-10-21 100.0% n4
 verdict, launch-time predictions only (post-hoc rows are today's planner on old runs):
-   decode_tps          NOT shrinking: 2026-10-18 17.3% n1 -> 2026-10-19 13.9% n3 -> 2026-10-20 4.4% n7 -> 2026-10-21 23.6% n10
-   decode_tps_nodraft  NOT shrinking: 2026-10-18 2.1% n1 -> 2026-10-19 19.8% n6 -> 2026-10-21 27.4% n7
+   decode_tps          NOT shrinking: 2026-10-18 17.3% n1 -> 2026-10-19 13.9% n3 -> 2026-10-20 4.4% n7 -> 2026-10-21 25.2% n9
+   decode_tps_nodraft  NOT shrinking: 2026-10-18 2.1% n1 -> 2026-10-19 19.8% n6 -> 2026-10-20 8.5% n4 -> 2026-10-21 26.4% n10
    prefill_tps         NOT shrinking: 2026-10-18 8.4% n1 -> 2026-10-21 21.0% n1
    vram_post_gib       shrinking: 2026-10-18 0.4% n1 -> 2026-10-21 0.2% n7
    gate miss share     NOT shrinking: 2026-10-18 12.5% n16 -> 2026-10-19 33.3% n3 -> 2026-10-20 100.0% n1 -> 2026-10-21 100.0% n2
 per box / model / engine (all rows):
    decode_tps          droopy/glm/ik          NOT shrinking: 2026-10-18 n1 17.3% (+17.3) -> 2026-10-19 n1 13.9% (-13.9) -> 2026-10-20 n2 19.4% (-19.4)
-   decode_tps          droopy/orn122/ik       too few buckets (1): 2026-10-20 n1 33.0% (-33.0)
+   decode_tps          droopy/orn122/ik       too few buckets (1): 2026-10-20 n1 1.3% (+1.3)
    decode_tps          droopy/v41/ik          NOT shrinking: 2026-10-17 n5 8.3% (+8.0) -> 2026-10-19 n1 20.6% (-20.6) -> 2026-10-20 n1 14.9% (-14.9) -> 2026-10-21 n7 25.2% (-25.2)
    decode_tps          lassie/llada22flash/llama-dllm-gen too few buckets (1): 2026-10-19 n2 14.5% (-14.5)
-   decode_tps          lassie/orn35/ik        too few buckets (1): 2026-10-21 n7 39.1% (-19.3)
+   decode_tps          lassie/orn35/ik        too few buckets (1): 2026-10-21 n4 22.6% (+22.6)
    decode_tps          lassie/v41/ik          NOT shrinking: 2026-10-20 n4 18.7% (+18.7) -> 2026-10-21 n6 24.5% (+24.5)
    decode_tps          odie/lingmini2/llama-dllm-gen too few buckets (1): 2026-10-19 n2 43.8% (+43.8)
    decode_tps          odie/llada21mini/llama-dllm-gen too few buckets (1): 2026-10-19 n15 4.1% (-1.5)
@@ -560,7 +584,10 @@ per box / model / engine (all rows):
    decode_tps          odie/llada22flash/llama-dllm-gen too few buckets (1): 2026-10-19 n4 4.8% (+4.8)
    decode_tps          snoopy/glm/glmlite     NOT shrinking: 2026-10-17 n1 0.2% (+0.2) -> 2026-10-19 n4 2.5% (+0.9) -> 2026-10-20 n3 3.2% (-3.2)
    decode_tps_nodraft  droopy/glm/ik          NOT shrinking: 2026-10-18 n1 2.1% (+2.1) -> 2026-10-19 n6 19.8% (-19.8) -> 2026-10-20 n1 44.1% (-44.1)
+   decode_tps_nodraft  droopy/orn122/ik       too few buckets (1): 2026-10-20 n1 0.4% (-0.4)
    decode_tps_nodraft  droopy/v41/ik          NOT shrinking: 2026-10-17 n3 12.3% (+12.3) -> 2026-10-19 n1 22.9% (-22.9) -> 2026-10-21 n7 27.4% (-27.4)
+   decode_tps_nodraft  lassie/orn35/ik        too few buckets (1): 2026-10-21 n4 16.7% (-9.7)
+   decode_tps_nodraft  lassie/v41/ik          NOT shrinking: 2026-10-20 n4 8.5% (+8.5) -> 2026-10-21 n5 31.7% (+31.7)
    prefill_tps         droopy/glm/ik          too few buckets (1): 2026-10-18 n1 8.4% (+8.4)
    prefill_tps         droopy/v41/ik          NOT shrinking: 2026-10-17 n2 0.6% (-0.6) -> 2026-10-19 n1 5.8% (-5.8) -> 2026-10-21 n1 21.0% (-21.0)
    vram_post_gib       droopy/glm/ik          too few buckets (1): 2026-10-18 n1 0.4% (+0.4)

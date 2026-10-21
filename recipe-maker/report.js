@@ -83,7 +83,8 @@ if (ai >= 0) {
     // a launch capture keeps its own verdicts; a check added after it (accuracy.replay_checks) is replayed post hoc and labelled
     const ck = run.check ? run.check.checks.concat(today.filter(c => replay.indexOf(c.id) >= 0 && !run.check.checks.some(x => x.id === c.id)).map(c => Object.assign({ replayed: true }, c))) : today;
     const lab = labels[run.id], bad = ACC.wentBad(run, lab);
-    return { id: run.id, when: run.when, box: run.box, model: run.model, engine: run.engine, run, pred, pred_basis: launch ? 'launch' : 'post-hoc',
+    const predNow = now.prediction || FM.predictRecipe(data, run.recipe);
+    return { id: run.id, when: run.when, box: run.box, model: run.model, engine: run.engine, run, pred, pred_basis: launch ? 'launch' : 'post-hoc', pairs_now: ACC.pairs(run, predNow),
       checks: ck, today, launch_checks: run.check ? run.check.checks : null, check_basis: run.check ? 'launch' : 'post-hoc', bad, scored: !bad.length, pairs: ACC.pairs(run, pred),
       causes: [...new Set(ACC.causesOf(lab).map(c => c.class))], disturbed: ACC.disturbed(lab),
       in_sample: (run.tags || []).filter(t => t.startsWith('anchor:')).map(t => t.slice(7)),
@@ -107,6 +108,16 @@ if (ai >= 0) {
   for (const metric of METRICS) {
     const s = ACC.summarize(rows, r => r.box + '/' + r.model + '/' + r.engine, metric);
     out.summary[metric] = s;
+    s.forEach(x => console.log(`${metric.padEnd(19)} ${x.key.padEnd(22)} n ${String(x.n).padStart(2)}  median |err| ${x.median_abs_pct.toFixed(1).padStart(5)} %  bias ${(x.bias_pct >= 0 ? '+' : '') + x.bias_pct.toFixed(1)} %`));
+  }
+  // the same summary with today's planner on every run (launch rows replayed from their recorded recipe): how far the model
+  // is off now, beside how far it was off when each run launched
+  console.log('\n-- the same with today\'s planner on every run (launch-time rows replayed post hoc) --');
+  const NOW = rows.map(r => Object.assign({}, r, { pairs: r.pairs_now }));
+  out.summary_now = {};
+  for (const metric of METRICS.slice(0, 2)) {
+    const s = ACC.summarize(NOW, r => r.box + '/' + r.model + '/' + r.engine, metric);
+    out.summary_now[metric] = s;
     s.forEach(x => console.log(`${metric.padEnd(19)} ${x.key.padEnd(22)} n ${String(x.n).padStart(2)}  median |err| ${x.median_abs_pct.toFixed(1).padStart(5)} %  bias ${(x.bias_pct >= 0 ? '+' : '') + x.bias_pct.toFixed(1)} %`));
   }
   out.draft_ratios = ACC.draftRatios(rows, r => r.box + '/' + r.model + '/' + r.engine);

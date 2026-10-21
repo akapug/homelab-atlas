@@ -200,20 +200,33 @@
     fe.forEach(p => { if (p.quality > best + 1e-9) { out.push(p); best = p.quality; } });
     return out.sort((a, b) => a.tokps - b.tokps);
   }
-  function anchorsHere() {
-    return data.cal.rows.filter(r => r.box === st.box && MODELS.indexOf(r.model) >= 0).map(r => {
-      const q = r.explicit ? r.explicit.type : data.models[r.model].base_type;
-      const kq = FM.typeKld(data, r.model, q);
-      return Object.assign({}, r, { quality: FM.qualityOf(data, (kq || 0)) });
-    });
+  // measured runs on this box, read from the ledger (data.recipes rows that carry a measured decode): each one sits at its
+  // measured speed and at the projected quality of its stored types, with a line to what the model predicts for that run's
+  // own settings. A draft run shows its faster arm (MTP or draft on, or off when the draft lost); a run that went bad is
+  // listed in the table only.
+  function measuredHere() {
+    return (data.recipes || []).filter(r => r.box === st.box && r.measured && MODELS.indexOf(r.model) >= 0).map(r => {
+      const m = r.measured, rec = r.recipe, q = FM.recipeQuality(data, rec);
+      if (!q) return null;
+      const arm = m.on > 0 && !(m.off > m.on) ? 'on' : m.off > 0 ? 'off' : 'other';
+      const meas = m[arm], phase = m[arm + '_phase'];
+      const p = FM.predictRecipe(data, rec);
+      const draftArm = arm === 'on' || (arm === 'other' && rec.draft);
+      const pv = p.status !== 'PREDICTED' ? null : draftArm ? p.decode_tps : p.decode_tps_nodraft;
+      const why = p.status !== 'PREDICTED' ? p.why : !(pv > 0) ? p.draft_why : null;
+      return { id: r.run_id, when: r.when, label: rec.label || r.label, model: r.model, engine: r.engine, meas, phase, arm, draftArm,
+        pred: pv > 0 ? pv : null, why, gap: pv > 0 ? meas / pv - 1 : null, waiver: rec.gate_waiver || null,
+        quality: q.quality, qhow: q.how, top1: m.top1, bad: m.bad, guess: !!m.guess, holdout: m.holdout };
+    }).filter(Boolean);
   }
+  const armText = a => a.arm === 'on' ? 'MTP / draft on' : a.arm === 'off' ? 'no draft' : a.draftArm ? 'draft on' : 'no draft';
   function frontierSVG() {
     const AW = app.clientWidth || 720;
     const W = Math.round(Math.max(280, AW >= 980 ? (AW - 10) * 1.25 / 2.25 - 26 : AW - 26)), H = Math.round(Math.min(440, Math.max(340, W * 0.62))), L = 46, Rm = 12, T = 10, B = 40;
     const allP = [];
     R.curves.forEach(c => envelope(c.pts).forEach(p => allP.push(p)));
-    const anc = anchorsHere();
-    const xmax = Math.max(40, ...allP.map(p => p.tokps * 1.05), ...anc.map(a => Math.max(a.meas, a.pred) * 1.05), R.owner ? R.owner.ev.tokps * 1.05 : 0);
+    const anc = measuredHere().filter(a => !a.bad && !a.guess);
+    const xmax = Math.max(40, ...allP.map(p => p.tokps * 1.05), ...anc.map(a => Math.max(a.meas, a.pred || 0) * 1.05), R.owner ? R.owner.ev.tokps * 1.05 : 0);
     const qs = allP.map(p => p.quality).concat(anc.map(a => a.quality));
     const ymin = Math.max(0, Math.floor((Math.min(75, ...qs) - 2) / 5) * 5);
     const X = x => L + (W - L - Rm) * Math.min(x, xmax) / xmax, Y = y => T + (H - T - B) * (100 - y) / (100 - ymin);
@@ -253,13 +266,19 @@
         labels.push({ text: f1(b.ev.quality) + ' %', x, y, r: 7, pri: 3, own: 'b' + ci + t, ser: ci });
       });
     });
+    // the fastest clean run per model carries its gap to the model as a label
+    const top = {};
+    anc.forEach(a => { if (!top[a.model] || a.meas > top[a.model].meas) top[a.model] = a; });
     anc.forEach((a, ai) => {
-      const col = a.model === 'v41' ? 'var(--s1)' : (a.engine === 'glmlite' ? 'var(--s3)' : modelColor(a.model, a.engine));
-      body += `<line x1="${X(a.meas)}" x2="${X(a.pred)}" y1="${Y(a.quality)}" y2="${Y(a.quality)}" stroke="${col}" stroke-width="1.5"/>`;
-      const x = X(a.meas), y = Y(a.quality);
+      const col = modelColor(a.model, a.engine), x = X(a.meas), y = Y(a.quality);
+      if (a.pred) {
+        body += `<line x1="${x}" x2="${X(a.pred)}" y1="${y}" y2="${y}" stroke="${col}" stroke-width="1.5"${a.waiver ? ' stroke-dasharray="3 2"' : ''}/>`;
+        body += `<circle cx="${X(a.pred)}" cy="${y}" r="2.5" fill="${col}" pointer-events="none"/>`;
+      }
       body += `<path d="${shapePath('diamond', x, y, 6)}" fill="var(--surface-1)" stroke="${col}" stroke-width="2" data-k="anc" data-a="${ai}"/>`;
-      body += `<circle cx="${X(a.pred)}" cy="${y}" r="2.5" fill="${col}" pointer-events="none"/>`;
       mark(x, y, 6, 'a' + ai);
+      const pc = a.pred ? Math.round(100 * a.gap) : 0;
+      if (top[a.model] === a) labels.push({ text: 'run ' + f1(a.meas) + (a.pred ? ', ' + (pc > 0 ? '+' : pc < 0 ? '−' : '±') + Math.abs(pc) + ' % vs model' : ', not modelled'), x, y, r: 6, pri: 2, own: 'a' + ai, ser: 'a' + a.model });
     });
     if (R.owner) {
       const x = X(R.owner.ev.tokps), y = Y(R.owner.ev.quality);
@@ -280,6 +299,15 @@
     return { svg: s, anc, labels };
   }
   // one sentence per curve, read by screen readers with the chart (and a quick human summary)
+  // what the chart cannot show: runs this copy leaves out (data.meta.left_out, written by the public export) and measured
+  // runs the planner does not model (no line)
+  function chartNotes() {
+    const lo = data.meta.left_out || {}, out = [];
+    Object.keys(lo).forEach(mk => { const n = lo[mk].runs[st.box]; if (n) out.push(`${n} ${esc(data.models[mk] ? data.models[mk].short : mk)} run${n > 1 ? 's' : ''} on this box ${n > 1 ? 'are' : 'is'} left out of this copy: ${esc(lo[mk].why)}.`); });
+    const un = measuredHere().filter(a => !a.bad && !a.guess && !a.pred).length;
+    if (un) out.push(`${un} measured run${un > 1 ? 's' : ''} here ${un > 1 ? 'are' : 'is'} not modelled (no line; hover for why).`);
+    return out.length ? ' ' + out.join(' ') : '';
+  }
   function frontierSummary() {
     const part = c => {
       const nm = data.models[c.mk].short + ' ' + engShort(c.eng);
@@ -462,10 +490,12 @@
   st.page = pageOf(location.hash.slice(1));
   // a card as a landmark section with its h2 as the name and an id the nav and deep links use
   const sec = (id, html) => html.replace(/^<div class="card"><h2>/, `<section class="card" id="${id}" aria-labelledby="${id}-h"><h2 id="${id}-h">`).replace(/<\/div>$/, '</section>');
-  function introHTML() {
-    return `<details class="intro" id="intro" ${load('intro', false) ? 'open' : ''}><summary>How to read this page</summary><ol>
+  // the header folds into one details below this width, so a phone reaches the tabs without scrolling past the intro
+  const NARROW_PX = 600;
+  function introHTML(head, more) {
+    return `<details class="intro" id="intro" ${load('intro', false) ? 'open' : ''}><summary>${head}</summary>${more || ''}<ol>
 <li>Choose a box. The chart shows every model that fits on it: how closely each layout matches the full model (up) against how fast it decodes (right). Up and to the right is better.</li>
-<li>Each curve keeps only the best layouts. The large markers are the best layout at 20 and at 25 tokens per second; hollow diamonds are runs we measured, with a line to what the model predicted for them.</li>
+<li>Each curve keeps only the best layouts. The large markers are the best layout at 20 and at 25 tokens per second; hollow diamonds are runs we measured, with a line to what the model predicts for each run's own settings.</li>
 <li>Click a point to load its layout, or tab to the chart and use the arrow keys and Enter. <a href="#layout">Selected layout</a> sums it up; the <a href="#bytes">Where it lives</a> tab shows where each part of the model sits: one bar per memory tier, from the GPU down to disk.</li>
 <li>The small tags say how far to trust a number: <b>seen</b> (we measured it), <b>inferred</b> (fitted, or from a spec or a community post) or <b>unknown</b>. Hover a tag for its source.</li>
 <li>The address bar keeps the box and the layout, so a copied link opens the same view.</li></ol></details>`;
@@ -475,10 +505,11 @@
     const box = data.boxes[st.box];
     const kn = st.knobs;
     let h = '';
-    h += `<header class="top"><h1>Recipe Maker</h1><p class="sub">Plan where each part of a big mixture-of-experts model lives on a box, and see the smartest layout it can run at 20+ or 25+ tok/s. Built ${esc(data.meta.built)} from measured runs and community priors.</p>`;
-    h += `<p class="lead">The boxes here are our own four machines (boxes A to D in the Atlas). <b>To start:</b> pick a box below, then click a large marker on the chart; the layout card sums that layout up, and the tabs go one level deeper each: where every byte lives, how far to trust each number.${data.meta.home ? ` <b>For your own box:</b> clone the folder and run the probe, as in <a href="${esc(data.meta.home)}#with-your-own-boxes">With your own boxes</a>.` : ''}</p>`;
+    const sub = `<p class="sub">Plan where each part of a big mixture-of-experts model lives on a box, and see the smartest layout it can run at 20+ or 25+ tok/s. Built ${esc(data.meta.built)} from measured runs and community priors.</p>`;
+    const lead = `<p class="lead">The boxes here are our own four machines (boxes A to D in the Atlas). <b>To start:</b> pick a box below, then click a large marker on the chart; the layout card sums that layout up, and the tabs go one level deeper each: where every byte lives, how far to trust each number.${data.meta.home ? ` <b>For your own box:</b> clone the folder and run the probe, as in <a href="${esc(data.meta.home)}#with-your-own-boxes">With your own boxes</a>.` : ''}</p>`;
     const EV = data.meta.evidence;
-    h += `<div class="legend" style="margin-top:6px">${Object.keys(EV.classes).map(k => `<span>${gradeChip(k, EV.classes[k])} ${esc(EV.classes[k])} (${EV.counts[k] || 0} values)</span>`).join('')}</div>${introHTML()}</header>`;
+    const leg = `<div class="legend" style="margin-top:6px">${Object.keys(EV.classes).map(k => `<span>${gradeChip(k, EV.classes[k])} ${esc(EV.classes[k])} (${EV.counts[k] || 0} values)</span>`).join('')}</div>`;
+    h += '<header class="top"><h1>Recipe Maker</h1>' + ((app.clientWidth || 720) < NARROW_PX ? introHTML('What this is and how to read it', sub + lead + leg) : sub + lead + leg + introHTML('How to read this page')) + '</header>';
     h += `<nav class="toc" aria-label="Pages"><ul>${PAGES.map(([id, t]) => `<li><a href="#${id}" ${id === st.page ? 'aria-current="page"' : ''}>${t}</a></li>`).join('')}</ul></nav><main id="main">`;
     const page = id => `<div class="page" id="pg-${id}" ${id === st.page ? '' : 'hidden'}><p class="pagesum">${esc(PAGES.find(p => p[0] === id)[2])}</p>`;
     // controls
@@ -521,11 +552,11 @@
     const fr = frontierSVG();
     h += '<div class="grid2"><section class="card" id="chart" aria-labelledby="chart-h"><h2 id="chart-h">Quality vs speed on ' + esc(box.name) + '</h2>';
     h += '<div class="legend">' + R.curves.map(c => `<span>${keySVG(c.color, modelShape(c.mk), c.dash)}${esc(data.models[c.mk].short + ' ' + engShort(c.eng))}</span>`).join('') +
-      `<span>${keySVG('var(--text-secondary)', 'diamond')}measured run</span>` + (R.owner ? `<span>${keySVG('var(--text-primary)', 'star')}our per-expert plan (needs a split-expert build)</span>` : '') + '</div>';
+      `<span>${keySVG('var(--text-secondary)', 'diamond')}measured run → model</span>` + (R.owner ? `<span>${keySVG('var(--text-primary)', 'star')}our per-expert plan (needs a split-expert build)</span>` : '') + '</div>';
     h += `<div class="plot" id="plot" tabindex="0" role="group" aria-roledescription="interactive chart" aria-label="Quality against speed, one curve per model" aria-describedby="chart-sum chart-keys">${fr.svg}</div>`;
     h += `<p class="sr-only" id="chart-sum">${esc(frontierSummary())}</p>`;
-    h += `<p class="small muted" id="chart-keys">Each curve sweeps the speed target from slow to fast and keeps the best-quality layout. Large markers = best at 20 and at 25 tok/s; the ring marks the loaded layout. Click a point to load it, or focus the chart: arrow keys move along a curve (up and down switch curves), Enter loads, Escape leaves.</p>`;
-    h += `<details id="chart-table" ${st.table ? 'open' : ''}><summary>Chart as a table</summary>${frontierTable(fr.anc)}</details>`;
+    h += `<p class="small muted" id="chart-keys">Each curve sweeps the speed target from slow to fast and keeps the best-quality layout. Large markers = best at 20 and at 25 tok/s; the ring marks the loaded layout. Diamonds are measured runs from the ledger, each with a line to what the model predicts for that run's own settings (dashed: part of the run is outside the model); the fastest per model is labelled with its gap. The curves use the page's default settings, so a run with other threads, page layout or draft can sit off its curve.${chartNotes()} Click a point to load it, or focus the chart: arrow keys move along a curve (up and down switch curves), Enter loads, Escape leaves.</p>`;
+    h += `<details id="chart-table" ${st.table ? 'open' : ''}><summary>Chart as a table</summary>${frontierTable()}</details>`;
     h += '</section><section class="card" id="layout" aria-labelledby="layout-h">' + selectionHTML(sel) + '</section></div></div>';
     // waterfall
     h += page('bytes') + '<section class="card" id="bytes" aria-labelledby="bytes-h"><h2 id="bytes-h">Where every byte sits</h2>' + (sel ? `<div class="sub">${esc(sel.label)}</div>` : '') + wfLegend(sel) + `<p class="small muted">One bar per memory tier, to scale within the tier. Hover a segment, or tab to a bar and use the arrow keys, for its full name and size.</p>` + waterfallHTML(sel) + '</section>';
@@ -653,7 +684,14 @@
     (data.levers || []).forEach(l => { h += `<tr><td>${esc(l.box + ' ' + l.model)}</td><td>${esc(l.lever)}</td><td>${esc(l.before)}</td><td>${esc(l.after)}${tagChip(l.tag, l.src)}</td><td class="small muted">${esc(l.src)}</td></tr>`; });
     return h + '</table></div></details></div>';
   }
-  function frontierTable(anc) {
+  function runTip(a) {
+    return `<b>${esc(a.label)}</b><br>measured ${f2(a.meas)} tok/s, ${armText(a)} (${esc(a.phase || '')}) · ` +
+      (a.pred ? `model ${f2(a.pred)} for this run's settings, ${(a.gap >= 0 ? '+' : '') + (100 * a.gap).toFixed(1)} %` : `not modelled: ${esc(a.why || '')}`) +
+      (a.waiver ? `<br><span class="muted">part of this run is outside the model: ${esc(a.waiver)}</span>` : '') +
+      `<br>height: projected top-1 of its stored types (${esc(a.qhow)})` + (a.top1 ? `; measured top-1 ${f1(100 * a.top1)} % against its own reference` : '') +
+      `<br><span class="muted">run ${esc(a.id)}${a.holdout ? ' (held out of the fit)' : ''}</span>`;
+  }
+  function frontierTable() {
     let h = '<div class="scroll"><table><caption class="sr-only">Quality vs speed: every point on each curve, the best layouts at 20 and 25 tok/s, and the measured runs</caption><tr><th>curve</th><th class="n">tok/s</th><th class="n">top-1 %</th><th class="n">KLD</th><th>kind</th></tr>';
     R.curves.forEach(c => {
       const nm = esc(data.models[c.mk].short + ' ' + engShort(c.eng));
@@ -661,7 +699,7 @@
       if (c.b20) h += `<tr><td>${nm}</td><td class="n">${f2(c.b20.ev.tokps)}</td><td class="n">${f2(c.b20.ev.quality)}</td><td class="n">${c.b20.ev.kld.toFixed(4)}</td><td>best at 20</td></tr>`;
       if (c.b25) h += `<tr><td>${nm}</td><td class="n">${f2(c.b25.ev.tokps)}</td><td class="n">${f2(c.b25.ev.quality)}</td><td class="n">${c.b25.ev.kld.toFixed(4)}</td><td>best at 25</td></tr>`;
     });
-    anc.forEach(a => { h += `<tr><td>${esc(a.label)}</td><td class="n">${f2(a.meas)} measured / ${f2(a.pred)} model</td><td class="n">${f2(a.quality)}</td><td></td><td>anchor ${esc(a.fit)}</td></tr>`; });
+    measuredHere().forEach(a => { h += `<tr><td>${esc(a.label)}</td><td class="n">${f2(a.meas)} measured / ${a.pred ? f2(a.pred) + ' model' : 'not modelled'}</td><td class="n">${f2(a.quality)}</td><td></td><td>run ${esc(a.id)}, ${armText(a)}${a.bad ? ', went bad (not on the chart)' : a.guess ? ', per-prompt or per-pass phases only, no single served decode (not on the chart)' : ''}${a.pred ? ', ' + (a.gap >= 0 ? '+' : '') + (100 * a.gap).toFixed(1) + ' %' : ': ' + esc(a.why || '')}${a.waiver ? '; partly outside the model' : ''}</td></tr>`; });
     return h + '</table></div>';
   }
   function calHTML() {
@@ -757,7 +795,7 @@
       n.addEventListener('mousemove', e => {
         if (k === 'pt') { const c = R.curves[+n.dataset.c]; showTip(e, `<b>${esc(data.models[c.mk].short + ' ' + engShort(c.eng))}</b><br>${f2(+n.dataset.x)} tok/s · top-1 ${f2(+n.dataset.q)} % · KLD ${(+n.dataset.kld).toFixed(4)}<br><span class="muted">click to load this layout</span>`); }
         else if (k === 't20' || k === 't25') { const c = R.curves[+n.dataset.c], b = c['b' + k.slice(1)]; showTip(e, `<b>Best at ${k.slice(1)} tok/s: ${esc(data.models[c.mk].short + ' ' + engShort(c.eng))}</b><br>${f2(b.ev.tokps)} tok/s · top-1 ${f2(b.ev.quality)} % · KLD ${b.ev.kld.toFixed(4)}`); }
-        else if (k === 'anc') { const a = anc[+n.dataset.a]; showTip(e, `<b>${esc(a.label)}</b><br>measured ${f2(a.meas)} tok/s (MEASURED) · model ${f2(a.pred)} · residual ${(100 * a.resid).toFixed(1)} %<br><span class="muted">${esc(a.src)}</span>`); }
+        else if (k === 'anc') { const a = anc[+n.dataset.a]; showTip(e, runTip(a)); }
         else if (k === 'owner') { const o = R.owner.ev; showTip(e, `<b>Our per-expert plan (droopy)</b><br>hottest coding experts MXFP4 in VRAM, other coding experts q3_K in DRAM, the rest MXFP4 in Optane<br>${f2(o.tokps)} tok/s · top-1 ${f2(o.quality)} %<br><span class="muted">needs per-expert types (split-expert build); click to load</span>`); }
         else if (k === 'seg') { const rows = tierRows(R.selected), g = rows[+n.dataset.tier].segs[+n.dataset.seg]; showTip(e, `<b>${esc(g.label)}</b><br>${f2(g.gib)} GiB${g.tag ? ' ' + tagChip(g.tag, g.src || '') : ''}${g.src ? '<br><span class="muted">' + esc(g.src) + '</span>' : ''}`); }
         else if (k === 'time') { const p = timeSplitHTML(R.selected).parts[+n.dataset.p]; showTip(e, `<b>${esc(p[0])}</b><br>${f1(p[1])} ms per token`); }

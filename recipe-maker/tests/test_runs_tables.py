@@ -39,6 +39,40 @@ class DraftTwins(unittest.TestCase):
 
 
 
+    def test_prefixed_mtp_groups_make_one_twin(self):
+        t = R.draft_twins([run('o', {'std-m3': 47.34, 'std-n0': 41.95}, box='lassie', model='orn35'),
+                           run('g', {'d600_m3_mean': 31.0, 'd600_n0_mean': 27.0, 'd4000_m3_mean': 30.0, 'd4000_n0_mean': 26.0})])
+        self.assertEqual(round(t['lassie|orn35'][0]['mult'], 4), round(47.34 / 41.95, 4))
+        self.assertEqual(t['lassie|orn35'][0]['what'], 'MTP n_max 3')
+        self.assertEqual(round(t['droopy|glm'][0]['mult'], 4), round((31 / 27 + 30 / 26) / 2, 4), 'the mean over the groups')
+
+
+class Served(unittest.TestCase):
+    def test_draft_and_off_arms(self):
+        self.assertEqual(R.served(run('a', {'n4': 9.0, 'n4b': 11.0, 'n0': 7.5})), {'on': 10.0, 'on_phase': 'n4/n4b', 'off': 7.5, 'off_phase': 'n0'})
+        s = R.served(run('b', {'std-m3': 47.0, 'std-n0': 42.0}))
+        self.assertEqual((s['on'], s['off'], s['off_phase']), (47.0, 42.0, 'std-n0'))
+        self.assertEqual(R.served(run('c', {'std-n4': 11.5, 'std-n0': 42.0}))['on_phase'], 'std-n4', 'an external draft width is a draft arm too')
+
+    def test_primary_phase_c1_and_guess(self):
+        self.assertEqual(R.served(run('c', {'short_c1': 70.0, 'long_c1': 60.0})), {'other': 70.0, 'other_phase': 'short_c1'})
+        self.assertEqual(R.served(run('d', {'all': 4.0}))['other'], 4.0)
+        g = R.served(run('e', {'DV0_p0': 16.9, 'DV0_p1': 16.2}))
+        self.assertTrue(g['guess'], 'per-prompt phases are no served decode: the page lists the run and compares nothing')
+        r = run('f', {'DV0_p0': 16.9, 'x': 12.0})
+        r['measured']['primary_phase'] = 'x'
+        self.assertEqual(R.served(r), {'other': 12.0, 'other_phase': 'x'})
+        self.assertIsNone(R.served(run('h', {})))
+
+    def test_recipes_carry_measured(self):
+        r = dict(run('a', {'n4': 9.0, 'n0': 7.0}), when='2026-10-20T10:00Z', engine='ik', recipe={'id': 'a'}, sources=['x'])
+        r['measured']['top1'] = 0.97
+        m = R.recipes_from_runs([r], {'a'})[0]['measured']
+        self.assertEqual({k: m[k] for k in ('on', 'on_phase', 'off', 'off_phase', 'top1', 'holdout')},
+                         {'on': 9.0, 'on_phase': 'n4', 'off': 7.0, 'off_phase': 'n0', 'top1': 0.97, 'holdout': True})
+        self.assertIn('bad', m)
+
+
 class DecodeFits(unittest.TestCase):
     def test_current_replay_has_operands_but_ledger_and_saved_predictions_are_unchanged(self):
         root = os.path.dirname(HERE)

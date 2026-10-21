@@ -82,7 +82,7 @@ models['orn122'] = {
     'lookups': [{'label': 'token_embd (lookup)', 'gib': n(round(ornlookup, 3), R, HORN), 'cls': 'token_embd', 'on_file': False}],
     'kv_gib': n(_orn_kv(ORN_CB4096_MIB), E, ORN_KVSRC % ('-ub 4096 %.0f MiB = GLM %d MiB x vocab %d / %d' % (ORN_CB4096_MIB, GLM_CB4096_MIB, ORN_VOCAB, GLM_VOCAB))),
     'kv_gib_ub512': n(_orn_kv(ORN_CB4096_MIB * 512 / 4096), E, ORN_KVSRC % ('-ub 512 %.0f MiB (the -ub 4096 figure x 512/4096)' % (ORN_CB4096_MIB * 512 / 4096))),
-    'draft': {'label': 'MTP head (nextn block %d: attention, shared expert and, under ik -ot exps=CPU on blocks 0-%d, its routed experts on the GPU)' % (ORN_MAIN, ORN_MAIN - 1),
+    'draft': {'kind': 'mtp', 'label': 'MTP head (nextn block %d: attention, shared expert and, under ik -ot exps=CPU on blocks 0-%d, its routed experts on the GPU)' % (ORN_MAIN, ORN_MAIN - 1),
               'vram_gib': n(round(orn_mtp_ne, 3), R, HORN + ': block %d non-expert tensors' % ORN_MAIN),
               'experts_gib': {KQM_TY: n(round(orn_mtp_ex, 3), R, HORN + ': blk.%d ffn_*_exps (gate/up q4_K, down q6_K)' % ORN_MAIN)},
               'experts_on_gpu': n(True, E, 'ESTIMATE: the r0 recipe sends only blocks 0-%d experts to the CPU (-ot), as ik --cpu-moe left GLM block 45 experts on the GPU (%s)' % (ORN_MAIN - 1, GLM_VRAM_SRC)),

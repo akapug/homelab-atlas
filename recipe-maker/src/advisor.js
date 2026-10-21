@@ -40,7 +40,7 @@
       const q = runQuality(data, run, runs);
       if (q.status !== 'PASS') { why.push({ run: run.id, why: 'quality ' + q.status + ' (' + q.basis + ')' }); return; }
       const p = FM.predictRecipe(data, r);
-      if (p.status !== 'PREDICTED') { why.push({ run: run.id, why: 'UNMODELLED: ' + p.why }); return; }
+      if (p.status !== 'PREDICTED' || !(p.decode_tps > 0)) { why.push({ run: run.id, why: p.status !== 'PREDICTED' ? 'UNMODELLED: ' + p.why : 'draft speed UNMODELLED: ' + p.draft_why }); return; }
       out[k] = { run, recipe: r, phase: ph, measured: meas, quality: q, pred: p };
     });
     return { best: Object.values(out), skipped: why };

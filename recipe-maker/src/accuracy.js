@@ -27,13 +27,25 @@ function wentBad(run, lab) {
   return why;
 }
 
-// the measured decode phase a prediction pairs with: the draft prediction with the primary draft phase, the no-draft one with n0
+// the measured decode phase a prediction pairs with: the draft prediction with the primary draft phase, the no-draft one with n0.
+// Kits that run one workload per phase group put the width inside the name (std-n4 / std-n0, d600_m3_mean / d600_n0_mean):
+// such a phase reads like its bare width
+const DRAFT_RX = /(?:^|[-_])(?:n4|m3)(?:b)?(?=$|[-_])/, OFF_RX = /(?:^|[-_])[mn]0(?=$|[-_])/;
 function primaryPhase(run) {
   const m = run.measured || {}, d = m.decode_tps || {}, ks = Object.keys(d);
   if (m.primary_phase && d[m.primary_phase] !== undefined) return m.primary_phase;
   const draft = run.recipe && run.recipe.draft;
   for (const k of draft ? ['n4', 'c1', 'all'] : ['n0', 'c1', 'all']) if (d[k] !== undefined) return k;
-  return ks[0] || null;
+  return ks.find(k => (draft ? DRAFT_RX : OFF_RX).test(k)) || ks[0] || null;
+}
+// a no-draft phase: n0 / m0, bare or inside a workload group name
+const isOff = k => NODRAFT.indexOf(k) >= 0 || OFF_RX.test(k);
+// the no-draft twin of a phase: n0 / m0, or the same workload group with its width set to n0 / m0 (std-n4 -> std-n0)
+function offOf(d, ph) {
+  const bare = NODRAFT.find(k => d[k] !== undefined);
+  if (bare) return bare;
+  const m = ph && /(^|[-_])(n4|m3)b?(?=$|[-_])/.exec(ph);
+  return m ? ['n0', 'm0'].map(o => ph.slice(0, m.index + m[1].length) + o + ph.slice(m.index + m[0].length)).find(k => d[k] !== undefined) || null : null;
 }
 
 // drafts per request the run declared (recipe.conditions.draft_n: a number, or a string led by one); null = not declared
@@ -53,9 +65,9 @@ function pairs(run, pred) {
     if (!num(x)) return;
     out.push({ metric, phase, pred: num(p) ? p : null, meas: x, err: num(p) ? p - x : null, pct: num(p) && pctOk && x !== 0 ? (p - x) / x : null });
   };
-  const d = m.decode_tps || {}, ph = primaryPhase(run), draft = !!(run.recipe && run.recipe.draft), off = draft && draftN(run) === 0;
+  const d = m.decode_tps || {}, ph = primaryPhase(run), draft = !!(run.recipe && run.recipe.draft), off = draft && (draftN(run) === 0 || isOff(ph || ''));
   if (ph) add(off ? 'decode_tps_nodraft' : 'decode_tps', ph, pred && (off ? pred.decode_tps_nodraft : pred.decode_tps), d[ph], true);
-  const nd = NODRAFT.find(k => d[k] !== undefined);
+  const nd = offOf(d, ph);
   if (draft && !off && nd && ph !== nd) add('decode_tps_nodraft', nd, pred && pred.decode_tps_nodraft, d[nd], true);
   add('prefill_tps', null, pred && pred.prefill_tps, m.prefill_tps, true);
   add('vram_post_gib', null, pred && pred.vram_post_gib, m.vram_post_gib, true);
@@ -69,7 +81,7 @@ function pairs(run, pred) {
 function draftRatios(rows, keyOf) {
   const g = {};
   rows.forEach(r => {
-    const d = (r.run.measured || {}).decode_tps || {}, ph = primaryPhase(r.run), nd = NODRAFT.find(k => d[k] !== undefined);
+    const d = (r.run.measured || {}).decode_tps || {}, ph = primaryPhase(r.run), nd = offOf(d, ph);
     if (!r.run.recipe.draft || draftN(r.run) === 0 || !ph || !nd || ph === nd || !num(d[ph]) || !num(d[nd]) || [ph, nd].some(k => r.disturbed.indexOf(k) >= 0)) return;
     const p = r.pred && num(r.pred.decode_tps) && num(r.pred.decode_tps_nodraft) ? r.pred.decode_tps / r.pred.decode_tps_nodraft : null;
     (g[keyOf(r)] = g[keyOf(r)] || []).push({ id: r.id, meas: d[ph] / d[nd], pred: p });
