@@ -22,7 +22,7 @@ the largest model with its routed experts at release precision, all from DRAM.
 | A: AM5 desktop | Ryzen 9 9950X3D, 16 cores | 192 GB DDR5 as 4 DIMMs, running at 5200 MT/s | RTX 3090 Ti 24 GB |
 | B: 2019 workstation (HP Z8 G4) | 2x Xeon Gold 5215, 10 cores each | 192 GB DDR4-2666 (12 x 16 GB), plus 256 GB Optane PMem 100 (2 x 128 GB, one App Direct region) | Quadro RTX 6000 24 GB (Turing) |
 | C: TRX40 workstation | Threadripper 3960X, 24 cores | 128 GB DDR4 as 4 x 32 GB | Intel Arc Pro B70 32 GB (one of two in the box) |
-| D: two-socket EPYC server (Supermicro H11DSi) | 2x EPYC 7601 (Zen 1), 32 cores each, 8 NUMA nodes | 1 TB DDR4-2400 (16 x 64 GB LRDIMM, 16 channels) | GTX 1080 Ti 11 GB (Pascal). The box also holds an [MI25](../mi25/), not used here |
+| D: two-socket EPYC server (Supermicro H11DSi) | 2x EPYC 7601 (Zen 1), 32 cores each, 8 NUMA nodes | 1 TB DDR4-2400 (16 x 64 GB LRDIMM, 16 channels) | GTX 1080 Ti 11 GB (Pascal). The box also holds an [MI25](../mi25/), used only in points 18 and 23 |
 
 ## Best measured result per model
 
@@ -280,16 +280,18 @@ weights on the CPU. Micro-batch 1024 with attention on the GPU, 2048 in the row 
   6.93 in a third run. (In the run with them the draft model ran out of GPU memory at every step, so only its no-draft
   figure is valid.) The hot-expert idea needs a bigger card: point 18.
 
-**18. The MI25 as a hot-expert store for V4.1: correct text, currently slower. Fixes in progress.**
+**18. The MI25 as a hot-expert store for V4.1: correct text, but slower in every version. We stopped it.**
 - The 16 GB MI25 in the same box holds the 799 hottest routed experts (14 GiB, 31.6 % of the routed picks on
   held-out coding text) under Vulkan, in the same process as the CUDA 1080 Ti (an engine change,
-  [below](#engine-changes)). The rest is the layout of point 17.
-- Measured on one prompt: 2.66 tok/s with the draft and 4.08 without, against 7.24 and 6.95 for that prompt without
-  the MI25. The text is identical to the run without it, with and without the draft.
-- Why, and what we are changing: [the MI25 entry](../mi25/#as-a-hot-expert-store-for-deepseek-v41-in-progress).
-  Our ceiling estimate, not measured: the MI25 holds the experts behind 31.6 % of CPU expert reads. If its work
-  hid entirely behind the CPU's, that would save about 21 ms of the 143 ms a token takes without the draft in the
-  layout without the MI25 (6.97 tok/s, point 17), so about 8 tok/s at most.
+  [below](#engine-changes)). The rest is the layout of point 17. The text is identical to the run without it.
+- First run: 2.66 tok/s with the draft and 4.08 without, against 7.24 and 6.95 for that prompt without the MI25.
+- After three fixes (the MI25 forced to its high clock state, a mat-vec Vulkan kernel for small batches, and a bank
+  order that really runs the MI25 first): 6.19 with the draft and 5.61 without, mean of 3 prompts, against 7.13 and
+  6.97 without the MI25.
+- The op profile per step: the banks save about 13.5 ms of CPU expert time and add about 40 ms of waiting across
+  devices. With 31.6 % coverage every layer still runs its CPU expert pass, and the bank adds hops in series with it.
+  Details: [the MI25 entry](../mi25/#as-a-hot-expert-store-for-deepseek-v41-stopped-bound-by-hop-latency).
+- The same two cards win on a model whose experts they hold completely: point 23.
 
 **19. Ornith-1.5-122B on box B: the first model above 25 tok/s on that box.**
 
@@ -396,6 +398,29 @@ thinking sampling. These use our own private tests, not published here. One pass
   - Equal pass counts at n = 1 per change show no quality difference either way; they do not show equality. We
     serve IQ3_XXS, the faster and smaller file, on that basis.
 
+**23. Box D with a model that fits its GPUs: Ornith-1.5-35B-A3B at 59-60 tok/s on the MI25 and the 1080 Ti.**
+
+Ornith-1.5-35B-A3B Q4_K_M has about 18.2 GiB of routed experts: too much for either card, enough for both. The MI25
+holds the experts of 30 whole layers (13.5 GiB), the 1080 Ti holds the other 10 (4.7 GiB) beside attention, the
+DeltaNet layers, the KV cache and the dense weights, and the model's own MTP head drafts. 64 threads, `-c 8192`,
+the 3 coding-agent prompts of 300 greedy tokens, one load per arm, each figure the mean of 3 prompts.
+
+| arm | routed experts | decode tok/s | wall power (median) |
+|---|---|---|---|
+| CPUs only for experts | CPUs, rows over 8 nodes | 41.99 without a draft; 47.34 with MTP 3 | 542 / 598 W |
+| both GPUs | MI25 + 1080 Ti banks | 44.62 without a draft; **59.13 with MTP 3, 60.01 with MTP 2** (acceptance 85 %) | 484 / 508 W |
+
+- In real chat requests at the card's sampling, with an 8,192-token thinking budget: 45.7-53.3 tok/s at 13-21k
+  tokens of context, prefill 318-354 tok/s.
+- On box D, gpt-oss-120b (MXFP4, experts on the CPUs, no draft) decodes 31.0 tok/s, 34.6 with the experts of
+  layers 0-2 on the 1080 Ti. Its experts cannot go in our banks yet (biases, `SWIGLU_OAI`).
+- Code-review screens (point 20's kit): Ornith-1.5-35B-A3B passed one plant, ranked the other below a wrong primary,
+  and claimed a defect in the clean control. gpt-oss-120b missed one plant, found the other, and was right on the
+  clean control. One sample each.
+- So box D's choice depends on the job: Ornith-1.5-35B-A3B for speed, about 8.3x V4.1 on the same box (59.13 against 7.13, both with a draft);
+  gpt-oss-120b where a false alarm on clean code costs more. Neither is shown to be the better reviewer.
+- Everything else, with the commands and the switches: [the MI25 entry](../mi25/#ornith-15-35b-a3b-on-the-mi25-and-a-gtx-1080-ti-about-60-toks).
+
 ## The quality reference problem
 
 Our GLM quality gate compares against the EXL3 3.05 bpw store computed exactly on the GPU, because a BF16
@@ -419,7 +444,7 @@ Each branch contains the one before it, so the last one carries them all:
 | [`expert-placement-dense-rows`](https://github.com/akapug/ik_llama.cpp/tree/expert-placement-dense-rows) | `3e3c25b1` | dense rows per node |
 | [`no-host-weights`](https://github.com/akapug/ik_llama.cpp/tree/no-host-weights) | `d93aeb48` | no host weights |
 | [`sched-inplace-follow`](https://github.com/akapug/ik_llama.cpp/tree/sched-inplace-follow) | `5716ef61` | in-place ops follow their target (the V4.1 attention fix for sm_61 cards) |
-| [`mixed-cuda-vulkan-expert-banks`](https://github.com/akapug/ik_llama.cpp/tree/mixed-cuda-vulkan-expert-banks) | `a8b82a70` | CUDA and Vulkan in one process, with the MI25 bank fixes so far |
+| [`mixed-cuda-vulkan-expert-banks`](https://github.com/akapug/ik_llama.cpp/tree/mixed-cuda-vulkan-expert-banks) | `63bf5755` | CUDA and Vulkan in one process, the MI25 bank fixes, a bank device per layer, whole-layer banks |
 
 The fork's [PATCHES.md](https://github.com/akapug/ik_llama.cpp/blob/mixed-cuda-vulkan-expert-banks/PATCHES.md) gives each switch, its default, the
 measured effect and the known limits. Its box letters are its own: its box A is our box D, and its box B is our box B.
@@ -433,7 +458,8 @@ Each change is off by default unless it says otherwise, so a build with them and
 | dense rows per node | lets a placement rule name any weight (by tensor name or regex), not only routed experts, and split a dense matrix into one row slice per node | `LLAMA_EXPERT_PLACEMENT` rules with `*` or `/G` | V4.1 on box D +9 % with the draft, +17 % without; Qwen3-30B-A3B +11 % (point 16) |
 | no host weights | keeps model weights in plain host memory, never pinned, so the pin budget goes to the buffers the GPU reads directly; logs a warning when such a buffer falls back to pageable memory | `LLAMA_NO_HOST_WEIGHTS=1` or `--no-host` | the box D arm that crashed at warm-up (Xid 31) ran with no fault (point 11) |
 | in-place ops follow their target | the scheduler runs an in-place op on the backend of the tensor it writes into. Fixes V4.1 attention on cards without a kernel for its flash attention (garbage text on the GTX 1080 Ti) | on; `GGML_SCHED_INPLACE_FOLLOW=0` turns it off | correct text with V4.1 attention on the 1080 Ti; moving attention and the KV cache onto the card then took decode without the draft from 5.60 to 6.97 tok/s, and prefill from 37.2 to 48.2 (point 17) |
-| CUDA and Vulkan in one process | a CUDA build also opens Vulkan devices and puts hot-expert banks on one of them; MXFP4 expert banks on Vulkan | `LLAMA_EXTRA_VULKAN=1`, `GGML_VK_VISIBLE_DEVICES`, `LLAMA_HOT_EXPERTS_DEVICE=Vulkan0`, `GGML_VK_OFFLOAD_MIN_BATCH` | correct text with the MI25 holding 14 GiB of V4.1 experts beside the 1080 Ti, but slower: 4.08 against 6.95 tok/s without the draft (point 18). Fixes in progress ([the MI25 entry](../mi25/#as-a-hot-expert-store-for-deepseek-v41-in-progress)) |
+| CUDA and Vulkan in one process | a CUDA build also opens Vulkan devices and puts hot-expert banks on one of them; MXFP4 expert banks on Vulkan | `LLAMA_EXTRA_VULKAN=1`, `GGML_VK_VISIBLE_DEVICES`, `LLAMA_HOT_EXPERTS_DEVICE=Vulkan0`, `GGML_VK_OFFLOAD_MIN_BATCH` | V4.1: correct text with 14 GiB of experts on the MI25, but slower: 5.61 against 6.97 tok/s without the draft, after the fixes (point 18). Ornith-1.5-35B-A3B with every expert on the two GPUs: 59.13 tok/s against 47.34 with the experts on the CPUs, both with MTP (point 23) |
+| a bank device per layer, whole-layer banks | a third column on a heat-file line names the backend for that layer's bank; a layer whose experts are all banked runs no CPU expert pass | `LLAMA_HOT_EXPERTS=<file>` lines `blk.N <ids> <backend>` | the Ornith-1.5-35B-A3B layout of point 23, split between the MI25 and the 1080 Ti |
 
 On box B, the newer changes together lift V4.1 by 11-12 % (point 21); how much each one gives there is not yet
 measured.

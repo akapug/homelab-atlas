@@ -5,9 +5,211 @@ paper, passive cooling. We paid about $50 for ours. AMD's current ROCm releases 
 it on Vulkan, with no ROCm installed. The question: what does a card this cheap add to an old server, alone, as a
 hot-expert store for a MoE model, and beside a GTX 1080 Ti?
 
-It sits in box D of [the MoE offload entry](../moe-offload/): 2x EPYC 7601, 1 TB DDR4, a GTX 1080 Ti. Its first
-use there, holding hot experts of DeepSeek V4.1 Flash beside the 1080 Ti, is
-[in progress](#as-a-hot-expert-store-for-deepseek-v41-in-progress): correct text, currently slower.
+It sits in box D of [the MoE offload entry](../moe-offload/): 2x EPYC 7601, 1 TB DDR4, a GTX 1080 Ti.
+
+**The best result so far: a 35B MoE model at about 60 tok/s on two retired GPUs that nobody would pair.** The MI25
+(Vega 10, Vulkan only) and the GTX 1080 Ti (Pascal, CUDA) hold every routed expert of Ornith-1.5-35B-A3B between
+them, in one ik_llama.cpp process, in a 2017 server. With the model's own MTP draft head it decodes 59.1-60.0 tok/s
+on coding prompts, against 42.0 with the experts on the CPUs.
+[Details, commands and the quality screens below](#ornith-15-35b-a3b-on-the-mi25-and-a-gtx-1080-ti-about-60-toks).
+The same hardware does not help DeepSeek V4.1 Flash: [that result is negative](#as-a-hot-expert-store-for-deepseek-v41-stopped-bound-by-hop-latency),
+and we explain why.
+
+## Ornith-1.5-35B-A3B on the MI25 and a GTX 1080 Ti: about 60 tok/s
+
+[Ornith-1.5-35B-A3B](https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B) is a fine-tune of Qwen3.6-35B-A3B: 35B
+parameters, about 3B active per token, 40 layers (30 Gated DeltaNet, 10 attention), 256 routed experts per layer,
+and one MTP layer that can draft tokens for the model. We ran ornith-ai's Q4_K_M GGUF
+([`ornith-ai/Ornith-1.5-35B-A3B-GGUF`](https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF/tree/f60452672689e0040be350560267a614cc172a18),
+20.2 GiB). Its routed experts total about 18.2 GiB. That does not fit on either card alone, but it fits on the two
+together.
+
+**The layout.**
+- The GTX 1080 Ti (11 GB) holds attention, the DeltaNet layers, the KV cache, the router, the shared expert, the
+  norms, the output head and the MTP layer (`-ngl 99 --cpu-moe`).
+- Every routed expert of the 40 main layers sits in a GPU bank. Banks hold whole layers: 30 layers (13.5 GiB) on the
+  MI25 and 10 layers (4.7 GiB) on the 1080 Ti. The engine reports "10240 hot experts in 40 layers, 18600.04 MiB on
+  GPU".
+- The host copy of the experts stays in DRAM, each expert's rows split over the 8 NUMA nodes. Prefill uses it,
+  because the banks serve only batches of 8 tokens or fewer.
+- Each token crosses CUDA, Vulkan and CUDA again in every layer, all in one process. That needs our engine changes
+  ([below](#the-engine-changes-and-their-switches)).
+
+**Conditions for the table.** Box D (2x EPYC 7601, 8 NUMA nodes, DDR4-2400; GTX 1080 Ti on driver 580; MI25 on Mesa
+RADV, clocks forced to the high DPM state). Our ik_llama.cpp fork at the commits linked below, built for sm_61 with
+Vulkan. One server load per arm. 64 threads (`-cr 0-63`), `-c 8192`, `-ub 1024`, f16 KV cache, `--no-mmap`.
+The workload is 3 coding-agent prompts of about 1.5-2.2k tokens, 300 greedy tokens each, through the raw
+`/completion` endpoint. Each figure is the mean of the 3 prompts. `m3` / `m2` = the model's MTP head drafting
+3 / 2 tokens (`--spec-type mtp:n_max=3,p_min=0.75`, with `n_max` set per request). `n0` = no draft. Wall power is
+the median for the whole box during the run. All MEASURED, 2026-10-21.
+
+| arm | where the routed experts are | decode tok/s | prefill tok/s | 1080 Ti memory (MiB, of 11,264) | wall power |
+|---|---|---|---|---|---|
+| o1 | CPUs (rows over 8 nodes) | n0 41.99 (42.79, 41.14, 42.05) | 370 | 2,935 | 542 W |
+| o2 | GPU banks: MI25 + 1080 Ti | n0 44.62 (45.11, 44.51, 44.24) | 368 | 7,719 | 484 W |
+| o5 | CPUs, + MTP draft | m3 47.34, m2 46.96, n0 41.95; acceptance 85 % | 320 | 3,531 | 598 W |
+| **o6** | **GPU banks, + MTP draft** | **m3 59.13 (56.11, 58.62, 62.67), m2 60.01 (59.27, 56.85, 63.91), n0 44.59**; acceptance 85 % | 331 | 8,315 | **508 W** |
+
+- **The banks give +6 % without a draft and +25 % with one** (o6 against o5, m3). Our reading, not measured
+  separately: when MTP verifies 4 tokens at once, the CPU path must read the union of the experts that those
+  tokens route to, from DDR4. The banks compute those tokens on the GPUs, from HBM2 and GDDR5X.
+- **The box draws less power when it runs faster.** o6 at 508 W median against o5 at 598 W. Our reading: the
+  CPUs no longer compute the experts during decode. The MI25 peaked at 59 C junction and 57 C HBM, far below the limits in [Heat and power](#heat-and-power).
+- Same-binary text check: the n0 texts of o6 and o2 are byte-identical, and so are those of o5 and o1. The bank
+  arms and the CPU arms differ from each other. Our reading: rounding, because the experts are computed by other
+  kernels. All texts read coherently.
+- For scale: the same model, as `sym_int4` under vLLM on one current Intel Arc Pro B70, decodes about 198 tok/s at
+  one stream ([the B70 entry](../b70/ornith-35b-a3b.md)). This entry is about what old parts can do, not a claim that
+  they beat a new card.
+
+**Real chat requests at the model card's sampling.** The o6 layout served three long code-review requests through
+`/v1/chat/completions` with `--jinja`, temperature 0.6, top_p 0.95, top_k 20, thinking on with an 8,192-token budget
+(`--reasoning-budget 8192` and a message telling the model to commit), and `-c 32768`. Decode 45.7, 50.3 and
+53.3 tok/s over 9.0-9.5k generated tokens each, at 13-21k tokens of context. MTP acceptance 85.7 %. Prefill 318-354
+tok/s. MEASURED from the server log.
+
+### Quality: three code-review screens
+
+These are the same three private screens as for Ornith-1.5-122B in [moe-offload point 20](../moe-offload/#what-we-learned-measured):
+three diffs of our own code, two with one planted defect each and one clean control. One sample per screen, graded
+by hand against answer keys written before the runs. They are a smoke test of judgement, not a benchmark.
+
+| model and box | planted defect 1 | planted defect 2 | clean control |
+|---|---|---|---|
+| Ornith-1.5-35B-A3B Q4_K_M, box D, o6 layout, conditions above | PASS: names the defect, a scenario, a fix and a test that fails before the fix | PARTIAL: names another issue as THE defect; the plant is its first "other concern", worded correctly, with no fix or test | FALSE ALARM: it promotes a wording note to THE defect, and its scenario contradicts its own quote of the code |
+| Ornith-1.5-122B Q4_K_M, box B, same budget and sampling | PASS | PASS | FALSE ALARM (the same overclaim) |
+| gpt-oss-120b MXFP4, box D, medium reasoning effort, card sampling 1.0 / 1.0 | FAIL: a wrong defect | PASS: the plant, a fix and a test | PASS: "no defect" |
+
+- The 35B finds the easy plant, ranks the second plant below a wrong primary, and claims a defect in clean code,
+  like its 122B sibling. For a reviewer role that false alarm matters: a reviewer that always finds something costs
+  the reader time.
+- gpt-oss-120b is the one model here that did not overclaim on the clean code, but it missed the first plant.
+- n = 1 per screen. None of these numbers show that one model is better at review in general.
+
+### The comparison on the same box: gpt-oss-120b
+
+[`ggml-org/gpt-oss-120b-GGUF`](https://huggingface.co/ggml-org/gpt-oss-120b-GGUF/tree/7200b74bea78b0a2964ef9f3897eefa401e890ff),
+native MXFP4 experts (a 59.0 GiB file), same build, same box. The 1080 Ti holds attention, KV cache and the dense weights;
+the routed experts are on the CPUs with their rows split over 8 nodes. No draft: this engine's EAGLE-3 path is not
+implemented yet. MEASURED, 2026-10-21.
+
+| arm | decode tok/s (3 prompts, 300 greedy tokens) | prefill tok/s | 1080 Ti memory (MiB) | wall power |
+|---|---|---|---|---|
+| experts on the CPUs, `-c 32768` | 31.0 (31.97, 30.56, 30.46) | about 163 | about 5,000 | 595 W |
+| + the experts of layers 0-2 on the 1080 Ti (`-ot`), `-c 8192` | 34.57 (+11.5 %) | not recorded | about 8,200 | not recorded |
+
+- Real chat requests (Harmony template, medium effort): 26.4-28.2 tok/s at 3.6-10.6k tokens of context, prefill
+  155-163 tok/s.
+- Each gpt-oss layer reads about 53 MB of experts per token from the CPU side, against about 14 MB for Ornith-35B
+  (our arithmetic from the files). So each layer moved to a GPU saves more on gpt-oss.
+- **The MI25 cannot hold gpt-oss experts yet.** gpt-oss experts carry biases and use the `SWIGLU_OAI` activation.
+  Our bank partitions do not handle biases, and the Vulkan fused MoE op in this engine handles neither. A repair
+  needs both. Our estimate of the gain, not measured: 0-10 %, because Ornith gained 6 % from the banks without a
+  draft.
+- The greedy speed check is weak for this model: through raw `/completion` with `ignore_eos`, it keeps generating
+  empty analysis turns after its end token. The chat figures above use the real template.
+
+### The engine changes and their switches
+
+All of them are in our public fork [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp), branch
+[`mixed-cuda-vulkan-expert-banks`](https://github.com/akapug/ik_llama.cpp/tree/mixed-cuda-vulkan-expert-banks)
+(tip [`63bf5755`](https://github.com/akapug/ik_llama.cpp/commit/63bf575558e8ff5aa220bfdc0161f1dc4ca3b828)). The
+measured binary was built from the same source; the published tree differs only in comments, test-harness option
+names and internal build scripts. The fork's
+[PATCHES.md](https://github.com/akapug/ik_llama.cpp/blob/mixed-cuda-vulkan-expert-banks/PATCHES.md) lists every switch.
+Its box A is our box D.
+
+| switch | what it does here |
+|---|---|
+| `LLAMA_EXTRA_VULKAN=1`, `GGML_VK_VISIBLE_DEVICES=<n>` | a CUDA build also opens the MI25 as `Vulkan0` |
+| `LLAMA_HOT_EXPERTS=<file>` | the heat file: which experts go in banks |
+| heat-file third column ([`b4e5f5d7`](https://github.com/akapug/ik_llama.cpp/commit/b4e5f5d7ea8b0bbf52342624fb3ddbef21c32d01)) | `blk.N <expert ids> <backend>` puts the bank of that layer on that backend, so one file splits layers between `Vulkan0` and `CUDA0`; a layer whose experts are all banked gets no CPU split |
+| `LLAMA_HOT_EXPERTS_DEVICE=Vulkan0` | the default bank device for lines without a third column |
+| `LLAMA_HOT_BANK_FIRST=1` ([`1aa46479`](https://github.com/akapug/ik_llama.cpp/commit/1aa464798f0406722ff485f05ea36a3bc7c0e003)) | the bank work goes first in the graph. Before this fix the switch did not reorder anything |
+| `GGML_VK_ASYNC_GRAPH=1` | the Vulkan graph returns after its last submit |
+| `GGML_VK_STAGED_INPUTS=1` | inputs and the last output of the Vulkan step go through a host-visible staging buffer |
+| `GGML_VK_MMVID_MAX_TOKENS` (default 8) | Vulkan `mul_mat_id` batches of up to 8 tokens use the mat-vec kernel per token. On the MI25, a 5-token bank chain went from 11.1 to 1.30 ms |
+| `GGML_VK_OFFLOAD_MIN_BATCH=1000000` | prefill does not copy host experts to the MI25 |
+| `LLAMA_EXPERT_PLACEMENT=<file>`, `GGML_MOE_GROUPS=8` | the host copy of each expert is split by rows over the 8 NUMA nodes |
+| `LLAMA_NO_HOST_WEIGHTS=1`, `GGML_CUDA_NO_PINNED=1`, `GGML_CUDA_PIN_STAGING=1` | weights are never pinned; only staging buffers are |
+| `GGML_SCHED_INPLACE_FOLLOW` (on by default) | in-place ops run on the backend that owns their memory |
+
+The test `tests/test-expert-banks.cpp` covers mixed, non-host and whole-layer banks
+([`be71aea2`](https://github.com/akapug/ik_llama.cpp/commit/be71aea26d2f7a4b35226750f35897403408dac8) fixes its
+whole-layer case). It passed on box D with the measured package.
+
+### To run it
+
+**Build** (we built in `nvidia/cuda:12.6.3-devel-ubuntu24.04` with `libvulkan-dev` and `glslc`):
+
+```sh
+git clone -b mixed-cuda-vulkan-expert-banks https://github.com/akapug/ik_llama.cpp && cd ik_llama.cpp
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_VULKAN=ON -DCMAKE_CUDA_ARCHITECTURES=61 \
+  -DGGML_NATIVE=OFF -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DCMAKE_C_FLAGS=-march=znver1 -DCMAKE_CXX_FLAGS=-march=znver1 \
+  -DGGML_EXPERT_CHUNKING=OFF -DGGML_SCHED_MAX_COPIES=1 -DGGML_IQK_FA_ALL_QUANTS=ON -DBUILD_SHARED_LIBS=OFF
+cmake --build build --target llama-server -j
+```
+
+**Placement rules.**
+1. Fill VRAM with whole layers of experts. A layer split between a bank and the CPU still pays for a CPU pass and a
+   device hop. With whole layers, that split goes away.
+2. Put the MI25 first in the fill order: it holds 16 GB and is free of other work. The 1080 Ti takes what is left
+   after attention, KV cache and the compute buffers (8,315 of 11,264 MiB in use here).
+3. Leave the MTP layer out of the heat file when the MTP draft is on.
+   [`whole-layer-banks.py`](whole-layer-banks.py) does this.
+4. Force the MI25 to its high DPM state before a run: `echo high > /sys/class/drm/card<N>/device/power_dpm_force_performance_level`
+   (undo: `echo auto`). Under `auto` it stayed at 300 / 167 MHz through bursty decode, and a 1-token bank chain took
+   3.3x longer (1,387 against 423 microseconds).
+5. Pick the Vulkan device by its name, not by its index: on this box the indexes changed across a reboot
+   ([the card and the stack](#the-card-and-the-stack)).
+6. Watch the HBM temperature during the run: see [Heat and power](#heat-and-power).
+
+**The heat file** (needs `gguf-py` from the same tree; it reads only the GGUF header):
+
+```sh
+PYTHONPATH=gguf-py python3 whole-layer-banks.py Ornith-1.5-35B-Q4_K_M.gguf orn35-banks.tsv Vulkan0=14 CUDA0=5
+# Vulkan0: 30 layers [9, 11, 12, ..., 39], 13.49 of 14 GiB
+# CUDA0: 10 layers [0, 1, ..., 8, 10], 4.67 of 5 GiB
+# CPU: []; MTP layers not written: [40]
+```
+
+**The rows placement** for the host copy: one line per routed-expert tensor, all experts, rows over nodes 0-7:
+
+```sh
+PYTHONPATH=gguf-py python3 -c 'import gguf,re,sys; r=gguf.GGUFReader(sys.argv[1])
+for t in r.tensors:
+    if re.search(r"ffn_(up|gate|down|gate_up)_exps", t.name): print(f"{t.name}\t*\trows:0,1,2,3,4,5,6,7")' \
+  Ornith-1.5-35B-Q4_K_M.gguf > orn35-rows8.tsv
+```
+
+**The server** (arm o6):
+
+```sh
+echo 0 | sudo tee /proc/sys/kernel/numa_balancing
+env GGML_AFFINITY_ONCE=1 LLAMA_MOE_OVERLAP=1 GGML_SCHED_OVERLAP=1 GGML_OMP_FAST_ENTRY=1 GGML_BARRIER_SPIN=1 \
+  GGML_MAIN_NO_MOE=1 GGML_CUDA_NO_PINNED=1 GGML_CUDA_PIN_STAGING=1 LLAMA_NO_HOST_WEIGHTS=1 \
+  GGML_MOE_GROUPS=8 LLAMA_EXPERT_PLACEMENT=orn35-rows8.tsv LLAMA_EXPERT_PLACEMENT_VERIFY=1 \
+  LLAMA_HOT_EXPERTS=orn35-banks.tsv LLAMA_EXTRA_VULKAN=1 GGML_VK_VISIBLE_DEVICES=0 LLAMA_HOT_EXPERTS_DEVICE=Vulkan0 \
+  GGML_VK_OFFLOAD_MIN_BATCH=1000000 GGML_VK_ASYNC_GRAPH=1 GGML_VK_STAGED_INPUTS=1 LLAMA_HOT_BANK_FIRST=1 \
+  GGML_VK_MMVID_MAX_TOKENS=8 \
+numactl --interleave=0-7 build/bin/llama-server -m Ornith-1.5-35B-Q4_K_M.gguf --no-mmap \
+  -t 64 -tb 64 -cr 0-63 -c 8192 -ngl 99 --cpu-moe -cuda offload-batch-size=1000000 -ub 1024 -b 1024 \
+  --spec-type mtp:n_max=3,p_min=0.75 -fa 1 -np 1 --host 127.0.0.1 --port 8080
+```
+
+- For chat, add `--jinja --reasoning-format deepseek --reasoning-budget 8192` and a larger `-c`. We ran `-c 32768`.
+- The CPU-side switches (`GGML_AFFINITY_ONCE` to `GGML_MAIN_NO_MOE`) are research switches. Each was worth 0-3 % on
+  another box and model; we did not measure them one by one here.
+- Arm o1 = the same without `LLAMA_HOT_EXPERTS` and the Vulkan switches. Arm o5 = o1 with the MTP draft.
+
+### What did not work
+
+- **An external DFlash draft model** for Ornith-1.5-35B-A3B (a Q8_0 GGUF, `--spec-type dflash:n_max=4`) was accepted for
+  0.9 % of drafted tokens with the draft on the CPU, 1.3 % on the 1080 Ti, and 6 % with the scheduler overlap
+  switches off. Decode with it was 11.5-19.9 tok/s, below the no-draft speed. The texts were coherent. Our reading: a fault in this engine's
+  DFlash path for this draft, not yet investigated. Use the model's own MTP head.
+- **The MTP layer in the heat file.** If the heat file also names the MTP layer, the load aborts with "already
+  device-resident".
 
 ## The card and the stack
 
@@ -120,9 +322,10 @@ Box D's CPUs had no other jobs during the CPU-only and two-card rows.
 - **Two old cards hold the whole model and decode at 71-74 tok/s, 7x CPU-only.** The 1080 Ti also held a ~5 GB
   process of its own. Prefill falls as more layers go to the 1080 Ti (no fast fp16 on Pascal): 365 to 296.
 
-## As a hot-expert store for DeepSeek V4.1 (in progress)
+## As a hot-expert store for DeepSeek V4.1: stopped, bound by hop latency
 
-Status: the text is correct, the speed is not there yet, and the fixes are in progress. Everything here is box D
+Status: **a negative result.** The text is correct, but every version was slower than the same box without the
+MI25, and the profile says why ([the outcome](#the-outcome-hop-latency-not-bandwidth)). Everything here is box D
 running DeepSeek V4.1 Flash as in [moe-offload point 17](../moe-offload/#what-we-learned-measured): the GTX 1080 Ti
 holds attention, KV cache and the dense weights, the CPUs hold the routed experts. The MI25 is added to hold the
 most-routed experts, in the same process. That needed an engine change: a CUDA build of ik_llama.cpp that also opens
@@ -170,9 +373,43 @@ its 128 experts per layer in MI25 banks, the engine's op profiler, milliseconds 
 - On V4.1, moving the sum to the CUDA card ran the 1080 Ti out of memory at warm-up (+1.7 GiB of compute buffer), so
   there the sum stays on the MI25. The next V4.1 run has the other fixes on.
 - A model whose experts carry biases (gpt-oss-20b) skips the bank path in this build, so it is no test of the banks.
-- Our ceiling estimate, not measured: the MI25 holds the experts behind 31.6 % of CPU expert reads. If its work hid
-  completely behind the CPU's, that would save about 21 ms of the 143 ms a token takes without the draft on V4.1
-  without the MI25, so about 8 tok/s at most.
+- Our ceiling estimate before the runs below, not measured: the MI25 holds the experts behind 31.6 % of CPU expert
+  reads. If its work hid completely behind the CPU's, that would save about 21 ms of the 143 ms a token takes without
+  the draft on V4.1 without the MI25, so about 8 tok/s at most.
+
+### The outcome: hop latency, not bandwidth
+
+Two more causes, found and fixed (MEASURED with the engine's `--hotbank-perf` timing of the V4.1 bank chain):
+- **Clocks.** Under the driver's `auto` DPM level the MI25 sat at 300 MHz core and 167 MHz HBM through bursty decode.
+  Forced to `high` (1500 / 945 MHz), a 1-token bank chain took 423 instead of 1,387 microseconds (3.3x).
+- **The Vulkan MoE kernel.** For batches of a few tokens, `mul_mat_id` ran the tiled matmul path: 11.1 ms for a
+  5-token chain. The mat-vec kernel per token (`GGML_VK_MMVID_MAX_TOKENS`, default 8) takes 1.30 ms.
+- **Bank-first did not reorder.** `LLAMA_HOT_BANK_FIRST=1` was meant to start the MI25 before the CPU experts. The
+  graph's split map showed CPU, then Vulkan, then CUDA in every layer: the bank output was pulled in only by the
+  final sum. The fix ([`1aa46479`](https://github.com/akapug/ik_llama.cpp/commit/1aa464798f0406722ff485f05ea36a3bc7c0e003))
+  adds every partition to the graph in order.
+
+V4.1 on box D with the 14 GiB of hot experts on the MI25, the 1080 Ti layout of
+[moe-offload point 17](../moe-offload/#what-we-learned-measured), 3 coding-agent prompts of 300 greedy tokens, one
+load per row. Draft = the DSpark draft model at n_max 4.
+
+| arm | draft tok/s | no draft tok/s |
+|---|---|---|
+| no MI25 (point 17) | **7.13** (7.24, 7.46, 6.70) | **6.97** (6.95, 7.00, 6.95) |
+| MI25 banks, `auto` clocks, before the kernel change | 2.52 (2.71, 2.76, 2.10) | 4.41 (4.55, 4.45, 4.24) |
+| + `high` clocks + the mat-vec kernel | 6.05 (6.31, 6.52, 5.31) | 5.46 (5.62, 5.10, 5.65) |
+| + bank-first that reorders | 6.19 (6.27, 6.81, 5.48) | 5.61 (5.61, 5.58, 5.64) |
+
+The engine's op profiler, per decode step without the draft, in the last arm: the banks save about 13.5 ms of CPU
+expert time (31.6 % coverage cuts the CPU expert time by about 14 %). They add about 40 ms of waiting across devices:
+the Vulkan steps take 20.5 ms, the bank's down projection 11.6 ms as its own step, and the sum on the CUDA card 20 ms
+against 11.8 ms without banks. So the MI25 adds more latency per token than it removes.
+
+**Why the same card wins on Ornith-35B and loses on V4.1.** Our reading of the two profiles: on V4.1 the MI25 can
+hold only 31.6 % of the routed traffic, so every layer still runs its CPU expert pass, and the bank adds hops in
+series with it. On Ornith-35B the two cards hold every expert, so the CPU expert pass and its hop go away. A bank
+store pays when it removes a whole step per layer, not when it shortens a step that still runs. We stopped the
+MI25 lever on V4.1; the best V4.1 recipe on box D stays at 7.13 / 6.97 without it.
 
 ## Heat and power
 
@@ -212,6 +449,9 @@ is 95 C, the junction's 105 C):
 
 ## Not measured yet
 
+- Banks for experts with biases (gpt-oss), and the Vulkan `SWIGLU_OAI` path they need.
+- Why the external DFlash draft for Ornith-1.5-35B-A3B is almost never accepted in this engine.
+- Ornith-1.5-35B-A3B on the two cards as an agent on real repository work, and at depths beyond 21k.
 - The ROCm path on this card, for a same-build comparison with Vulkan.
 - Decode at 32k depth and beyond.
 - Whether a WX9100 vBIOS (a 170 W cap) helps. Decode mostly reads memory, so the 110 W cap may cost little there,
