@@ -363,8 +363,31 @@ prompts, 300 greedy tokens each, one load; each figure is the mean of the 3 prom
 - +12 % with the draft, +11 % without, +25 % prefill. Draft acceptance 0.90. The GPU used 21,512 of 23,040 MiB.
 - Without the draft, prompt 0 gives the same text as the earlier build; prompts 1 and 2 share their first 850 and 244
   characters and then drift, both coherent. Our reading: rounding from the 4.8 GiB more experts computed on the GPU.
-- This run changed several things at once, so which change buys how much is not measured yet; runs that leave out
-  one change at a time are queued.
+- Which change buys how much: the same recipe and build, each run with one change turned off, same prompts, one load
+  each (2026-10-21).
+
+| turned off | draft | no draft | texts |
+|---|---|---|---|
+| nothing (the row above) | 11.88 | 9.72 | |
+| no host weights | 10.99 | 9.04 | same |
+| in-place ops follow their target | 11.92 | 9.78 | same |
+| the DRAM fill that skips experts the GPU holds (plain placement instead) | 11.31 | 9.31 | same |
+| the draft model's experts on the CPU (the whole draft on the GPU, so only 3.7 GiB of hot experts fit) | 11.65 | 9.40 | differ |
+| all of these, with 2.2 GiB of hot experts (the earlier recipe on the new build) | 10.70 | 8.80 | |
+
+  - No host weights is worth +8 % with the draft and +7.5 % without; the fill that skips GPU-held experts +5 % and +4 %; the CPU draft
+    experts with the larger hot set +2 % and +3 %. In-place ops following their target changes nothing here: it is
+    the fix that lets the GTX 1080 Ti run V4.1's attention ([engine changes](#engine-changes)), and on this box the
+    graph is the same with or without it.
+  - With everything off, the new build matches the earlier one (10.70 and 8.80 against 10.58 and 8.75, the same
+    texts without the draft). So the prefill gain, 62-64 against 52-54, comes from the rebased build, not from any of
+    these changes.
+  - Moving the whole draft model to the CPU is a dead end: 2.44-2.69 tok/s, because a CPU draft round costs more than
+    a main-model token, and its drafts were never accepted (0 of 1,086, not chased).
+  - Two arms were not run: 7.6 GiB of hot experts, and 2.2 GiB of hot experts with every other change on.
+- One more engine change, not yet in our public fork, binds each expert weight to its NUMA node before the load reads
+  it. On it the same recipe ran 12.13 (13.15, 12.90, 10.33) with the draft and 10.00 without, prefill 65.5, with the
+  same texts. That is +2 %, inside the run-to-run spread we have not measured, so the table keeps 11.88.
 - Our planner predicted 8.88 and 7.05, 25-27 % low.
 
 **22. Flash-Next on one B70 does real agent work, and a smaller quant was as good and faster.**
