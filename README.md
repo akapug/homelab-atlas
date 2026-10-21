@@ -4,9 +4,29 @@ Measurements, patches and tools for running local LLMs on hardware people can ac
 older workstations, used server parts, single prosumer GPUs. Not a rack of H100s.
 
 The bet behind it: as models lean on sparsity, state-space layers, speculative decoding and low-bit
-weights, memory bandwidth and software matter more than raw GPU compute, and a lot of capability
-is left on the table on modest hardware because nobody tuned for it. Each entry here is a
-measured case of that, with the patches that closed the gap and the commands to check our numbers.
+weights, memory bandwidth and software matter more than raw GPU compute, and modest hardware often
+runs well below what it can do because few people tune for it. Each entry here is a measured case
+of that, with the patches that closed the gap and the commands to check our numbers.
+
+**Try Recipe Maker in your browser:** [akapug.github.io/homelab-atlas](https://akapug.github.io/homelab-atlas/).
+Pick one of our four boxes and see which layouts of a big MoE model fit it, how fast each should run, and how
+the predictions compare with our measured runs. Nothing to install.
+
+## Highlights
+
+Each line is one measured configuration; the linked entry gives its conditions, its correctness check and the
+commands.
+
+- Qwen3.8-27B on one Intel Arc Pro B70: 61 tok/s at one stream and 351 at eight (vLLM, AutoRound int4, MTP 3).
+  [B70](b70/)
+- Qwen3.8 Flash-Next on one B70 with about half its experts computed on the CPU: 87.1 tok/s, passing 11 of our
+  12 agent tasks. [MoE offload](moe-offload/)
+- GLM-5.3-Flash on an RTX 3090 Ti plus 192 GB of DDR5: 23.08 tok/s. [MoE offload](moe-offload/)
+- Ornith-1.5-35B-A3B with every routed expert on a $50 AMD MI25 and a GTX 1080 Ti, in a 2017 server:
+  59-60 tok/s with the model's own draft head, against 47 with the same draft and the experts on the CPUs.
+  [MI25](mi25/)
+- DeepSeek V4.1 Flash on a 2019 dual-Xeon workstation (one RTX 6000, DDR4 and Optane): 11.9 tok/s. On a
+  two-socket EPYC server with a GTX 1080 Ti and its experts as released: 7.13. [MoE offload](moe-offload/)
 
 ## Find your patch
 
