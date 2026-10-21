@@ -245,6 +245,14 @@ class Curate(unittest.TestCase):
         with open(os.path.join(self.out, 'recipes', 'r3.json')) as f:
             self.assertEqual(json.load(f), {'id': 'r3', 'note': 'lab notes'})
 
+    def test_manifest_strips_agent_names_and_ledger_prefixes(self):
+        with open(os.path.join(ROOT, 'publish', 'manifest.json')) as f:
+            R = self.C.rules(json.load(f), '')
+        agent = 'homelab-' + 'cla' + 'ude'
+        self.assertEqual(self.C.rewrite('package (ik ' + 'hl' + '332-stack 8d4d0f39)', R), 'package (ik stack 8d4d0f39)')
+        self.assertEqual(self.C.rewrite('stopped (' + agent + ' GO 10-20 23:12Z); x', R), 'stopped (approved); x')
+        self.assertEqual(self.C.rewrite('asked by local-ai-' + 'cla' + 'ude', R), 'asked by an agent')
+
     def test_every_home_path_becomes_tilde(self):
         R = self.C.rules({'rewrite': []}, '/home/' + 'someone')
         for raw in ('/home/' + 'someone/m.gguf', '/home/' + 'user/m.gguf', '/Users/' + 'x/m.gguf'):
@@ -284,6 +292,8 @@ class Scan(unittest.TestCase):
             f.write('see docs/' + '42 and ' + 'hl/' + '314\n')
         with open(os.path.join(planted, 'q.txt'), 'w') as f:
             f.write('copy of ~/.' + 'arc/x\nfrom ' + 'hl' + '256-providers\nsee the seat ' + 'branch b70-rig/x\n')
+        with open(os.path.join(planted, 'r.txt'), 'w') as f:
+            f.write('"tags": ["full-stack", "hl-' + '332"]\n')
         p = subprocess.run(['bash', os.path.join(ROOT, 'tools', 'export_atlas.sh'), '--scan-only', planted, '--terms', terms],
                            capture_output=True, text=True)
         self.assertEqual(p.returncode, 1, p.stdout)
@@ -295,6 +305,7 @@ class Scan(unittest.TestCase):
         self.assertIn('q.txt:1: lab notes pointer', p.stdout)
         self.assertIn('q.txt:2: internal id', p.stdout)
         self.assertIn('q.txt:3: lab notes pointer', p.stdout)
+        self.assertIn('r.txt:1: internal id', p.stdout)
 
 
 class Page(unittest.TestCase):

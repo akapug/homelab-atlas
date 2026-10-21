@@ -35,9 +35,24 @@ MAPS = ['7f0000000000 bind:1 anon=%d dirty=%d N1=%d kernelpagesize_kB=4' % (3 * 
         '7f1000000000 bind:0 anon=1 N0=%d N2=%d kernelpagesize_kB=4' % (2**18, 2**18),
         '7f2000000000 interleave:0-1 anon=1 N0=%d N1=%d N2=%d kernelpagesize_kB=4' % (2**18, 2**18, 2**18),
         '7f3000000000 default anon=1 N0=999999 kernelpagesize_kB=4', '7f4000000000 bind:2 file=/x N2=512 kernelpagesize_kB=2048']
+# dense-rows apply line ("N expert + M other tensors placed") and a CPU draft's own block (droopy-stack, 10-21)
+DENSE2 = [A + '/srv/kit/optane-place/v41-ba.placement.tsv: 240 expert + 0 other tensors placed in 63102 ranges (0 skipped), 62088 straddle pages, 0.94 MiB left at tensor edges',
+          A + '  node(s) 0        bind          80896.5 MiB', A + '  node(s) 1        bind          77810.7 MiB', A + '  node(s) 2        bind          63061.5 MiB',
+          'llama_expert_numa_report: verified (1 page in 64): node0=80900.0MiB node1=77800.0MiB node2=63060.0MiB; 0.00% of sampled pages are off their target',
+          A + '/srv/kit/optane-place/v41-ba.placement.tsv: 9 expert + 24 other tensors placed in 900 ranges (40 skipped), 800 straddle pages, 0.10 MiB left at tensor edges',
+          A + '  node(s) 0        bind           1000.0 MiB', A + '  node(s) 1        bind           1000.0 MiB',
+          'llama_expert_numa_report: verified (1 page in 64): node0=3000.0MiB node1=1000.0MiB; 2.00% of sampled pages are off their target']
 
 
 class PlaceVerify(unittest.TestCase):
+    def test_dense_rows_lines_and_a_cpu_draft_block_are_summed(self):
+        r = P.verify(DENSE2)
+        self.assertEqual(r['expected_mib'], {'0': 81896.5, '1': 78810.7, '2': 63061.5})
+        self.assertEqual(r['measured_mib'], {'0': 83900.0, '1': 78800.0, '2': 63060.0})
+        self.assertEqual(r['status'], 'PASS', r['reasons'])   # node0 +2.0 GiB < 3 % of 80 GiB
+        self.assertAlmostEqual(r['off_pct'], 100 * 0.02 * 4000 / 225760, places=2)
+        self.assertEqual(P.verify(DENSE2[:5])['status'], 'PASS')
+
     def test_live_numa_maps_counts_bind_and_interleave_pages(self):
         got, off = P.live(MAPS)
         self.assertEqual(got, {1: 4096.0, 0: 2048.0, 2: 3072.0})   # default ranges are not the placement's
@@ -52,6 +67,22 @@ class PlaceVerify(unittest.TestCase):
         h = P.verify(V41R1, numa_maps=healed)
         self.assertEqual(h['status'], 'PASS', h['reasons'])
         self.assertEqual(h['off_pct'], 0.0)
+
+    def test_live_extra_bind_ranges_pass_and_a_short_node_fails(self):
+        # v41fs-fs1b 10-21: main rows plan + a CPU draft's 4252.5 MiB on node 1; live maps after bind-heal, 0.13 % off
+        lines = DENSE2[:5] + [A + '/x.tsv: 9 expert + 0 other tensors placed in 9 ranges (0 skipped), 0 straddle pages, 0.04 MiB left at tensor edges',
+                              A + '  node(s) 1        bind           4252.5 MiB', 'llama_expert_numa_report: verified (1 page in 64): node1=4252.5MiB; 0.00% of sampled pages are off their target']
+        live = ['a bind:0 N0=%d kernelpagesize_kB=4' % int(81638.0 * 256), 'b bind:1 N1=%d N0=%d kernelpagesize_kB=4' % (int(84553.5 * 256), int(100 * 256)),
+                'c bind:2 N2=%d kernelpagesize_kB=4' % int(63361.3 * 256)]
+        r = P.verify(lines, numa_maps=live)
+        self.assertEqual(r['status'], 'PASS', r['reasons'])
+        self.assertEqual(sorted(r['extra_bind_mib']), ['1'])
+        short = ['a bind:0 N0=%d kernelpagesize_kB=4' % int(78000.0 * 256), 'b bind:1 N1=%d kernelpagesize_kB=4' % int(82063.0 * 256),
+                 'c bind:2 N2=%d kernelpagesize_kB=4' % int(63061.5 * 256)]
+        s = P.verify(lines, numa_maps=short)
+        self.assertEqual(s['status'], 'FAIL')
+        self.assertTrue(s['reasons'][0].startswith('node0 -2.8 GiB'), s['reasons'])
+        self.assertEqual(P.verify(lines)['status'], 'PASS')   # the log-time check keeps the two-sided bar
 
     def test_rows_on_target_passes(self):
         r = P.verify(R1)

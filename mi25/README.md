@@ -5,7 +5,9 @@ paper, passive cooling. We paid about $50 for ours. AMD's current ROCm releases 
 it on Vulkan, with no ROCm installed. The question: what does a card this cheap add to an old server, alone, as a
 hot-expert store for a MoE model, and beside a GTX 1080 Ti?
 
-It sits in box D of [the MoE offload entry](../moe-offload/): 2x EPYC 7601, 1 TB DDR4, a GTX 1080 Ti.
+It sits in box D of [the MoE offload entry](../moe-offload/): 2x EPYC 7601, 1 TB DDR4, a GTX 1080 Ti. Its first
+use there, holding hot experts of DeepSeek V4.1 Flash beside the 1080 Ti, is
+[in progress](#as-a-hot-expert-store-for-deepseek-v41-in-progress): correct text, currently slower.
 
 ## The card and the stack
 
@@ -117,6 +119,59 @@ Box D's CPUs had no other jobs during the CPU-only and two-card rows.
   the GPU run is no faster than CPU-only. On this box the CPU expert path is the bottleneck: fill the VRAM first.
 - **Two old cards hold the whole model and decode at 71-74 tok/s, 7x CPU-only.** The 1080 Ti also held a ~5 GB
   process of its own. Prefill falls as more layers go to the 1080 Ti (no fast fp16 on Pascal): 365 to 296.
+
+## As a hot-expert store for DeepSeek V4.1 (in progress)
+
+Status: the text is correct, the speed is not there yet, and the fixes are in progress. Everything here is box D
+running DeepSeek V4.1 Flash as in [moe-offload point 17](../moe-offload/#what-we-learned-measured): the GTX 1080 Ti
+holds attention, KV cache and the dense weights, the CPUs hold the routed experts. The MI25 is added to hold the
+most-routed experts, in the same process. That needed an engine change: a CUDA build of ik_llama.cpp that also opens
+Vulkan devices and puts expert banks on one of them ([engine changes](../moe-offload/#engine-changes-not-yet-public)).
+
+**Device checks first.** The engine's op tests on the MI25 under Vulkan: 35 of 36 required ops and 43 of 44 V4.1
+cases pass, all 8 full-bank cases among them. The one failure is sorting the router's scores over 384 experts
+(ARGSORT, normalized error 0.554), so expert routing must stay off this card. The banks never route; they only
+compute the experts they hold.
+
+**V4.1 with 14 GiB of hot experts on the MI25.** The 799 most-routed experts (14,326 MiB, 31.6 % of the routed picks
+on held-out coding text) sit in banks on the MI25; the other routed experts stay on the CPUs. One coding-agent prompt,
+300 greedy tokens, the draft first, then no draft on the cached prompt.
+
+| layout | draft tok/s | no draft tok/s |
+|---|---|---|
+| 1080 Ti + CPUs, no MI25 (same prompt) | 7.24 | 6.95 |
+| + 799 hot experts on the MI25 | 2.66 | 4.08 |
+
+- The greedy text is identical to the run without the MI25, with and without the draft.
+- The card hardly warmed: HBM and junction peaked at 39 C. Wall power peaked at 578 W. No GPU faults.
+- We stopped after one prompt to profile it.
+
+**Where the time goes.** Measured on a smaller model, so a profile takes minutes: Qwen3-30B-A3B Q4_K_S with 16 of
+its 128 experts per layer in MI25 banks, the engine's op profiler, milliseconds per decode step.
+- Experts only on the CPU: 86 ms. With the banks as first built: 141 ms.
+- Each layer runs four steps in turn: CUDA (attention, router), Vulkan (the bank), the CPU (the other experts), CUDA
+  again. The MI25's own GPU time per bank is about 0.39 ms; the rest of the cost is waiting and copying.
+- Our reading of the profile and the code: the Vulkan step waits on its fence, so it cannot overlap the CPU's
+  experts; one fused expert path allocated a fresh device buffer on every step; and summing the partial expert
+  outputs on the MI25 meant 5 inputs in and a synchronous read back out.
+
+**Fixes so far, each a runtime switch.**
+
+| change | measured |
+|---|---|
+| Vulkan steps submitted without waiting, banks scheduled first, a persistent buffer, the sum moved to the CUDA card | 141 → 107 ms a step |
+| inputs to the Vulkan step through one staging buffer, recorded into its first command buffer | its input copy 4.3 → 3.0 ms a step |
+| the bank's result copied to a staging buffer inside the Vulkan step, read after its fence | the next CUDA step's input copy 14.2 → 3.5 ms a step |
+
+- 107 ms is still slower than the CPU alone (86 ms) on this model.
+- The smoke's own tok/s swings from run to run (7.9-13 tok/s with the CPU alone), because it has no NUMA placement.
+  So the profile is the evidence here, not the smoke's speed. The greedy text matches the CPU-only run on one prompt;
+  on the other it differs from character 412 on, in every bank arm. We read that as rounding, not yet proven.
+- On V4.1, moving the sum to the CUDA card ran the 1080 Ti out of memory at warm-up (+1.7 GiB of compute buffer), so
+  there the sum stays on the MI25. The next V4.1 run has the other fixes on.
+- A model whose experts carry biases (gpt-oss-20b) skips the bank path in this build, so it is no test of the banks.
+- Our ceiling estimate, not measured: if the MI25's work hid completely behind the CPU's, it would remove at most the
+  31.6 % of CPU expert reads it holds, about 8 tok/s without the draft on V4.1.
 
 ## Heat and power
 

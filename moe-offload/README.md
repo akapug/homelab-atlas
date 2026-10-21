@@ -1,18 +1,19 @@
 # Big MoE models on one GPU plus system memory
 
-Three mixture-of-experts models that do not fit in one card's VRAM, each served by keeping part of the expert
+Four mixture-of-experts models that do not fit in one card's VRAM, each served by keeping part of the expert
 weights on the GPU and computing the rest on the CPU from system memory:
 
 - GLM-5.3-Flash, 321B total parameters;
 - DeepSeek V4.1 Flash, 748B;
-- Qwen3.8 Flash-Next.
+- Qwen3.8 Flash-Next;
+- Ornith-1.5-122B, a fine-tune of Qwen3.5-122B-A10B (122B total, about 10B active per token).
 
 The question on every box: how close does one mid-range GPU plus the memory already in the machine get to
 25 tok/s at one stream, without giving up output quality? 25 tok/s is our bar for a coding model we would
 hand an agent's work to.
 
 Box D asks it from the other side: a two-socket server with 1 TB of DRAM and only an 11 GB Pascal card, running
-the largest model with its experts at release precision, almost entirely from DRAM.
+the largest model with its routed experts at release precision, all from DRAM.
 
 ## The boxes
 
@@ -32,12 +33,13 @@ requests is named in the row.
 |---|---|---|---|---|---|
 | GLM-5.3-Flash | A | the `glm53-flash-offload` image (ghcr.io/sybil-solutions, exllamav3-based): a VRAM expert cache of 1,600 slots, the other experts computed on 14 CPU cores from a 107 GiB RAM tier | EXL3 3.05 bpw | **23.08**, upper median of 6 requests of 300 tokens (22.20 without layer-ahead warm-up) | served vs the same weights computed exactly on the GPU: KL 0.0044, top-1 0.985 (928 positions) |
 | GLM-5.3-Flash | B | ik_llama.cpp with our patches: hot experts on the GPU, each CPU expert's rows split between the two sockets, MTP draft 3 tokens with the reduced draft vocabulary (point 6), p_min 0.75, built with expert chunking off (point 13) | unsloth UD-Q4_K_XL | **16.06**, mean of 4 prompts, 3 rounds each (15.95 with the full draft vocabulary; 15.73 on our earlier build of the same recipe) | KL 0.030, top-1 0.960 against the EXL3 3.05 bpw store above (925 positions). See [the reference problem](#the-quality-reference-problem) |
-| DeepSeek V4.1 Flash | B | ik_llama.cpp with our patches: as above, plus the DSpark draft model at n_max 4 (acceptance 0.95) | MXFP4 for hot experts, q2_K for cold ones | **10.6**, mean of two runs (10.58, 10.62), each over 3 prompts of 300 tokens (8.75 without the draft) | KL 0.0169, top-1 0.975 against the all-MXFP4 store (1,376 positions) |
-| DeepSeek V4.1 Flash | D | ik_llama.cpp with our patches, CPU only: 64 threads, each expert's rows split across all 8 NUMA nodes, weights in a RAM disk, the DSpark draft model (Q2_K, on the CPU) at n_max 4 (acceptance 0.92) | routed experts at release precision (MXFP4, as DeepSeek released them), other tensors Q8_0 | **6.64**, mean of 3 prompts of 256 tokens, one request each (6.92, 7.58, 5.42); 4.45 without the draft | not measured on box D. The routed experts are as released (only the other tensors are quantized, to Q8_0); this store is the reference the box B row is measured against |
+| DeepSeek V4.1 Flash | B | ik_llama.cpp with our patches, including the newer ones ([below](#engine-changes-not-yet-public)): hot experts on the GPU (7.0 GiB), each CPU expert's rows split between the two sockets, the draft model's experts on the CPU, the DSpark draft model at n_max 4 (acceptance 0.90) | MXFP4 for hot experts, q2_K for cold ones | **11.88**, mean of 3 prompts of 300 tokens, one load (12.88, 12.62, 10.13); 9.72 without the draft (point 21). Before the newer changes: 10.6 and 8.75 | KL 0.0169, top-1 0.975 against the all-MXFP4 store (1,376 positions), measured with the earlier build; not re-measured on the new one |
+| DeepSeek V4.1 Flash | D | ik_llama.cpp with our patches ([below](#engine-changes-not-yet-public)): the GTX 1080 Ti holds attention, KV cache, the dense and shared-expert weights and the output head; the routed experts stay on the CPUs, each expert's rows split across all 8 NUMA nodes; 64 threads; the DSpark draft model (Q2_K, on the CPU) at n_max 4 (acceptance 0.92) | routed experts at release precision (MXFP4, as DeepSeek released them), other tensors Q8_0 | **7.13**, mean of 3 prompts of 300 tokens, one request each (7.24, 7.46, 6.70); 6.97 without the draft (point 17). CPU only: 7.02 and 5.16 (point 16) | not measured on box D. The routed experts are as released (only the other tensors are quantized, to Q8_0); this store is the reference the box B row is measured against |
 | Qwen3.8 Flash-Next | C | XeStrata (the SYCL port of Strata), one B70, about 10,900 experts in VRAM, the rest on the CPU from RAM, MTP 4, int8 KV, 262,144-token window | ISTA-DASLab GSQ-RCO IQ3_S | **87.1**, median of 3 runs (88.5, 87.1, 86.7) of 512 tokens on one code prompt, XeStrata xe0.1.45 with `--prefill auto` | not measured yet |
+| Ornith-1.5-122B | B | ik_llama.cpp with our patches: the RTX 6000 holds attention, the dense and shared-expert weights, the MTP layer's non-expert weights and the routed experts of layers 0-8; the other routed experts (the MTP layer's too) in DRAM, each expert's rows split between the two sockets; 39 threads; its own MTP layer at n_max 3, p_min 0.75; 49,152-token window | ornith-ai's Q4_K_M GGUF (70.6 GiB) | **31.6** at 4,000 tokens of context and 31.0 at 600, mean of 3 prompts of 300 tokens (33.72, 29.84, 31.23 at 4,000); 27.1-27.3 without the draft | code-review screens: both planted defects found only with an 8k thinking budget; agent tasks 0 of 3 (points 19 and 20) |
 
-Box A and box B each miss 25 tok/s for GLM; box C clears it with a smaller model. Box D, on its CPUs, runs V4.1
-at about a quarter of the bar.
+Box A and box B each miss 25 tok/s for GLM; box C clears it with a smaller model. Box B clears it with
+Ornith-1.5-122B, which then failed our agent tasks. Box D runs V4.1 at under a third of the bar.
 
 ## What we learned, measured
 
@@ -126,16 +128,28 @@ store (MXFP4 hot experts, q2_K cold ones); "release" is the store in the table a
 - Its draft acceptance is higher: 0.92 against 0.89.
 - Equal speed at more bytes is weak evidence that decode on this box is not bound by DRAM bytes. It is not settled.
 
-**11. The GTX 1080 Ti helps a little, and only without attention.**
-- With the experts read in place, the 1080 Ti holding the router, shared experts, norms and output (4.5 GiB with
-  its buffers) gave +8 % with the draft and +12 % without (5.58 vs 5.16, 4.56 vs 4.06). A large file copy ran on
-  the box during most of that run.
-- Any V4.1 attention weight, or its KV cache, on the 1080 Ti gave garbage text in this build. We bisected it: only
-  attention weights and KV cache both on the CPU gave correct text. A small Qwen3 model ran correctly on the same
-  build and card, so the fault is in V4.1's attention path on Pascal (sm_61). The cause is not found.
-- The placed layout plus the GPU crashed at warm-up with a GPU memory fault on host memory. Our diagnosis from the
-  logs: with weights loaded without mmap, our build's pinned-memory cap was used up by weight buffers, so a buffer
-  the GPU reads directly stayed unpinned. It needs an engine fix, so the gains of points 9 and 11 do not stack yet.
+**11. Two engine faults kept V4.1's attention off the GTX 1080 Ti. Both are fixed now.**
+- First, without attention: with the experts read in place, the 1080 Ti holding the router, shared experts, norms
+  and output (4.5 GiB with its buffers) gave +8 % with the draft and +12 % without (5.58 vs 5.16, 4.56 vs 4.06). A
+  large file copy ran on the box during most of that run.
+- Garbage text. Any V4.1 attention weight, or its KV cache, on the 1080 Ti gave garbage text; a small Qwen3 model ran
+  correctly on the same build and card. We compared per-op sums of a GPU-attention run against a CPU-attention run on
+  a 7-token prompt. They agree through the attention itself; the first op that departs is the attention output
+  projection (49.22 on the CPU, 15.36 on the GPU), and the same matrix multiply is correct on this card when tested
+  alone. The cause, from the backend each op ran on and the engine source: this card has no CUDA kernel for V4's
+  flash attention (head size 512 with sinks), so that op runs on the CPU and writes its output into host memory. The
+  in-place inverse rope that follows was scheduled on the GPU, and the next GPU step had already copied its input
+  from host memory before that write landed, so the projection read the un-rotated values. The fix is in the
+  engine's scheduler ([below](#engine-changes-not-yet-public)). With it the per-op sums agree to within rounding,
+  and the greedy text matches the CPU run (identical on 2 of 3 prompts in point 17, the third forking at a near-tie).
+  Our reading, not measured: any device that cannot run this attention kernel would hit the same bug, not only
+  Pascal.
+- A crash at warm-up. With weights loaded without mmap, the placed layout plus the GPU crashed with a GPU memory fault
+  on host memory (Xid 31). Our build had pinned 79 GiB of weight buffers up to its pin cap, so the compute buffer
+  the GPU reads directly stayed unpinned. With weights kept in plain, never-pinned host memory
+  ([below](#engine-changes-not-yet-public)) the same arm ran with no fault. Every fault we logged was a GPU write to
+  host memory, which is also the in-place bug's signature, so which of the two caused each crash is not settled.
+- With both fixed, the gains of points 9 and 11 stack: point 17.
 
 **12. Verifying many tokens in one pass costs almost as much per token: a block drafter would not pay here.**
 
@@ -187,6 +201,164 @@ reversed order. "Paired" is the range over prompt pairs against 0.75.
 - No draft ran at 12.27 before the sweep and 12.18 after it. MTP at 3 tokens is 1.31x that.
 - We keep 0.75: 0.80 is inside the noise.
 
+Points 15-18 are box D with V4.1 on the release store. Conditions, unless a point says otherwise: weights in a RAM
+disk and loaded without mmap; routed experts row-split across all 8 NUMA nodes (point 9); 64 threads on cores 0-63;
+8,192-token window, flash attention; the 3 coding-agent prompts of point 9 (1.5-2.2k tokens), 300 greedy tokens each,
+one request at a time, first with the DSpark draft at n_max 4 ("draft") and then without it on the cached prompt ("no
+draft"). Each figure is the mean of the 3 prompts.
+
+**15. On box D, more threads never help V4.1; 32 threads match 64.**
+
+A thread sweep, CPU only, experts read in place from the RAM disk, threads spread evenly over the 8 nodes (96 and 128
+add SMT siblings):
+
+| threads | no draft | draft | prefill tok/s |
+|---|---|---|---|
+| 32 | 4.15 | 5.45 | 24.0 |
+| 48 | 4.04 | 4.86 | 33.1 |
+| 64 | 4.00 | 5.21 | 38.9 |
+| 96 | 3.86 | 4.89 | 32.2 |
+| 128 | 3.42 | 4.63 | 36.2 |
+
+- With experts row-split, 32 threads (4 cores per node) against 64: no draft 4.73 against 4.42 (+7 %), prefill 23.7
+  against 36.8, wall power 406 W against 532 W at peak. The 4.42 leaves out one outlier prompt at 3.32; the same
+  prompt ran at 4.46 earlier in the day. With the draft, 6.55 against 6.45 over the 3 prompts, but 32 threads were
+  about 6 % slower on the 2 prompts whose texts are identical at both thread counts (6.37 and 6.90 against 6.76 and
+  7.31).
+- An op profile at 32 threads, no draft, 245 ms a token: routed experts 25 %, the Q8_0 attention matrix multiplies
+  about 31 %, shared experts 9 %, flash attention 7 %, the BF16 output head 5 %.
+- Our reading, not measured directly: decode here is bound neither by compute nor by thread synchronization, but by
+  reads that cross NUMA nodes. The attention weights sat interleaved over all nodes, so about 7 of every 8 of their
+  reads were remote. Point 16 tests that.
+- We keep 64 threads for agent turns (prefill +55 %, drafts verify faster on the matched prompts) and would use 32
+  for long generation without a draft.
+
+**16. Place the dense weights per NUMA node too: +9 % with the draft, +17 % without.**
+- An engine change ([below](#engine-changes-not-yet-public)) lets a placement rule name any weight, not only routed
+  experts, and split a dense matrix into 8 row slices, one per node. With `-cr` listing the cores in node order, the
+  engine's static row split then has each node's threads read its own slice.
+- We placed the attention projections, the shared experts and the output head this way, beside the row-split
+  routed experts. Same session, 64 threads:
+
+| layout | draft | no draft | prefill tok/s |
+|---|---|---|---|
+| routed experts row-split | 6.45 (6.76, 7.31, 5.28) | 4.42 (4.44, 4.40; the outlier of point 15 left out) | 36.8 |
+| + dense weights row-split | **7.02** (7.45, 7.70, 5.91) | **5.16** (5.18, 5.13, 5.17) | 36.2 |
+
+- With the draft, all 3 texts and draft counts are identical to the run without the change. Without it, 2 of 3
+  texts are identical; the third forks at a near-tie, as it also does between thread counts.
+- The same change on Qwen3-30B-A3B Q4_K_S (64 threads, 128 tokens, one text in all four arms): 21.31 and 21.42 tok/s
+  with two unpatched builds, 21.26 patched without dense rules, 23.81 with attention and head row-split (+11 %).
+- This was the best CPU-only V4.1 recipe on box D: 7.02 tok/s with the draft, 5.16 without. Box B keeps its dense
+  weights on its GPU, so the change does nothing there today; we have not measured it on box B.
+
+**17. The 1080 Ti holding attention, KV cache and the dense weights: +35 % without the draft, and the draft stops paying.**
+
+With both faults of point 11 fixed, the 1080 Ti holds attention, the KV cache, the router, the shared experts, the
+norms and the output head (`-ngl 99 --cpu-moe`); routed experts stay row-split on the CPUs, and the draft model's
+weights on the CPU. Micro-batch 1024 with attention on the GPU, 2048 in the row without it, 4096 on the CPU only.
+
+| arm | draft | no draft | prefill tok/s | 1080 Ti memory |
+|---|---|---|---|---|
+| CPU only, point 16 | 7.02 | 5.16 | 36.2 | - |
+| GPU holds everything above except attention and KV | 6.59 | 5.60 | 37.2 | 6,385 MiB peak |
+| **GPU holds attention and KV too** | **7.13** (7.24, 7.46, 6.70) | **6.97** (6.95, 7.00, 6.95) | **48.2** | 9,579 MiB after load, 11,129 peak, of 11,264 |
+| the same, KV cache in host memory (`-nkvo`) | 7.05 | 6.67 | 48.8 | |
+| the same, the draft model's dense weights on the GPU too (micro-batch 512) | 5.57 | 6.90 | 46.7 | |
+
+- Against CPU only: no draft +35 %, prefill +33 %. No GPU memory faults in any of these runs. Wall power with
+  attention on the GPU: median 574 W, peak 590 W; CPU only peaked at 529 W.
+- Without the draft, 2 of 3 texts are identical to the CPU-only run; the third forks at the near-tie of point 16.
+- The draft now buys 1.02x (7.13 against 6.97). On the CPU it bought 1.36x. Our reading: with the dense work on the
+  GPU, verifying 5 tokens costs mostly the CPU reads of the union of the experts those 5 tokens route to, and the
+  dense work the draft used to amortize is gone. Putting the draft's own weights on the GPU made it slower still
+  (5.57). So on this layout we would serve without a draft.
+- Keeping the KV cache on the GPU wins (6.97 against 6.67 without the draft), even though the flash-attention op
+  itself runs on the CPU on this card (point 11).
+- Hot experts on the 1080 Ti cost 3-4 %. The memory left over holds 28 hot experts (502 MiB), 4.0 % of the routed
+  picks on held-out coding text. With them, no draft ran at 6.72, against 6.97 for the same layout without them and
+  6.93 in a third run. (In the run with them the draft model ran out of GPU memory at every step, so only its no-draft
+  figure is valid.) The hot-expert idea needs a bigger card: point 18.
+
+**18. The MI25 as a hot-expert store for V4.1: correct text, currently slower. Fixes in progress.**
+- The 16 GB MI25 in the same box holds the 799 hottest routed experts (14 GiB, 31.6 % of the routed picks on
+  held-out coding text) under Vulkan, in the same process as the CUDA 1080 Ti (an engine change,
+  [below](#engine-changes-not-yet-public)). The rest is the layout of point 17.
+- Measured on one prompt: 2.66 tok/s with the draft and 4.08 without, against 7.24 and 6.95 for that prompt without
+  the MI25. The text is identical to the run without it, with and without the draft.
+- Why, and what we are changing: [the MI25 entry](../mi25/#as-a-hot-expert-store-for-deepseek-v41-in-progress).
+  Our ceiling estimate, not measured: if the MI25's work hid entirely behind the CPU's, it would save at most the
+  31.6 % of CPU expert reads, about 8 tok/s without the draft.
+
+**19. Ornith-1.5-122B on box B: the first model above 25 tok/s on that box.**
+
+ornith-ai's Q4_K_M GGUF, loaded without mmap from a RAM disk in PMem. The RTX 6000 holds attention, the dense and
+shared-expert weights, the MTP layer's non-expert weights and the routed experts of layers 0-8 (21,066 of 23,040 MiB
+at peak); the other routed experts sit in DRAM, each expert's rows split between the two sockets, none in PMem. 39
+threads, micro-batch 2048, 49,152-token window, expert chunking off (point 13). Three coding-agent prompts cut to 600
+and to 4,000 tokens, 300 greedy tokens each; each figure is the mean of the 3 prompts.
+
+| draft | 600 tokens deep | 4,000 deep | acceptance (600 / 4,000) |
+|---|---|---|---|
+| none | 27.32 | 27.11 | |
+| MTP n_max 1 | 30.70 | 30.78 | 0.75 / 0.76 |
+| MTP n_max 2 | 30.82 | 30.79 | 0.75 / 0.76 |
+| MTP n_max 3, p_min 0.75 | 30.99 | 31.60 | 0.73 / 0.77 |
+| the same, repeated at the end | 31.13 | 31.55 | |
+
+- Prefill of 2,048-token prompts: 165.5 tok/s (164.5, 166.0, 166.0).
+- Context depth costs almost nothing here (-0.8 % without the draft). 36 of its 48 layers are Gated DeltaNet, whose
+  state does not grow with context.
+- The draft adds 12-17 %, and n_max 1, 2 and 3 land within 3 % of each other. Our reading: the model has one MTP
+  layer, and at p_min 0.75 deeper drafts are rarely made.
+- Our planner predicted 20.7 tok/s with the draft and 15.9 without; it borrows its per-token host cost from GLM,
+  and for this model that is 35-42 % low.
+
+**20. But Ornith-1.5-122B failed as a reviewer and as an agent on box B.**
+
+These use our own private tests, not published here.
+- Code-review screens: three diffs of our own code, two with one planted defect each and one clean control. Card
+  sampling (temperature 0.6, top_p 0.95, top_k 20).
+  - Thinking on, no budget, up to 32,768 tokens: no answer on one planted diff and on the clean control (all
+    32,768 tokens spent reasoning), a partial answer on the other planted diff. On the first, its reasoning found the
+    planted defect within about 1,000 tokens and then kept deliberating.
+  - Thinking off: it said "no defect" to all three, so it missed both plants and was right only on the clean control.
+  - Thinking on with an 8,192-token reasoning budget (`--reasoning-budget 8192` and a message telling it to commit):
+    it found both planted defects, with a fix and a test, but promoted a wording note to a defect on the clean
+    control. 8,954-9,435 tokens and 334-397 s per review.
+- Agent tasks: three tasks of real repository work from our private battery, run through an agent client and a
+  proxy with a 45-minute wall each, the 8,192-token budget, a 262,144-token window with a Q8_0 KV cache, and the routed
+  experts of 7 or 8 layers on the GPU. 0 of 3 passed, and no task got as far as editing a file in 17-28 turns: it
+  read and searched for 15-25 turns, then deliberated up to the budget.
+  - Decode fell from 27.5 tok/s at 21k tokens of context to about 18 past 60k; turns that reached the budget ran at
+    18.0-19.3 tok/s, about 8 minutes each. Incremental prefill about 130 tok/s.
+  - The server died twice in prefills at 66-76k tokens of context: a CUDA out-of-memory after 55 minutes with 8
+    layers of experts on the GPU (its memory use had crept from 22,098 to 22,474 of 23,040 MiB), and a cuBLAS
+    internal error after 85 minutes with 7. Two more runs were void because of the first crash.
+  - Qwen3.8 Flash-Next on box C ran the same tasks at 60-68 tok/s, 38-101 turns in the same wall.
+- Our reading: on box B it is too slow under agent context to act inside the wall, and a 262k window on a 24 GB card
+  is not stable past about 65k. We do not run it as a coder.
+
+**21. The same engine changes on box B: V4.1 from 10.6 to 11.9 tok/s.**
+
+Box B's V4.1 recipe of the table (the split store, hot experts on the RTX 6000, CPU experts row-split between the
+sockets, 39 threads, the DSpark draft at n_max 4) on a build that carries every engine change below, with weights
+never pinned and in-place ops following their target switched on. Three more changes ride with it: the draft model's experts on the CPU of socket 1, hot experts grown from 2.2 to 7.0 GiB (420 experts), and
+DRAM filled with the hottest experts the GPU does not hold, the rest in PMem. Micro-batch 4096. The 3 coding-agent
+prompts, 300 greedy tokens each, one load; each figure is the mean of the 3 prompts.
+
+| build | draft | no draft | prefill tok/s |
+|---|---|---|---|
+| earlier (the 10.6 row) | 10.58 | 8.75 | about 52 |
+| with the newer changes | **11.88** (12.88, 12.62, 10.13) | **9.72** (9.44, 9.83, 9.90) | **64.9** |
+
+- +12 % with the draft, +11 % without, +25 % prefill. Draft acceptance 0.90. The GPU used 21,512 of 23,040 MiB.
+- Without the draft, prompt 0 gives the same text as the earlier build; prompts 1 and 2 share their first 850 and 244
+  characters and then drift, both coherent. Our reading: rounding from the 4.8 GiB more experts computed on the GPU.
+- This run changed several things at once, so which change buys how much is not measured yet; runs that leave out
+  one change at a time are queued.
+- Our planner predicted 8.88 and 7.05, 25-27 % low.
+
 ## The quality reference problem
 
 Our GLM quality gate compares against the EXL3 3.05 bpw store computed exactly on the GPU, because a BF16
@@ -199,7 +371,22 @@ miss against that reference (KL 0.02997, top-1 0.960, 925 positions); its fideli
 For scale, unsloth reports KL against BF16 of 0.049 for UD-Q4_K_XL and 0.160 for UD-Q3_K_XL, on their own prompts.
 A near-lossless reference (Q8_0 on a large-memory CPU box) is the next step.
 
-## Not published yet
+## Engine changes (not yet public)
 
-- The ik_llama.cpp patches behind box B's numbers: socket-split expert rows, the reduced draft vocabulary, and
-  hot-expert placement. They will follow with build steps.
+Our changes to ik_llama.cpp behind the box B and box D numbers. Our fork with these branches is being published;
+fork link to follow, with build steps. Each is off by default unless it says otherwise, so a build with them and no switches set runs as before.
+
+| change | what it does | switch | measured effect |
+|---|---|---|---|
+| expert rows per node | places each routed expert's rows across the sockets or NUMA nodes you name, so each node's threads compute the slice in their own memory | `LLAMA_EXPERT_PLACEMENT` rules, `GGML_MOE_GROUPS` | kernel 1.37-1.40x on box B (point 4); V4.1 on box D +27 % with the draft, +8 % without (point 9) |
+| reduced draft vocabulary | the MTP head scores only a frequency-chosen subset of token ids; the target still checks every draft | a token-id list | +0.7 % on box B, identical output (point 6) |
+| hot-expert placement | keeps the most-routed experts, from a hot-expert map, on the GPU | placement rules | used in the box B layouts; not measured on its own |
+| dense rows per node | lets a placement rule name any weight (by tensor name or regex), not only routed experts, and split a dense matrix into one row slice per node | `LLAMA_EXPERT_PLACEMENT` rules with `*` or `/G` | V4.1 on box D +9 % with the draft, +17 % without; Qwen3-30B-A3B +11 % (point 16) |
+| no host weights | keeps model weights in plain host memory, never pinned, so the pin budget goes to the buffers the GPU reads directly; logs a warning when such a buffer falls back to pageable memory | `LLAMA_NO_HOST_WEIGHTS=1` or `--no-host` | the box D arm that crashed at warm-up (Xid 31) ran with no fault (point 11) |
+| in-place ops follow their target | the scheduler runs an in-place op on the backend of the tensor it writes into. Fixes V4.1 attention on cards without a kernel for its flash attention (garbage text on the GTX 1080 Ti) | on; `GGML_SCHED_INPLACE_FOLLOW=0` turns it off | correct text with V4.1 attention on the 1080 Ti; moving attention and the KV cache onto the card then took decode without the draft from 5.60 to 6.97 tok/s, and prefill from 37.2 to 48.2 (point 17) |
+| CUDA and Vulkan in one process | a CUDA build also opens Vulkan devices and puts hot-expert banks on one of them; MXFP4 expert banks on Vulkan | `LLAMA_EXTRA_VULKAN=1`, `GGML_VK_VISIBLE_DEVICES`, `LLAMA_HOT_EXPERTS_DEVICE=Vulkan0`, `GGML_VK_OFFLOAD_MIN_BATCH` | correct text with the MI25 holding 14 GiB of V4.1 experts beside the 1080 Ti, but slower: 4.08 against 6.95 tok/s without the draft (point 18). Fixes in progress ([the MI25 entry](../mi25/#as-a-hot-expert-store-for-deepseek-v41-in-progress)) |
+
+On box B, the newer changes together lift V4.1 by 11-12 % (point 21); how much each one gives there is not yet
+measured.
+
+Build option, upstream's and not ours: `-DGGML_EXPERT_CHUNKING=OFF` (point 13).
