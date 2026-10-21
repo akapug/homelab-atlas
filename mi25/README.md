@@ -32,7 +32,8 @@ together.
   GPU".
 - The host copy of the experts stays in DRAM, each expert's rows split over the 8 NUMA nodes. Prefill uses it,
   because the banks serve only batches of 8 tokens or fewer.
-- Each token crosses CUDA, Vulkan and CUDA again in every layer, all in one process. That needs our engine changes
+- In each of the 30 layers banked on the MI25, a token crosses CUDA, Vulkan and CUDA again; the other 10 layers
+  stay on the 1080 Ti (CUDA banks). All of it runs in one process. That needs our engine changes
   ([below](#the-engine-changes-and-their-switches)).
 
 **Conditions for the table.** Box D (2x EPYC 7601, 8 NUMA nodes, DDR4-2400; GTX 1080 Ti on driver 580; MI25 on Mesa
@@ -63,7 +64,7 @@ the median for the whole box during the run. All MEASURED, 2026-10-21.
   they beat a new card.
 
 **Real chat requests at the model card's sampling.** The o6 layout served three long code-review requests through
-`/v1/chat/completions` with `--jinja`, temperature 0.6, top_p 0.95, top_k 20, thinking on with an 8,192-token budget
+`/v1/chat/completions` with `--jinja`, temperature 0.6, top_p 0.95, top_k 20, min_p 0.0, thinking on with an 8,192-token budget
 (`--reasoning-budget 8192` and a message telling the model to commit), and `-c 32768`. Decode 45.7, 50.3 and
 53.3 tok/s over 9.0-9.5k generated tokens each, at 13-21k tokens of context. MTP acceptance 85.7 %. Prefill 318-354
 tok/s. MEASURED from the server log.
@@ -95,8 +96,8 @@ implemented yet. MEASURED, 2026-10-21.
 
 | arm | decode tok/s (3 prompts, 300 greedy tokens) | prefill tok/s | 1080 Ti memory (MiB) | wall power |
 |---|---|---|---|---|
-| experts on the CPUs, `-c 32768` | 31.0 (31.97, 30.56, 30.46) | about 163 | about 5,000 | 595 W |
-| + the experts of layers 0-2 on the 1080 Ti (`-ot`), `-c 8192` | 34.57 (+11.5 %) | not recorded | about 8,200 | not recorded |
+| experts on the CPUs, `-c 32768` | 31.0 (31.97, 30.56, 30.46) | 163.2 | about 5,000 | 595 W median, 644 W peak |
+| + the experts of layers 0-2 on the 1080 Ti (`-ot`), `-c 8192` | 34.57 (34.64, 34.59, 34.47; +11.5 %) | 177.1 | 8,169 | 591 W median, 618 W peak |
 
 - Real chat requests (Harmony template, medium effort): 26.4-28.2 tok/s at 3.6-10.6k tokens of context, prefill
   155-163 tok/s.
@@ -200,7 +201,10 @@ numactl --interleave=0-7 build/bin/llama-server -m Ornith-1.5-35B-Q4_K_M.gguf --
 - For chat, add `--jinja --reasoning-format deepseek --reasoning-budget 8192` and a larger `-c`. We ran `-c 32768`.
 - The CPU-side switches (`GGML_AFFINITY_ONCE` to `GGML_MAIN_NO_MOE`) are research switches. Each was worth 0-3 % on
   another box and model; we did not measure them one by one here.
-- Arm o1 = the same without `LLAMA_HOT_EXPERTS` and the Vulkan switches. Arm o5 = o1 with the MTP draft.
+- Arm o5 = the same without `LLAMA_HOT_EXPERTS` and the Vulkan switches (MTP still on). Arm o1 = o5 without
+  `--spec-type` as well, so no draft at all. Arm o2 = o6 without `--spec-type`. The measured o1 and o2 loads also
+  carried an external DFlash draft model (`-md`, on the CPU; see [What did not work](#what-did-not-work)); their n0
+  figures come from requests that did not draft.
 
 ### What did not work
 
