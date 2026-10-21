@@ -1,4 +1,4 @@
-== b0 start 2026-10-17T15:52:21Z PK=~/optane-bin/split-unrepack-72d65438 PLACE=~/optane-place/v41-split-dramfill.placement.tsv HOT=~/optane-place/v41split-dramfill-hot3p9-w6.tsv PLACE_EXPECT=N0:78,N1:81,N2:62
+== b0 start 2026-10-17T15:52:21Z PK=~/optane-bin/split-unrepack-unpublished PLACE=~/optane-place/v41-split-dramfill.placement.tsv HOT=~/optane-place/v41split-dramfill-hot3p9-w6.tsv PLACE_EXPECT=N0:78,N1:81,N2:62
 P0: numa_balancing 0 demotion false
 == V4.1 split from /mnt/datadrive1/models/v41-split/DeepSeek-V4.1-Flash-hotmxfp4-coldq2k-00001-of-00010.gguf
 node0 MemFree 86 GiB

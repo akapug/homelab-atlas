@@ -139,11 +139,11 @@ def mtp_parts(path, mtp_block=GLM_MTP_BLOCK):
 glm_mtp_ne, glm_mtp_ex = mtp_parts(os.path.join(SRC, 'hdr-glm.json'))
 _, glmq3_mtp_ex = mtp_parts(os.path.join(SRC, 'hdr-glm-q3kxl.json'))
 HGLMQ3 = 'GGUF header, odie /models/glm53-gguf/UD-Q3_K_XL (read 2026-10-18; dump src/hdr-glm-q3kxl.json)'
-# GLM VRAM at -ub 4096, MEASURED on droopy (glm-be1q3 server.log 10-18 07:46Z, UD-Q3_K_XL, ik h2dstage-b38ad4e2): 22322 of 23040 MiB
+# GLM VRAM at -ub 4096, MEASURED on droopy (glm-be1q3 server.log 10-18 07:46Z, UD-Q3_K_XL, ik h2dstage-unpublished): 22322 of 23040 MiB
 # free before the load (CUDA context), CUDA0 model buffer 11871.38 MiB = non-experts 8404 + block 45 non-experts 191 + block 45
 # routed experts 3276 (ik --cpu-moe does not move the MTP block's experts to the host), KV 215.56 MiB, compute buffer 2484 MiB
 # (cudaMalloc failed at 852 hot experts = 8902 MiB)
-GLM_VRAM_SRC = 'droopy glm-be1q3-hot8p7-t40 server.log (10-18 07:46Z, UD-Q3_K_XL, -ub 4096, ik h2dstage-b38ad4e2)'
+GLM_VRAM_SRC = 'droopy glm-be1q3-hot8p7-t40 server.log (10-18 07:46Z, UD-Q3_K_XL, -ub 4096, ik h2dstage-unpublished)'
 GLM_CTX_MIB, GLM_KV_MIB, GLM_CB4096_MIB = 23040 - 22322, 215.56, 2484.0
 V41_P = 5120 * 2304 * 3
 GLM_P = 4096 * 2048 * 3
@@ -238,7 +238,7 @@ KAPPA_AT_LOAD = 'fitted at load from kappa_from (the glm-lite lane bytes rate / 
 types = {
     'mxfp4': T(4.25, R, QK, 0.85, E, SMOKE, 0.0, 0.015, engines=('ik', 'sycl')),
     'mxfp4_r8': T(4.25, R, QK, 0.96, E, SMOKE, 0.0, 0.015,
-                  note='repacked MXFP4 (-rtr). Runs on CUDA hybrid since hot-unrepack (split-unrepack-72d65438). K1 kernel 0.69 vs 0.47, but END TO END on B0 (10-17 14:58Z vs 15:52Z): no decode gain, prefill 3x worse. Used only with the -rtr knob; the rtr check fails it on split models'),
+                  note='repacked MXFP4 (-rtr). Runs on CUDA hybrid since hot-unrepack (split-unrepack-unpublished). K1 kernel 0.69 vs 0.47, but END TO END on B0 (10-17 14:58Z vs 15:52Z): no decode gain, prefill 3x worse. Used only with the -rtr knob; the rtr check fails it on split models'),
     'q2_K': T(2.625, R, QK, 0.87, E, SMOKE, 0.09, 0.10, engines=('ik', 'sycl')),
     'q2kq3k': T((2 * 2.625 + 3.4375) / 3, R, 'requant A recipe: gate+up q2_K, down q3_K (lab notes 07:15Z) -> mean of block sizes', 0.87, E, SMOKE + ' (q2_K:q3_K)', 0.05, 0.06,
                 note='requant A on odie (~183 GiB experts for V4.1)', engines=('ik', 'sycl')),
@@ -828,7 +828,7 @@ _k1 = {'mxfp4': 0.4645, 'q2_K': 0.5308, 'q2kq3k': 0.5308, 'iq2_ks': 0.3391, 'iq2
 boxes['droopy']['kappa'] = {q: n(x, M, K1 + (' (row q2_K gate/up + q3_K down)' if q in ('q2_K', 'q2kq3k') else '')) for q, x in _k1.items()}
 boxes['droopy']['kappa']['q3_K'] = n(0.5308, E, 'ESTIMATE: the K1 q2_K:q3_K row')
 boxes['droopy']['kappa']['mxfp4_r8'] = n(0.4645, M, 'END TO END = mxfp4: B0 -rtr arm decode n0 6.91 vs -rtr off 6.83 (lab notes 14:58Z / 15:52Z); K1 kernel-only 0.6885 did not carry to the server')
-boxes['droopy']['kappa']['gsq_iq3s'] = n(0.274, M, 'K1-FNX 10-18 17:20-17:27Z (droopy, the K1 bench: ik llama-moe-mbench 714adff9, T20 on CPUs 0-19, ft, B1, xread ceiling 141-147 GB/s; lab notes): Flash-Next shapes (embd 2560, ff 640, k 10 of 512), cells IQ3_XXS 0.27 / IQ3_S 0.24 / IQ2_S 0.29 / IQ4_XS 0.50 gate-up with IQ4_NL down, weighted by the ISTA GSQ-RCO IQ3_S file\'s layer mix (gate/up 17 IQ3_XXS, 10 IQ3_S, 20 IQ2_S, 1 IQ4_XS; down IQ4_NL 39 + Q2_0 9, IQ4_NL standing in for Q2_0, which the ik bench lacks) = 0.274; experts 25.9 ms per token for 48 layers. Drift anchor: iq3_ks at V4.1 shapes 0.52 = K1 0.5217. ik iqk kernels; mainline llama.cpp IQ kernels unmeasured')
+boxes['droopy']['kappa']['gsq_iq3s'] = n(0.274, M, 'K1-FNX 10-18 17:20-17:27Z (droopy, the K1 bench: ik llama-moe-mbench unpublished build, T20 on CPUs 0-19, ft, B1, xread ceiling 141-147 GB/s; lab notes): Flash-Next shapes (embd 2560, ff 640, k 10 of 512), cells IQ3_XXS 0.27 / IQ3_S 0.24 / IQ2_S 0.29 / IQ4_XS 0.50 gate-up with IQ4_NL down, weighted by the ISTA GSQ-RCO IQ3_S file\'s layer mix (gate/up 17 IQ3_XXS, 10 IQ3_S, 20 IQ2_S, 1 IQ4_XS; down IQ4_NL 39 + Q2_0 9, IQ4_NL standing in for Q2_0, which the ik bench lacks) = 0.274; experts 25.9 ms per token for 48 layers. Drift anchor: iq3_ks at V4.1 shapes 0.52 = K1 0.5217. ik iqk kernels; mainline llama.cpp IQ kernels unmeasured')
 _kr = _k1['mxfp4'] / 0.85
 for q in types:
     if q not in boxes['droopy']['kappa'] and types[q]['kappa']['v'] is not None and 'kappa_from' not in types[q]:
@@ -841,7 +841,7 @@ boxes['droopy']['cpu']['reserve'] = n(1, R, 'kit-settings/droopy.env KIT_CPU_RES
 # NUMA page layout of the DRAM experts: CPU expert time relative to interleaved pages (the layout every anchor the box f is
 # fitted on ran with). rows = each expert's row halves bound to the socket whose MoE thread group reads them (placement
 # rows:0,1 + socket-ordered -cr); first_touch = the kernel bench's socket-local pages; node = every expert whole on one node
-_K1N = 'runs/bench-raw/droopy-k1glm-2026-10-19.jsonl K1-GLM-N (ik llama-moe-mbench 714adff9, GLM-5.3 expert shapes, T38): B1 / B4 us per layer '
+_K1N = 'runs/bench-raw/droopy-k1glm-2026-10-19.jsonl K1-GLM-N (ik llama-moe-mbench unpublished build, GLM-5.3 expert shapes, T38): B1 / B4 us per layer '
 boxes['droopy']['numa_layout'] = {
     'interleave': n(1.0, M, 'reference: the layout of every droopy anchor the box f is fitted on (dram-fill "0,1" interleave)'),
     'rows': n(0.737, M, 'runs rows droopy-glm-glm-be1r1-1140 vs droopy-glm-glm-be1q4z-0956 (same recipe, same greedy tokens, only the layout and -cr order differ): '
@@ -853,8 +853,8 @@ boxes['droopy']['numa_layout'] = {
 
 # ik build flag GGML_EXPERT_CHUNKING (cmake default ON): decode tok/s with ON / with OFF on this box, same source and layout.
 # The decode model assumes OFF (every anchor ran an OFF package); a recipe declares expert_chunking 'on' | 'off'.
-boxes['droopy']['ik_expert_chunking_on'] = n(0.797, M, 'runs droopy-glm-glm-be1dv-1751 (package dvocab-ee4d0755, chunking ON) vs droopy-glm-glm-be1dvnc-1202 '
-                                             '(dvocab-ee4d0755-nc, OFF; same source, r1 layout, same cells): MTP3 p_min 0.75 DV0 12.71 / 15.95 = 0.797, '
+boxes['droopy']['ik_expert_chunking_on'] = n(0.797, M, 'runs droopy-glm-glm-be1dv-1751 (package dvocab-ee53cdd6, chunking ON) vs droopy-glm-glm-be1dvnc-1202 '
+                                             '(dvocab-ee53cdd6-nc, OFF; same source, r1 layout, same cells): MTP3 p_min 0.75 DV0 12.71 / 15.95 = 0.797, '
                                              'no-spec 9.41 / 12.30 = 0.765; OFF = r1 15.73 (+1.4 %). Every droopy ik package builds OFF')
 
 # split GGUF host time per model: the box fit (calibrate, from the V4.1 split anchor d-v41-b0) holds for that model; a model with
@@ -1026,7 +1026,7 @@ checks = {
         'runtime': {
             'glm|ik': {
                 'pool_gib_per_tok': dict(n(round(456 / 1024 / 2048, 7), M, S + ' 10-18 12:4xZ BE1-Q3e (srv/glm-be1q3e-hot6p9-t40-ub2k, -ub 2048): nvidia-smi 21,744 MiB after the load -> 22,200 MiB after the first prompts (+456 MiB = the VMM pool kept by ggml_cuda_pool_vmm); linear in -ub (INFERRED). Bound: BE1-Q3d at -ub 4096 crashed at its first prefill in ggml_cuda_pool_vmm::alloc <- ggml_cuda_op_mul_mat (cuMemCreate OOM) with 574 MiB free -> pool(4096) > 0.56 GiB; the line gives 0.89'), lo=round(574 / 1024 / 4096, 7)),
-                'mtp_compute_gib_per_tok': n(round(2484 / 1024 / 4096, 8), M, S + ' 10-18: MTP draft context CUDA0 compute buffer 2,484 MiB at its inherited -ub 4096 (BE1-Q3c 09:54Z: cudaMalloc failed) and 77.62 MiB at LLAMA_MTP_UBATCH=128 (BE1-Q3d 11:52Z, BE1-Q3e 12:46Z): exactly linear (2484 / 32 = 77.6). Recipe field mtp_ubatch (ik cd004c44); unset = the recipe ub'),
+                'mtp_compute_gib_per_tok': n(round(2484 / 1024 / 4096, 8), M, S + ' 10-18: MTP draft context CUDA0 compute buffer 2,484 MiB at its inherited -ub 4096 (BE1-Q3c 09:54Z: cudaMalloc failed) and 77.62 MiB at LLAMA_MTP_UBATCH=128 (BE1-Q3d 11:52Z, BE1-Q3e 12:46Z): exactly linear (2484 / 32 = 77.6). Recipe field mtp_ubatch (ik unpublished build); unset = the recipe ub'),
                 'draft_fixed_gib': n(round((21744 - 21115) / 1024 - 77.62 / 1024, 3), M, S + ' 10-18 12:46Z BE1-Q3e: 21,744 MiB used after the load vs 21,115 MiB (20.62 GiB) predicted by the parts above minus the MTP compute buffer (77.62 MiB) = 0.538 GiB with MTP on: speculative per-step checkpoint buffer 446.25 MiB (max_tokens 4 = n_max 3 + 1; BE1-Q3c/d fell back to a 145.56 MiB shadow when it did not fit) + conv-state shadow 9.56 MiB + ~95 MiB unlogged (CUDA context, cuBLAS). Draft off: unmeasured, not added'),
                 # context length (recipe field ctx, default 4096 = every measured GLM load): KV grows per context token (MEASURED rate);
                 # the prefill graph's context-sized buffers are an ESTIMATE until a long-context load prints its compute buffer
@@ -1035,7 +1035,7 @@ checks = {
                 'compute_gib_per_ctx_tok': n(0.0, M, S + ' 10-18 a2f 14:31Z: main CUDA0 compute buffer 3,032.01 MiB at n_ctx 34816 (offload 32, -ub 2048, MTP experts on the host), below the 4,102.01 MiB a2e printed at n_ctx 4096 (offload 32, -ub 2048, MTP experts on the GPU); the MTP context buffer stays 77.62 MiB at micro-batch 128. No context-sized prefill buffer shows (the MLA path does not decompress K/V for the whole context at reserve). Was ESTIMATE 64 KiB per context token (+1,920 MiB at 34816)'),
                 # GPU prefill offload: the main context's compute buffer is F + s x ub with offload on, against b x ub off; the planner
                 # adds the difference (F + (s - b) x ub, >= 0) beside the upload buffers (prefill.vram_gib)
-                'offload_compute_fixed_gib': n(round(3654.0 / 1024, 4), M, S + ' 10-18 two points, ik mtpub-cd004c44 / h2dstage-b38ad4e2, -cuda offload-batch-size 32: a2b CUDA0 compute buffer 4,550.02 MiB at -ub 4096 (09:23Z, cudaMalloc failed), a2e 4,102.01 MiB at -ub 2048 (13:35Z, then a CUDA pool OOM at the first prefill with ~584 MiB free) -> 3654.0 + 0.21876 MiB x ub. Fixed part = the GPU copy of one layer\'s CPU-resident experts (INFERRED: GLM routed experts ~2.9 GiB per layer). Was modelled as linear through 0 (+2,066 MiB at 4096 -> 1,033 at 2048): a2e read 1,827 MiB more'),
+                'offload_compute_fixed_gib': n(round(3654.0 / 1024, 4), M, S + ' 10-18 two points, ik mtpub-unpublished / h2dstage-unpublished, -cuda offload-batch-size 32: a2b CUDA0 compute buffer 4,550.02 MiB at -ub 4096 (09:23Z, cudaMalloc failed), a2e 4,102.01 MiB at -ub 2048 (13:35Z, then a CUDA pool OOM at the first prefill with ~584 MiB free) -> 3654.0 + 0.21876 MiB x ub. Fixed part = the GPU copy of one layer\'s CPU-resident experts (INFERRED: GLM routed experts ~2.9 GiB per layer). Was modelled as linear through 0 (+2,066 MiB at 4096 -> 1,033 at 2048): a2e read 1,827 MiB more'),
                 'offload_compute_fixed_gib_mtp_cpu': n(round((3032.01 - 1242.0 + 794.0) / 1024, 4), M, S + ' 10-18 a2f 14:31Z (recipe mtp_experts cpu, offload 32, -ub 2048): CUDA0 compute buffer 3,032.01 MiB = off buffer 1,242 + F + (s - b) x 2048 with the same slope -> F = 2,584 MiB, 1,070 MiB below the MTP-on-GPU fit (one point; INFERRED cause: with block 45 experts on the GPU the prefill graph runs the MTP layer FFN on the GPU for every prompt token, which ik main 8d21687c (#2678) skips; the rebased build prints the buffer again)'),
                 'offload_compute_gib_per_tok': n(round((0.218755 - 2484 / 4096) / 1024, 9), M, S + ' 10-18: slope with offload on 0.21876 MiB per ub token (a2b, a2e) minus the offload-off compute 0.60645 MiB per token (2,484 at 4096, 1,242 at 2048: BE1-Q3c/d/e) = -0.38769 MiB per token over the off buffer; fitted on ub 2048-4096'),
             }},
@@ -1050,7 +1050,7 @@ checks = {
             # load style: '|chain' = one-chain GGUF (no split; llama_expert_numa_apply interleave); split loads use the banks keys, then the bare key
             'droopy|v41|ik|chain': dict(n(4.54, M, 'one-chain GGUF loads that ran fine (ledger, resident_gib_by_node minus the per-node plan of 78.5 GiB experts): d1g q2d-p0 N0 83.04 -> +4.54, d1g place12-p0 N0 81.80 -> +3.30 (lab notes 06:55Z). Process memory beyond the expert bytes, all nodes: 3.85 / 3.02 GiB. E2 (N2 took 17 GiB over its plan) and d1g q2d-fb (no placement) carry no per-node figure. The value is the high end of the band; lo is the low end'), lo=3.30),
             'droopy|v41|ik': n(9.5, M, S + ' 17:38Z B1b: dram-fill headroom 10 GiB on node0 -> MemFree 0.5 GiB (kswapd active, prefill 10-12 vs ~50, decode 4.9-8.8); node0 resident 85.2 GiB vs 76 planned experts (B0 nortr at the same headroom: 82.0 resident, +6.0, ran clean; B1b +9.2 process: interleaved non-experts + CUDA host buffers incl. pinned staging GGML_CUDA_PIN_MAX_MIB=4096) + page cache of the on-file engram. Measured on node0 only; node1 assumed the same (ESTIMATE)'),
-            'droopy|glm|ik|chain': dict(n(8.54, E, 'ESTIMATE: V4.1 one-chain node0 +4.54 (MEASURED, d1g q2d-p0) + 4.0 GiB pinned H2D staging ring (GGML_CUDA_PIN_MAX_MIB=4096, h2dstage-b38ad4e2) if it lands on node 0. lo = the GLM D2 process total beyond expert bytes over all nodes: resident 48.17 + 54.33 + 77.9 = 180.40 GiB vs 176.82 GiB experts incl. MTP blk.45 (UD-Q4_K_XL header) = +3.58 (MEASURED, D2 mtp3, interleave 1:1:1 so no per-node split)'), lo=3.58),
+            'droopy|glm|ik|chain': dict(n(8.54, E, 'ESTIMATE: V4.1 one-chain node0 +4.54 (MEASURED, d1g q2d-p0) + 4.0 GiB pinned H2D staging ring (GGML_CUDA_PIN_MAX_MIB=4096, h2dstage-unpublished) if it lands on node 0. lo = the GLM D2 process total beyond expert bytes over all nodes: resident 48.17 + 54.33 + 77.9 = 180.40 GiB vs 176.82 GiB experts incl. MTP blk.45 (UD-Q4_K_XL header) = +3.58 (MEASURED, D2 mtp3, interleave 1:1:1 so no per-node split)'), lo=3.58),
             'droopy|v41|ik|banks<=2.25': dict(n(10.55, M, S + ' 03:20Z-04:21Z 10-18 b1017 (split, 2.2 GiB banks, dram-fill headroom 10, swap off): node0 MemFree 0.59 GiB (b1017sw 2 s telemetry, 595 MiB) + 1.14 GiB of runtime pages that found no room and fell back to PMem node 2 -> node 0 needed 10 - 0.59 + 1.14 = 10.55 GiB beyond its experts; prefill 8-10 vs 46-51 once healed. lo = 9.41 = the part that fit (10 - 0.59). B0 nortr read +6.0 at the same headroom (15:52Z 10-17) with swap ON, so pages were out: not comparable under the swap-off P0 rule'), lo=9.41),
             'ik': n(9.5, E, 'ESTIMATE: borrowed from droopy V4.1 B1b node0, a split load (no reading on this box/model)'),
             'sycl': n(4.0, E, 'ESTIMATE: host staging + page cache of on-file tables; non-experts live on the B70s'),
@@ -1098,7 +1098,7 @@ checks = {
     'rtr': {
         'label': 'CPU repack (-rtr)',
         'rule': '-rtr on the split MXFP4/q2_K model cuts prefill about 3x and gains no decode; on the one-chain GLM UD-Q4_K_XL rows layout it cuts MTP decode a third: off unless a new measurement says otherwise',
-        'chain_decode_mult': n(round(10.039 / 15.03, 3), M, 'runs droopy-glm-glm-be1r2-1354 vs droopy-glm-glm-be1r1-1140 (same package rows-0104a59e, placement, prompts): MTP n_max 3 10.04 vs 15.03 tok/s; CPU MoE up/gate per distinct expert 195 vs 129 us (q4_k_r4 path under GGML_MOE_GROUPS chunks)'),
+        'chain_decode_mult': n(round(10.039 / 15.03, 3), M, 'runs droopy-glm-glm-be1r2-1354 vs droopy-glm-glm-be1r1-1140 (same package rows-17acecef, placement, prompts): MTP n_max 3 10.04 vs 15.03 tok/s; CPU MoE up/gate per distinct expert 195 vs 129 us (q4_k_r4 path under GGML_MOE_GROUPS chunks)'),
         'chain_prefill_mult': n(round(69.8 / 67.9, 2), M, 'r2 warm-up 2933 tokens 69.8 tok/s vs q4c 67.9 (offload off; not a matched pair: r1 logged no warm-up prefill)'),
         'prefill_mult': n(round(16 / 50.0, 2), M, S + ' 14:58Z vs 15:52Z: B0 -rtr prefill 15-17 tok/s vs -rtr off 47.8-52.8'),
         'decode_mult': n(round(6.91 / 6.83, 2), M, S + ' n0 phases: -rtr 6.91 vs off 6.83 (n4 medians 6.35 vs 8.39)'),
@@ -1111,7 +1111,7 @@ checks = {
         # whole store files measured on the same gate (paired decode KL vs the gate reference), keyed model|store type
         'stores': {
             'glm|ud_q3kxl': {'kl': n(0.05029, M, 'a2f 10-18: droopy glm-be1q3a2f kl-gate.json'), 'top1': 0.9492, 'n': 926,
-                             'src': 'a2f + q3f 10-18 (droopy, ik mtpub-cd004c44): Unsloth UD-Q3_K_XL as shipped vs ref-topk512.json (A = the EXL3 3.05 store exact GPU path, snoopy kl-1328; NOT a BF16 reference), 6 standard prompts, 926 positions: KL 0.0503 / top-1 0.949 (a2f, GPU prefill offload 32). Offload ruled out: on the same first 5 prompts (768 positions) q3f without offload read KL 0.0489 / top-1 0.953 vs a2f 0.0504 / 0.949. Agrees with Unsloth\'s own KLD vs BF16 (0.160 / top-1 86.3 % for UD-Q3_K_XL against 0.049 / 92.2 % for UD-Q4_K_XL)'}},
+                             'src': 'a2f + q3f 10-18 (droopy, ik mtpub-unpublished): Unsloth UD-Q3_K_XL as shipped vs ref-topk512.json (A = the EXL3 3.05 store exact GPU path, snoopy kl-1328; NOT a BF16 reference), 6 standard prompts, 926 positions: KL 0.0503 / top-1 0.949 (a2f, GPU prefill offload 32). Offload ruled out: on the same first 5 prompts (768 positions) q3f without offload read KL 0.0489 / top-1 0.953 vs a2f 0.0504 / 0.949. Agrees with Unsloth\'s own KLD vs BF16 (0.160 / top-1 86.3 % for UD-Q3_K_XL against 0.049 / 92.2 % for UD-Q4_K_XL)'}},
         'families': {
             'glm': {'engines': ['glmlite'], 'tag': 'FIT',
                     'base_kl': n(0.00446, M, GR + 'k2e-1450-kl.json ref served_A_vs_B1: 3.05 lane on vs exact = 0.00446 (top-1 0.9914); two-run floor 0.00472'),
@@ -1124,12 +1124,12 @@ checks = {
             'fnx': {'engines': [], 'tag': 'UNKNOWN', 'unmeasured': True,
                     'note': 'Flash-Next: no KL vs 2-bit share and no agent eval yet (scout measurements 3-4); quality ~GLM-5.3-Flash on public boards only'},
             'v41': {'engines': ['ik'], 'tag': 'FIT',
-                    'base_kl': n(0.0, M, 'v41kl ref-r1.json floor_gen_vs_forced: the reference (1017 Q8_0, MXFP4 experts as released) generation path vs the forced scoring path on the same server, 320 positions, KL 0.0 / top-1 1.0 (lassie CPU build b38ad4e2, slot erased per prompt). External check of this reference (10-18 19:45Z, MEASURED, v41kl res/unsloth-u2.json sha 4b73f058): unsloth DeepSeek-V4.1-Flash-1017 UD-Q4_K_XL (experts = the release MXFP4) served by unslothai/llama.cpp 4a314d3a (CPU, FA off, no repack, mmap, swa-full) vs ref-r1.json over the same 1376 positions: KL 0.00276 (median 1.9e-6, p99 0.053, max 0.224), top-1 0.984; std 0.00289 / 0.982, code 0.00247 / 0.988. Below the 6.1e-3 / 0.977 that unsloth measured against the DeepSeek official reference, so the ik V4.1 forward and this reference are confirmed; ~0.003 is the cross-engine floor under the store points'),
+                    'base_kl': n(0.0, M, 'v41kl ref-r1.json floor_gen_vs_forced: the reference (1017 Q8_0, MXFP4 experts as released) generation path vs the forced scoring path on the same server, 320 positions, KL 0.0 / top-1 1.0 (lassie CPU build unpublished build, slot erased per prompt). External check of this reference (10-18 19:45Z, MEASURED, v41kl res/unsloth-u2.json sha 4b73f058): unsloth DeepSeek-V4.1-Flash-1017 UD-Q4_K_XL (experts = the release MXFP4) served by unslothai/llama.cpp 4a314d3a (CPU, FA off, no repack, mmap, swa-full) vs ref-r1.json over the same 1376 positions: KL 0.00276 (median 1.9e-6, p99 0.053, max 0.224), top-1 0.984; std 0.00289 / 0.982, code 0.00247 / 0.988. Below the 6.1e-3 / 0.977 that unsloth measured against the DeepSeek official reference, so the ik V4.1 forward and this reference are confirmed; ~0.003 is the cross-engine floor under the store points'),
                     'base_top1': 1.0,
                     'points': [{'share': 0.225, 'kl': 0.01689, 'top1': 0.9746, 'tag': M, 'run': 'droopy-v41-b1017-kl-lassie',
-                                'src': 'v41kl var-s1017.json (lassie 10-18 11:22Z, 1376 positions, 6 standard + 4 coding-agent prompts x <= 160 greedy tokens): the 1017 split store (hot experts MXFP4 kept, cold q2_K / q3_K down 0-9) vs the 1017 Q8_0 reference, same CPU build b38ad4e2; share = the b1017 recipe lowbit_share (22.5 % of routed reads at q2_K). p99 0.272, max 4.69 (a tool-call opening in coding-agent prompt 4: ref ｜DSML｜ 0.999, store Read 0.974); groups std 0.0163 / 0.9737, code 0.0183 / 0.9766; rerun bit-identical'},
+                                'src': 'v41kl var-s1017.json (lassie 10-18 11:22Z, 1376 positions, 6 standard + 4 coding-agent prompts x <= 160 greedy tokens): the 1017 split store (hot experts MXFP4 kept, cold q2_K / q3_K down 0-9) vs the 1017 Q8_0 reference, same CPU build unpublished build; share = the b1017 recipe lowbit_share (22.5 % of routed reads at q2_K). p99 0.272, max 4.69 (a tool-call opening in coding-agent prompt 4: ref ｜DSML｜ 0.999, store Read 0.974); groups std 0.0163 / 0.9737, code 0.0183 / 0.9766; rerun bit-identical'},
                                {'share': 0.65, 'kl': 0.04036, 'top1': 0.9535, 'tag': M, 'run': 'droopy-v41-q3q2-kl-lassie',
-                                'src': 'v41kl var-q3q2.json (lassie 10-18 15:12Z, the same 1376 positions and reference ref-r1.json, same CPU build b38ad4e2): the 1017 NON-split requant, routed experts q3_K on layers 0-13 and q2_K on 14-39 (PLAN step 5 requant A; ik llama-quantize b38ad4e2, imatrix-1017-fixed 6a440a1c), non-experts as the source; share = the planner layer_types share 0.650. p99 0.639, max 3.23; groups std 0.0478 / 0.9442, code 0.0238 / 0.9742 (the coding prompts alone clear the bar); the 1-point line had predicted KL 0.0488 / top-1 0.927 here'}],
+                                'src': 'v41kl var-q3q2.json (lassie 10-18 15:12Z, the same 1376 positions and reference ref-r1.json, same CPU build unpublished build): the 1017 NON-split requant, routed experts q3_K on layers 0-13 and q2_K on 14-39 (PLAN step 5 requant A; ik llama-quantize unpublished build, imatrix-1017-fixed 6a440a1c), non-experts as the source; share = the planner layer_types share 0.650. p99 0.639, max 3.23; groups std 0.0478 / 0.9442, code 0.0238 / 0.9742 (the coding prompts alone clear the bar); the 1-point line had predicted KL 0.0488 / top-1 0.927 here'}],
                     'note': 'V4.1 line through the measured reference floor (0) and TWO store points on one reference and one engine: the 1017 split (22.5 % of reads at q2_K) and the non-split q3_K L0-13 / q2_K requant (65 %). Both points sit near the line (the 65 % point slightly below it: KL 0.0404 measured vs 0.0488 predicted from the first point); the split point keeps MXFP4 hot experts, the requant has none, so share alone carries the fit'}}},
 }
 checks['quality']['families'].update(FAMILY_QUALITY)
@@ -1248,13 +1248,13 @@ def sibling_md(name):
 # ~ 1), so one ubatch costs one upload of the CPU-resident expert bytes; the GPU compute overlaps the copy (b1017off2: the
 # on-phase prompt time matches the upload time), so offload tok/s = P / (ceil(P / ub) x upload_s). It pays when that beats
 # the CPU rate: crossover P* = cpu_tps x upload_s inside the first ubatch; above ub every extra ubatch pays the upload again.
-SP = S + ' 10-18 06:43Z b1017off2 (srv/b1017off-t40: V4.1-1017 split, h2dstage-b38ad4e2, SPILL_HEAL, banks off, ub 4096)'
+SP = S + ' 10-18 06:43Z b1017off2 (srv/b1017off-t40: V4.1-1017 split, h2dstage-unpublished, SPILL_HEAL, banks off, ub 4096)'
 prefill = {
     'rule': 'offload tok/s = P / (ceil(P / ub) x upload_s), upload_s = CPU-resident routed expert bytes / h2d rate; CPU tok/s = cpu_tps[box|model|engine|ub] inside its envelope (x checks.rtr.prefill_mult with -rtr on a split model), else UNMODELLED; crossover P* = cpu_tps x upload_s (offload pays above it, up to ub)',
     'h2d_gbs': {
         'ring': dict(n(6.67, M, SP + ': stager 477.18 GiB in 12592 copies at 6.67 GB/s incl. DMA waits (dmon rx 6.73 GB/s over 60 busy s); microbench ceiling 7.63-7.67 (04:2xZ)'), hi=7.65),
         'driver': dict(n(2.0, M, S + ' 10-18 04:2xZ microbench: pageable -> device through the driver 2.30 GB/s (interleave), 1.76 (membind 1); P17 implied 1.6-1.8'), lo=1.7, hi=2.3)},
-    'ring_builds': ['h2dstage-b38ad4e2'],
+    'ring_builds': ['h2dstage-unpublished'],
     # CPU path: one MEASURED rate per box|model|engine|ub cell, trusted only inside its measured envelope (the PMem expert
     # bytes of the runs that read it within its band). Any other -ub, PMem share, or -rtr outside the measured split pair is
     # UNMODELLED (prefill_tps null): the ledger holds no second -ub per model, and its two -ub 512 V4.1 points (d1g q2d 23.2,

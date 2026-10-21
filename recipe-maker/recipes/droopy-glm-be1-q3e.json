@@ -1,10 +1,10 @@
 {
  "id": "glm-be1q3e",
- "label": "droopy GLM best-effort full box: UD-Q3_K_XL as shipped, every routed expert in DRAM interleaved N0/N1 (64.2 GiB each, no PMem), 6.9 GiB hottest experts by coding-agent decode heat in VRAM (cut from 8.7 after the 07:46Z VRAM failure: the MTP block's 3.2 GiB experts stay on the GPU), MTP, T40 on all 40 CPUs | (e) mtpub-cd004c44, LLAMA_MTP_UBATCH=128, -ub/-b 2048: Q3d MEASURED a CUDA pool OOM (cuMemCreate in ggml_cuda_op_mul_mat) at the first prefill with 574 MiB free after load; -ub 2048 halves the 2484 MiB compute buffer and the per-op pool temporaries",
+ "label": "droopy GLM best-effort full box: UD-Q3_K_XL as shipped, every routed expert in DRAM interleaved N0/N1 (64.2 GiB each, no PMem), 6.9 GiB hottest experts by coding-agent decode heat in VRAM (cut from 8.7 after the 07:46Z VRAM failure: the MTP block's 3.2 GiB experts stay on the GPU), MTP, T40 on all 40 CPUs | (e) mtpub-unpublished, LLAMA_MTP_UBATCH=128, -ub/-b 2048: Q3d MEASURED a CUDA pool OOM (cuMemCreate in ggml_cuda_op_mul_mat) at the first prefill with 574 MiB free after load; -ub 2048 halves the 2484 MiB compute buffer and the per-op pool temporaries",
  "box": "droopy",
  "model": "glm",
  "engine": "ik",
- "engine_build": "h2dstage-b38ad4e2",
+ "engine_build": "h2dstage-unpublished",
  "store": {
   "split": false,
   "types": [
@@ -54,6 +54,6 @@
   }
  ],
  "src": "lab notes GLM best-effort BE1-Q3 + glm-be1/run-glm-be1q3.sh",
- "engine_pkg": "mtpub-cd004c44",
+ "engine_pkg": "mtpub-unpublished",
  "mtp_ubatch": 128
 }

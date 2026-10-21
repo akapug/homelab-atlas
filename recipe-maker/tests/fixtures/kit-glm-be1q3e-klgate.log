@@ -1,4 +1,4 @@
-== glm-be1q3e start 2026-10-18T12:16:01Z PK=~/optane-bin/mtpub-cd004c44 PLACE=glm-be1q3.placement.tsv HOT=glm-be1q3b-hot6p9.tsv CPUS=0-39 T=40 OFFLOAD=100000 PLACE_EXPECT=N0:68,N1:64,N2:0
+== glm-be1q3e start 2026-10-18T12:16:01Z PK=~/optane-bin/mtpub-unpublished PLACE=glm-be1q3.placement.tsv HOT=glm-be1q3b-hot6p9.tsv CPUS=0-39 T=40 OFFLOAD=100000 PLACE_EXPECT=N0:68,N1:64,N2:0
 GLM Q3 already staged + verified at /mnt/datadrive1/models/GLM-5.3-Flash-UD-Q3_K_XL
 P0: swap off (0 active)
 P0: numa_balancing 0 demotion false

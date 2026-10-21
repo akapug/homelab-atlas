@@ -121,7 +121,7 @@
   "cpu_reserve": "1 (~/.config/optane-kit/settings.env: CPU 39, every other task pinned to it by sys-pin.py)",
   "maint_timers": "paused for the load (srv-arm.sh MAINT_PAUSE=1), restored on exit",
   "cpu_order": "-cr 0-9,20-29,10-19,30-38 (threads 0-19 socket 0, 20-38 socket 1; GGML_MOE_GROUPS=2 -> group g = socket g)",
-  "package": "optane-bin/v41rows-0104a59e (split-unrepack-72d65438 + expert-rows 0104a59e)"
+  "package": "optane-bin/v41rows-17acecef (split-unrepack-unpublished + expert-rows 17acecef)"
  },
  "heat": {
   "plan": "dsv41-flash-1017__a5-docs-51k__ik-imatrix__2026-10-17:prefill",

@@ -1,10 +1,10 @@
 {
  "id": "glm-be1q3a2e",
- "label": "droopy GLM BE1-Q3 arm 2 (e): Q3e (mtpub-cd004c44, LLAMA_MTP_UBATCH=128, -ub/-b 2048) with GPU prefill offload ON (-cuda offload-batch-size 32, h2dstage pinned ring), banks 5.0 GiB (490 hottest experts by coding-agent decode heat): fit-viz vram_peak with the measured runtime terms (prefill pool 0.45 + MTP compute 0.08 + checkpoints/runtime 0.54 + offload upload buffers + compute graph 1.85 GiB at -ub 2048) PASSes at <= 5.2 GiB; 5.0 keeps 0.25 GiB under the top of the margin band because the offload graph term is INFERRED linear in -ub from a2b's 4550 MiB at -ub 4096",
+ "label": "droopy GLM BE1-Q3 arm 2 (e): Q3e (mtpub-unpublished, LLAMA_MTP_UBATCH=128, -ub/-b 2048) with GPU prefill offload ON (-cuda offload-batch-size 32, h2dstage pinned ring), banks 5.0 GiB (490 hottest experts by coding-agent decode heat): fit-viz vram_peak with the measured runtime terms (prefill pool 0.45 + MTP compute 0.08 + checkpoints/runtime 0.54 + offload upload buffers + compute graph 1.85 GiB at -ub 2048) PASSes at <= 5.2 GiB; 5.0 keeps 0.25 GiB under the top of the margin band because the offload graph term is INFERRED linear in -ub from a2b's 4550 MiB at -ub 4096",
  "box": "droopy",
  "model": "glm",
  "engine": "ik",
- "engine_build": "h2dstage-b38ad4e2",
+ "engine_build": "h2dstage-unpublished",
  "store": {
   "split": false,
   "types": [
@@ -54,7 +54,7 @@
   }
  ],
  "src": "lab notes GLM best-effort BE1-Q3, arm 2; glm-be1/run-glm-be1q3a2e.sh; place-glm/glm-be1q3a2e-hot5p0.tsv",
- "engine_pkg": "mtpub-cd004c44",
+ "engine_pkg": "mtpub-unpublished",
  "mtp_ubatch": 128,
  "offload_batch": 32
 }

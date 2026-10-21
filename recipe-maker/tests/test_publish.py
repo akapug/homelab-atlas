@@ -166,6 +166,61 @@ class HeatGzip(unittest.TestCase):
 
 
 @unittest.skipUnless(os.path.exists(CURATE), 'the publishing tool is not in this copy')
+class IkBuildIds(unittest.TestCase):
+    """ids of our engine builds in the copy: a rewritten commit becomes its sha on the public fork, a public commit stays,
+    any other build of ours becomes the unpublished label, and ids of anything else (digests, other projects) stay"""
+    def setUp(self):
+        self.d = tempfile.mkdtemp(prefix='ikids-')
+        self.addCleanup(shutil.rmtree, self.d)
+        git = lambda repo, *a: subprocess.run(['git', '-C', repo, '-c', 'user.name=t', '-c', 'user.email=t' + '@' + 'example.org', *a],
+                                              check=True, capture_output=True, text=True).stdout.strip()
+        priv, fork = os.path.join(self.d, 'priv'), os.path.join(self.d, 'fork')
+        sha = {}
+        for repo in (priv, fork):
+            os.makedirs(repo)
+            git(repo, 'init', '-q')
+        for name in ('up', 'mapped', 'gone', 'unshipped'):     # up: upstream; mapped: rewritten + on the fork; the rest never public
+            git(priv, 'commit', '-q', '--allow-empty', '-m', name)
+            sha[name] = git(priv, 'rev-parse', 'HEAD')
+            if name == 'up':
+                git(priv, 'update-ref', 'refs/remotes/upstream/main', sha['up'])
+        git(fork, 'commit', '-q', '--allow-empty', '-m', 'rewritten')
+        sha['new'] = git(fork, 'rev-parse', 'HEAD')
+        git(fork, 'update-ref', 'refs/remotes/fork/main', sha['new'])
+        self.cmap = os.path.join(self.d, 'commit-map')
+        with open(self.cmap, 'w') as f:   # 'unshipped' was rewritten too, but its new sha is on no public ref
+            f.write('old new\n%s %s\n%s %s\n' % (sha['mapped'], sha['new'], sha['unshipped'], 'e' * 40))
+        self.sha = sha
+        self.cfg = {'commit_map': self.cmap, 'private': [priv], 'public': {priv: ['refs/remotes/upstream'], fork: ['refs/remotes/fork']},
+                    'unpublished': 'unpublished build', 'unpublished_tag': 'unpublished'}
+        import curate
+        self.C = curate
+
+    def test_ids_map_stay_or_go(self):
+        s = self.sha
+        R = self.C.rules({'rewrite': [], 'ik_builds': self.cfg}, '')
+        text = 'ik main %s; stack %s (dvocab-%s-nc); ik h2dstage-%s; rows-%s; build %s; digest sha256:%s; date 20261017' % (
+            s['up'][:8], s['mapped'][:8], s['mapped'][:12], s['gone'][:8], s['unshipped'][:10], s['gone'][:9], 'ab12cd34ef56')
+        self.assertEqual(self.C.rewrite(text, R),
+                         'ik main %s; stack %s (dvocab-%s-nc); ik h2dstage-unpublished; rows-unpublished; build unpublished build; digest sha256:%s; date 20261017' % (
+                             s['up'][:8], s['new'][:8], s['new'][:12], 'ab12cd34ef56'))
+        row = self.C.rewrite_json({'id': 'r-' + s['gone'][:8], 'engine_build': 'h2dmain-' + s['mapped'][:8]}, R)
+        self.assertEqual(row, {'id': 'r-' + s['gone'][:8], 'engine_build': 'h2dmain-' + s['new'][:8]}, 'ids are never rewritten')
+
+    def test_shipped_tests_get_the_same_build_names(self):
+        man = {'rewrite': [['\\bdocs/\\d+', 'lab notes', 'a doc']], 'ik_builds': self.cfg}
+        doc = 'docs/' + '42'   # split: the export scan reads this file
+        line = "engine_build: 'h2dstage-%s' // %s" % (self.sha['gone'][:8], doc)
+        self.assertEqual(self.C.rewrite(line, self.C.ik_rules(man)), "engine_build: 'h2dstage-unpublished' // " + doc)
+        self.assertEqual(self.C.rewrite(line, self.C.rules(man, '')), "engine_build: 'h2dstage-unpublished' // lab notes")
+
+    def test_export_refuses_without_the_commit_map(self):
+        os.remove(self.cmap)
+        with self.assertRaises(SystemExit):
+            self.C.curate(os.path.join(self.d, 'out'), {'ik_builds': self.cfg, 'rewrite': []}, root=self.d)
+
+
+@unittest.skipUnless(os.path.exists(CURATE), 'the publishing tool is not in this copy')
 class Curate(unittest.TestCase):
     """tools/curate.py on a planted repo: the manifest decides what ships, the ledger is curated (skipped models out, fields
     dropped, degraded notes reduced to their class, sources replaced), pointers into lab notes are rewritten, ids are not"""

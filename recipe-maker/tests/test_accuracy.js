@@ -140,7 +140,7 @@ t('numa_free regression: b1017 (headroom 10, 2.2 GiB banks) FAILs without SPILL_
 });
 
 t('prefill model: calibrated on b1017off2 (offload ON at 1532 / 2210 tokens), crossover inside the measured band', () => {
-  const base = Object.assign({}, runRecipe('droopy-v41-b1017heal'), { banks_gib: 0, engine_build: 'h2dstage-b38ad4e2', offload_batch: 32 });
+  const base = Object.assign({}, runRecipe('droopy-v41-b1017heal'), { banks_gib: 0, engine_build: 'h2dstage-unpublished', offload_batch: 32 });
   const p = FM.predictRecipe(data, base);
   assert.strictEqual(p.status, 'PREDICTED', p.why);
   const pf = p.prefill, cal = data.prefill.calibration;
@@ -526,7 +526,7 @@ t('prefill: one model for every engine; mainline uploads the routed experts per 
   assert.ok(Math.abs(sy.prefill_tps - sy.prefill_tps_at[2048]) < 1e-9, 'prefill_tps is at the recipe prefill_tokens (2048 default)');
   const nh = FM.predictRecipe(data, Object.assign({}, recipe('odie-glm-q3-b1n4.json'), { no_host: true }));
   assert.strictEqual(nh.prefill.h2d, 'engine --no-host');
-  const ik = FM.predictRecipe(data, Object.assign({}, runRecipe('droopy-v41-b1017heal'), { banks_gib: 0, engine_build: 'h2dstage-b38ad4e2', offload_batch: 32 }));
+  const ik = FM.predictRecipe(data, Object.assign({}, runRecipe('droopy-v41-b1017heal'), { banks_gib: 0, engine_build: 'h2dstage-unpublished', offload_batch: 32 }));
   assert.strictEqual(ik.prefill.upload_touched, false);
   assert.ok(Math.abs(ik.prefill.upload_gib - ik.tiers.filter(x => !/^gpu/.test(x.id)).reduce((a, x) => a + x.experts_gib, 0)) < 1e-6, 'ik stages every CPU-resident expert');
 });

@@ -4,7 +4,7 @@
  "box": "droopy",
  "model": "glm",
  "engine": "ik",
- "engine_build": "h2dstage-b38ad4e2",
+ "engine_build": "h2dstage-unpublished",
  "store": {
   "split": false,
   "types": [
@@ -54,7 +54,7 @@
   }
  ],
  "src": "lab notes; place-glm/glm-be1q3f-hot10p0.tsv",
- "engine_pkg": "mtpub-cd004c44",
+ "engine_pkg": "mtpub-unpublished",
  "mtp_ubatch": 128,
  "mtp_experts": "cpu"
 }

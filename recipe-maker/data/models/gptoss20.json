@@ -1,0 +1,159 @@
+{
+ "name": "gpt-oss-20b",
+ "L": 24,
+ "layer_ids": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23
+ ],
+ "E": 32,
+ "k": 4,
+ "P": 24883200,
+ "P_src": "HF ggml-org/gpt-oss-20b-GGUF@15dcfc7e7c608c6161507211ed43c5b590801b4b gpt-oss-20b-MXFP4.gguf verified header ranges: 3 x hidden 2880 x expert_ff 2880",
+ "tensor_names": [
+  "blk.{L}.ffn_down_exps.bias",
+  "blk.{L}.ffn_down_exps.weight",
+  "blk.{L}.ffn_gate_exps.bias",
+  "blk.{L}.ffn_gate_exps.weight",
+  "blk.{L}.ffn_up_exps.bias",
+  "blk.{L}.ffn_up_exps.weight"
+ ],
+ "arch": {
+  "v": "gpt-oss",
+  "tag": "READ",
+  "src": "HF ggml-org/gpt-oss-20b-GGUF@15dcfc7e7c608c6161507211ed43c5b590801b4b gpt-oss-20b-MXFP4.gguf verified header ranges"
+ },
+ "hidden": {
+  "v": 2880,
+  "tag": "READ",
+  "src": "HF ggml-org/gpt-oss-20b-GGUF@15dcfc7e7c608c6161507211ed43c5b590801b4b gpt-oss-20b-MXFP4.gguf verified header ranges"
+ },
+ "expert_ff": {
+  "v": 2880,
+  "tag": "READ",
+  "src": "HF ggml-org/gpt-oss-20b-GGUF@15dcfc7e7c608c6161507211ed43c5b590801b4b gpt-oss-20b-MXFP4.gguf verified header ranges"
+ },
+ "n_shared": {
+  "v": null,
+  "tag": "UNKNOWN",
+  "src": "n_shared: not in the header/config"
+ },
+ "layers": {
+  "v": {
+   "main": 24,
+   "moe": 24,
+   "dense": [],
+   "linear_attention": []
+  },
+  "tag": "READ",
+  "src": "HF ggml-org/gpt-oss-20b-GGUF@15dcfc7e7c608c6161507211ed43c5b590801b4b gpt-oss-20b-MXFP4.gguf verified header ranges"
+ },
+ "kv_bytes_per_token": {
+  "v": 49152,
+  "tag": "ESTIMATE",
+  "src": "24 attention layers x 8 KV heads x (K 64 + V 64) x 2 B (f16); NOT applied: sliding window 128 (the engine may store less)"
+ },
+ "mtp": {
+  "v": {
+   "layers_config": null,
+   "in_this_source": false,
+   "gib": 0.0
+  },
+  "tag": "READ",
+  "src": "HF ggml-org/gpt-oss-20b-GGUF@15dcfc7e7c608c6161507211ed43c5b590801b4b gpt-oss-20b-MXFP4.gguf verified header ranges"
+ },
+ "intake": {
+  "source": "HF ggml-org/gpt-oss-20b-GGUF@15dcfc7e7c608c6161507211ed43c5b590801b4b gpt-oss-20b-MXFP4.gguf verified header ranges",
+  "tag": "READ",
+  "files": [
+   [
+    "gpt-oss-20b-MXFP4.gguf",
+    12109566624,
+    459
+   ]
+  ],
+  "total_gib": 11.266,
+  "gib_by_class": {
+   "attention": 0.632,
+   "embedding": 0.573,
+   "expert_down": 3.16,
+   "expert_gate": 3.16,
+   "expert_up": 3.16,
+   "norm": 0.0,
+   "output": 0.573,
+   "router": 0.008
+  },
+  "bytes_by_class": {
+   "attention": {
+    "f32": 1327104,
+    "q8_0": 676823040
+   },
+   "embedding": {
+    "q8_0": 615329280
+   },
+   "expert_down": {
+    "f32": 8847360,
+    "mxfp4": 3384115200
+   },
+   "expert_gate": {
+    "f32": 8847360,
+    "mxfp4": 3384115200
+   },
+   "expert_up": {
+    "f32": 8847360,
+    "mxfp4": 3384115200
+   },
+   "norm": {
+    "f32": 11520
+   },
+   "output": {
+    "q8_0": 615329280
+   },
+   "router": {
+    "f32": 8850432
+   }
+  },
+  "experts_gib": 9.48,
+  "dense_gib": 1.213,
+  "lookup_gib": {
+   "embedding": 0.573
+  },
+  "expert_types": {
+   "expert_down": {
+    "f32": 0.008,
+    "mxfp4": 3.152
+   },
+   "expert_gate": {
+    "f32": 0.008,
+    "mxfp4": 3.152
+   },
+   "expert_up": {
+    "f32": 0.008,
+    "mxfp4": 3.152
+   }
+  },
+  "unclassified": [],
+  "expert_bpw": 4.261
+ }
+}

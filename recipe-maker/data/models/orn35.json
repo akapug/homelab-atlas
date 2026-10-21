@@ -1,0 +1,218 @@
+{
+ "name": "Ornith-1.5-35B",
+ "L": 40,
+ "layer_ids": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+  32,
+  33,
+  34,
+  35,
+  36,
+  37,
+  38,
+  39
+ ],
+ "E": 256,
+ "k": 8,
+ "P": 3145728,
+ "P_src": "HF ornith-ai/Ornith-1.5-35B-A3B-GGUF@f60452672689e0040be350560267a614cc172a18 Ornith-1.5-35B-Q4_K_M.gguf verified header ranges: 3 x hidden 2048 x expert_ff 512",
+ "tensor_names": [
+  "blk.{L}.ffn_down_exps.weight",
+  "blk.{L}.ffn_gate_exps.weight",
+  "blk.{L}.ffn_up_exps.weight"
+ ],
+ "arch": {
+  "v": "qwen35moe",
+  "tag": "READ",
+  "src": "HF ornith-ai/Ornith-1.5-35B-A3B-GGUF@f60452672689e0040be350560267a614cc172a18 Ornith-1.5-35B-Q4_K_M.gguf verified header ranges"
+ },
+ "hidden": {
+  "v": 2048,
+  "tag": "READ",
+  "src": "HF ornith-ai/Ornith-1.5-35B-A3B-GGUF@f60452672689e0040be350560267a614cc172a18 Ornith-1.5-35B-Q4_K_M.gguf verified header ranges"
+ },
+ "expert_ff": {
+  "v": 512,
+  "tag": "READ",
+  "src": "HF ornith-ai/Ornith-1.5-35B-A3B-GGUF@f60452672689e0040be350560267a614cc172a18 Ornith-1.5-35B-Q4_K_M.gguf verified header ranges"
+ },
+ "n_shared": {
+  "v": 1,
+  "tag": "READ",
+  "src": "HF ornith-ai/Ornith-1.5-35B-A3B-GGUF@f60452672689e0040be350560267a614cc172a18 Ornith-1.5-35B-Q4_K_M.gguf verified header ranges"
+ },
+ "layers": {
+  "v": {
+   "main": 40,
+   "moe": 40,
+   "dense": [],
+   "linear_attention": [
+    0,
+    1,
+    2,
+    4,
+    5,
+    6,
+    8,
+    9,
+    10,
+    12,
+    13,
+    14,
+    16,
+    17,
+    18,
+    20,
+    21,
+    22,
+    24,
+    25,
+    26,
+    28,
+    29,
+    30,
+    32,
+    33,
+    34,
+    36,
+    37,
+    38
+   ]
+  },
+  "tag": "READ",
+  "src": "HF ornith-ai/Ornith-1.5-35B-A3B-GGUF@f60452672689e0040be350560267a614cc172a18 Ornith-1.5-35B-Q4_K_M.gguf verified header ranges"
+ },
+ "kv_bytes_per_token": {
+  "v": 20480,
+  "tag": "READ",
+  "src": "10 attention layers x 2 KV heads x (K 256 + V 256) x 2 B (f16) (HF ornith-ai/Ornith-1.5-35B-A3B-GGUF@f60452672689e0040be350560267a614cc172a18 Ornith-1.5-35B-Q4_K_M.gguf verified header ranges)"
+ },
+ "mtp": {
+  "v": {
+   "layers_config": 1,
+   "in_this_source": true,
+   "gib": 0.509
+  },
+  "tag": "READ",
+  "src": "HF ornith-ai/Ornith-1.5-35B-A3B-GGUF@f60452672689e0040be350560267a614cc172a18 Ornith-1.5-35B-Q4_K_M.gguf verified header ranges"
+ },
+ "intake": {
+  "source": "HF ornith-ai/Ornith-1.5-35B-A3B-GGUF@f60452672689e0040be350560267a614cc172a18 Ornith-1.5-35B-Q4_K_M.gguf verified header ranges",
+  "tag": "READ",
+  "files": [
+   [
+    "Ornith-1.5-35B-Q4_K_M.gguf",
+    21713463040,
+    753
+   ]
+  ],
+  "total_gib": 20.212,
+  "gib_by_class": {
+   "attention": 0.145,
+   "embedding": 0.266,
+   "expert_down": 6.914,
+   "expert_gate": 5.625,
+   "expert_up": 5.625,
+   "linear_attention": 0.59,
+   "mtp": 0.509,
+   "norm": 0.0,
+   "output": 0.389,
+   "router": 0.078,
+   "shared_expert": 0.071
+  },
+  "bytes_by_class": {
+   "attention": {
+    "f32": 184320,
+    "q4_K": 149815296,
+    "q6_K": 5160960
+   },
+   "embedding": {
+    "q4_K": 286064640
+   },
+   "expert_down": {
+    "q4_K": 3019898880,
+    "q6_K": 4404019200
+   },
+   "expert_gate": {
+    "q4_K": 6039797760
+   },
+   "expert_up": {
+    "q4_K": 6039797760
+   },
+   "linear_attention": {
+    "f32": 4446720,
+    "q4_K": 436322304,
+    "q6_K": 192675840
+   },
+   "mtp": {
+    "f32": 2148352,
+    "q4_K": 322633728,
+    "q6_K": 221921280
+   },
+   "norm": {
+    "f32": 8192
+   },
+   "output": {
+    "q6_K": 417177600
+   },
+   "router": {
+    "f32": 83886080
+   },
+   "shared_expert": {
+    "f32": 327680,
+    "q4_K": 58982400,
+    "q6_K": 17203200
+   }
+  },
+  "experts_gib": 18.164,
+  "dense_gib": 1.272,
+  "lookup_gib": {
+   "embedding": 0.266
+  },
+  "expert_types": {
+   "expert_down": {
+    "q6_K": 4.102,
+    "q4_K": 2.812
+   },
+   "expert_gate": {
+    "q4_K": 5.625
+   },
+   "expert_up": {
+    "q4_K": 5.625
+   }
+  },
+  "unclassified": [],
+  "expert_bpw": 4.844
+ }
+}
