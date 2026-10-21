@@ -107,8 +107,9 @@ measured it with Qwen3.6-35B-A3B on this card, under a nonstop stream of 19k-tok
   - An easy question took 1.0 s.
   - A hard bill-split took 12.7 s and 2,000 tokens, against 6,223 tokens with no cap.
   - A no-thinking preset (temperature 0.7, top_p 0.8) answers its first word in 0.2 s through Open WebUI.
-- **Photos.** The checkpoint carries the vision tower, and vLLM loads it, so photos need no second model
-  and no extra VRAM. Time to the first word, measured at the server:
+- **Photos.** The checkpoint carries the vision tower, and vLLM loads it, so photos need no separately
+  deployed vision model. The tower and image-processing buffers still use VRAM; their incremental footprint
+  was not measured here. Time to the first word, measured at the server:
 
   | photo size | first word |
   |---|---|
