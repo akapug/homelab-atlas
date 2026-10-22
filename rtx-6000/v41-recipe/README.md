@@ -47,9 +47,11 @@ Face CLI, about 1 TB of disk, and for the run itself the RAM and Optane of this 
 compute threads leave CPU 39 for the tier split's prefetch, which this run had off) and Optane as a CPU-less node 2. On another box, change `CPUS` and `T` and the node numbers in `placement.tsv`, and see
 [the planner](../../recipe-maker/) for a layout that fits.
 
-We ran `build-engine.sh` on 2026-10-22 (16 cores, about 15 min): it built `6d9992e2` with rc 0. That
-build box has no NVIDIA driver, so its binaries and tests were not run there; the other scripts have not been run as
-written (they repeat steps our lab kit ran, which needs the 500 GB download and the box).
+We ran `build-engine.sh` as published on 2026-10-22 (16 cores, about 15 min): it built `6d9992e2` with rc 0. On a
+host with the NVIDIA driver (our RTX 3090 Ti box: driver 595, glibc 2.42, a Zen 5 CPU that runs the Cascade Lake code)
+`test-tier-split` passed all 16 arms with `LD_LIBRARY_PATH=pkg/lib`, and `llama-server` starts. `test-expert-place`
+places pages on NUMA nodes 0-2, so it means something only on a box that has them; that box has one. The other
+scripts have not been run as written (they repeat steps our lab kit ran, which needs the 500 GB download and the box).
 
 ## Where your rebuild will differ from ours
 

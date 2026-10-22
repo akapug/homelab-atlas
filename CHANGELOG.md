@@ -19,6 +19,8 @@ day). Results that change a headline number say so.
   page, PATCHES.md and `atlas.json` (the 12.69 entry is now `measured`) say so.
 
 ### Fixed
+- `build-engine.sh` as published (with libgomp packaged) rebuilt `6d9992e2` with rc 0, and its `test-tier-split` passed
+  all 16 arms on a host with the NVIDIA driver; the recipe README says so.
 - From devindsflash at 0491930 (86/80): `check_atlas.py` now finds each atlas number as a whole number inside the
   section its anchor names (it caught two: the Flash-Next entry now cites the B70 page, and a 69.0 that reads as 69),
   and walks `docs/` for links too (only the generated `docs/page/` is skipped); Recipe Maker `--check --strict` holds
