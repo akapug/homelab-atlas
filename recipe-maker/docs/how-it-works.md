@@ -170,6 +170,9 @@ penalty), the thinking mode with its control and effort, the chat template (sha2
 parser, the context and the max output. Every value is `{v, tag, src}`: `READ` with the URL and line it was read from, or
 `UNKNOWN` with `v` null when the card does not say. The build refuses a value with no URL.
 
+The public copy ships the recorder and the model cards, but not `tools/screen_sources.json` or `runs/screen.jsonl`:
+bring your own source specification and quality rounds. A missing screen ledger is not a passed screen.
+
 `tools/record_screen.py --spec tools/screen_sources.json --write` reads a round into `runs/screen.jsonl`, one row per
 model arm: the settings the arm actually ran with (the request body over the server defaults from `/props`, the context
 from `server.log`, the template the server ran), and for every request its failure shapes: a cap hit (`finish` length),

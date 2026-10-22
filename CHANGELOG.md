@@ -11,6 +11,12 @@ day). Results that change a headline number say so.
   (heading anchors and commands that name Claude Code, the `noreply` author line in the SYCL patches, the eval's
   `example.com` address) are listed with their reasons in `.scan-admit`; anything else still refuses a push.
   CONTRIBUTING and AGENTS say so.
+- README: speed claims name their correctness evidence and its limits; a check from an earlier build or another backend
+  says so (from a cloud reader's diff).
+- The V4.1 layout files `droopy-v41-fs1c.json` / `fs1p.json` give the window the launch really used (`-c 4096`); the
+  run ledger row keeps its wrong "-c unset", and the RTX 6000 page says which is right.
+- Recipe Maker README and how-it-works: no screen ledger or screen source list ships here, and a missing screen is not a
+  passed one.
 
 ### Removed
 - `.gitattributes`: its one line was a waiver for an internal commit guard, which no longer needs it.

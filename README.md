@@ -138,7 +138,8 @@ Before you start:
 
 - Every number names its conditions: card, software version, model and quantization, context
   depth, stream count, speculation settings.
-- Speed claims come with a correctness check on the same configuration: a new kernel path or a
+- Speed claims name their correctness evidence and its limits. A check from an earlier build or another
+  backend says so, and is not passed off as a check of the measured configuration. A new kernel path or a
   compiled mode that is faster and wrong is worse than useless.
 - Measured means measured. Estimates are labelled as such, and so are the limits of what we tried.
 - Repeated runs are all reported, as ranges.

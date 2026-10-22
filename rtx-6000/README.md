@@ -114,7 +114,7 @@ env GGML_CUDA_GRAPHS_PRE_AMPERE=1 GGML_AFFINITY_ONCE=1 LLAMA_MOE_OVERLAP=1 GGML_
 - The placement file splits each CPU expert's rows over nodes 0 and 1 and adds one rule that keeps the draft
   model's 3 layers of experts on node 1; the format is in the fork's PATCHES.md.
 - `-cr` lists the cores socket by socket, so MoE thread group g is socket g.
-- `-c 4096` is what our launch script passes; the run ledger's condition text and the layout file's `ctx` say
+- `-c 4096` is what our launch script passes (the layout file's `ctx` says so); the run ledger's condition text says
   "-c unset", which is wrong. The prompts are under 2.2k tokens, so the window does not bind.
 - Shards 8 and 9 of the ten are not from the split store: they hold V4.1's engram tables (lookup tables, about a
   quarter of its parameters) and come from the Q8_0 store on an NVMe drive, read from the file while serving (the layout file marks them

@@ -70,7 +70,7 @@ node report.js                       # best layouts at 20 and 25 tok/s per model
 node report.js --check RECIPE.json   # the pre-launch gate
 node report.js --accuracy            # predicted vs measured over the run ledger
 node report.js --external            # our physics on published community measurements
-node report.js --screen              # quality rounds against each model's card conditions (verdict-ready)
+node report.js --screen              # your quality rounds against card conditions (no screen ledger ships here)
 ```
 
 Open `index.html` after the build. It shows our boxes, models and runs. The same page, built from this folder, is at

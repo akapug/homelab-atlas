@@ -96,7 +96,7 @@
  ],
  "src": "run-v41fs.sh (seat b70-rig/droopy-v41)",
  "conditions": {
-  "ctx": "server default (-c unset, as b1017)",
+  "ctx": "4096 (-c 4096, as the launch script passes; the run ledger row records -c unset, which is wrong)",
   "kv_type": "f16 (ik default)",
   "draft_n": "DSpark q2 draft (1017), --spec-type dspark:n_max=4,conf_cum_min=0.5; per request: n4 (0.5), c75 (n_max 4, conf_cum_min 0.75), c90 (0.9), n0 (no draft), n4b (0.5 again)",
   "sampling": {
