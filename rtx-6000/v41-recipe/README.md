@@ -17,7 +17,7 @@ did, written out on their own.
 | [`launch.sh`](launch.sh) | the system settings, the environment and the `llama-server` command line | the launch, with the tier split at 8 threads (`split=8` in the `GGML_TIER_CTL` file) |
 | [`bench.py`](bench.py) | a client that does what our lab client did: a 64-token warm-up and a 13,000-character prefill to touch every expert page, then each prompt once per phase, greedy, 300 tokens, no prompt cache | the timing (ours ran its phases from the lab kit, and its warm-up text was different) |
 | [`prompts.json`](prompts.json) | three public coding-agent prompts | **not** the run's prompts, see below |
-| [`SHA256SUMS`](SHA256SUMS) | hashes and sizes of the public sources, our store shards and our draft | checks |
+| [`SHA256SUMS`](SHA256SUMS) | hashes and sizes of the public sources, our store shards and our draft | checks. Its middle column is the size, so `sha256sum -c` needs the other two: `awk 'length($1)==64 {print $1"  "$3}' SHA256SUMS \| sha256sum -c --ignore-missing` in the download folder (the build scripts do this) |
 
 ## Rebuild it
 

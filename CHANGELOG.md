@@ -30,8 +30,10 @@ day). Results that change a headline number say so.
   CONTRIBUTING and AGENTS say so.
 - README: speed claims name their correctness evidence and its limits; a check from an earlier build or another backend
   says so (from a cloud reader's diff).
-- The V4.1 layout files `droopy-v41-fs1c.json` / `fs1p.json` give the window the launch really used (`-c 4096`); the
-  run ledger row keeps its wrong "-c unset", and the RTX 6000 page says which is right.
+- The V4.1 layout files `droopy-v41-fs1c.json` / `fs1p.json` say in a `ctx_note` that the launch really used `-c 4096`;
+  `ctx` keeps the run ledger's wrong "-c unset", because the planner's decode fit matches layouts on it (rewriting it
+  turned `--check` UNMODELLED and failed `tests/test_decode_fit.js`, found by a cloud reader). The RTX 6000 page says
+  which is right.
 - Recipe Maker README and how-it-works: no screen ledger or screen source list ships here, and a missing screen is not a
   passed one.
 
