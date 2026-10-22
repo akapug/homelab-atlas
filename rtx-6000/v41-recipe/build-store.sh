@@ -28,6 +28,28 @@ SRC=$SRCDIR/Q8_0/DeepSeek-V4.1-Flash-1017-Q8_0-00001-of-00010.gguf
 mkdir -p "$OUT/tmp"
 python3 -c "import numpy, yaml" || { echo "needs numpy and PyYAML (in a venv: python3 -m venv v && . v/bin/activate && pip install numpy pyyaml)"; exit 1; }
 # split_experts.py imports gguf-py from the checkout, which needs numpy and PyYAML
+# the imatrix must hold every routed-expert tensor: stock llama-imatrix drops a whole tensor when 5 % or more of its
+# experts saw no tokens (examples/imatrix/imatrix.cpp, save_imatrix), and the split would then quantize it without one.
+# ik fuses gate with up, so a gate entry is optional: the split falls back to up's, as llama-quantize does.
+python3 - "$IMATRIX" "$SRCDIR/Q8_0" "$IK/gguf-py" <<'PY_CHECK'
+import glob, os, re, struct, sys
+imx, src, gguf_py = sys.argv[1:]
+sys.path.insert(0, gguf_py)
+from gguf import GGUFReader
+exps = re.compile(r'blk\.\d+\.ffn_(up|gate|down)_exps\.weight$')
+want = {t.name for f in sorted(glob.glob(os.path.join(src, '*.gguf'))) for t in GGUFReader(f).tensors if exps.match(t.name)}
+have = set()
+with open(imx, 'rb') as h:
+    for _ in range(struct.unpack('<i', h.read(4))[0]):
+        name = h.read(struct.unpack('<i', h.read(4))[0]).decode()
+        ncall, nval = struct.unpack('<ii', h.read(8))
+        h.seek(4 * nval, 1)
+        have.add(name)
+miss = sorted(n for n in want if n not in have and n.replace('_gate_', '_up_') not in have)
+print(f'imatrix: {len(want) - len(miss)} of {len(want)} routed-expert tensors (gate from up)')
+if miss:
+    sys.exit(f'imatrix lacks {len(miss)} routed-expert tensors (first: {miss[0]}): feed it more text, or keep partial entries')
+PY_CHECK
 python3 "$IK/scripts/split_experts.py" "$SRC" "$OUT/tmp/V41-1017-split-00001-of-00010.gguf" --shard-search "$SRCDIR/Q8_0" \
   --part hot="$here/hot-alloc.json" --rest cold \
   --imatrix "$IMATRIX" --imatrix-out "$OUT/v41-1017-split.imatrix.dat" \

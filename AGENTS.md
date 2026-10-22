@@ -64,7 +64,7 @@ Ornith-1.5-35B-A3B, card 1 Qwen3.8 Flash-Next (2026-10-22).
 ## The run ledger, read correctly
 
 - `recipe-maker/runs/runs.jsonl` is the live segment and may be empty; the rows are in the sealed segments
-  `runs.0001.jsonl` ... read in order, then `runs.jsonl`. 175 rows on 2026-10-22.
+  `runs.0001.jsonl` ... read in order, then `runs.jsonl`. 185 rows on 2026-10-22.
 - Each row: `recipe` (what was launched), `check` (the pre-launch gate's verdict per check), `prediction`,
   `measured` (per-phase decode, prefill, draft acceptance, residency, system state), `sources`.
 - A check whose result is null was not evaluated for that run. It is not a PASS.
@@ -73,8 +73,9 @@ Ornith-1.5-35B-A3B, card 1 Qwen3.8 Flash-Next (2026-10-22).
   off-target run. It is a setting, not a failed run.
 - `runs/screen.jsonl` (quality-round ledger) and `tools/screen_sources.json` are private and not shipped; code that
   reads them reports unknown without them.
-- Raw server logs and our benchmark prompts are not published. Card pages say so under "What you cannot get from us
-  yet" where it changes what you can reproduce.
+- Raw server logs and our benchmark prompts are not published. Where that changes what you can reproduce, the page
+  says so in its reproduce section (the RTX 6000 page's "What you cannot get from us" list, the V4.1 recipe's "Where
+  your rebuild will differ from ours").
 
 ## Verifying a claim
 

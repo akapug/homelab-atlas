@@ -34,12 +34,13 @@ class Caveats(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.d)
         self.p = os.path.join(self.d, 'runs.jsonl')
         rows = [{'id': 'a', 'when': '2026-10-21T23:34Z', 'measured': {'outcome': 'ok', 'wall_min': -1388.0, 'src': {'wall_min': 'kit'}}},
-                {'id': 'b', 'when': '2026-10-22T01:27Z', 'measured': {'outcome': 'ok'}}]
+                {'id': 'b', 'when': '2026-10-22T01:27Z', 'measured': {'outcome': 'ok'}, 'recipe': {'conditions': {'ctx': 'unset', 'kv': 'f16'}}}]
         with open(self.p, 'w') as f:
             f.writelines(json.dumps(r) + '\n' for r in rows)
         with open(os.path.join(self.d, L.CAVEATS), 'w') as f:
             json.dump({'_doc': 'x', 'a': {'kind': 'confounded', 'why': 'w', 'superseded_by': 'b', 'src': 's',
-                                          'correct': {'wall_min': {'v': 52.0, 'src': 'stamps'}}}}, f)
+                                          'correct': {'wall_min': {'v': 52.0, 'src': 'stamps'}}},
+                       'b': {'recipe': {'conditions.ctx': {'v': '4096', 'src': 'launcher'}}}}, f)
 
     def test_overlay_on_read_raw_on_request(self):
         a, b = L.rows(self.p)
@@ -47,12 +48,15 @@ class Caveats(unittest.TestCase):
         self.assertEqual((a['measured']['wall_min'], a['measured']['src']), (52.0, {'wall_min': 'stamps', 'caveats': 's'}))
         self.assertEqual((L.caveated(a), L.caveated(b)), (['confounded'], []))
         self.assertEqual(L.rows(self.p, raw=True)[0]['measured']['wall_min'], -1388.0, 'the row on disk stays as recorded')
+        self.assertEqual((b['recipe'], b['measured']['src']), ({'conditions': {'ctx': '4096', 'kv': 'f16'}}, {'recipe.conditions.ctx': 'launcher'}))
+        self.assertEqual(L.rows(self.p, raw=True)[1]['recipe']['conditions']['ctx'], 'unset', 'a recipe correction leaves the row on disk alone')
 
     def test_node_reads_the_same_overlay(self):
-        js = "const L = require(%s); const r = L.rows(%s); console.log(JSON.stringify([r[0].measured, L.caveated(r[0]), L.caveated(r[1])]))" % (
+        js = "const L = require(%s); const r = L.rows(%s); console.log(JSON.stringify([r[0].measured, L.caveated(r[0]), L.caveated(r[1]), r[1].recipe, r[1].measured]))" % (
             json.dumps(os.path.join(ROOT, 'src', 'ledger.js')), json.dumps(self.p))
         out = json.loads(subprocess.run(['node', '-e', js], capture_output=True, text=True, check=True).stdout)
-        self.assertEqual(out, [L.rows(self.p)[0]['measured'], ['confounded'], []])
+        py = L.rows(self.p)
+        self.assertEqual(out, [py[0]['measured'], ['confounded'], [], py[1]['recipe'], py[1]['measured']])
 
     def test_the_real_ledger_reads_ts1_confounded_with_its_wall(self):
         r = next(x for x in L.rows(os.path.join(ROOT, 'runs', 'runs.jsonl')) if x['id'] == 'droopy-v41-v41fs-ts1-0026')

@@ -37,7 +37,14 @@ function overlay(row, cv) {
     m.caveats = (m.caveats || []).concat([['kind', 'why', 'superseded_by'].reduce((a, k) => (k in c ? Object.assign(a, { [k]: c[k] }) : a), {})]);
     src.caveats = c.src;
   }
-  return Object.assign({}, row, { measured: Object.assign(m, { src }) });
+  // cv[id].recipe: recipe fields by dotted path the recorder got wrong (value + src under measured.src['recipe.<path>'])
+  const recipe = c.recipe ? JSON.parse(JSON.stringify(row.recipe || {})) : row.recipe;
+  Object.keys(c.recipe || {}).forEach(k => {
+    const up = k.split('.'), last = up.pop();
+    const node = up.reduce((o, p) => (o[p] = o[p] && typeof o[p] === 'object' ? o[p] : {}), recipe);
+    node[last] = c.recipe[k].v; src['recipe.' + k] = c.recipe[k].src;
+  });
+  return Object.assign({}, row, { measured: Object.assign(m, { src }) }, c.recipe ? { recipe } : {});
 }
 // the ledger's rows in order; unless raw, with the caveats file beside it applied
 function rows(file, raw) {

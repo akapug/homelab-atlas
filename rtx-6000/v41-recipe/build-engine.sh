@@ -15,6 +15,8 @@ IMG=${IMG:-nvidia/cuda:12.6.3-devel-ubuntu24.04}
 mkdir -p "$OUT"
 [ -d "$OUT/src/.git" ] || git clone https://github.com/akapug/ik_llama.cpp "$OUT/src"
 git -C "$OUT/src" fetch -q origin tier-split && git -C "$OUT/src" checkout -q "$REF"
+state=$(git -C "$OUT/src" status --porcelain --untracked-files=all)
+[ -z "$state" ] || { echo "source checkout is dirty; use a clean OUT/src" >&2; exit 1; }
 git -C "$OUT/src" rev-parse HEAD > "$OUT/SOURCE_SHA"
 [ "$REF" != "$PIN" ] || [ "$(cat "$OUT/SOURCE_SHA")" = "$PIN" ] || { echo "checkout is not $PIN"; exit 1; }
 docker run --rm -v "$OUT":/o -e J="$J" -e U="$(id -u):$(id -g)" "$IMG" bash -euc '

@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+# what the V4.1 recipe scripts download and build when run inside the clone
+rtx-6000/v41-recipe/v41-1017-q8/
+rtx-6000/v41-recipe/v41-1017-split/
+rtx-6000/v41-recipe/draft/
+rtx-6000/v41-recipe/imatrix.dat

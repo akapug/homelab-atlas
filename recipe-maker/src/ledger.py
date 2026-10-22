@@ -58,7 +58,8 @@ def caveats(path):
 
 
 def overlay(row, cv):
-    """the row as read: cv[id].correct sets measured fields (value + src) that the recorder got wrong; cv[id].kind adds
+    """the row as read: cv[id].correct sets measured fields (value + src) that the recorder got wrong; cv[id].recipe sets
+    recipe fields by dotted path (value + src, the src under measured.src['recipe.<path>']); cv[id].kind adds
     measured.caveats [{kind, why, superseded_by}] (src in measured.src.caveats). A 'confounded' run is no clean measure of its
     recipe: no best-run pick, fit or speed score takes it; it stays in every run list with its caveat"""
     c = cv.get(row.get('id'))
@@ -71,7 +72,14 @@ def overlay(row, cv):
     if c.get('kind'):
         m['caveats'] = list(m.get('caveats') or []) + [{k: c[k] for k in ('kind', 'why', 'superseded_by') if k in c}]
         src['caveats'] = c['src']
-    return dict(row, measured=dict(m, src=src))
+    recipe = json.loads(json.dumps(row.get('recipe') or {})) if c.get('recipe') else row.get('recipe')
+    for k, x in (c.get('recipe') or {}).items():
+        *up, last = k.split('.')
+        node = recipe
+        for p in up:
+            node = node.setdefault(p, {})
+        node[last], src['recipe.' + k] = x['v'], x['src']
+    return dict(row, measured=dict(m, src=src), **({'recipe': recipe} if c.get('recipe') else {}))
 
 
 def rows(path, raw=False):

@@ -40,7 +40,7 @@ PORT=8790 N=300 PHASES=n4:4,n0:0,n4b:4 python3 bench.py
 
 **The host needs** an NVIDIA driver (every binary links `libcuda.so.1`, `llama-quantize` too), glibc 2.39 or newer
 (Ubuntu 24.04 or later; the build container's), Docker for the two builds, Python 3 with numpy and PyYAML, the Hugging
-Face CLI, about 1 TB of disk, and for the run itself the RAM and Optane of this box (or a layout from the planner).
+Face CLI, `numactl`, about 1 TB of disk, and for the run itself the RAM and Optane of this box (or a layout from the planner).
 `pkg/lib` carries the CUDA runtime, cuBLAS and libgomp.
 
 `launch.sh` is written for this box: two 10-core Xeons with 20 hardware threads each (NUMA nodes 0 and 1; the 39
@@ -50,7 +50,8 @@ compute threads leave CPU 39 for the tier split's prefetch, which this run had o
 We ran `build-engine.sh` as published on 2026-10-22 (16 cores, about 15 min): it built `6d9992e2` with rc 0. On a
 host with the NVIDIA driver (our RTX 3090 Ti box: driver 595, glibc 2.42, a Zen 5 CPU that runs the Cascade Lake code)
 `test-tier-split` passed all 16 arms with `LD_LIBRARY_PATH=pkg/lib`, and `llama-server` starts. `test-expert-place`
-places pages on NUMA nodes 0-2, so it means something only on a box that has them; that box has one. The other
+places pages on NUMA nodes 0-2, so it means something only on a box with those nodes, like the Optane box; the 3090 Ti box
+has one node, so we did not count it. The other
 scripts have not been run as written (they repeat steps our lab kit ran, which needs the 500 GB download and the box).
 
 ## Where your rebuild will differ from ours
@@ -60,10 +61,12 @@ scripts have not been run as written (they repeat steps our lab kit ran, which n
   kind (a system line, a task, a few tool turns, cut where the agent starts writing code), 4.5-5.1k characters each
   against our 5.6-8.1k. We have not timed the public set on this box yet. On the public-fork build our three prompts
   gave 12.88, 12.62 and 10.13 tok/s: decode moves with the prompt, so expect a spread of that size.
-- **The importance matrix, so the cold experts' bytes.** Ours (1.56 GB) came from one `llama-imatrix` pass of
+- **The importance matrix, so the cold experts' bytes.** Ours (789 MB) came from one `llama-imatrix` pass of
   512 x 512 tokens over a text that includes private code, with a small local patch that keeps expert entries even
-  when some experts saw no tokens. Neither the text nor the matrix is published. Any code-heavy imatrix of the 1017
-  weights works with `build-store.sh`; your shards will have our sizes (in `SHA256SUMS`) but not our hashes, and the
+  when some experts saw no tokens (stock `llama-imatrix` drops a whole expert tensor when 5 % or more of its experts
+  saw none). Neither the text nor the matrix is published. `build-store.sh` counts the routed-expert tensors in yours
+  before it splits and stops if any are missing; a gate entry may be absent, because ik fuses gate with up and the
+  split uses up's. Any code-heavy imatrix of the 1017 weights that passes that count works; your shards will have our sizes (in `SHA256SUMS`) but not our hashes, and the
   q2_K quality will be close but not equal. Lucebox publishes one
   ([`v41-1017-262144.dat`](https://huggingface.co/Lucebox/DeepSeek-V4.1-Flash-1017-ROCMFP-GGUF/tree/30faf4aae57edae24420cec466fb9863f27feef1/imatrix));
   we did not use it, because its importance values correlated poorly with ours (median log correlation 0.17).

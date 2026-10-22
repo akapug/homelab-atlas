@@ -129,7 +129,7 @@
     1407,
     1410
    ],
-   "conditions": "MTP 3, 50,521-token draft vocabulary, fp8 KV, 57,344 window, temperature 0, thinking off, 512 out; 279-287 summed at 3 streams",
+   "conditions": "MTP 3, 50,521-token draft vocabulary, fp8 KV, 57,344 window, temperature 0, thinking off, 512 out; 279-288 for 3 streams together (all tokens over the wall time, prefill included)",
    "quality": "41/41 exact on the B70 correctness eval (same checkpoint)",
    "date": "2026-10-07",
    "status": "measured",
@@ -142,7 +142,7 @@
    "engine": "glm53-flash-offload (exllamav3-based) + route trim keep4 L29-44",
    "decode_tps": 26.69,
    "streams": 1,
-   "conditions": "1,600 experts cached in VRAM, 16 CPU threads (the 23.08 base used 14 cores), 3 coding prompts x 300 tokens, greedy, thinking off, 32,768 window",
+   "conditions": "1,600 experts cached in VRAM, 16 CPU threads (the 23.08 base used 14 cores), 3 coding prompts x 300 tokens plus 4 real coding-agent briefs (1.5-2.2k tokens) x 256 tokens, two rounds per arm, greedy, thinking off, 32,768 window",
    "quality": "KL 0.0154, top-1 0.975: pass",
    "date": "2026-10-20",
    "status": "unpublished-code",

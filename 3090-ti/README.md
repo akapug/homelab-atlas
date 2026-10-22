@@ -10,13 +10,16 @@ The 3090 Ti has the most memory bandwidth of our cards (1,008 GB/s nameplate). O
 
 ## At a glance
 
+The headline is the fastest result that passes our quality checks: Qwen3.8-27B at 103-105. Sage-A1.5 decodes faster
+(154-171) but failed our code-review screen, so it is listed, not crowned.
+
 All figures are measured on this box, one request at a time unless the row says otherwise. Decode and prefill are
 tokens per second. "MTP 3" = speculative decoding with the model's own multi-token-prediction head, 3 drafted tokens
 a step. Terms: [GLOSSARY](../GLOSSARY.md).
 
 | model | engine and weights | result | conditions | quality check | details |
 |---|---|---|---|---|---|
-| Qwen3.8-27B (dense) | vLLM 0.31.0 (official CUDA image) + [`draft-vocab`](../b70/vllm-xpu/draft-vocab.py) + [`length-finish`](../b70/vllm-xpu/length-finish.py); AutoRound int4 (the same checkpoint as the B70) | **103-105 decode** at 1 stream; **279-287** summed over 3 streams; prefill 1,407-1,410 on a 16k prompt; 88-95 decode at 32k depth | MTP 3 with a 50,521-token draft vocabulary, fp8 KV, 57,344-token window, temperature 0, thinking off, 512 tokens out, idle server, 2026-10-07 | the checkpoint passed the [B70 entry's](../b70/#at-a-glance) correctness eval (41 of 41 exact) | [Qwen3.8-27B on vLLM CUDA](#qwen38-27b-on-vllm-cuda-about-104-toks) |
+| Qwen3.8-27B (dense) | vLLM 0.31.0 (official CUDA image) + [`draft-vocab`](../b70/vllm-xpu/draft-vocab.py) + [`length-finish`](../b70/vllm-xpu/length-finish.py); AutoRound int4 (the same checkpoint as the B70) | **103-105 decode** at 1 stream; **279-288** for 3 streams together; prefill 1,407-1,410 on a 16k prompt; 88-95 decode at 32k depth | MTP 3 with a 50,521-token draft vocabulary, fp8 KV, 57,344-token window, temperature 0, thinking off, 512 tokens out, idle server, 2026-10-07 | the checkpoint passed the [B70 entry's](../b70/#at-a-glance) correctness eval (41 of 41 exact) | [Qwen3.8-27B on vLLM CUDA](#qwen38-27b-on-vllm-cuda-about-104-toks) |
 | GLM-5.3-Flash (321B MoE) | the `glm53-flash-offload` engine (exllamav3-based), EXL3 3.05 bpw, 1,600 experts cached in VRAM, the rest computed on the CPU from RAM (14 cores for the 23.08 base in moe-offload, 16 threads in the trim runs) | **26.69 decode** with a route trim (keep 4 of 8 picks that miss VRAM, layers 29-44; not yet published); 23.08 without | 3 coding prompts x 300 tokens, greedy, thinking off, 32,768-token window, 2026-10-20 | KL 0.0154, top-1 0.975 against the same weights computed exactly on the GPU: **passes** our bar (KL at most 0.03, top-1 at least 0.97) | [GLM route trim](#glm-53-flash-a-route-trim-clears-25-toks), [moe-offload points 1-3](../moe-offload/#what-we-learned-measured) |
 | Qwen3.8 Flash-Next (125B MoE, 6B active) | [Strata](https://github.com/Niko1221/Strata) `477ac13c` built for sm_86, Q8_0, every expert in RAM, a VRAM expert cache | **49.1 decode** (median, one client); prefill about 1,620 at 15k | MTP 4, the model card's thinking sampling; speed at a 32,768-token window, agent runs at 131,072; 2026-10-18 | **23 of 24** agent tasks over 2 passes (21 of 24 inside the 20-minute limit) | [Flash-Next](#qwen38-flash-next-agent-work-from-ram) |
 | sabi-noema (a Qwen3.8-27B fine-tune) | llama.cpp `d454a20` CUDA, i1-Q4_K_M (16.55 GB) | 35.9-47.3 decode | no speculation, f16 KV, 49,152-token window, card sampling, thinking on, 2026-10-21 | **5 of 5** planted defects caught, each with a working test; 1 soft false positive on 2 clean controls | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
@@ -34,7 +37,7 @@ salted prompts so no prefix cache hits, an idle server, 512 tokens out.
 | measure | result |
 |---|---|
 | decode, 1 stream | 103-105 tok/s (95-107 over 10 runs) |
-| decode, 3 streams | 279-287 tok/s summed (96-99 each) |
+| decode, 3 streams | 279-288 tok/s together: all tokens over the wall time, each request's prefill included, so below three times one stream; each stream decodes at 96-100 once it starts |
 | prefill, 16k-token prompt | 1,407-1,410 tok/s (11.3 s) |
 | decode at 32k depth | 88-95 tok/s (24.7 s to the first token) |
 | decode at 55k depth | 88 tok/s (47 s to the first token) |
@@ -176,8 +179,8 @@ hang and a power cut) were resumed from the last answered question, discarding t
 
 Banked with their conditions, because a loser on this box can be the right answer on another.
 
-- **GLM's MTP draft loses here**: 17.22 tok/s at 3 drafted tokens, 20.25 at 2, against 22.20 without. The draft took
-  512 of the 1,600 VRAM expert slots ([moe-offload point 2](../moe-offload/#what-we-learned-measured)).
+- **GLM's MTP draft loses here**: 17.22 tok/s at 3 drafted tokens, 20.25 at 2, against 22.20 without it: the figure before layer-ahead
+  warm-up (the 23.08 base adds it; [moe-offload](../moe-offload/#best-measured-result-per-model) has both). The draft took 512 of the 1,600 VRAM expert slots ([moe-offload point 2](../moe-offload/#what-we-learned-measured)).
 - **Fewer bits in GLM's middle layers fail quality**: 25.13 tok/s with the middle 30 layers at 2.05 bpw, but KL
   0.0716, top-1 0.943 ([point 3](../moe-offload/#what-we-learned-measured)). The route trim above is the version
   that passes.

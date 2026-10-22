@@ -7,7 +7,7 @@ a quality bar.
 
 - **Predicts before you run:** decode tokens per second with and without a draft model, VRAM peak, free memory per
   NUMA node, and the share of routed reads at low bit widths, for each layout it proposes or each recipe you write.
-- **Refuses bad launches:** `node report.js --check RECIPE.json` is a pre-launch gate. On the 175 runs in the shipped
+- **Refuses bad launches:** `node report.js --check RECIPE.json` is a pre-launch gate. On the 185 runs in the shipped
   ledger (2026-10-22) it failed 31 of the 47 runs that later went bad; `node report.js --accuracy` prints the current
   count.
 - **Says what each number rests on:** every number is tagged `seen` (we measured it), `inferred` (fitted, estimated or
@@ -33,22 +33,22 @@ Every measured run, the fastest clean run per box and model with its conditions,
 
 ## How close are its predictions?
 
-From `node report.js --accuracy` on the shipped ledger (175 runs, 2026-10-22). Error = (predicted - measured) / measured, scored
+From `node report.js --accuracy` on the shipped ledger (185 runs, 2026-10-22). Error = (predicted - measured) / measured, scored
 only on runs that finished cleanly and were not disturbed; a negative bias means the planner predicted slower. The first
 two columns score what the planner said when each run launched; the last replays every run through today's planner.
 
 | Box / model / engine | Decode (draft on) | Decode (no draft) | Decode (draft on), today's planner |
 | --- | ---: | ---: | ---: |
 | snoopy, GLM-5.3-Flash, glmlite | 2.5 % (8 runs, bias -0.8 %) | | 2.5 % (8 runs, bias -0.8 %) |
-| droopy, DeepSeek V4.1 Flash, ik_llama.cpp | 21.9 % (19 runs, bias -21.9 %) | 26.3 % (15 runs, bias -26.3 %) | 22.2 % (19 runs, bias -22.2 %) |
+| droopy, DeepSeek V4.1 Flash, ik_llama.cpp | 23.4 % (20 runs, bias -23.4 %) | 26.3 % (15 runs, bias -26.3 %) | 23.8 % (20 runs, bias -23.8 %) |
 | droopy, GLM-5.3-Flash, ik_llama.cpp | 15.6 % (4 runs, bias -10.6 %) | 19.8 % (8 runs, bias -19.8 %) | 15.8 % (4 runs, bias -10.5 %) |
 | droopy, Ornith-1.5-122B, ik_llama.cpp (in sample: its host term is fitted on this one run) | 1.3 % (1 run, bias +1.3 %) | 0.4 % (1 run, bias -0.4 %) | 1.3 % (1 run, bias +1.3 %) |
-| lassie, DeepSeek V4.1 Flash, ik_llama.cpp | 24.5 % (10 runs, bias +24.5 %) | 10.8 % (9 runs, bias +10.8 %) | 26.9 % (11 runs, bias +26.9 %) |
+| lassie, DeepSeek V4.1 Flash, ik_llama.cpp | 19.4 % (19 runs, bias +4.8 %) | 10.3 % (18 runs, bias +8.2 %) | 20.0 % (20 runs, bias +8.4 %) |
 | lassie, Ornith-1.5-35B-A3B, ik_llama.cpp | 16.1 % (4 runs, bias +16.1 %) | 9.7 % (4 runs, bias -9.7 %) | 1.2 % (3 runs, bias +1.2 %) |
 | odie, LLaDA2.1-mini (block diffusion), one Arc Pro B70 | 4.1 % (15 runs, bias -1.5 %) | | 4.1 % (15 runs, bias -1.5 %) |
 | odie / lassie, other block-diffusion models | 1.6-43.8 % (2-4 runs each) | | 1.6-43.8 % (2-4 runs each) |
 
-The pre-launch gate, over the same ledger (175 runs, 2026-10-22): 31 runs it failed went bad (10 of them for the
+The pre-launch gate, over the same ledger (185 runs, 2026-10-22): 31 runs it failed went bad (10 of them for the
 cause the failing check names), 16 runs went bad with no check failing, and 24 runs it failed ran fine. On a box it has never seen, expect the
 gap it shows on published community measurements (17-59 % by hardware class, `node report.js --external`) until your
 own runs are in the ledger. Where it is still weak: [docs/how-it-works.md#honest-limits](docs/how-it-works.md#honest-limits).
@@ -113,7 +113,7 @@ capture one for your model with `tools/heat-capture/` and convert it with `tools
 | `results/RESULTS.md` | every measured run with its conditions, and the accuracy report |
 | `QUANT-PRIORS.md`, `QUANT-RECIPES.md` | desk research on published quants, with links; the build reads their JSON twins |
 | `tools/` | run recording, bench sweeps, routing capture, placement check |
-| `tests/` | `python3 -m unittest discover -s tests`, then `node tests/test_accuracy.js`, `node tests/test_advisor.js` and `node tests/test_decode_fit.js` (the screening test stays with the private screening ledger) |
+| `tests/` | `python3 -m unittest discover -s tests`, then `node tests/test_accuracy.js`, `node tests/test_advisor.js` and `node tests/test_screen.js` |
 | `docs/how-it-works.md` | the reference: evidence tags, the gate's checks, recipe fields, the models behind each number, honest limits |
 
 ---

@@ -26,7 +26,7 @@ at a time unless it says otherwise.
 |---|---|---|---|
 | **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s**; GLM-5.3-Flash (321B MoE) at **26.69 tok/s** |
 | **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s**; **16 of 16** facts recalled from a 189k-token prompt |
-| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next at **87.1 tok/s**, and **11 of 12** agent tasks on the build before; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams (the 27B was measured with the cards in the AM5 box, before they moved here) |
+| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next at **87.1 tok/s**, and **11 of 12** agent tasks on the build before; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams in compiled mode (the 27B was measured with the cards in the AM5 box, before they moved here) |
 | **2017 two-socket server** (Supermicro H11DSi) | 2x EPYC 7601, 1 TB DDR4 on 16 channels | [**GTX 1080 Ti** 11 GB](1080-ti/) and [**Radeon Instinct MI25** 16 GB](mi25/) | Ornith-1.5-35B-A3B at **59-60 tok/s** with every expert on the two retired cards; DeepSeek V4.1 Flash at **12.09 tok/s** (11.74 without a draft) |
 | the same server | [**its CPUs alone**](epyc-cpu/) | none | DeepSeek V4.1 Flash at **7.02 tok/s**, no GPU at all |
 
@@ -71,7 +71,8 @@ The ones we are proudest of, each with its conditions and quality check one clic
 
 - **A 748B model on a 2019 workstation, at long context.** DeepSeek V4.1 Flash decodes 12.69 tok/s on one Quadro
   RTX 6000 plus DDR4 and Optane, from public code. [One folder](rtx-6000/v41-recipe/) holds every input but the
-  prompts and the importance matrix, with scripts that build the 233 GB store from the public 508 GB weights. At 189k tokens it recalled all 16 planted facts. [RTX 6000](rtx-6000/)
+  prompts and the importance matrix, with scripts that build the store from the public 508 GB weights (233 GB of new shards; the other three are the
+  source's own, linked). At 189k tokens it recalled all 16 planted facts. [RTX 6000](rtx-6000/)
 - **GLM-5.3-Flash over the 25 tok/s line on a gaming card.** 26.69 tok/s on an RTX 3090 Ti plus 192 GB of DDR5,
   by computing only the top 4 of the expert picks that miss VRAM on 16 of its layers, with its output still within
   our quality bar. The trim is not published yet; 23.08 without it on the public image.
@@ -85,7 +86,8 @@ The ones we are proudest of, each with its conditions and quality check one clic
   Ornith-1.5-35B-A3B in a 2017 server: 59-60 tok/s with the model's own draft head, against 47 with the same draft
   and the experts on the CPUs. [MI25](mi25/)
 - **An 11 GB Pascal card earns its slot.** Moving DeepSeek V4.1's attention onto a GTX 1080 Ti first gave garbage
-  text; one scheduler fix later it decoded 35 % faster than the CPUs alone. Then a profile showed the card spending 92
+  text; one scheduler fix later it decoded 35 % faster than the CPUs alone
+  without a draft (6.97 against 5.16; with the draft, 7.13 against 7.02). Then a profile showed the card spending 92
   ms a token in F16 math it runs at 1/64 speed, so we wrote it a decode-attention kernel: 7.96 to 11.74 tok/s without
   a draft, 12.09 with one, same binary, same prompts. A card from 2017, one kernel, +47 %.
   [1080 Ti](1080-ti/#one-kernel-47-)

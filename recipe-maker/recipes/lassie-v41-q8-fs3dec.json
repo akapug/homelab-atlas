@@ -1,0 +1,129 @@
+{
+ "id": "lassie-v41-q8-fs3dec",
+ "box": "lassie",
+ "model": "v41",
+ "engine": "ik",
+ "label": "lassie V4.1 fs3 layout (attention block, KV, shared experts, router, hc, norms, head on the GTX 1080 Ti; DSpark draft on the CPU; routed experts rows:0..7 + GROUPS=8, --no-mmap, T64 -cr 0-63, MAIN_NO_MOE, -ub 512) on 16/16 DIMMs, binary unpublished build with LLAMA_FA_DEC=1: decode (1 row) and draft-verify (<=5 dense / <=8 sparse rows) attention on the 1080 Ti through the new split-K kernel fattn_dec_sinks; prefill attention as fs3hyb; std + long, N=300",
+ "store": {
+  "split": false,
+  "types": [
+   "mxfp4"
+  ],
+  "hot_type": "mxfp4",
+  "cold_type": "mxfp4"
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": 512,
+ "draft": true,
+ "banks_gib": 0,
+ "threads": 64,
+ "numa": {
+  "headroom_gib": 40.0,
+  "layout": "rows",
+  "spill_heal": false,
+  "src": "routed experts rows:0..7 + GGML_MOE_GROUPS=8 (MAIN_NO_MOE: thread 0 issues CUDA); every dense rule of q8-dense-rows8 skips (those tensors sit on the GPU)",
+  "verify": "LLAMA_EXPERT_PLACEMENT_VERIFY=1 + numa_maps per node after load",
+  "pinned_host": false
+ },
+ "system": {
+  "numa_balancing": 0,
+  "demotion": false,
+  "swap": "on (7 GiB, unused)"
+ },
+ "files": [
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00001-of-00010.gguf",
+   "holds": "experts + non-experts shard 1",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00002-of-00010.gguf",
+   "holds": "experts + non-experts shard 2",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00003-of-00010.gguf",
+   "holds": "experts + non-experts shard 3",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00004-of-00010.gguf",
+   "holds": "experts + non-experts shard 4",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00005-of-00010.gguf",
+   "holds": "experts + non-experts shard 5",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00006-of-00010.gguf",
+   "holds": "experts + non-experts shard 6",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00007-of-00010.gguf",
+   "holds": "experts + non-experts shard 7",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00008-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00009-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00010-of-00010.gguf",
+   "holds": "experts + non-experts shard 10",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/draft/DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf",
+   "holds": "DSpark q2 draft (1017)",
+   "access": "mmap"
+  }
+ ],
+ "src": "run-lv41.sh arm fs3dec, B=build-fa-unpublished-sm61 (unpublished build) UB=512 N=300 SETS='std long' XENV='LLAMA_FA_TILE_NEW_SINKS=1 LLAMA_FA_TILE_NEW_SINKS_MIN_Q=2 LLAMA_FA_DEC=1'",
+ "conditions": {
+  "ctx": "8192 (-c 8192)",
+  "kv_type": "f16 (ik default), KV on the GPU; the V4 D=512 FA runs on the CPU on sm_61 (fattn tile_new unsupported)",
+  "draft_n": "DSpark q2 draft (1017) weights on the CPU (-ngld 0); per request n4 (n_max 4, conf_cum_min 0.5) and n0",
+  "sampling": {
+   "temperature": 0,
+   "set_by": "client"
+  },
+  "reasoning_effort": "none (raw /completion, no chat template)",
+  "workload": {
+   "prompt_kind": "coding-agent.json first 3 briefs (std); per prompt n4 first (carries the prefill), then n0 with cache_prompt true",
+   "gen_tokens": 300,
+   "ignore_eos": true,
+   "cache_prompt": true
+  },
+  "threads": 64,
+  "cpu_reserve": "64 SMT siblings left to the system",
+  "cpu_order": "-cr 0-63",
+  "ram": "dimm 16/16 (1073.6 GB, all 16 DDR4 channels; reseated 10-21 ~19:10Z, boot 19:14Z)",
+  "condition": "dimm 16/16",
+  "tmpfs_store": "/mnt/v41 tmpfs mpol interleave 0-7 (all 8 nodes; the 15/16 fs3 ran 0-3,5-7)",
+  "binary": "ik fa-dec unpublished build (unpublished build + fattn-dec-sinks: Pascal split-K decode attention, head size 512, sinks, K==V, src[5] row gather), incremental rebuild on lassie of build-fa-unpublished-sm61, llama-server sha256 722619dcf5da",
+  "co_tenants": [
+   "fab mc-u1 fixture minidregg-client-consent pid 631782 (a deliberate 16 h store-growth profile run) ~75 % CPU on CPU 123, the SMT sibling of pinned thread CPU 59 (node 7); left alone; CPU 59 stayed in -cr 0-63 because dropping it breaks the 8 threads x 8 nodes MoE group symmetry",
+   "minidregg-client pid 468785 ~42-50 % CPU on CPU 5 (inside -cr 0-63, node 0); minidregg-host bursts to ~900 %; libvirtd ~42 %; pid 481491 ~16 % on CPU 71",
+   "homelab-embed (5 GiB on the 1080 Ti) stopped for the arm and restarted after it by run-lv41.sh",
+   "vm.zone_reclaim_mode 1 (set for these arms; host default 0, restored after)",
+   "tmpfs store /mnt/v41 reused as rebalanced (34.8 GiB per node resident in the server)"
+  ],
+  "draft": "DSpark q2 draft weights on the CPU (-ngld 0); phases n4 then n0 (n0 = draft off)",
+  "extra_env": "LLAMA_FA_TILE_NEW_SINKS=1 LLAMA_FA_TILE_NEW_SINKS_MIN_Q=2 LLAMA_FA_DEC=1"
+ },
+ "gate_waiver": "vram_peak: the planner rejects any V4.1 GPU layout on the 1080 Ti (non-expert weights + KV do not fit, UNMODELLED). Measured 21:11Z on this package (dbg-gpu2.sh gpuattn, -ub 512): CUDA0 weights 8.33 GiB + KV 0.31 + compute 0.27 = 9.3 GiB of 11; -ub 2048 adds ~0.8 GiB compute (rows8ga: 1.09 vs 0.27 GiB), the draft dense ~0.65 GiB: ~10.8 of 11 GiB expected, OOM at load is the stated risk",
+ "gate_note": "gate captured at launch (22:13Z); fs1 minus the draft dense on the GPU, so the DFlash K/V (720 MiB) fits",
+ "knobs": {
+  "draft": false
+ }
+}

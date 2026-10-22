@@ -19,6 +19,29 @@ day). Results that change a headline number say so.
   page, PATCHES.md and `atlas.json` (the 12.69 entry is now `measured`) say so.
 
 ### Fixed
+- From the GPT-6.1 reader at 0491930 (its diff): `build-engine.sh` refuses a dirty source checkout instead of stamping a
+  `SOURCE_SHA` that does not describe what it built.
+- `build-store.sh` counts the routed-expert tensors in your importance matrix before the split and stops if any are
+  missing (stock `llama-imatrix` drops a whole expert tensor when 5 % of its experts saw no tokens; gate may come from
+  up). Tested on the Q8_0 source: our matrix passes 120 of 120, and the same matrix with one tensor removed is refused.
+  The recipe README gives our matrix's size as collected, 789 MB (it said 1.56 GB).
+- The droopy V4.1 window: 13 runs (the 12.69 run among them) were recorded as "server default (-c unset)"; our
+  launcher sets `-c 4096` when no window is given, and every server log of them reads `ctx_size = 4096`. The Recipe
+  Maker ledger now corrects the field through `runs/run_caveats.json` (with its source; the rows on disk stay as
+  recorded), its layout files read 4096, and the RTX 6000 page says so. Recipe Maker can now correct any recipe field
+  that way (`recipe.<dotted path>`).
+- From the round-4 readers: the 3090 Ti 3-stream figure is 279-288 and says what it is (all tokens over the wall
+  time, prefill included; each stream decodes at 96-100); the 22.20 GLM figure says it predates layer-ahead warm-up;
+  the 3090 Ti page says why its headline is the 27B and not the faster Sage-A1.5 (failed our code-review screen);
+  the GLM conditions in `atlas.json` add the two-round agent-brief arm; the 1080 Ti highlight gives both 35 % pairs
+  (6.97 against 5.16 without a draft, 7.13 against 7.02 with one); the B70 351 says compiled mode; the store highlight
+  says 233 GB are new shards and three are the source's own; the moe-offload table has the 12.09 decode-attention row
+  and says the 7.13 ran on 15 of 16 DIMMs; the recipe lists `numactl` and says why `test-expert-place` was not counted
+  on a one-node box; AGENTS.md points at the recipe's list of what you cannot get from us; the build outputs are in
+  `.gitignore`.
+- Recipe Maker export and its live page: 185 runs (the 1080 Ti decode-attention rows added), so the accuracy tables in its README,
+  how-it-works, AGENTS.md and PATCHES.md (V4.1: 23.4 % on the Optane box, 19.4 % on the 2017 server) are regenerated;
+  the export keeps `lassie-v41-q8-rows8.json`, which two pages link to.
 - `build-engine.sh` as published (with libgomp packaged) rebuilt `6d9992e2` with rc 0, and its `test-tier-split` passed
   all 16 arms on a host with the NVIDIA driver; the recipe README says so.
 - From devindsflash at 0491930 (86/80): `check_atlas.py` now finds each atlas number as a whole number inside the
