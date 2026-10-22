@@ -43,7 +43,9 @@ salted prompts so no prefix cache hits, an idle server, 512 tokens out.
 | card power | about 357-360 W decoding, about 108 W idle with the model loaded |
 
 - **Against one B70** (B70 figures from other prompts, so provisional): CUDA decodes about 1.4x faster (B70: 74.6
-  tok/s at 1 stream with MTP 3), and the B70 prefills about 1.15x faster (1,621 tok/s at 17.7k). Our reading, not
+  tok/s at 1 stream with MTP 3 and the same reduced draft vocabulary, from the
+  [draft-vocab measurement](../PATCHES.md#draft-vocabpy-cheaper-drafts-for-speculative-decoding); the B70's 61 in the
+  README is an earlier compiled-mode figure), and the B70 prefills about 1.15x faster (1,621 tok/s at 17.7k). Our reading, not
   measured directly: decode follows memory bandwidth (1,008 against 608 GB/s), prefill follows matrix throughput.
 - **The window is the cost.** 17.8 GiB of weights leave about 2 GiB for the fp8 KV cache, so the largest window that
   starts is 57,344 tokens (45,056 while the desktop holds about 1.1 GB of the card). One B70 holds 212,992. A

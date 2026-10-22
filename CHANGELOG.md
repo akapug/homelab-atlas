@@ -25,6 +25,10 @@ day). Results that change a headline number say so.
   condition they ran under; the MI25 page notes it too.
 - The Recipe Maker page carries a plain-text introduction and repository links for readers without JavaScript.
 
+- Readers' round two: the README table says which headline needs unpublished code, which quant, and which ran one DIMM
+  short; atlas.json windows, threads and dates match the card pages; the B70's 61 and 74.6 tok/s are told apart;
+  the 11.88 row no longer claims the unpublished changes; the intro is less pleased with itself.
+
 ### Added
 - `tools/check_atlas.py`: checks every `atlas.json` number against the page it cites, and every Markdown link and
   anchor. `atlas.json` rows now carry the run ledger id where one exists.
