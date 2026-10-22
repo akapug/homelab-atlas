@@ -575,7 +575,7 @@ depend on the text.
 - **Measured.** Its decode prediction against our own runs (`node report.js --accuracy`): median error 2.5 % for
   GLM-5.3-Flash on an RTX 3090 Ti box (8 runs), 13.9 % for DeepSeek V4.1 Flash and 15.6 % for GLM on the Optane
   workstation (7 and 4 runs), 4.1 % for a block-diffusion model on an Arc Pro B70 (15 runs). Its pre-launch gate
-  failed 31 of the 41 runs that went bad. On published community runs on hardware we do not own, the median error is
+  failed 31 of the 47 runs that went bad (175 runs, 2026-10-22). On published community runs on hardware we do not own, the median error is
   17-59 % by hardware class.
 - **Run.** `python3 build.py`, open `index.html`; then [use it with your own
   boxes](recipe-maker/README.md#with-your-own-boxes). Every measured run with its conditions:

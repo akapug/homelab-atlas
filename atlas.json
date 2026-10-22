@@ -241,7 +241,7 @@
     61.5
    ],
    "streams": 1,
-   "conditions": "MTP 3, 1.5k prompts; 351.4 summed at 8 streams; measured in snoopy",
+   "conditions": "MTP 3, compiled mode with XPU graphs (not yet supported by Intel; 54.4 eager), 1.5k prompts; 351.4 summed at 8 streams; measured in snoopy",
    "quality": "41/41 exact; agent 22/24",
    "date": "2026-09",
    "status": "measured",

@@ -24,7 +24,7 @@ linked page gives the full conditions and the quality check for every number.
 |---|---|---|---|
 | **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s** (vLLM CUDA, int4, MTP 3); GLM-5.3-Flash (321B MoE) at **26.69 tok/s** with its quality check passing |
 | **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s**, and **16 of 16** facts recalled from a 189k-token prompt |
-| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next at **87.1 tok/s** with **11 of 12** agent tasks passed; Qwen3.8-27B at 61 tok/s, **351** summed over 8 streams |
+| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next at **87.1 tok/s** with **11 of 12** agent tasks passed; Qwen3.8-27B at 61 tok/s, **351** summed over 8 streams (compiled mode; 54.4 eager) |
 | **2017 two-socket server** (Supermicro H11DSi) | 2x EPYC 7601, 1 TB DDR4 on 16 channels | [**GTX 1080 Ti** 11 GB](1080-ti/) and [**Radeon Instinct MI25** 16 GB](mi25/) | Ornith-1.5-35B-A3B at **59-60 tok/s** with every expert on the two retired cards; DeepSeek V4.1 Flash at 7.13 |
 | the same server | [**its CPUs alone**](epyc-cpu/) | none | DeepSeek V4.1 Flash at **7.02 tok/s** with its experts as released, no GPU at all |
 
@@ -61,8 +61,9 @@ The ones we are proudest of, each with its conditions and quality check one clic
   Ornith-1.5-35B-A3B in a 2017 server: 59-60 tok/s, against 47 with the experts on the CPUs. [MI25](mi25/)
 - **An 11 GB Pascal card earns its slot.** Moving DeepSeek V4.1's attention onto a GTX 1080 Ti first gave garbage
   text; one scheduler fix later it gives +35 % over the CPUs alone. [1080 Ti](1080-ti/)
-- **The B70, tuned.** Qwen3.8-27B at 61 tok/s at one stream and 351 at eight, from five vLLM changes and 18
-  llama.cpp SYCL patches. [B70](b70/)
+- **The B70, tuned.** Qwen3.8-27B at 61 tok/s at one stream and 351 at eight in vLLM's compiled mode with XPU
+  graphs, which Intel does not support yet; 54.4 in eager mode, which is how our own servers ran. Five vLLM changes
+  and 18 llama.cpp SYCL patches got it there. [B70](b70/)
 
 ## Find your patch
 

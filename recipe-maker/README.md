@@ -7,8 +7,9 @@ a quality bar.
 
 - **Predicts before you run:** decode tokens per second with and without a draft model, VRAM peak, free memory per
   NUMA node, and the share of routed reads at low bit widths, for each layout it proposes or each recipe you write.
-- **Refuses bad launches:** `node report.js --check RECIPE.json` is a pre-launch gate. On our 167 recorded runs it
-  failed 31 of the 46 runs that later went bad.
+- **Refuses bad launches:** `node report.js --check RECIPE.json` is a pre-launch gate. On the 175 runs in the shipped
+  ledger (2026-10-22) it failed 31 of the 47 runs that later went bad; `node report.js --accuracy` prints the current
+  count.
 - **Says what each number rests on:** every number is tagged `seen` (we measured it), `inferred` (fitted, estimated or
   read from a spec) or `unknown`, with its source. A prediction prints how many of its terms are each kind.
 - **Measures itself:** every real run goes into a run ledger with the prediction made at launch, and
@@ -47,8 +48,8 @@ two columns score what the planner said when each run launched; the last replays
 | odie, LLaDA2.1-mini (block diffusion), one Arc Pro B70 | 4.1 % (15 runs, bias -1.5 %) | | 4.1 % (15 runs, bias -1.5 %) |
 | odie / lassie, other block-diffusion models | 1.6-43.8 % (2-4 runs each) | | 1.6-43.8 % (2-4 runs each) |
 
-The pre-launch gate, over the same ledger: 32 runs it failed went bad (10 of them for the cause the failing check
-names), 18 runs went bad with no check failing, and 25 runs it failed ran fine. On a box it has never seen, expect the
+The pre-launch gate, over the same ledger (175 runs, 2026-10-22): 31 runs it failed went bad (10 of them for the
+cause the failing check names), 16 runs went bad with no check failing, and 24 runs it failed ran fine. On a box it has never seen, expect the
 gap it shows on published community measurements (17-59 % by hardware class, `node report.js --external`) until your
 own runs are in the ledger. Where it is still weak: [docs/how-it-works.md#honest-limits](docs/how-it-works.md#honest-limits).
 

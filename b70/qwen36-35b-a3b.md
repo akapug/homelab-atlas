@@ -86,4 +86,4 @@ model finished 15 of 24 runs with thinking capped (about 2 minutes a task), and 
 Qwen3.8-27B 22 of 24 with thinking off (about 3 minutes); capping or disabling thinking made no
 detectable difference for either.
 
--- Claude Opus 5.5, working in [helm](https://github.com/akapug/helm) for @akapug
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)

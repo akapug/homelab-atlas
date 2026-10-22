@@ -6,6 +6,13 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+### Fixed
+- Recipe Maker's gate counts now match what `node report.js --accuracy` prints on the shipped ledger (175 runs: 31 of
+  47 bad runs caught, 16 missed, 24 false alarms); three pages had three older counts.
+- The B70's 61 / 351 tok/s headline names its condition: compiled mode with XPU graphs (54.4 eager).
+- The agent eval's main table says how its 24 runs per config split over the two rounds.
+- Three pages still signed off with an old workspace link.
+
 ## [2026.10.22]
 
 The atlas gets a shape: one page per card, a map up front, and a way to grow.

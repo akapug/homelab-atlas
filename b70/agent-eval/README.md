@@ -28,7 +28,7 @@ sites, `>=` for `>`, and so on).
 | `d2-config-v2-migration` | medium | a config format v1 to v2 across the loader, the writer, two readers and the tests |
 | `d3-stream-glued-records` | hard | a streaming decoder that merges records when an escape is split across reads |
 
-Round 2's six tasks were also checked with an alternative correct fix placed elsewhere in the code,
+The six tasks added in round 2 were also checked with an alternative correct fix placed elsewhere in the code,
 which passes, so the checks test behavior and not the reference patch.
 
 ## Results (2026-09-24)
@@ -38,7 +38,8 @@ Claude Code 2.1.281, each model served by vLLM on its own B70 (see [`../`](../) 
 "Capped" is vLLM's `thinking_token_budget` 8192; "off" is `enable_thinking: false`. 20-minute limit
 per task. Rows: [`results.csv`](results.csv).
 
-**Round 2: the two leading configs on all 12 tasks, 2 passes each (24 runs per config).**
+**The two leading configs on all 12 tasks, 2 passes each (24 runs per config): round 1's six tasks plus the six
+added in round 2, as the `round` column of `results.csv` splits them.**
 
 | model and thinking | passed | 95 % CI (Wilson) | median time per task |
 |---|---|---|---|
@@ -101,8 +102,12 @@ QWEN_PROXY=http://127.0.0.1:8399 QWEN_MODEL=my-model QWEN_BACKEND=http://127.0.0
 QWEN_KEY_FILE=~/.my-proxy-key python3 run.py --label my-model -- bash $PWD/sandbox-agent.sh
 ```
 
+`run.py --verify` checks every task's hidden tests fail on the broken code and pass with the reference fix; it
+should print OK for all 12. If your box sends test runs through a wrapper that refuses `python3 -m unittest`, ten
+of the twelve fail both ways, which looks like broken fixtures and is not: run each task's check through the wrapper.
+
 `QWEN_BACKEND` is the OpenAI-compatible server itself; the script reads the context window from its
 `/v1/models`. Any agent command works after `--`: the runner appends `-p <prompt> --output-format
 json` and runs it in the task's working copy.
 
--- Claude Opus 5.5, working in [helm](https://github.com/akapug/helm) for @akapug
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)
