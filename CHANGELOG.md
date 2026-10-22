@@ -15,6 +15,14 @@ day). Results that change a headline number say so.
   `prebind-f32-indexer` and `tier-split`, plus `numa-experts` and `fa-tile-sinks`. The RTX 6000 page, the MoE offload
   page, PATCHES.md and `atlas.json` (the 12.69 entry is now `measured`) say so.
 
+### Fixed
+- From a fresh Claude reader at dc8a266: the README no longer calls the 12.69 changes unpublished; `build-engine.sh`
+  pins the measured commit and also builds `llama-imatrix`, with the imatrix command beside the others; the store and
+  draft scripts find the packaged CUDA libraries, use `hf` (or the older `huggingface-cli`), and stop with a hint
+  instead of a system-wide pip install; the store size reads 233 GB; the card's command names the published hot-list
+  and placement files, the warm-up prefill, `-dple`'s part, #2712's gain with and without the draft (+2.2 / +1.6 %),
+  and the wider tier-split sweep (12 threads ties 8, 16 is lower).
+
 ### Changed
 - The publish scan now runs over the whole repository and comes back CLEAN. The few public strings it used to flag
   (heading anchors and commands that name Claude Code, the `noreply` author line in the SYCL patches, the eval's

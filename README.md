@@ -34,8 +34,8 @@ The fine print, card by card (the card pages carry the rest):
 - **RTX 3090 Ti.** Qwen3.8-27B: vLLM CUDA, int4, MTP 3 with a reduced draft vocabulary; the same checkpoint scored
   41 of 41 on our correctness eval on the B70. GLM-5.3-Flash: EXL3 3.05 bpw with a route trim that passes our quality
   bar but is not published yet; 23.08 without it, on the public image.
-- **RTX 6000.** 11.88 on our public code; the 12.69 adds two changes not published yet plus upstream ik_llama.cpp
-  #2712, and its quality check comes from the earlier build of the same store and layout.
+- **RTX 6000.** 11.88 without, 12.69 with two newer changes of ours plus upstream ik_llama.cpp #2712, all public (our
+  fork's branch `tier-split`); its quality check comes from the earlier build of the same store and layout.
 - **B70.** Flash-Next: IQ3_S on XeStrata; the speed run (xe0.1.45, 262,144-token window, 2026-10-19) and the agent
   tasks (xe0.1.40.2.2, 229,376-token window, 2026-10-18) used two builds of the same setup. Qwen3.8-27B: 74.6 in eager
   mode with MTP 3 and the reduced draft vocabulary, which leaves the output unchanged; the 351 is compiled mode without
@@ -68,8 +68,8 @@ lived in that box until 2026-10-07; their older pages say so where it matters.
 The ones we are proudest of, each with its conditions and quality check one click away.
 
 - **A 748B model on a 2019 workstation, at long context.** DeepSeek V4.1 Flash decodes 12.69 tok/s on one Quadro
-  RTX 6000 plus DDR4 and Optane: 11.88 on our public fork, plus upstream ik_llama.cpp #2712 and two changes of ours
-  not published yet. At 189k tokens it recalled all 16 planted facts. [RTX 6000](rtx-6000/)
+  RTX 6000 plus DDR4 and Optane, from public code, with every input but the prompts and the importance matrix in
+  [one folder](rtx-6000/v41-recipe/). At 189k tokens it recalled all 16 planted facts. [RTX 6000](rtx-6000/)
 - **GLM-5.3-Flash over the 25 tok/s line on a gaming card.** 26.69 tok/s on an RTX 3090 Ti plus 192 GB of DDR5,
   by computing only the top 4 of the expert picks that miss VRAM on 16 of its layers, with its output still within
   our quality bar. The trim is not published yet; 23.08 without it on the public image.

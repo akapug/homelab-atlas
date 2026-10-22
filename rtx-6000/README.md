@@ -54,6 +54,8 @@ the same text (2026-10-22):
   ik_llama.cpp's F32 indexer change (#2712), which on its own moved the same recipe from 12.13 to 12.40 (n4) and
   10.00 to 10.16 (n0), with draft acceptance 0.890 to 0.908. Run-to-run
   noise on this recipe, same build, two loads: 0.2-0.6 %.
+- A second load with wider splits: off 12.33 / 12.40, split 8 **12.71** (10.29 n0), split 12 12.71 (10.30), split 16
+  12.54 (10.25), every arm with the same text. The gain stops at 8 to 12 threads; 8 stays the launch default.
 
 ## V4.1 at 189k tokens: every fact recalled
 
@@ -83,7 +85,7 @@ benchmark client. [Its README](v41-recipe/README.md) says what each file did and
 
 | piece | where |
 |---|---|
-| the engine | [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp), branch `tier-split`: the 11.88 changes plus expert pre-binding (+2 %, binds each expert weight to its NUMA node before the load reads it), upstream's F32 indexer (#2712, +2.2-2.5 %) and the tier split (+2.4 %). The newest branch's [PATCHES.md](https://github.com/akapug/ik_llama.cpp/blob/fa-tile-sinks/PATCHES.md) lists every switch. Branches `expert-prebind` and `prebind-f32-indexer` hold the steps between; `mixed-cuda-vulkan-expert-banks` is the 11.88 build. [`build-engine.sh`](v41-recipe/build-engine.sh) builds it |
+| the engine | [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp), branch `tier-split`: the 11.88 changes plus expert pre-binding (+2 %, binds each expert weight to its NUMA node before the load reads it), upstream's F32 indexer (#2712: +2.2 % with the draft, +1.6 % without) and the tier split (+2.4 %). The newest branch's [PATCHES.md](https://github.com/akapug/ik_llama.cpp/blob/fa-tile-sinks/PATCHES.md) lists every switch (`tier-split`'s own covers only the changes on its line). Branches `expert-prebind` and `prebind-f32-indexer` hold the steps between; `mixed-cuda-vulkan-expert-banks` is the 11.88 build. [`build-engine.sh`](v41-recipe/build-engine.sh) builds it |
 | the model | DeepSeek V4.1 Flash 1017, hot experts as released (MXFP4), cold experts requantized to q2_K with an importance matrix: [`build-store.sh`](v41-recipe/build-store.sh) builds it from the public Q8_0 GGUF. The store is not uploaded |
 | the draft model | the DSpark draft that the release declares in its `config.json` (128 routed experts, top-3, block 5), converted to GGUF with its experts at Q2_K: [`build-draft.sh`](v41-recipe/build-draft.sh) |
 | hot-expert list and placement | [`hot-experts.tsv`](v41-recipe/hot-experts.tsv) and [`placement.tsv`](v41-recipe/placement.tsv), the files the run loaded. They name experts of this store, ranked on our prompts; for your own prompts, [HOT-EXPERT-MAPS.md](../recipe-maker/HOT-EXPERT-MAPS.md) |
@@ -91,7 +93,7 @@ benchmark client. [Its README](v41-recipe/README.md) says what each file did and
 | PMem as memory | the standard Linux route, as on this box: `ipmctl create -goal PersistentMemoryType=AppDirect` and a reboot (a full power cycle after a firmware update), `ndctl create-namespace --mode=devdax` on each region, then `daxctl reconfigure-device --mode=system-ram <daxX.Y>` onlines it as a NUMA node with no CPUs. `numactl -H` should show it |
 
 The launch, as our kit runs it (paths shortened; [`launch.sh`](v41-recipe/launch.sh) is the same command with the tier
-split's settings, `GGML_TIER_CTL` with `split=8`):
+split's settings, `split=8` in the `GGML_TIER_CTL` file):
 
 ```bash
 # system state for the run: no automatic page migration, swap off
@@ -102,7 +104,7 @@ sudo swapoff -a
 env GGML_CUDA_GRAPHS_PRE_AMPERE=1 GGML_AFFINITY_ONCE=1 LLAMA_MOE_OVERLAP=1 GGML_SCHED_OVERLAP=1 \
     GGML_SCHED_ASYNC_COPY=1 GGML_OMP_FAST_ENTRY=1 GGML_BARRIER_SPIN=1 GGML_MOE_GROUPS=2 GGML_MAIN_NO_MOE=1 \
     GGML_CUDA_PIN_STAGING=1 GGML_CUDA_PIN_MAX_MIB=4096 GGML_SCHED_INPLACE_FOLLOW=1 LLAMA_NO_HOST_WEIGHTS=1 \
-    LLAMA_EXPERT_PLACEMENT=v41-rows-hot7p0.placement.tsv LLAMA_HOT_EXPERTS=v41-hot7p0.tsv \
+    LLAMA_EXPERT_PLACEMENT=v41-recipe/placement.tsv LLAMA_HOT_EXPERTS=v41-recipe/hot-experts.tsv \
   numactl --interleave=0,1 --physcpubind=0-9,20-29,10-19,30-38 \
   llama-server -m DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00001-of-00010.gguf \
     -ngl 99 -fa 1 --no-mmap -t 39 -c 4096 -cr 0-9,20-29,10-19,30-38 --numa numactl -dple --cpu-moe \
@@ -117,14 +119,16 @@ env GGML_CUDA_GRAPHS_PRE_AMPERE=1 GGML_AFFINITY_ONCE=1 LLAMA_MOE_OVERLAP=1 GGML_
   "-c unset", which is wrong. The prompts are under 2.2k tokens, so the window does not bind.
 - Shards 8 and 9 of the ten are not from the split store: they hold V4.1's engram tables (lookup tables, about a
   quarter of its parameters) and come from the Q8_0 store on an NVMe drive, read from the file while serving (the layout file marks them
-  `on_file` and lists where every shard sits).
+  `on_file` and lists where every shard sits). `-dple` does that: tables it defers stay mapped from the file while
+  `--no-mmap` reads everything else into memory.
 - `node report.js --check` on this layout prints a quality line from its layer map (KL 0.0169, top-1 0.980,
   predicted). The measured figures are the ones in the table above: KL 0.0169, top-1 0.975.
 - For the 189k recall layout: 2.2 GiB of hot experts, `-ub 2048 -b 2048 -c 212992 --swa-compress`.
 - `GGML_SCHED_ASYNC_COPY` is in the public branch's `ggml/src/ggml-backend.cpp` but not yet described in the fork's
   PATCHES.md; without it the engine runs its default copy path.
 - The client: 3 coding-agent prompts of 1.5-2.2k tokens, 300 greedy tokens each through `/completion`, after a
-  64-token warm-up. Each figure is the mean of the 3 prompts.
+  64-token warm-up and a 13,000-character prefill that touches every expert page. Each figure is the mean of the 3
+  prompts.
 
 What you cannot get from us, so your number will differ:
 
@@ -156,7 +160,6 @@ What you cannot get from us, so your number will differ:
 
 ## Not measured yet
 
-- The tier split at more than 8 threads per group (the gain was still rising at 8).
 - V4.1 agent work on this box.
 - GLM-5.3-Flash with the route trim that passes on the [3090 Ti](../3090-ti/).
 

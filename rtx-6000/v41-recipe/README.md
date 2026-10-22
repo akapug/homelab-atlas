@@ -2,19 +2,20 @@
 
 Our fastest DeepSeek V4.1 Flash run on this box decoded **12.69 tok/s** with a 4-token draft (n4) and 10.29 without
 one (n0). A later sweep on the same build, layout and switches gave 12.71 / 10.29. This folder holds the inputs for
-that run, so you can rebuild it. Each file below is the exact one the run used, unless its line says otherwise.
+that run, so you can rebuild it. The data files are the exact ones the run loaded; the scripts do what our lab kit
+did, written out on their own.
 
 | file | what it is | how the run used it |
 |---|---|---|
-| [`build-engine.sh`](build-engine.sh) | builds [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp) branch `tier-split` with our CMake flags, in the CUDA 12.6.3 container | the engine: `llama-server`, `llama-quantize` and the two tests |
+| [`build-engine.sh`](build-engine.sh) | builds [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp) branch `tier-split` at the pinned commit (its code is the measured `cde5fc20`) with our CMake flags, in the CUDA 12.6.3 container | the engine: `llama-server`, `llama-quantize`, `llama-imatrix` and the two tests |
 | [`build-draft.sh`](build-draft.sh) | converts DeepSeek's draft head (DSpark, release shards 44-46) to GGUF, then makes its routed experts q2_K | `-md DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf` |
 | [`build-store.sh`](build-store.sh) | downloads the public Q8_0 GGUF, checks it, and splits it into hot MXFP4 and cold q2_K experts | `-m DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00001-of-00010.gguf` |
 | [`hot-alloc.json`](hot-alloc.json) | which experts of each layer stay MXFP4 (hot); about 3 bits per weight overall | input of `build-store.sh` |
 | [`split.rules`](split.rules) | the quantize rule list the split script writes from those choices | `build-store.sh` checks that yours is the same |
 | [`hot-experts.tsv`](hot-experts.tsv) | 420 experts (7.0 GiB) kept on the GPU, per layer | `LLAMA_HOT_EXPERTS` |
 | [`placement.tsv`](placement.tsv) | where every CPU expert lives: hot ones split by rows over the two sockets, cold ones on the sockets or the Optane node, the draft's experts on socket 1 | `LLAMA_EXPERT_PLACEMENT` (the same bytes as the run's file) |
-| [`launch.sh`](launch.sh) | the system settings, the environment and the `llama-server` command line | the launch, with `GGML_TIER_SPLIT` 8 |
-| [`bench.py`](bench.py) | the benchmark client: warm-up, then each prompt once per phase, greedy, 300 tokens | the timing |
+| [`launch.sh`](launch.sh) | the system settings, the environment and the `llama-server` command line | the launch, with the tier split at 8 threads (`split=8` in the `GGML_TIER_CTL` file) |
+| [`bench.py`](bench.py) | a client that does what our lab client did: a 64-token warm-up and a 13,000-character prefill to touch every expert page, then each prompt once per phase, greedy, 300 tokens, no prompt cache | the timing (ours ran its phases from the lab kit, and its warm-up text was different) |
 | [`prompts.json`](prompts.json) | three public coding-agent prompts | **not** the run's prompts, see below |
 | [`SHA256SUMS`](SHA256SUMS) | hashes and sizes of the public sources, our store shards and our draft | checks |
 
@@ -23,11 +24,13 @@ that run, so you can rebuild it. Each file below is the exact one the run used, 
 ```bash
 OUT=$HOME/build/ik-tier-split ./build-engine.sh                 # about 30-60 min on 16 cores
 QUANTIZE=$HOME/build/ik-tier-split/pkg/bin/llama-quantize OUT=$PWD/draft ./build-draft.sh
+# an importance matrix of the Q8_0 source (ours: 512 chunks of 512 tokens of code-heavy text, see below):
+#   pkg/bin/llama-imatrix -m <Q8_0 shard 1> -f <your text> -c 512 --chunks 512 -o imatrix.dat
 IK=$HOME/build/ik-tier-split/src QUANTIZE=$HOME/build/ik-tier-split/pkg/bin/llama-quantize \
   IMATRIX=<your imatrix .dat> OUT=$PWD/v41-1017-split ./build-store.sh
 ENGINE=$HOME/build/ik-tier-split/pkg STORE=$PWD/v41-1017-split \
   DRAFT=$PWD/draft/DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf ./launch.sh &
-# after "server is listening" (the load takes about 45 min from Optane):
+# after "server is listening" (about 45 min: the store is read from disk and placed over DRAM and PMem):
 PORT=8790 N=300 PHASES=n4:4,n0:0,n4b:4 python3 bench.py
 ```
 
@@ -53,7 +56,12 @@ the tier split's copy thread, outside the 39 compute threads) and Optane as a CP
   `split_experts.py`, byte for byte, but a `llama-quantize` from before the fork caught up with upstream). Expect the
   same sizes, not the same hashes.
 - **Our harness.** Our launcher also checked each node's pages after the load (`"verify"` in the layout file) and
-  stopped a run whose placement was off; it reported PLACEMENT PASS for this run. `launch.sh` leaves that out.
+  stopped a run whose placement was off; it reported PLACEMENT PASS for this run. It also pinned every other task on
+  the box to CPU 39 and paused maintenance timers for the load. `launch.sh` does neither.
+- **A quality check.** Ours (KL against the release-precision store) ran on a harness that is not in this repo, so you
+  cannot check a rebuilt store's q2_K experts against ours here.
+- **The CPU.** `build-engine.sh` targets Cascade Lake (AVX-512 VNNI) and the RTX 6000 (sm_75). On another CPU or card,
+  change `-march` and `CMAKE_CUDA_ARCHITECTURES`, or `llama-quantize` itself will not run.
 - **The engine.** `tier-split` holds the measured source with two kinds of edit: comments and a test flag that named
   our internal tracker are renamed, and a few lab build scripts are left out. No compiled code path changed.
 

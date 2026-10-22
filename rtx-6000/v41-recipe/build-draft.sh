@@ -3,13 +3,15 @@
 # The draft head (mtp.* tensors) lives in safetensors shards 44-46 of deepseek-ai/DeepSeek-V4.1-Flash-1017; the
 # converter is JigSawPT's llama.cpp fork at 8ce09685 (DeepseekV41DSparkModel).
 #   QUANTIZE=<llama-quantize from build-engine.sh> OUT=<dir> ./build-draft.sh
-# Needs about 25 GB free, docker, and huggingface-cli (pip install huggingface_hub).
+# Needs about 25 GB free, docker, and the Hugging Face CLI (`hf`, from pip install -U huggingface_hub).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 QUANTIZE=${QUANTIZE:?QUANTIZE=<llama-quantize>}; OUT=$(realpath -m "${OUT:-$PWD/draft}")
 REV=1bae0e1088993b9b82de08f59de5be5a34e42170; JIG=8ce0968539b1a6795f3413c2783dfa5646b4688a
+HF=$(command -v hf || command -v huggingface-cli) || { echo "needs the Hugging Face CLI: pip install -U huggingface_hub"; exit 1; }
+export LD_LIBRARY_PATH="$(dirname "$QUANTIZE")/../lib:${LD_LIBRARY_PATH:-}"   # the CUDA libraries build-engine.sh packaged
 mkdir -p "$OUT/st" "$OUT/in"
-huggingface-cli download deepseek-ai/DeepSeek-V4.1-Flash-1017 --revision $REV --local-dir "$OUT/st" \
+"$HF" download deepseek-ai/DeepSeek-V4.1-Flash-1017 --revision $REV --local-dir "$OUT/st" \
   --include 'model-0004[4-6]-of-00048.safetensors' '*.json' '*.py' 'tokenizer*'
 (cd "$OUT/st" && grep 'safetensors$' "$here/SHA256SUMS" | awk '{print $1"  "$3}' | sha256sum -c)
 # the converter refuses an index that names absent shards: give it an index trimmed to the mtp.* tensors
