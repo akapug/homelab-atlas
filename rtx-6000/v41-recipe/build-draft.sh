@@ -23,7 +23,11 @@ wm = {k: v for k, v in idx['weight_map'].items() if k.startswith('mtp.')}
 json.dump({'metadata': idx.get('metadata', {}), 'weight_map': wm}, open(f'{dst}/model.safetensors.index.json', 'w'), indent=1)
 for f in os.listdir(src):
     if f != 'model.safetensors.index.json' and not f.startswith('.'):
-        os.symlink(os.path.abspath(f'{src}/{f}'), f'{dst}/{f}')
+        target = os.path.abspath(f'{src}/{f}')
+        link = f'{dst}/{f}'
+        if os.path.islink(link) and os.readlink(link) == target:
+            continue
+        os.symlink(target, link)
 print(len(wm), 'mtp.* tensors in', sorted(set(wm.values())))
 PY
 [ -d "$OUT/jig/.git" ] || git clone -q https://github.com/JigSawPT/llama.cpp "$OUT/jig"

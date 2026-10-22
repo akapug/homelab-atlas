@@ -20,7 +20,7 @@ a step. Terms: [GLOSSARY](../GLOSSARY.md).
 | model | engine and weights | result | conditions | quality check | details |
 |---|---|---|---|---|---|
 | Qwen3.8-27B (dense) | vLLM 0.31.0 (official CUDA image) + [`draft-vocab`](../b70/vllm-xpu/draft-vocab.py) + [`length-finish`](../b70/vllm-xpu/length-finish.py); AutoRound int4 (the same checkpoint as the B70) | **103-105 decode** at 1 stream; **279-288** for 3 streams together; prefill 1,407-1,410 on a 16k prompt; 88-95 decode at 32k depth | MTP 3 with a 50,521-token draft vocabulary, fp8 KV, 57,344-token window, temperature 0, thinking off, 512 tokens out, idle server, 2026-10-07 | the checkpoint passed the [B70 entry's](../b70/#at-a-glance) correctness eval (41 of 41 exact) | [Qwen3.8-27B on vLLM CUDA](#qwen38-27b-on-vllm-cuda-about-104-toks) |
-| GLM-5.3-Flash (321B MoE) | the `glm53-flash-offload` engine (exllamav3-based), EXL3 3.05 bpw, 1,600 experts cached in VRAM, the rest computed on the CPU from RAM (14 cores for the 23.08 base in moe-offload, 16 threads in the trim runs) | **26.69 decode** with a route trim (keep 4 of 8 picks that miss VRAM, layers 29-44; not yet published); 23.08 without | 3 coding prompts x 300 tokens, greedy, thinking off, 32,768-token window, 2026-10-20 | KL 0.0154, top-1 0.975 against the same weights computed exactly on the GPU: **passes** our bar (KL at most 0.03, top-1 at least 0.97) | [GLM route trim](#glm-53-flash-a-route-trim-clears-25-toks), [moe-offload points 1-3](../moe-offload/#what-we-learned-measured) |
+| GLM-5.3-Flash (321B MoE) | the `glm53-flash-offload` engine (exllamav3-based), EXL3 3.05 bpw, 1,600 experts cached in VRAM, the rest computed on the CPU from RAM (a CPU lane on 14 cores, the same in the base and the trim runs) | **26.69 decode** with a route trim (keep 4 of 8 picks that miss VRAM, layers 29-44; not yet published); 23.08 without | 3 coding prompts x 300 tokens, greedy, thinking off, 32,768-token window, 2026-10-20 | KL 0.0154, top-1 0.975 against the same weights computed exactly on the GPU: **passes** our bar (KL at most 0.03, top-1 at least 0.97) | [GLM route trim](#glm-53-flash-a-route-trim-clears-25-toks), [moe-offload points 1-3](../moe-offload/#what-we-learned-measured) |
 | Qwen3.8 Flash-Next (125B MoE, 6B active) | [Strata](https://github.com/Niko1221/Strata) `477ac13c` built for sm_86, Q8_0, every expert in RAM, a VRAM expert cache | **49.1 decode** (median, one client); prefill about 1,620 at 15k | MTP 4, the model card's thinking sampling; speed at a 32,768-token window, agent runs at 131,072; 2026-10-18 | **23 of 24** agent tasks over 2 passes (21 of 24 inside the 20-minute limit) | [Flash-Next](#qwen38-flash-next-agent-work-from-ram) |
 | sabi-noema (a Qwen3.8-27B fine-tune) | llama.cpp `d454a20` CUDA, i1-Q4_K_M (16.55 GB) | 35.9-47.3 decode | no speculation, f16 KV, 49,152-token window, card sampling, thinking on, 2026-10-21 | **5 of 5** planted defects caught, each with a working test; 1 soft false positive on 2 clean controls | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
 | Qwen3.8-27B and a coding fine-tune (GGUF) | the same llama.cpp build, UD-Q4_K_XL and Q3 GGUFs | 38.0-46.1 decode | as above | 4 of 5 each | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
@@ -31,13 +31,13 @@ a step. Terms: [GLOSSARY](../GLOSSARY.md).
 The same AutoRound int4 checkpoint the B70 serves (all files sha256-identical), so this card and a B70 are an
 XPU-vs-CUDA comparison on one set of weights.
 
-Measured 2026-10-07 with [`bench/serve-ab.py`](../b70/bench/) conditions: temperature 0, thinking off, `ignore_eos`,
+Measured 2026-10-07 with [`serve-ab.py`](../b70/bench/serve-ab.py), the same client on both cards: temperature 0, thinking off, `ignore_eos`,
 salted prompts so no prefix cache hits, an idle server, 512 tokens out.
 
 | measure | result |
 |---|---|
 | decode, 1 stream | 103-105 tok/s (95-107 over 10 runs) |
-| decode, 3 streams | 279-288 tok/s together: all tokens over the wall time, each request's prefill included, so below three times one stream; each stream decodes at 96-100 once it starts |
+| decode, 3 streams | 279-288 tok/s together: output tokens over the wall time, each request's prefill included, so below three times one stream; each stream decodes at 96-100 once it starts |
 | prefill, 16k-token prompt | 1,407-1,410 tok/s (11.3 s) |
 | decode at 32k depth | 88-95 tok/s (24.7 s to the first token) |
 | decode at 55k depth | 88 tok/s (47 s to the first token) |
@@ -94,15 +94,17 @@ A **route trim** keeps only the top n of a token's routed picks that miss the VR
 renormalisation. Picks already in VRAM are never dropped. It reads fewer experts from RAM per token. Which layers
 tolerate it comes from the planner's per-layer sensitivity map ([Recipe Maker, layer map and route
 trim](../recipe-maker/docs/how-it-works.md#layer-map-and-route-trim)). Measured 2026-10-20, EXL3 3.05 bpw, layer-ahead
-warm-up on, 16 threads, 3 coding prompts x 300 tokens plus 4 real coding-agent briefs (1.5-2.2k tokens) x 256 tokens,
-greedy, thinking off, two rounds per arm:
+warm-up on, the CPU lane on 14 cores, 3 coding prompts x 300 tokens plus 4 real coding-agent briefs (1.5-2.2k tokens) x 256 tokens,
+greedy, thinking off. Each trim ran interleaved with an untrimmed arm on the same server, two rounds each (untrimmed,
+trimmed, untrimmed, trimmed); a round is the median of 6 requests, and a figure is the mean of its two rounds. The
+percent compares a trim with the untrimmed arm beside it:
 
-| trim | decode (coding prompts) | agent briefs, base / trim | KL | top-1 | verdict |
-|---|---|---|---|---|---|
-| none | 22.68-23.11 | 20.17-21.37 | 0.0045 (the floor: this session's untrimmed run; 0.0044 in moe-offload's earlier one) | - | pass |
-| keep 5 on layers 27-44 | **25.65** (+13 %) | 21.15 / 24.79 | 0.0103 | 0.984 | **pass** |
-| keep 4 on layers 29-44 | **26.69** (+17 %) | 20.17 / 24.65 | 0.0154 | 0.975 | **pass** |
-| keep 4 on 27-44 and keep 7 on 26 | 27.60 (+19 %) | 21.37 / 25.62 | 0.0193 | 0.969 | **fail** (top-1) |
+| trim | decode (coding prompts): trim, its two rounds | untrimmed beside it | agent briefs, base / trim | KL | top-1 | verdict |
+|---|---|---|---|---|---|---|
+| none | - | 22.68-23.11 over the three sessions | 20.17-21.37 | 0.0045 (the floor: this session's untrimmed run; 0.0044 in moe-offload's earlier one) | - | pass |
+| keep 5 on layers 27-44 | **25.65** (25.94, 25.35) | 22.68 (23.04, 22.32): +13 % | 21.15 / 24.79 | 0.0103 | 0.984 | **pass** |
+| keep 4 on layers 29-44 | **26.69** (26.92, 26.45) | 22.77 (22.70, 22.85): +17 % | 20.17 / 24.65 | 0.0154 | 0.975 | **pass** |
+| keep 4 on 27-44 and keep 7 on 26 | 27.60 (27.47, 27.72) | 23.11 (23.07, 23.14): +19 % | 21.37 / 25.62 | 0.0193 | 0.969 | **fail** (top-1) |
 
 - KL and top-1 are against the same EXL3 weights computed exactly on the GPU, on our coding text; see
   [the quality reference problem](../moe-offload/#the-quality-reference-problem) for what that reference does and
@@ -110,8 +112,10 @@ greedy, thinking off, two rounds per arm:
 - The trim cuts CPU expert reads from about 170 to 137-145 per token.
 - The planner predicted the KL of each arm before the run (0.011-0.017); it under-predicted the failing arm's.
 - **Not yet published:** the trim is our change to the engine's routing, switched on by an environment variable we
-  will name when the change is public. Until then the public image reproduces the untrimmed 23.08, not 26.69; see
-  [moe-offload](../moe-offload/).
+  will name when the change is public. The untrimmed 23.08 is not the public image alone either: every arm here and
+  in [moe-offload](../moe-offload/) ran the public `glm53-flash-offload` image with our unpublished CPU-lane changes
+  mounted over it (the layer-ahead warm-up among them). These pages give no timing of the public image
+  alone.
 
 ## Qwen3.8 Flash-Next: agent work from RAM
 

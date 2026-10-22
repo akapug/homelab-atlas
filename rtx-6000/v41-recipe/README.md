@@ -43,6 +43,10 @@ PORT=8790 N=300 PHASES=n4:4,n0:0,n4b:4 python3 bench.py
 Face CLI, `numactl`, about 1 TB of disk, and for the run itself the RAM and Optane of this box (or a layout from the planner).
 `pkg/lib` carries the CUDA runtime, cuBLAS and libgomp.
 
+Put the source (`SRCDIR`, default `./v41-1017-q8`) on an NVMe drive: the store's shards 8-10 are links to the
+source's own, and the server reads the engram tables in 8 and 9 from the file while it decodes (our copy sat on a PCIe NVMe
+drive). The other shards are read once at the load.
+
 `launch.sh` is written for this box: two 10-core Xeons with 20 hardware threads each (NUMA nodes 0 and 1; the 39
 compute threads leave CPU 39 for the tier split's prefetch, which this run had off) and Optane as a CPU-less node 2. On another box, change `CPUS` and `T` and the node numbers in `placement.tsv`, and see
 [the planner](../../recipe-maker/) for a layout that fits.
@@ -73,8 +77,9 @@ scripts have not been run as written (they repeat steps our lab kit ran, which n
 - **The quantizer build.** Our store and draft were quantized by an earlier build of the same fork (the same
   `split_experts.py`, byte for byte, but a `llama-quantize` from before the fork caught up with upstream). Expect the
   same sizes, not the same hashes.
-- **Our harness.** Our launcher also checked each node's pages after the load (`"verify"` in the layout file) and
-  stopped a run whose placement was off; it reported PLACEMENT PASS for this run. It also pinned every other task on
+- **Our harness.** Our launcher also checked each node's pages after the load and stopped a run whose placement was
+  off; it reported PLACEMENT PASS for this run. That is what `"verify": "fail"` in the layout file means: on a failed
+  check, fail the run. It is a setting, not a failed run. It also pinned every other task on
   the box to CPU 39 and paused maintenance timers for the load. `launch.sh` does neither.
 - **A quality check.** Ours (KL against the release-precision store) ran on a harness that is not in this repo, so you
   cannot check a rebuilt store's q2_K experts against ours here.

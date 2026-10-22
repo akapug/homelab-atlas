@@ -33,7 +33,7 @@ at a time unless it says otherwise.
 The fine print, card by card (the card pages carry the rest):
 - **RTX 3090 Ti.** Qwen3.8-27B: vLLM CUDA, int4, MTP 3 with a reduced draft vocabulary; the same checkpoint scored
   41 of 41 on our correctness eval on the B70. GLM-5.3-Flash: EXL3 3.05 bpw with a route trim that passes our quality
-  bar but is not published yet; 23.08 without it, on the public image (14 cores, 3 coding prompts x 300 tokens,
+  bar but is not published yet; 23.08 without it (the public image plus our CPU-lane changes, also unpublished; 14 cores, 3 coding prompts x 300 tokens,
   greedy, thinking off, 32,768 window).
 - **RTX 6000.** 11.88 without, 12.69 with two newer changes of ours plus upstream ik_llama.cpp #2712, all public (our
   fork's branch `tier-split`); its quality check comes from the earlier build of the same store and layout.
@@ -45,7 +45,8 @@ The fine print, card by card (the card pages carry the rest):
   defects and raised one false alarm. V4.1: the DSpark draft model, experts at release precision (the quality
   reference itself); the 12.09 adds our decode-attention kernel for the 1080 Ti, checked against the CPU attention on
   16 shapes, with all 16 DIMMs. The Ornith run had 15 of 16 DIMMs working.
-- **EPYC alone.** V4.1 with the same release-precision weights and draft model, same DIMM condition.
+- **EPYC alone.** V4.1 with the same release-precision weights and draft model, on 15 of 16 DIMMs (the 12.09 had
+  all 16).
 
 Names you will meet on the card pages and in Recipe Maker: the desktop is **snoopy**, the workstation **droopy**, the
 Threadripper **odie** and the server **lassie**; the [MoE offload entry](moe-offload/) calls them boxes A, B, C and D.
@@ -75,7 +76,7 @@ The ones we are proudest of, each with its conditions and quality check one clic
   source's own, linked). At 189k tokens it recalled all 16 planted facts. [RTX 6000](rtx-6000/)
 - **GLM-5.3-Flash over the 25 tok/s line on a gaming card.** 26.69 tok/s on an RTX 3090 Ti plus 192 GB of DDR5,
   by computing only the top 4 of the expert picks that miss VRAM on 16 of its layers, with its output still within
-  our quality bar. The trim is not published yet; 23.08 without it on the public image.
+  our quality bar. The trim is not published yet, nor are the CPU-lane changes under the 23.08 it starts from.
   [3090 Ti](3090-ti/#glm-53-flash-a-route-trim-clears-25-toks)
 - **Agent work from a model mostly in RAM.** Qwen3.8 Flash-Next passed 23 of 24 agent tasks on the 3090 Ti box
   (21 inside the time limit),

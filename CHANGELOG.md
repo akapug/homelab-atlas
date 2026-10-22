@@ -21,6 +21,17 @@ day). Results that change a headline number say so.
 ### Fixed
 - From the GPT-6.1 reader at 0491930 (its diff): `build-engine.sh` refuses a dirty source checkout instead of stamping a
   `SOURCE_SHA` that does not describe what it built.
+- GLM-5.3-Flash on the 3090 Ti: the pages said the untrimmed 23.08 ran on the public image. It ran the public image
+  with our unpublished CPU-lane changes mounted over it (the layer-ahead warm-up among them), as did every trim arm;
+  the README, the 3090 Ti and MoE offload pages and `atlas.json` now say so. The base and trim runs used the same CPU
+  lane (14 cores), not 14 against 16. The trim table gives each arm's two rounds and the untrimmed arm run beside it,
+  which its percent compares against (22.68, 22.77, 23.11).
+- From the round-5 Claude reader: `serve-ab.py`, the client behind the 3090 Ti and B70 comparison, is now in
+  `b70/bench/` (the page linked a folder without it); the box D sentence under the MoE offload table says about half
+  the bar (12.09), not under a third; the README's EPYC fine print says 15 of 16 DIMMs (the 12.09 had 16); the recipe
+  says to keep the source on NVMe (the server reads shards 8 and 9 while it decodes) and what `"verify": "fail"` means.
+- From the GPT-6.1 reader at 12aa2d5 (its diff): `build-draft.sh` can be re-run: a link it already made is kept, and a
+  different file in its place still stops it.
 - `build-store.sh` counts the routed-expert tensors in your importance matrix before the split and stops if any are
   missing (stock `llama-imatrix` drops a whole expert tensor when 5 % of its experts saw no tokens; gate may come from
   up). Tested on the Q8_0 source: our matrix passes 120 of 120, and the same matrix with one tensor removed is refused.

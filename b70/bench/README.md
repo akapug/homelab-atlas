@@ -4,6 +4,7 @@
 |---|---|
 | [`decode-streams.py`](decode-streams.py) | aggregate decode tok/s of a llama-server at N simultaneous streams and set prompt depths, from the server's own per-request timings |
 | [`decode-vllm.py`](decode-vllm.py) | the same against an OpenAI-compatible server that returns no timings (vLLM): each stream's decode is timed from its first to its last streamed chunk, tokens from `usage` |
+| [`serve-ab.py`](serve-ab.py) | the short set for comparing one model across accelerators on any OpenAI-compatible vLLM server: decode at 1 stream (512 tokens, x3), prefill of a ~16k prompt (x2), decode at ~32k depth (x2), and 3 streams together (output tokens over the wall time); salted prompts, temperature 0, thinking off, `ignore_eos` |
 | [`spec-step-cost.sh`](spec-step-cost.sh) | the time of one speculative verify step at the server's current draft count: one stream of 1,024 tokens, tokens a step from vLLM's draft counters; it waits for an idle server and flags a run other requests shared |
 | [`cpu-contention-probe.sh`](cpu-contention-probe.sh) | whether host CPU load slows a vLLM server's speculative step, and what gets it back: `spec-step-cost.sh` idle, under `stress-ng` on every CPU, with the container pinned (`docker update`, live) and the load on the other CPUs, and pinned alone |
 | [`length-cut-check.py`](length-cut-check.py) | whether a tool call cut off by `max_tokens` is reported as `length` (with `length-finish.py`) or as `tool_calls` (the stock image): it forces a cut and prints the streamed finish reason |
