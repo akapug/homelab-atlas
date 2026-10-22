@@ -28,6 +28,13 @@ class ModelJs(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout[-3000:] + p.stderr[-3000:])
         self.assertRegex(p.stdout, r'\d+ tests passed')
 
+    @unittest.skipUnless(shutil.which('node') and os.path.exists(os.path.join(ROOT, 'tests', 'test_screen.js')), 'node not installed, or a public copy (the screening ledger stays home)')
+    def test_screen_js(self):
+        """tests/test_screen.js: the verdict-ready check on the screening rows against the card conditions"""
+        p = subprocess.run(['node', os.path.join('tests', 'test_screen.js')], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stdout[-3000:] + p.stderr[-3000:])
+        self.assertRegex(p.stdout, r'\d+ tests passed')
+
 
 if __name__ == '__main__':
     unittest.main()

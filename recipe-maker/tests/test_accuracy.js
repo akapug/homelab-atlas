@@ -716,9 +716,11 @@ t('NUMA page layout: a measured layout scales the DRAM expert CPU time (rows fas
 });
 
 t('draft speed-up: 2+ in-load ledger twins (served width vs no draft, same load) set the box x model fit; fewer keep the anchors', () => {
-  const D = JSON.parse(JSON.stringify(data)), xs = D.draft_twins['droopy|glm'].map(x => x.mult);
-  const c = FM.applyCal(D).boxes.droopy.draft.glm;
-  assert.ok(Math.abs(c.v - xs.reduce((a, x) => a + x, 0) / xs.length) < 1e-9 && /in-load twins in the run ledger/.test(c.src), c.src);
+  const D = JSON.parse(JSON.stringify(data)), xs = D.draft_twins['droopy|glm'];
+  const c = FM.applyCal(D).boxes.droopy.draft.glm, s = id => FM.predictRecipe(D, D.recipes.find(y => y.run_id === id).recipe).ms_per_token;
+  // least squares on the log speed-up with a free tau: at each twin's own CPU share the fit matches the twins in geometric mean
+  const lg = xs.reduce((a, x) => { const m = s(x.id); return a + Math.log(c.v / (1 + c.beta.v * m.cpu / m.total) / x.mult); }, 0);
+  assert.ok(Math.abs(lg) < 1e-9 && /in-load twins in the run ledger/.test(c.src) && c.runs.length === xs.length, c.src);
   D.draft_twins['droopy|glm'] = D.draft_twins['droopy|glm'].slice(0, 1);
   const a = FM.applyCal(D).boxes.droopy.draft.glm;
   assert.ok(!/in-load twins/.test(a.src) && /measured arm/.test(a.src), a.src);
@@ -998,6 +1000,106 @@ t('recipeQuality: a hot/cold store is read-weighted on the score heat, one type 
   const ext = FM.recipeQuality(data, Object.assign({}, fs1, { engine: 'nope' }));
   assert.ok(ext && /every routed expert/.test(ext.how), JSON.stringify(ext));
   assert.strictEqual(FM.recipeQuality(data, Object.assign({}, fs1, { model: 'zz' })), null);
+});
+
+t('drive row: ik reaches the lassie MI25 through Vulkan RADV as a banks-only card, at its bench line, with the seen types only', () => {
+  const ctx = FM.prepare(FM.context(data, 'lassie', 'orn35', 'ik', data.knobs), data.models.orn35.heat.plan_default, data.models.orn35.heat.score_default);
+  const mi = ctx.tiers.find(x => x.gpu && x.gpu.id === 'mi25'), d = data.boxes.lassie.gpus.find(g => g.id === 'mi25').drive.ik;
+  assert.ok(mi.engineOk && mi.banks && mi.cap > 0, 'ik drives the MI25 and it holds experts');
+  assert.strictEqual(ctx.g0.gpu.id, '1080ti', 'dense weights, KV and the draft stay on the CUDA card');
+  assert.ok(!ctx.notes.some(x => /sits idle/.test(x)) && ctx.notes.some(x => /MI25.*expert banks only.*vulkan-radv/.test(x)), ctx.notes.join(' | '));
+  assert.ok(Math.abs(mi.bw * mi.eta - FM.v(data.bench.gpu[d.backend].rate_gbs) * 1e9) < 1, 'the measured line, not nameplate x gpu_eta: ' + mi.bw * mi.eta);
+  const ti = ctx.tiers.indexOf(mi), on = ctx.opts.filter(o => o.ti === ti);
+  assert.ok(on.length && on.every(o => d.types.indexOf(o.q) >= 0), on.map(o => o.q).join(','));
+  const g = FM.context(data, 'lassie', 'orn35', 'llamacpp', data.knobs).tiers.find(x => x.gpu && x.gpu.id === 'mi25');
+  assert.ok(!g.drive && g.eta === FM.v(data.assume.gpu_eta), 'an engine without a drive row reads the card as before');
+});
+
+t('lassie-orn35-q4km-o6: the label\'s per-card placement puts every expert on the two cards; the fitted MI25 hop replays n0 and holds out of sample', () => {
+  const row = data.recipes.find(x => x.run_id === 'lassie-orn35-q4km-o6'), p = FM.predictRecipe(data, row.recipe);
+  assert.strictEqual(p.status, 'PREDICTED', p.why);
+  assert.ok(Math.abs(p.cross_layers.mi25 - 30) < 1e-6, 'blk 9 + 11-39 = 30 layers crossed: ' + JSON.stringify(p.cross_layers));
+  assert.deepStrictEqual(p.tiers.map(x => x.id), ['gpu0', 'gpu1'], 'no expert left on the CPU');
+  assert.ok(Math.abs(p.tiers[1].read_share - 0.75) < 1e-6, '30 of 40 layers of routed reads on the MI25');
+  const hop = data.cal.boxes.lassie.hop.mi25;
+  assert.ok(hop.tag === 'FIT' && hop.runs.indexOf('lassie-orn35-q4km-o6') >= 0 && hop.v > 0, JSON.stringify(hop));
+  assert.ok(!data.cal.boxes.lassie.host.orn35.runs.some(id => hop.runs.indexOf(id) >= 0), 'a run that crosses to the card fits the hop, never the host');
+  assert.ok(Math.abs(p.decode_tps_nodraft / row.measured.off - 1) < 0.01, 'n0 ' + p.decode_tps_nodraft + ' vs ' + row.measured.off);
+  const ev = p.evidence[1].terms.map(x => x.term + ' ' + x.evidence);
+  assert.ok(ev.indexOf('GPU read rate GB/s (mi25, vulkan-radv bench line) seen') >= 0 && ev.indexOf('cross-backend hop ms per layer (mi25) inferred') >= 0, ev.join(' | '));
+  // out of sample: the hop fitted without o6 (and q6, the same load) predicts o6's no-draft decode
+  const D = JSON.parse(JSON.stringify(data)); D.recipes = D.recipes.filter(x => ['lassie-orn35-q4km-o6', 'lassie-orn35-q4km-q6'].indexOf(x.run_id) < 0);
+  FM.applyCal(D);
+  assert.deepStrictEqual(D.cal.boxes.lassie.hop.mi25.runs, ['lassie-orn35-q4km-o2']);
+  const q = FM.predictRecipe(D, row.recipe);
+  assert.ok(Math.abs(q.decode_tps_nodraft / row.measured.off - 1) < 0.02, 'held out: ' + q.decode_tps_nodraft + ' vs ' + row.measured.off);
+});
+
+t('gpu_layers cards: an unknown card, a type not seen on the card and layers past its capacity are UNMODELLED', () => {
+  const r = data.recipes.find(x => x.run_id === 'lassie-orn35-q4km-o6').recipe, pl = data.placements['lassie-orn35-q4km-o6'];
+  const un = (x, rx) => { const p = FM.predictRecipe(data, Object.assign({}, r, x)); assert.strictEqual(p.status, 'UNMODELLED'); assert.ok(rx.test(p.why), p.why); };
+  un({ placement: Object.assign({}, pl, { cards: { nope: [9] } }) }, /drives no card nope/);
+  const L = JSON.parse(JSON.stringify(data.boxes.lassie)), D = Object.assign({}, data, { boxes: Object.assign({}, data.boxes, { lassie: L }) });
+  L.gpus.find(g => g.id === 'mi25').drive.ik.types = ['mxfp4'];
+  const p = FM.predictRecipe(D, r);
+  assert.ok(p.status === 'UNMODELLED' && /q4_K is not a type seen on mi25/.test(p.why), p.why);
+  un({ store: { split: false, types: ['q6_K'] }, placement: { mode: 'gpu_layers', cards: { mi25: Array.from({ length: 40 }, (_, i) => i) } } }, /exceed the mi25 capacity/);
+});
+
+t('draft speed-up by where the experts sit: tau per box x model / (1 + beta x CPU share), beta per draft kind fitted on the ledger twins; o5 and o6 replay m3, out of sample too', () => {
+  const C = data.cal.draft_cpu, B = C['MTP n_max 3'], S = C['DSpark n_max 4'], L = data.cal.boxes.lassie.draft.orn35, row = id => data.recipes.find(x => x.run_id === id);
+  const top = FM.v(data.assume.draft_cpu_beta_max);
+  assert.ok(B.tag === 'FIT' && B.v > 0 && B.v < top && ['lassie-orn35-q4km-o5', 'lassie-orn35-q4km-o6'].every(id => B.runs.indexOf(id) >= 0), JSON.stringify(B));
+  assert.ok(L.beta === B && L.tag === 'FIT', 'the lassie orn35 speed-up carries the MTP weight');
+  // a separate DSpark draft model weighs CPU expert time unlike an MTP head: its own fit, on the droopy V4.1 twins only
+  assert.ok(S.tag === 'FIT' && S.v > 0 && S.v < B.v && S.runs.every(id => /^droopy-v41-/.test(id)) && data.cal.boxes.droopy.draft.v41.beta === S, JSON.stringify(S));
+  assert.ok(C.pooled.runs.length === B.runs.length + S.runs.length && /pooled over every draft kind/.test(C.pooled.src), C.pooled.src);
+  assert.ok(data.cal.boxes.droopy.draft.glm.beta === B && data.cal.boxes.droopy.draft.orn122.beta === B, 'every MTP box x model shares the MTP weight');
+  // anchor-only fits (no ledger twins) keep their plain mean and no CPU weight
+  [['snoopy', 'v40'], ['lassie', 'glm']].forEach(([bk, mk]) => assert.ok(!data.cal.boxes[bk].draft[mk].beta, bk + ' ' + mk));
+  const m3 = (D, id) => { const p = FM.predictRecipe(D, row(id).recipe); return [p.decode_tps / row(id).measured.on - 1, p.decode_tps_nodraft / row(id).measured.off - 1, p]; };
+  const [e6, n6, p6] = m3(data, 'lassie-orn35-q4km-o6'), [e5, n5] = m3(data, 'lassie-orn35-q4km-o5');
+  assert.ok(Math.abs(e6) < 0.03 && Math.abs(e5) < 0.03, 'm3 in sample: o6 ' + e6 + ', o5 ' + e5);
+  assert.ok(Math.abs(n6) < 0.01 && Math.abs(n5) < 0.01, 'n0 untouched: ' + [n6, n5]);
+  assert.ok(Math.abs(p6.decode_tps / p6.decode_tps_nodraft - L.v) < 1e-9, 'every o6 expert on a GPU: the speed-up is tau');
+  const ev = p6.evidence[0].terms.map(x => x.term);
+  assert.ok(ev.indexOf('draft speed-up at no CPU expert time') >= 0 && ev.indexOf('draft verify weight on CPU expert time') >= 0, ev.join(' | '));
+  // out of sample: each lassie twin left out of the fit. tau then rests on the other lassie twin, and beta cannot come from
+  // lassie (one twin, no spread in CPU share) nor from the MTP kind (the GLM twins alone run the fit to the search top), so
+  // lassie takes the weight pooled over every kind (0.162 without the twin, mostly the DSpark twins' 0.08), while its own
+  // pair needs 0.42. Measured 10-21: o5 +0.102 and o6 -0.092 held out. The bound is the held-out spread of the chosen
+  // design over all 26 twins that can be held out (orn122 has one): rms 0.068, |error| 0.090-0.110 on 6 of them, 0.134 and
+  // 0.174 above. No design fitted on the other twins reaches 0.07 for o5 (pooled 0.102, per box x model 0.102, per kind
+  // without the fallback -0.557). o5 and o6 also ran on 15 of 16 lassie DIMMs, which the planner names but does not model
+  // (its slower DRAM reads land in the lassie host fit, which lowers o5's CPU share).
+  ['lassie-orn35-q4km-o5', 'lassie-orn35-q4km-o6'].forEach(id => {
+    const D = JSON.parse(JSON.stringify(data)); D.draft_twins['lassie|orn35'] = D.draft_twins['lassie|orn35'].filter(x => x.id !== id);
+    FM.applyCal(D);
+    const Lb = D.cal.boxes.lassie.draft.orn35.beta;
+    assert.ok(!D.cal.draft_cpu['MTP n_max 3'] && Lb === D.cal.draft_cpu.pooled && Lb.runs.indexOf(id) < 0, JSON.stringify(Lb));
+    const [e] = m3(D, id);
+    assert.ok(Math.abs(e) < 0.11, id + ' held out: ' + e);
+  });
+  // the solver reads the same speed-up: draft-on tok/s = tau / (T + beta x CPU expert time) on a solved lassie orn35 layout
+  const ctx = FM.prepare(FM.context(data, 'lassie', 'orn35', 'ik', data.knobs), data.models.orn35.heat.plan_default, data.models.orn35.heat.score_default);
+  const pts = FM.frontier(ctx), ev2 = pts.filter(x => x.feasible).map(x => FM.evaluate(ctx, FM.gateRepair(ctx, FM.expand(ctx, FM.solveLambda(ctx, x.lam)))));
+  ev2.push(FM.bestAt(ctx, 20, pts).ev);
+  assert.ok(ctx.cpuW === B.v && ev2.length, 'draft on: the context carries the weight');
+  ev2.forEach(e => assert.ok(Math.abs(e.tokps - L.v / (e.T + B.v * e.cpuT)) < 1e-9 && e.mult <= L.v + 1e-12));
+  const off = FM.context(data, 'lassie', 'orn35', 'ik', Object.assign({}, data.knobs, { draft: false })), given = FM.context(data, 'lassie', 'orn35', 'ik', Object.assign({}, data.knobs, { draftMult: 1.5 }));
+  assert.ok(off.cpuW === 0 && given.cpuW === 0 && given.mult === 1.5, 'no draft, or a given draftMult knob: no CPU weight');
+});
+
+t('a ledger fit on runs from a dated box condition names it: lassie host, MI25 hop and draft fits ran on 15 of 16 DIMMs; droopy fits did not', () => {
+  const C = data.boxes.lassie.conditions.find(c => c.id === 'dimm-15of16'), L = data.cal.boxes.lassie;
+  const under = x => (x.box_conditions || []).map(c => c.box + ' ' + c.id + ': ' + c.runs.join(','));
+  assert.deepStrictEqual(under(L.host.orn35), ['lassie dimm-15of16: lassie-orn35-q4km-o1,lassie-orn35-q4km-o5']);
+  assert.deepStrictEqual(under(L.hop.mi25), ['lassie dimm-15of16: lassie-orn35-q4km-o2,lassie-orn35-q4km-o6']);
+  assert.deepStrictEqual(under(L.draft.orn35), ['lassie dimm-15of16: lassie-orn35-q4km-o5,lassie-orn35-q4km-o6']);
+  ['MTP n_max 3', 'pooled'].forEach(k => assert.deepStrictEqual(under(data.cal.draft_cpu[k]), ['lassie dimm-15of16: lassie-orn35-q4km-o5,lassie-orn35-q4km-o6'], 'beta ' + k + ': only the lassie twins ran under it'));
+  assert.ok(!data.cal.draft_cpu['DSpark n_max 4'].box_conditions, 'the DSpark weight has no lassie twin');
+  [L.host.orn35, L.hop.mi25, L.draft.orn35, data.cal.draft_cpu['MTP n_max 3']].forEach(x => assert.ok(x.src.indexOf(' ran under lassie ' + C.short + ' (' + C.from + ' to ' + C.to + ')') > 0, x.src));
+  assert.ok(!data.cal.boxes.droopy.host.orn122.box_conditions && !/ran under/.test(data.cal.boxes.droopy.host.orn122.src), 'droopy runs: no condition');
 });
 
 console.log(`${n} tests passed`);

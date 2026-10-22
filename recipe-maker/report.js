@@ -3,6 +3,7 @@
 // owner's droopy layout, and a knob-combination search. Usage: node report.js [--json out.json] [--quick]
 // Pre-launch check: node report.js --check recipe.json [--json] [--strict]. Run ledger accuracy: node report.js --accuracy [runs.jsonl] [--json] [--bucket day|week]
 // External validation (community rows, runs/external.jsonl): node report.js --external [--json]
+// Screening rounds against the card conditions (runs/screen.jsonl, data/cards): node report.js --screen [--json]
 // Layer map + trim proposals + upgrade advisor only (src/advisor.js; also part of the full and --quick reports): node report.js --advice [--json]
 'use strict';
 const fs = require('fs'), path = require('path');
@@ -65,13 +66,31 @@ if (args.includes('--external')) {
   process.exit(0);
 }
 
+// ---------- screening rounds: node report.js --screen [--json] ----------
+// every quality-round row (runs/screen.jsonl) against its model's card conditions (data/cards): the verdict-ready check,
+// each departure, and any keep/delete verdict the round gave on a run that was not verdict-ready
+if (args.includes('--screen')) {
+  const S = FM.screenChecks(data);
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(S.map(x => ({ id: x.row.id, card: x.row.card, arm: x.row.arm, shapes: x.row.shapes, settings: x.row.settings, check: x.check })), null, 1) + '\n'); process.exit(0); }
+  console.log(`screening runs: ${S.length} (${data.screen.file}); verdict-ready refuses a keep/delete verdict over ${(100 * v(data.checks.verdict_ready.shape_rate_max)).toFixed(0)} % failure shapes or a card departure without a recorded best-config sweep`);
+  S.forEach(({ row, check }) => {
+    console.log(`== ${row.id} [${row.card} on ${row.box} / ${row.engine}]${row.verdict ? ' verdict given: ' + row.verdict.call : ''}`);
+    console.log(`  ${check.status.padEnd(7)} ${check.detail}`);
+    if (check.refused) console.log(`  REFUSED  the ${row.verdict.call} verdict waits for a run under the card conditions or a best-config sweep (${row.verdict.src})`);
+  });
+  const cs = Object.keys(data.cards).filter(k => !S.some(x => x.row.card === k));
+  if (cs.length) console.log('cards with no screening run: ' + cs.map(k => k + ' (' + data.cards[k].name + ')').join(', '));
+  process.exit(0);
+}
+
 // ---------- run-ledger accuracy: node report.js --accuracy [runs.jsonl] [--json] ----------
 // A launch-time prediction/check (captured by record_run.py from --check --json) is used as recorded; backfilled runs are
-// predicted and checked post hoc with today's planner and are labelled so. Speed errors are scored only on runs that went fine.
+// predicted and checked post hoc with today's planner and are labelled so. Speed errors are scored only on runs that went fine
+// and carry no confounded caveat (runs/run_caveats.json, read by src/ledger.js).
 const ai = args.indexOf('--accuracy');
 if (ai >= 0) {
   const file = args[ai + 1] && !args[ai + 1].startsWith('--') ? args[ai + 1] : path.join(__dirname, 'runs', 'runs.jsonl');
-  const runs = require('./src/ledger.js').rows(file);
+  const LED = require('./src/ledger.js'), runs = LED.rows(file);
   // cause labels beside the ledger (runs/labels.json): read from each row's notes and logs, never guessed
   const lf = path.join(path.dirname(file), 'labels.json'), labels = fs.existsSync(lf) ? JSON.parse(fs.readFileSync(lf, 'utf8')) : {};
   const replay = data.accuracy.replay_checks.v;
@@ -85,7 +104,7 @@ if (ai >= 0) {
     const lab = labels[run.id], bad = ACC.wentBad(run, lab);
     const predNow = now.prediction || FM.predictRecipe(data, run.recipe);
     return { id: run.id, when: run.when, box: run.box, model: run.model, engine: run.engine, run, pred, pred_basis: launch ? 'launch' : 'post-hoc', pairs_now: ACC.pairs(run, predNow),
-      checks: ck, today, launch_checks: run.check ? run.check.checks : null, check_basis: run.check ? 'launch' : 'post-hoc', bad, scored: !bad.length, pairs: ACC.pairs(run, pred),
+      checks: ck, today, launch_checks: run.check ? run.check.checks : null, check_basis: run.check ? 'launch' : 'post-hoc', bad, scored: !bad.length && !LED.caveated(run).length, pairs: ACC.pairs(run, pred),
       causes: [...new Set(ACC.causesOf(lab).map(c => c.class))], disturbed: ACC.disturbed(lab),
       in_sample: (run.tags || []).filter(t => t.startsWith('anchor:')).map(t => t.slice(7)),
       bound_source: (run.tags || []).filter(t => t.startsWith('bound-source:')).map(t => t.slice(13)) };
@@ -98,7 +117,7 @@ if (ai >= 0) {
   console.log('\n-- per run --');
   rows.forEach(r => {
     const d = r.pairs.filter(p => p.metric.startsWith('decode'));
-    const tag = [r.pred_basis, r.in_sample.length ? 'in-sample ' + r.in_sample.join('/') : '', r.bad.length ? 'went bad: ' + r.bad.join(', ') : ''].filter(Boolean).join('; ');
+    const tag = [r.pred_basis, r.in_sample.length ? 'in-sample ' + r.in_sample.join('/') : '', r.bad.length ? 'went bad: ' + r.bad.join(', ') : '', !r.bad.length && !r.scored ? 'confounded: not scored' : ''].filter(Boolean).join('; ');
     if (r.pred.status !== 'PREDICTED') { console.log(`${r.id.padEnd(30)} UNMODELLED: ${r.pred.why}` + (d.length ? ` | measured ${d.map(p => p.phase + ' ' + n2(p.meas)).join(', ')}` : '') + ` [${tag}]`); out.unmodelled.push({ id: r.id, why: r.pred.why }); }
     else console.log(`${r.id.padEnd(30)} ` + (r.pairs.length ? r.pairs.map(p => `${p.metric}${p.phase ? '[' + p.phase + ']' : ''} ${n2(p.pred)} vs ${n2(p.meas)}` + (p.pred === null ? ' (UNMODELLED)' : p.pct !== null ? ` ${pct(p.pct)}` : ` (${p.err >= 0 ? '+' : ''}${n2(p.err)})`)).join(', ') : 'nothing measured') + ` [${tag}]`);
     out.runs.push({ id: r.id, box: r.box, model: r.model, engine: r.engine, pred_basis: r.pred_basis, status: r.pred.status, why: r.pred.why, scored: r.scored, bad: r.bad, in_sample: r.in_sample, pairs: r.pairs });

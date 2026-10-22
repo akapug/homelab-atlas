@@ -204,8 +204,8 @@
   }
   // measured runs on this box, read from the ledger (data.recipes rows that carry a measured decode): each one sits at its
   // measured speed and at the projected quality of its stored types, with a line to what the model predicts for that run's
-  // own settings. A draft run shows its faster arm (MTP or draft on, or off when the draft lost); a run that went bad is
-  // listed in the table only.
+  // own settings. A draft run shows its faster arm (MTP or draft on, or off when the draft lost); a run that went bad or
+  // carries a confounded caveat (src/ledger.py overlay) is listed in the table only.
   function measuredHere() {
     return (data.recipes || []).filter(r => r.box === st.box && r.measured && MODELS.indexOf(r.model) >= 0).map(r => {
       const m = r.measured, rec = r.recipe, q = FM.recipeQuality(data, rec);
@@ -218,16 +218,22 @@
       const why = p.status !== 'PREDICTED' ? p.why : !(pv > 0) ? p.draft_why : null;
       return { id: r.run_id, when: r.when, label: rec.label || r.label, model: r.model, engine: r.engine, meas, phase, arm, draftArm,
         pred: pv > 0 ? pv : null, why, gap: pv > 0 ? meas / pv - 1 : null, waiver: rec.gate_waiver || null,
-        quality: q.quality, qhow: q.how, top1: m.top1, bad: m.bad, guess: !!m.guess, holdout: m.holdout };
+        quality: q.quality, qhow: q.how, top1: m.top1, bad: m.bad, caveat: (m.caveat || []).length > 0, guess: !!m.guess, holdout: m.holdout,
+        conds: (data.boxes[r.box].conditions || []).filter(c => (r.box_conditions || []).indexOf(c.id) >= 0),
+        cpuShare: p.ms_per_token ? p.ms_per_token.cpu / p.ms_per_token.total : null };
     }).filter(Boolean);
   }
   const armText = a => a.arm === 'on' ? 'MTP / draft on' : a.arm === 'off' ? 'no draft' : a.draftArm ? 'draft on' : 'no draft';
+  // a dated box condition the run ran under (data.boxes[box].conditions), and how much of its modelled token read DRAM experts
+  const condWindow = c => c.from.slice(5, 10) + ' ' + c.from.slice(11) + ' to ' + c.to.slice(5, 10) + ' ' + c.to.slice(11);
+  const condText = a => a.conds.map(c => 'ran under ' + c.short + ' (' + condWindow(c) + ')' +
+    (a.cpuShare > 0 ? ': CPU experts are ' + (100 * a.cpuShare).toFixed(0) + ' % of its modelled token, plausibly slower' : a.cpuShare === 0 ? ': every routed expert on a GPU, barely affected' : '')).join('; ');
   function frontierSVG() {
     const AW = app.clientWidth || 720;
     const W = Math.round(Math.max(280, AW >= 980 ? (AW - 10) * 1.25 / 2.25 - 26 : AW - 26)), H = Math.round(Math.min(440, Math.max(340, W * 0.62))), L = 46, Rm = 12, T = 10, B = 40;
     const allP = [];
     R.curves.forEach(c => envelope(c.pts).forEach(p => allP.push(p)));
-    const anc = measuredHere().filter(a => !a.bad && !a.guess);
+    const anc = measuredHere().filter(a => !a.bad && !a.caveat && !a.guess);
     const xmax = Math.max(40, ...allP.map(p => p.tokps * 1.05), ...anc.map(a => Math.max(a.meas, a.pred || 0) * 1.05), R.owner ? R.owner.ev.tokps * 1.05 : 0);
     const qs = allP.map(p => p.quality).concat(anc.map(a => a.quality));
     const ymin = Math.max(0, Math.floor((Math.min(75, ...qs) - 2) / 5) * 5);
@@ -306,7 +312,7 @@
   function chartNotes() {
     const lo = data.meta.left_out || {}, out = [];
     Object.keys(lo).forEach(mk => { const n = lo[mk].runs[st.box]; if (n) out.push(`${n} ${esc(data.models[mk] ? data.models[mk].short : mk)} run${n > 1 ? 's' : ''} on this box ${n > 1 ? 'are' : 'is'} left out of this copy: ${esc(lo[mk].why)}.`); });
-    const un = measuredHere().filter(a => !a.bad && !a.guess && !a.pred).length;
+    const un = measuredHere().filter(a => !a.bad && !a.caveat && !a.guess && !a.pred).length;
     if (un) out.push(`${un} measured run${un > 1 ? 's' : ''} here ${un > 1 ? 'are' : 'is'} not modelled (no line; hover for why).`);
     return out.length ? ' ' + out.join(' ') : '';
   }
@@ -356,6 +362,7 @@
     if (t.kind === 'gpu' && !t.engineOk) return ctx.E.name.split(' (')[0] + ' cannot drive this card';
     const maxQ = ev.kld <= ctx.kldDense + 1e-6;
     if (maxQ) return 'every expert already sits at its best type: nothing left to buy here';
+    if (t.banks) return 'expert banks only (' + t.drive.backend + '): no further expert is faster here, or the speed target is met without it';
     if (t.kind === 'gpu') return 'the fixed part fills this card; what remains is too small or the speed target is met without it';
     if (t.id === 'nvme' || t.id === 'pmem') return 'not needed: the faster tiers hold every expert this layout keeps';
     return 'left free: no move or type upgrade gains quality inside the speed target';
@@ -392,12 +399,12 @@
       const bytes = ev.bytesTok[i], tms = ev.timeT[i] * 1000;
       const eff = tms > 0 ? bytes / (tms / 1000) / 1e9 : 0;
       let src = null;
-      if (t.kind === 'gpu') src = (t.gpu && t.gpu.bw) || null;
+      if (t.kind === 'gpu') src = t.bwTerm || (t.gpu && t.gpu.bw) || null;
       else if (t.id === 'dram') src = box.dram.bw;
       else if (t.id === 'pmem') src = t.bwTerm;
       else if (t.id === 'nvme') src = box.nvme.bw;
       const capSrc = t.kind === 'gpu' ? (t.gpu && t.gpu.vram_gib) : t.id === 'dram' ? box.dram.total_gib : t.id === 'pmem' ? box.pmem && box.pmem.gib : box.nvme.gib;
-      const kernel = t.kind === 'cpu' ? ` CPU kernel ceiling ${f1(ctx.cpuRate(data.types.q4_K ? 'q4_K' : ctx.types[0]) / 1e9)} GB/s (q4_K, f ${f2(ctx.f)}${ctx.kern > 1 ? ', 2x kernel' : ''}${ctx.smt !== 1 ? ', SMT x' + f2(ctx.smt) : ''})` : t.kind === 'gpu' ? ` (x ${f2(t.eta)} reach${chip(data.assume.gpu_eta)})` : '';
+      const kernel = t.kind === 'cpu' ? ` CPU kernel ceiling ${f1(ctx.cpuRate(data.types.q4_K ? 'q4_K' : ctx.types[0]) / 1e9)} GB/s (q4_K, f ${f2(ctx.f)}${ctx.kern > 1 ? ', 2x kernel' : ''}${ctx.smt !== 1 ? ', SMT x' + f2(ctx.smt) : ''})` : t.kind === 'gpu' ? (t.bwTerm ? ` (${esc(t.drive.backend)} bench line` : ` (x ${f2(t.eta)} reach${chip(data.assume.gpu_eta)}`) + (t.drive ? `, + ${f2(t.hop * 1000)} ms per layer crossed${chip(t.hopTerm)}` : '') + ')' : '';
       h += `<div class="tierbox"><div class="tierhead"><b>${esc(t.name)}</b><span class="small">${f1(r.total)} GiB${chip(capSrc)} · ${f1(t.bw / 1e9)} GB/s${chip(src)}${kernel}</span></div>${s}`;
       h += `<div class="small muted">${ev.cnt[i] ? Math.round(ev.cnt[i]).toLocaleString() + ' experts, ' + f1(ev.heatT[i] / ctx.kL * 100) + ' % of routed picks, ' : ''}reads ${f2(bytes / 1e9)} GB per token in ${f1(tms)} ms${eff ? ' (' + f1(eff) + ' GB/s effective)' : ''}</div>`;
       if (t.id === 'dram' && t.nodes && t.nodes.length > 1) {
@@ -433,7 +440,7 @@
     const tot = parts.reduce((a, p) => a + p[1], 0);
     const s = hbar(parts.map((p, pi) => ({ w: p[1] / tot, col: p[2], text: f1(p[1]) + ' ms', short: f1(p[1]), tip: p[0] + ': ' + f1(p[1]) + ' ms', attrs: `data-k="time" data-p="${pi}"` })), 24, 'time per token');
     const ov = ctx.overlap ? ` GPU and CPU work overlap (factor ${f2(ctx.overlap)}), so the token takes ${f1(ev.T * 1000)} ms, not the sum.` : ` GPU and CPU work run one after the other.`;
-    return { svg: s, parts, text: `${parts.map(p => esc(p[0]) + ' ' + f1(p[1]) + ' ms').join(' · ')}.${ov} Draft/MTP multiplier x${f2(ctx.mult)}.` };
+    return { svg: s, parts, text: `${parts.map(p => esc(p[0]) + ' ' + f1(p[1]) + ' ms').join(' · ')}.${ov} Draft/MTP multiplier x${f2(ev.mult)}${ctx.cpuW ? ` (x${f2(ctx.mult)} with no CPU expert time, / (1 + ${f2(ctx.cpuW)} x the CPU share ${f2(ev.cpuT / ev.T)}))` : ''}.` };
   }
   function bitsByHeatSVG(sel) {
     const { ctx, lay } = sel;
@@ -485,7 +492,7 @@
   const PAGES = [
     ['box', 'Plan', 'Pick a box, then a large marker on the chart. The layout card sums that layout up.', ['box', 'whatif', 'chart', 'layout']],
     ['bytes', 'Where it lives', 'The loaded layout, byte by byte: one bar per memory tier, then how many bits each expert gets by how often it is used.', ['bytes', 'bits']],
-    ['trust', 'Trust', 'How far each number goes: its evidence class, the hard checks each recorded run met or failed, and how close the model came to every measured run. Each card opens one level deeper.', ['trust', 'checks', 'calibration']],
+    ['trust', 'Trust', 'How far each number goes: its evidence class, the hard checks each recorded run met or failed, whether each screening round may give a verdict, and how close the model came to every measured run. Each card opens one level deeper.', ['trust', 'checks', 'screen', 'calibration']],
     ['types', 'Edit', 'Change the quant type numbers the model uses, and write down an idea to download with the current view.', ['types', 'idea']],
     ['sources', 'Sources', 'The community recipe rules and priors behind the defaults, and how the model works.', ['sources']]];
   const pageOf = id => (PAGES.find(p => p[0] === id || p[3].indexOf(id) >= 0) || PAGES[0])[0];
@@ -519,6 +526,10 @@
     h += `<label class="boxpick">Box <select id="c-box">${Object.keys(data.boxes).map(b => `<option value="${b}" ${b === st.box ? 'selected' : ''}>${esc(data.boxes[b].name)}${data.boxes[b].atlas ? ' = box ' + esc(data.boxes[b].atlas) : ''}</option>`).join('')}</select></label>`;
     h += `<span class="small" role="group" aria-label="Theme">Theme ${['auto', 'light', 'dark'].map(t => `<button id="t-${t}" data-theme-b="${t}" aria-pressed="${st.theme === t}" class="${st.theme === t ? 'on' : ''}">${t}</button>`).join(' ')}</span>`;
     h += `</div><p class="small muted" style="margin:6px 0 0">${esc(box.role)}.</p>`;
+    (box.conditions || []).forEach(c => {
+      const nr = (data.recipes || []).filter(r => r.box === st.box && (r.box_conditions || []).indexOf(c.id) >= 0).length;
+      h += `<div class="warnline">Runs from ${esc(condWindow(c))} had ${esc(c.short)}${chip(c)}: ${esc(c.what)}. ${nr} ledger run${nr === 1 ? '' : 's'} on this box ran under it (the chart table and each run's tooltip say so). ${esc(c.affects)}.</div>`;
+    });
     h += `<details id="heatd" ${load('heatd', false) ? 'open' : ''}><summary>Routing data behind each model</summary><div class="small muted">Plan heat = the routing counts a layout is built from; scored on = the counts used to project its speed and quality (a held-out half avoids grading the plan on its own data).</div><div class="heatgrid">`;
     MODELS.forEach(mk => {
       const m = data.models[mk], hs = heatFor(mk);
@@ -566,7 +577,7 @@
       const bh = bitsByHeatSVG(sel);
       h += `<section class="card" id="bits" aria-labelledby="bits-h"><h2 id="bits-h">Bits per weight by how often an expert is used</h2>${bh.leg}${bh.svg}<div class="callout small" id="bits-call">${bh.call}</div></section>`;
     }
-    h += '</div>' + page('trust') + sec('trust', trustHTML()) + sec('checks', checksCardHTML()) + sec('calibration', calHTML()) + '</div>' + page('types') + sec('types', tablesHTML()) + sec('idea', ideaHTML()) + '</div>' + page('sources') + sec('sources', sourcesHTML()) + '</div></main>';
+    h += '</div>' + page('trust') + sec('trust', trustHTML()) + sec('checks', checksCardHTML()) + sec('screen', screenHTML()) + sec('calibration', calHTML()) + '</div>' + page('types') + sec('types', tablesHTML()) + sec('idea', ideaHTML()) + '</div>' + page('sources') + sec('sources', sourcesHTML()) + '</div></main>';
     const fid = document.activeElement && document.activeElement.id;
     app.innerHTML = h;
     bind(fr.anc);
@@ -670,6 +681,30 @@
     h += `</table></div><div class="small muted">${S.unmodelled.length} rows UNMODELLED: ${esc(S.unmodelled.map(u => u.id + ' (' + u.why + ')').join('; '))}</div></details>`;
     return h + '</div>';
   }
+  // screening rounds: each quality-round row against its model's card conditions (data.cards), with the verdict-ready check
+  // shown like the other hard checks; then the card conditions themselves, every value with its source
+  const shortSha = x => typeof x === 'string' && x.startsWith('sha256:') ? x.slice(0, 19) : x;
+  function screenHTML() {
+    const S = FM.screenChecks(data), C = data.checks.verdict_ready, refused = S.filter(x => x.check.refused).length;
+    let h = `<div class="card"><h2>Screening runs: verdict-ready</h2><div class="small muted">A keep or delete verdict on a model waits until a quality round ran under the conditions its maker measured it under (the card: sampling, thinking, chat template, context and output length), or a recorded best-config sweep chose the departing value, and until no more than ${(100 * v(C.shape_rate_max)).toFixed(0)} % of its requests ended in a failure shape (cap hit, empty answer, loop, leaked template tags). Rows: ${esc(data.screen.file)}; cards: data/cards.</div>`;
+    h += `<p class="small" style="margin:6px 0">${S.length} screening runs; ${S.filter(x => x.check.status === 'PASS').length} verdict-ready; ${refused} gave a verdict that the check refuses.</p>`;
+    h += '<div class="scroll"><table><tr><th>when</th><th>model arm</th><th class="n">requests</th><th class="n">cap hits</th><th class="n">empty</th><th class="n">retry only</th><th class="n">loops</th><th class="n">leaked tags</th><th class="n">shape rate</th><th>verdict-ready</th><th>verdict given</th></tr>';
+    S.forEach(({ row: r, check: c }) => {
+      const s = r.shapes;
+      h += `<tr><td>${esc(r.when)}</td><td>${esc(r.arm)} <span class="small muted">(card ${esc(r.card)}, ${esc(r.box)} ${esc(r.engine)})</span></td><td class="n">${s.requests}</td><td class="n">${s.cap_hit}</td><td class="n">${s.empty}</td><td class="n">${s.retry_only}</td><td class="n">${s.loop}</td><td class="n">${s.leaked_tags}</td>` +
+        `<td class="n">${c.rate === null ? '-' : (100 * c.rate).toFixed(0) + ' %'}</td><td title="${esc(c.detail)}" style="color:${CHKTXT[c.status]};font-weight:${c.status === 'FAIL' ? 700 : 400}">${c.status === 'PASS' ? 'ready' : c.status === 'FAIL' ? 'NOT ready' : 'UNKNOWN'}</td>` +
+        `<td class="small">${r.verdict ? `<span title="${esc(r.verdict.src)}">${esc(r.verdict.call)}</span>${c.refused ? ' <b class="warnline">refused</b>' : ''}` : '-'}</td></tr>`;
+    });
+    h += '</table></div>';
+    S.forEach(({ row: r, check: c }) => { h += `<div style="margin-top:6px"><b>${esc(r.arm)}</b>${checksHTML([Object.assign({}, c, { detail: c.detail.replace(/sha256:[0-9a-f]{12}[0-9a-f]+/g, m => m.slice(0, 19) + '...') })])}</div>`; });
+    const groups = { sampling: ['temperature', 'top_p', 'top_k', 'min_p', 'presence_penalty'], thinking: ['mode', 'effort', 'control'], template: ['chat_template', 'reasoning_parser'], limits: ['context', 'max_output'] };
+    const cols = Object.entries(groups).reduce((a, [g, ks]) => a.concat(ks.map(k => [g, k])), []);
+    h += `<details><summary>Card conditions: ${Object.keys(data.cards).length} models (hover a value for its source; unknown = the card does not say)</summary><div class="scroll"><table><tr><th>model</th>${cols.map(([g, k]) => `<th>${esc(k.replace(/_/g, ' '))}</th>`).join('')}</tr>`;
+    Object.values(data.cards).forEach(cd => {
+      h += `<tr><td><span title="${esc(cd.repo + '@' + cd.revision + ', read ' + cd.read)}">${esc(cd.name)}</span></td>` + cols.map(([g, k]) => { const x = cd[g][k]; return `<td>${x.v === null ? '<span class="muted">-</span>' : esc(shortSha(x.v))}${chip(x)}</td>`; }).join('') + '</tr>';
+    });
+    return h + '</table></div></details></div>';
+  }
   function checksCardHTML() {
     let h = '<div class="card"><h2>Hard checks on every recorded run</h2><div class="small muted">Each recipe is checked for: storage tier of on-file tensors (never a rotational disk), VRAM peak (post-warm-up + transient margin, not the warm-up reading), the -rtr prefill penalty on split models, DRAM headroom per NUMA node (node MemFree after experts + non-expert interleave + host buffers + page cache must stay >= 3 GiB), the box P0 settings (numa_balancing, demotion, swap), and the 2-bit read-share quality gate. Recorded windows show what a run cost.</div>';
     const recs = FM.checkRecipes(data), failed = recs.filter(r => r.checks.some(c => c.status === 'FAIL')).length;
@@ -689,6 +724,7 @@
     return `<b>${esc(a.label)}</b><br>measured ${f2(a.meas)} tok/s, ${armText(a)} (${esc(a.phase || '')}) · ` +
       (a.pred ? `model ${f2(a.pred)} for this run's settings, ${(a.gap >= 0 ? '+' : '') + (100 * a.gap).toFixed(1)} %` : `not modelled: ${esc(a.why || '')}`) +
       (a.waiver ? `<br><span class="muted">part of this run is outside the model: ${esc(a.waiver)}</span>` : '') +
+      (a.conds.length ? `<br><span class="muted">${esc(condText(a))}</span>` : '') +
       `<br>height: projected top-1 of its stored types (${esc(a.qhow)})` + (a.top1 ? `; measured top-1 ${f1(100 * a.top1)} % against its own reference` : '') +
       `<br><span class="muted">run ${esc(a.id)}${a.holdout ? ' (held out of the fit)' : ''}</span>`;
   }
@@ -700,15 +736,15 @@
       if (c.b20) h += `<tr><td>${nm}</td><td class="n">${f2(c.b20.ev.tokps)}</td><td class="n">${f2(c.b20.ev.quality)}</td><td class="n">${c.b20.ev.kld.toFixed(4)}</td><td>best at 20</td></tr>`;
       if (c.b25) h += `<tr><td>${nm}</td><td class="n">${f2(c.b25.ev.tokps)}</td><td class="n">${f2(c.b25.ev.quality)}</td><td class="n">${c.b25.ev.kld.toFixed(4)}</td><td>best at 25</td></tr>`;
     });
-    measuredHere().forEach(a => { h += `<tr><td>${esc(a.label)}</td><td class="n">${f2(a.meas)} measured / ${a.pred ? f2(a.pred) + ' model' : 'not modelled'}</td><td class="n">${f2(a.quality)}</td><td></td><td>run ${esc(a.id)}, ${armText(a)}${a.bad ? ', went bad (not on the chart)' : a.guess ? ', per-prompt or per-pass phases only, no single served decode (not on the chart)' : ''}${a.pred ? ', ' + (a.gap >= 0 ? '+' : '') + (100 * a.gap).toFixed(1) + ' %' : ': ' + esc(a.why || '')}${a.waiver ? '; partly outside the model' : ''}</td></tr>`; });
+    measuredHere().forEach(a => { h += `<tr><td>${esc(a.label)}</td><td class="n">${f2(a.meas)} measured / ${a.pred ? f2(a.pred) + ' model' : 'not modelled'}</td><td class="n">${f2(a.quality)}</td><td></td><td>run ${esc(a.id)}, ${armText(a)}${a.bad ? ', went bad (not on the chart)' : a.caveat ? ', confounded: its phases are no clean measure of the recipe (not on the chart)' : a.guess ? ', per-prompt or per-pass phases only, no single served decode (not on the chart)' : ''}${a.pred ? ', ' + (a.gap >= 0 ? '+' : '') + (100 * a.gap).toFixed(1) + ' %' : ': ' + esc(a.why || '')}${a.waiver ? '; partly outside the model' : ''}${a.conds.length ? '; ' + esc(condText(a)) : ''}</td></tr>`; });
     return h + '</table></div>';
   }
   function calHTML() {
-    let h = '<div class="card"><h2>Calibration: measured runs vs the model</h2><div class="small muted">Fit per box: a CPU efficiency factor f (shared by both models), a host overhead per model family, and on droopy the Optane read rate inside its measured band. Draft rows use the measured speed-up against their no-draft twin. "check" and "ref" rows are not fitted.</div>';
+    let h = '<div class="card"><h2>Calibration: measured runs vs the model</h2><div class="small muted">Fit per box: a CPU efficiency factor f (shared by both models), a host overhead per model family, and on droopy the Optane read rate inside its measured band. Draft rows use the measured speed-up against their no-draft twin; where the run ledger has in-load twins at different CPU shares of the token, the speed-up falls with the share of time the CPU reads experts (x the speed-up with every expert on a GPU / (1 + a fitted weight x the CPU share)). "check" and "ref" rows are not fitted.</div>';
     h += '<div class="scroll"><table><tr><th>box</th><th>CPU factor f</th><th>host ms/token</th><th>draft speed-up</th><th>Optane rate</th><th class="n">rms log error</th></tr>';
     Object.keys(data.cal.boxes).forEach(bk => {
       const c = data.cal.boxes[bk];
-      h += `<tr><td>${esc(bk)}</td><td>${f2(v(c.f))}${chip(c.f)}</td><td>${Object.keys(c.host).filter(m => MODELS.indexOf(m) >= 0 || m === 'v40').map(m => esc(m) + ' ' + f1(v(c.host[m])) + chip(c.host[m])).join(' ')}${c.split_ms ? ' · split GGUF +' + f1(v(c.split_ms)) + chip(c.split_ms) : ''}</td><td>${Object.keys(c.draft).map(m => esc(m) + ' x' + f2(v(c.draft[m])) + chip(c.draft[m])).join(' ') || '-'}</td><td>${c.pmem_bw ? f1(v(c.pmem_bw)) + ' GB/s' + chip(c.pmem_bw) : '-'}</td><td class="n">${c.rms !== undefined ? c.rms.toFixed(3) : '-'}</td></tr>`;
+      h += `<tr><td>${esc(bk)}</td><td>${f2(v(c.f))}${chip(c.f)}</td><td>${Object.keys(c.host).filter(m => MODELS.indexOf(m) >= 0 || m === 'v40').map(m => esc(m) + ' ' + f1(v(c.host[m])) + chip(c.host[m])).join(' ')}${c.split_ms ? ' · split GGUF +' + f1(v(c.split_ms)) + chip(c.split_ms) : ''}</td><td>${Object.keys(c.draft).map(m => esc(m) + ' x' + f2(v(c.draft[m])) + chip(c.draft[m]) + (c.draft[m].beta ? ' / (1 + ' + f2(v(c.draft[m].beta)) + chip(c.draft[m].beta) + ' x CPU share)' : '')).join(' ') || '-'}</td><td>${c.pmem_bw ? f1(v(c.pmem_bw)) + ' GB/s' + chip(c.pmem_bw) : '-'}</td><td class="n">${c.rms !== undefined ? c.rms.toFixed(3) : '-'}</td></tr>`;
     });
     h += `</table></div><details><summary>Every measured run against the model (${data.cal.rows.length} rows)</summary><div class="scroll"><table><tr><th>run</th><th>use</th><th class="n">measured tok/s</th>`;
     h += '<th class="n">model</th><th class="n">residual</th><th>source</th></tr>';

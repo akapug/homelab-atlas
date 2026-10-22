@@ -1,0 +1,76 @@
+{
+ "key": "sabi-noema",
+ "name": "sabi-noema",
+ "repo": "sabicap/sabi-noema",
+ "revision": "2908c2d59081522a6cbfdb60ef0f848508295667",
+ "read": "2026-10-21",
+ "base": "qwen38-27b",
+ "sampling": {
+  "temperature": {
+   "v": 1.0,
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/generation_config.json (the card says: use the Qwen3.8-27B parameters, the generation_config.json defaults)"
+  },
+  "top_p": {
+   "v": 0.95,
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/generation_config.json"
+  },
+  "top_k": {
+   "v": 20,
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/generation_config.json"
+  },
+  "min_p": {
+   "v": 0.0,
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/README.md#L86 (same generation parameters as Qwen3.8-27B, whose thinking mode sets min_p=0.0: https://huggingface.co/Qwen/Qwen3.8-27B/blob/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/README.md#L252)"
+  },
+  "presence_penalty": {
+   "v": 0.0,
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/README.md#L86 (same generation parameters as Qwen3.8-27B, whose thinking mode sets presence_penalty=0.0: https://huggingface.co/Qwen/Qwen3.8-27B/blob/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/README.md#L252)"
+  }
+ },
+ "thinking": {
+  "mode": {
+   "v": "on",
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/README.md#L88 (non-thinking mode is supported but was not evaluated)"
+  },
+  "effort": {
+   "v": "xhigh",
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/README.md#L110 (reasoning_effort=\"xhigh\" in the quickstart)"
+  },
+  "control": {
+   "v": "chat_template_kwargs.enable_thinking; reasoning_effort",
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/README.md#L88"
+  }
+ },
+ "template": {
+  "chat_template": {
+   "v": "sha256:d392c2cd22ccb5a7e55a57ff1c6acc8d6ba3163c1724d1515321806139e58eb5",
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/chat_template.jinja (sha256 of the stripped template text)"
+  },
+  "reasoning_parser": {
+   "v": "qwen3",
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/README.md#L95 (vllm serve --reasoning-parser qwen3)"
+  }
+ },
+ "limits": {
+  "context": {
+   "v": 262144,
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/README.md#L78 (context length 262K tokens; config max_position_embeddings 262144)"
+  },
+  "max_output": {
+   "v": 32768,
+   "tag": "READ",
+   "src": "https://huggingface.co/sabicap/sabi-noema/blob/2908c2d59081522a6cbfdb60ef0f848508295667/README.md#L110 (max_tokens=32768 in the quickstart)"
+  }
+ }
+}

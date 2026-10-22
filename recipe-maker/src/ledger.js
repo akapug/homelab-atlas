@@ -19,6 +19,33 @@ function text(f) {
   return (f.endsWith('.gz') ? zlib.gunzipSync(b) : b).toString('utf8');
 }
 
-const rows = file => files(file).flatMap(f => text(f).split('\n').filter(l => l.trim()).map(l => JSON.parse(l)));
+// beside the ledger: dated caveats and corrections per run id (src/ledger.py overlay; the rows stay as recorded)
+const CAVEATS = 'run_caveats.json';
+function caveats(file) {
+  const p = path.join(path.dirname(file), CAVEATS);
+  if (!fs.existsSync(p)) return {};
+  const cv = JSON.parse(fs.readFileSync(p, 'utf8'));
+  delete cv._doc;
+  return cv;
+}
+function overlay(row, cv) {
+  const c = cv[row.id];
+  if (!c) return row;
+  const m = Object.assign({}, row.measured), src = Object.assign({}, m.src);
+  Object.keys(c.correct || {}).forEach(k => { m[k] = c.correct[k].v; src[k] = c.correct[k].src; });
+  if (c.kind) {
+    m.caveats = (m.caveats || []).concat([['kind', 'why', 'superseded_by'].reduce((a, k) => (k in c ? Object.assign(a, { [k]: c[k] }) : a), {})]);
+    src.caveats = c.src;
+  }
+  return Object.assign({}, row, { measured: Object.assign(m, { src }) });
+}
+// the ledger's rows in order; unless raw, with the caveats file beside it applied
+function rows(file, raw) {
+  const out = files(file).flatMap(f => text(f).split('\n').filter(l => l.trim()).map(l => JSON.parse(l)));
+  const cv = raw ? {} : caveats(file);
+  return Object.keys(cv).length ? out.map(r => overlay(r, cv)) : out;
+}
+// the caveat kinds that keep a run out of best-run picks, fits and speed scores
+const caveated = row => ((row.measured || {}).caveats || []).filter(c => c.kind === 'confounded').map(c => c.kind);
 
-module.exports = { segments, files, rows };
+module.exports = { segments, files, rows, overlay, caveats, caveated };

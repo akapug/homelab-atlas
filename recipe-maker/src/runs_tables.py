@@ -67,7 +67,13 @@ def outcome_text(run):
         txt += ' [' + '; '.join(m['degraded']) + ']'
     if m.get('notes'):
         txt += ' (' + m['notes'] + ')'
-    return txt
+    return txt + caveat_text(m)
+
+
+def caveat_text(m):
+    """' {confounded: why; superseded by id}' per caveat the run carries (ledger.overlay), '' for none"""
+    return ''.join(' {%s: %s%s}' % (c['kind'], c.get('why', ''), '; superseded by ' + c['superseded_by'] if c.get('superseded_by') else '')
+                   for c in m.get('caveats') or [])
 
 
 def cost_text(run):
@@ -117,12 +123,13 @@ def _groups(d, rx=MTP_TOKEN):
 
 
 def draft_twins(runs, exclude=()):
-    """{box|model: [twin]} per ledger run that decoded the served draft width and no draft in one load. A twin is left out when a
+    """{box|model: [twin]} per ledger run that decoded the served draft width and no draft in one load (a confounded run gives
+    none: ledger.caveated). A twin is left out when a
     degraded note names one of its phases ("m0 prompt1 ... 3.10 tok/s"); a note about the whole load (placement, MemFree) hits
     both phases alike and stays. A run with prefixed MTP phase groups (std-m3 / std-n0) gives one twin: the mean over its groups"""
     out = {}
     for run in runs:
-        if run['id'] in exclude:
+        if run['id'] in exclude or ledger.caveated(run):
             continue
         d = run['measured'].get('decode_tps')
         if not isinstance(d, dict):
@@ -185,15 +192,24 @@ def served(run):
     return dict(r, guess=True) if guess else r
 
 
-def recipes_from_runs(runs, holdout=()):
+def conditions_at(conds, when):
+    """ids of a box's dated conditions (boxes[box].conditions: from <= when < to, UTC) that held at a ledger time"""
+    t = ledger.when({'when': when})
+    return [c['id'] for c in conds if t and ledger.when({'when': c['from']}) <= t < ledger.when({'when': c['to']})]
+
+
+def recipes_from_runs(runs, holdout=(), boxes=None):
     """one row per run; 'measured' is what the page's measured-run markers read: the served decode (served()), whether the run
-    went bad (outcome or a degraded note: its speed is not the recipe's), its measured top-1, and whether a decode fit holds it out"""
+    went bad (outcome or a degraded note: its speed is not the recipe's), its caveat kinds (a confounded run feeds no fit), its measured
+    top-1, and whether a decode fit holds it out;
+    'box_conditions' = the ids of its box's dated hardware conditions that held when it ran (the ledger row stays as recorded)"""
     def meas(r):
         s = served(r)
-        return s and dict(s, bad=bool(went_bad(r)), top1=r['measured'].get('top1'), holdout=r['id'] in holdout)
+        return s and dict(s, bad=bool(went_bad(r)), caveat=ledger.caveated(r), top1=r['measured'].get('top1'), holdout=r['id'] in holdout)
     return [{'id': r['id'], 'run_id': r['id'], 'when': r['when'][11:16] + 'Z', 'box': r['box'], 'model': r['model'], 'engine': r['engine'],
              'label': r['recipe'].get('label', r['id']), 'outcome': outcome_text(r), 'wasted': cost_text(r), 'recipe': r['recipe'], 'observed': observed(r),
-             'measured': meas(r), 'src': '; '.join(r['sources'])} for r in sorted(runs, key=lambda r: r['when'])]
+             'measured': meas(r), 'box_conditions': conditions_at(((boxes or {}).get(r['box']) or {}).get('conditions', []), r['when']),
+             'src': '; '.join(r['sources'])} for r in sorted(runs, key=lambda r: r['when'])]
 
 
 def decode_fits(root, runs, recipes):

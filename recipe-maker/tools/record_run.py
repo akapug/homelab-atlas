@@ -136,9 +136,15 @@ def read_text(spec):
     return text
 
 
-def _ts(day, hms):
-    """kit timestamps carry the time only: attach the kit's start date (a later time of day stays on that date)."""
-    return datetime.datetime.strptime(day + 'T' + hms.rstrip('Z'), '%Y-%m-%dT%H:%M:%S').replace(tzinfo=datetime.timezone.utc)
+KIT_WRAP = datetime.timedelta(hours=12)   # a stamp this far before the last one read is past midnight, not a late log line
+
+
+def _ts(after, hms):
+    """kit timestamps carry the time only: the instant with that time of day nearest after `after` (the kit start or the last
+    stamp read). A stamp more than KIT_WRAP earlier in the day is past midnight and lands on the next date (v41fs-ts1 10-21:
+    start 23:34:34Z, rc 00:26:34Z read as -1388 min before); a watch line a few seconds behind stays on its date."""
+    t = datetime.datetime.strptime(after.strftime('%Y-%m-%d') + 'T' + hms.rstrip('Z'), '%Y-%m-%dT%H:%M:%S').replace(tzinfo=datetime.timezone.utc)
+    return t + datetime.timedelta(days=1) if after - t > KIT_WRAP else t
 
 
 def _iso(t):
@@ -162,6 +168,7 @@ def parse_kit(text, src):
         if s:
             kit = {'name': s.group(1), 'start': datetime.datetime.strptime(s.group(2), '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc),
                    'header': ln, 'system': {}, 'lows': [], 'terminated': False}
+            kit['clock'] = kit['start']   # the last stamp read: _ts places each time-of-day stamp after it
             kits.append(kit)
             pre, cur = [], None
             continue
@@ -172,14 +179,17 @@ def parse_kit(text, src):
             js = [json.loads(x) for x in pre if x.startswith('{')]
             js = [j for j in js if j.get('arm') == r.group(1)] or js[-1:]
             prev_end = arms[-1]['end'] if arms and arms[-1]['kit'] is kit else kit['start']
-            cur = {'kit': kit, 'arm': r.group(1), 'rc': int(r.group(2)), 'end': _ts(kit['start'].strftime('%Y-%m-%d'), r.group(3)),
+            kit['clock'] = max(kit['clock'], _ts(kit['clock'], r.group(3)))
+            cur = {'kit': kit, 'arm': r.group(1), 'rc': int(r.group(2)), 'end': kit['clock'],
                    'start': prev_end, 'json': js[0] if js else {}, 'pre': pre, 'post': []}
             arms.append(cur)
             pre = []
             continue
         low = re.match(r'^== N0 LOW (\d\d:\d\d:\d\dZ): node0 MemFree (\d+(?:\.\d+)?) GiB', ln)
         if low:
-            kit['lows'].append((_ts(kit['start'].strftime('%Y-%m-%d'), low.group(1)), float(low.group(2))))
+            t = _ts(kit['clock'], low.group(1))
+            kit['clock'] = max(kit['clock'], t)
+            kit['lows'].append((t, float(low.group(2))))
             continue
         if ln.startswith('P0: '):
             for k, v in re.findall(r'(numa_balancing|demotion) (\S+)', ln):

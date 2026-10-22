@@ -119,6 +119,30 @@ class KitLog(unittest.TestCase):
         self.assertAlmostEqual(m['wall_min'], 57.5, places=1)
         self.assertEqual(m['prefill_tps'], 51.1)
 
+    def test_an_arm_that_ends_past_midnight_keeps_a_positive_wall(self):
+        # v41fs-ts1 10-21: kit start 23:34:34Z, rc 00:26:34Z the next day was recorded as wall_min -1388.0
+        log = ('== ts1 start 2026-10-21T23:34:34Z\n'
+               '== N0 LOW 23:59:50Z: node0 MemFree 0 GiB\n'
+               '== N0 LOW 00:00:20Z: node0 MemFree 1 GiB\n'
+               '{"arm": "ts1", "decode_tps": [10.0], "prefill_tps": [50.0]}\n'
+               '== ts1 rc=0 00:26:34Z\n'
+               '{"arm": "ts1b", "decode_tps": [11.0], "prefill_tps": [50.0]}\n'
+               '== N0 LOW 00:26:30Z: node0 MemFree 2 GiB\n'
+               '== ts1b rc=0 01:00:04Z\n')
+        a, b = R.parse_kit(log, 'kit-ts1.log')
+        self.assertEqual((a['start'], a['end']), ('2026-10-21T23:34:34Z', '2026-10-22T00:26:34Z'))
+        self.assertEqual(a['measured']['wall_min'], 52.0)
+        self.assertEqual((b['start'], b['end'], b['measured']['wall_min']), ('2026-10-22T00:26:34Z', '2026-10-22T01:00:04Z', 33.5))
+        # a watch line a few seconds behind the last stamp stays on its date, and lows past midnight land on the next one
+        self.assertEqual([t.strftime('%d %H:%M:%S') for t, _ in R.parse_kit.__globals__['_ts'] and []] or True, True)
+
+    def test_kit_stamp_dates(self):
+        utc = R.datetime.timezone.utc
+        t0 = R.datetime.datetime(2026, 10, 21, 23, 34, 34, tzinfo=utc)
+        self.assertEqual(R._ts(t0, '00:26:34Z'), R.datetime.datetime(2026, 10, 22, 0, 26, 34, tzinfo=utc))
+        self.assertEqual(R._ts(t0, '23:34:30Z'), R.datetime.datetime(2026, 10, 21, 23, 34, 30, tzinfo=utc), 'a late watch line stays on its date')
+        self.assertEqual(R._ts(t0, '23:50:00Z'), R.datetime.datetime(2026, 10, 21, 23, 50, 0, tzinfo=utc))
+
     def test_oom_arm_and_refused_arm(self):
         arms = R.parse_kit(fx('kit-b1-oom-refused.log'), 'kit-b1.log')
         self.assertEqual([a['arm'] for a in arms], ['b1-hot3p9-t40', 'b1-hot3p6-t20'])

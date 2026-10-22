@@ -1,0 +1,76 @@
+{
+ "key": "qwen38-27b-coder390",
+ "name": "Qwen3.8-27B-Coder390-EfficientThink",
+ "repo": "nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-MTP-DFlash2",
+ "revision": "57c00f892e6b2ac425eb34b3ab12b3025901fb66",
+ "read": "2026-10-21",
+ "base": "qwen38-27b",
+ "sampling": {
+  "temperature": {
+   "v": 1.0,
+   "tag": "READ",
+   "src": "https://huggingface.co/nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-MTP-DFlash2/blob/57c00f892e6b2ac425eb34b3ab12b3025901fb66/README.md#L2334 (sampling defaults are generation_config.json: temperature 1.0, top_p 0.95, top_k 20)"
+  },
+  "top_p": {
+   "v": 0.95,
+   "tag": "READ",
+   "src": "https://huggingface.co/nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-MTP-DFlash2/blob/57c00f892e6b2ac425eb34b3ab12b3025901fb66/README.md#L2334"
+  },
+  "top_k": {
+   "v": 20,
+   "tag": "READ",
+   "src": "https://huggingface.co/nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-MTP-DFlash2/blob/57c00f892e6b2ac425eb34b3ab12b3025901fb66/README.md#L2334"
+  },
+  "min_p": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: the card states no min_p (and the repo root has no generation_config.json)"
+  },
+  "presence_penalty": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: the card states no presence_penalty"
+  }
+ },
+ "thinking": {
+  "mode": {
+   "v": "on",
+   "tag": "READ",
+   "src": "https://huggingface.co/nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-MTP-DFlash2/blob/57c00f892e6b2ac425eb34b3ab12b3025901fb66/README.md#L262 (GGUF LynnStyle protocol: thinking on)"
+  },
+  "effort": {
+   "v": "xhigh",
+   "tag": "READ",
+   "src": "https://huggingface.co/nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-MTP-DFlash2/blob/57c00f892e6b2ac425eb34b3ab12b3025901fb66/README.md#L216 (reasoning effort xhigh (template default))"
+  },
+  "control": {
+   "v": "reasoning_effort (template default xhigh)",
+   "tag": "READ",
+   "src": "https://huggingface.co/nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-MTP-DFlash2/blob/57c00f892e6b2ac425eb34b3ab12b3025901fb66/README.md#L557"
+  }
+ },
+ "template": {
+  "chat_template": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: the repo root has no chat_template.jinja or tokenizer_config.json (HTTP 404, 2026-10-21)"
+  },
+  "reasoning_parser": {
+   "v": "qwen3",
+   "tag": "READ",
+   "src": "https://huggingface.co/nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-MTP-DFlash2/blob/57c00f892e6b2ac425eb34b3ab12b3025901fb66/README.md#L216 (--reasoning-parser qwen3)"
+  }
+ },
+ "limits": {
+  "context": {
+   "v": 102400,
+   "tag": "READ",
+   "src": "https://huggingface.co/nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-MTP-DFlash2/blob/57c00f892e6b2ac425eb34b3ab12b3025901fb66/README.md#L573 (--max-model-len 102400 (100K context in every quality protocol))"
+  },
+  "max_output": {
+   "v": 94208,
+   "tag": "READ",
+   "src": "https://huggingface.co/nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-MTP-DFlash2/blob/57c00f892e6b2ac425eb34b3ab12b3025901fb66/README.md#L216 (94,208 generation cap in every quality protocol)"
+  }
+ }
+}

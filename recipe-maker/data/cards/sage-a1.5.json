@@ -1,0 +1,75 @@
+{
+ "key": "sage-a1.5",
+ "name": "Sage-A1.5",
+ "repo": "InternScience/Sage-A1.5",
+ "revision": "3e6b02c5e6afbc481fd4556baca8e6009f26d696",
+ "read": "2026-10-21",
+ "sampling": {
+  "temperature": {
+   "v": 1.0,
+   "tag": "READ",
+   "src": "https://huggingface.co/InternScience/Sage-A1.5/blob/3e6b02c5e6afbc481fd4556baca8e6009f26d696/README.md#L679 (Recommended Sampling Parameters)"
+  },
+  "top_p": {
+   "v": 0.95,
+   "tag": "READ",
+   "src": "https://huggingface.co/InternScience/Sage-A1.5/blob/3e6b02c5e6afbc481fd4556baca8e6009f26d696/README.md#L680"
+  },
+  "top_k": {
+   "v": 20,
+   "tag": "READ",
+   "src": "https://huggingface.co/InternScience/Sage-A1.5/blob/3e6b02c5e6afbc481fd4556baca8e6009f26d696/README.md#L681"
+  },
+  "min_p": {
+   "v": 0.0,
+   "tag": "READ",
+   "src": "https://huggingface.co/InternScience/Sage-A1.5/blob/3e6b02c5e6afbc481fd4556baca8e6009f26d696/README.md#L682"
+  },
+  "presence_penalty": {
+   "v": 1.5,
+   "tag": "READ",
+   "src": "https://huggingface.co/InternScience/Sage-A1.5/blob/3e6b02c5e6afbc481fd4556baca8e6009f26d696/README.md#L683"
+  }
+ },
+ "thinking": {
+  "mode": {
+   "v": "on",
+   "tag": "READ",
+   "src": "https://huggingface.co/InternScience/Sage-A1.5/blob/3e6b02c5e6afbc481fd4556baca8e6009f26d696/chat_template.jinja (the template opens a <think> block unless enable_thinking is false)"
+  },
+  "effort": {
+   "v": "none",
+   "tag": "READ",
+   "src": "https://huggingface.co/InternScience/Sage-A1.5/blob/3e6b02c5e6afbc481fd4556baca8e6009f26d696/chat_template.jinja (the template has no reasoning_effort)"
+  },
+  "control": {
+   "v": "chat_template_kwargs.enable_thinking; chat_template_kwargs.verification (self-review)",
+   "tag": "READ",
+   "src": "https://huggingface.co/InternScience/Sage-A1.5/blob/3e6b02c5e6afbc481fd4556baca8e6009f26d696/README.md#L641"
+  }
+ },
+ "template": {
+  "chat_template": {
+   "v": "sha256:0080393e13df7322bed792a78e75daf8a0374a80928996e5cf3cfd2ab4c1e1be",
+   "tag": "READ",
+   "src": "https://huggingface.co/InternScience/Sage-A1.5/blob/3e6b02c5e6afbc481fd4556baca8e6009f26d696/chat_template.jinja (sha256 of the stripped template text)"
+  },
+  "reasoning_parser": {
+   "v": "qwen3",
+   "tag": "READ",
+   "src": "https://huggingface.co/InternScience/Sage-A1.5/blob/3e6b02c5e6afbc481fd4556baca8e6009f26d696/README.md#L408 (sglang --reasoning-parser qwen3)"
+  }
+ },
+ "limits": {
+  "context": {
+   "v": 262144,
+   "tag": "READ",
+   "src": "https://huggingface.co/InternScience/Sage-A1.5/blob/3e6b02c5e6afbc481fd4556baca8e6009f26d696/README.md#L407 (--context-length 262144; natively 256K)"
+  },
+  "max_output": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: the card states no output length (SWE-bench ran at a 200K-token context, line 376)"
+  }
+ }
+}

@@ -49,8 +49,41 @@ def lines(path):
             yield from (x for x in h if x.strip())
 
 
-def rows(path):
-    return [json.loads(x) for x in lines(path)]
+CAVEATS = 'run_caveats.json'   # beside the ledger: dated caveats and corrections per run id (the rows stay as recorded)
+
+
+def caveats(path):
+    p = os.path.join(os.path.dirname(path), CAVEATS)
+    return {k: v for k, v in json.load(open(p, encoding='utf-8')).items() if k != '_doc'} if os.path.exists(p) else {}
+
+
+def overlay(row, cv):
+    """the row as read: cv[id].correct sets measured fields (value + src) that the recorder got wrong; cv[id].kind adds
+    measured.caveats [{kind, why, superseded_by}] (src in measured.src.caveats). A 'confounded' run is no clean measure of its
+    recipe: no best-run pick, fit or speed score takes it; it stays in every run list with its caveat"""
+    c = cv.get(row.get('id'))
+    if not c:
+        return row
+    m = dict(row.get('measured') or {})
+    src = dict(m.get('src') or {})
+    for k, x in (c.get('correct') or {}).items():
+        m[k], src[k] = x['v'], x['src']
+    if c.get('kind'):
+        m['caveats'] = list(m.get('caveats') or []) + [{k: c[k] for k in ('kind', 'why', 'superseded_by') if k in c}]
+        src['caveats'] = c['src']
+    return dict(row, measured=dict(m, src=src))
+
+
+def rows(path, raw=False):
+    """the ledger's rows in order; unless raw, with the caveats file beside it applied (overlay)"""
+    out = [json.loads(x) for x in lines(path)]
+    cv = {} if raw else caveats(path)
+    return [overlay(r, cv) for r in out] if cv else out
+
+
+def caveated(row):
+    """the caveat kinds that keep a run out of best-run picks, fits and speed scores"""
+    return [c['kind'] for c in (row.get('measured') or {}).get('caveats') or [] if c.get('kind') == 'confounded']
 
 
 def when(row):

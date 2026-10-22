@@ -1,0 +1,75 @@
+{
+ "key": "orn35",
+ "name": "Ornith-1.5-35B-A3B",
+ "repo": "ornith-ai/Ornith-1.5-35B-A3B",
+ "revision": "10fbf86fed7ecee4a061f8b499a618f46001cac1",
+ "read": "2026-10-21",
+ "sampling": {
+  "temperature": {
+   "v": 0.6,
+   "tag": "READ",
+   "src": "https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/blob/10fbf86fed7ecee4a061f8b499a618f46001cac1/README.md#L231 (general tasks: temperature=0.6, top_p=0.95, top_k=20; benchmarks reproduce at temperature=1.0 (line 232))"
+  },
+  "top_p": {
+   "v": 0.95,
+   "tag": "READ",
+   "src": "https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/blob/10fbf86fed7ecee4a061f8b499a618f46001cac1/README.md#L231"
+  },
+  "top_k": {
+   "v": 20,
+   "tag": "READ",
+   "src": "https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/blob/10fbf86fed7ecee4a061f8b499a618f46001cac1/README.md#L231"
+  },
+  "min_p": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: the card states no min_p"
+  },
+  "presence_penalty": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: the card states no presence_penalty"
+  }
+ },
+ "thinking": {
+  "mode": {
+   "v": "on",
+   "tag": "READ",
+   "src": "https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/blob/10fbf86fed7ecee4a061f8b499a618f46001cac1/README.md#L222 (a reasoning model: the turn opens with <think> by default)"
+  },
+  "effort": {
+   "v": "none",
+   "tag": "READ",
+   "src": "https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/blob/10fbf86fed7ecee4a061f8b499a618f46001cac1/chat_template.jinja (the template has no reasoning_effort)"
+  },
+  "control": {
+   "v": "chat_template_kwargs.enable_thinking",
+   "tag": "READ",
+   "src": "https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/blob/10fbf86fed7ecee4a061f8b499a618f46001cac1/chat_template.jinja"
+  }
+ },
+ "template": {
+  "chat_template": {
+   "v": "sha256:d5a363a612d0c2970816a401468be6aace1d707d56efa930e065f74cc4dff879",
+   "tag": "READ",
+   "src": "https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/blob/10fbf86fed7ecee4a061f8b499a618f46001cac1/chat_template.jinja (sha256 of the stripped template text; tokenizer_config.json carries an older one)"
+  },
+  "reasoning_parser": {
+   "v": "qwen3",
+   "tag": "READ",
+   "src": "https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/blob/10fbf86fed7ecee4a061f8b499a618f46001cac1/README.md#L252 (vllm --reasoning-parser qwen3)"
+  }
+ },
+ "limits": {
+  "context": {
+   "v": 262144,
+   "tag": "READ",
+   "src": "https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/blob/10fbf86fed7ecee4a061f8b499a618f46001cac1/README.md#L272 (context windows up to 262,144 tokens)"
+  },
+  "max_output": {
+   "v": 131072,
+   "tag": "READ",
+   "src": "https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B/blob/10fbf86fed7ecee4a061f8b499a618f46001cac1/README.md#L204 (Terminal-Bench 2.1 with Claude Code at max_new_tokens=131072)"
+  }
+ }
+}

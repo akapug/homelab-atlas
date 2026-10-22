@@ -113,11 +113,18 @@
         if (o.household && kn.freeHousehold) gib = 0;
         res.push({ label: o.what, gib, tag: o.gib.tag, src: o.gib.src, kind: 'other' });
       });
+      // a card the engine reaches through a second backend (g.drive[eng], catalog row): banks only, read at the backend's bench
+      // line when that line was measured on this card (else nameplate x gpu_eta), plus the hop the token pays per layer it
+      // crosses to the card (cal.hop, fitted on the ledger runs that bank experts there; 0 = UNKNOWN until one does)
+      const d = g.drive && g.drive[eng], bl = d && data.bench && data.bench.gpu && data.bench.gpu[d.backend];
+      const line = bl && (bl.cards || []).indexOf(bk + ' ' + g.id) >= 0 ? bl.rate_gbs : null, hop = d && cal.hop && cal.hop[g.id];
       tiers.push({
         id: 'gpu' + gi, kind: 'gpu', name: g.name, total: (v(g.vram_gib) + (gi === 0 ? LA.vram || 0 : 0)) * GiB,
-        bw: v(g.bw) * 1e9 * ls('vram_bw'), eta: v(data.assume.gpu_eta), reserves: res, gpu: g,
-        engineOk: !g.engines || g.engines.indexOf(eng) >= 0
+        bw: v(line || g.bw) * 1e9 * ls('vram_bw'), eta: line ? 1 : v(data.assume.gpu_eta), reserves: res, gpu: g,
+        engineOk: !g.engines || g.engines.indexOf(eng) >= 0,
+        drive: d || null, banks: !!d && d.role === 'banks', bwTerm: line, hop: hop ? v(hop) / 1000 : 0, hopTerm: d ? hop || { v: 0, tag: 'UNKNOWN', src: 'UNKNOWN: no clean ledger run banks experts on ' + g.id + ' through ' + d.backend } : null
       });
+      if (d) notes.push(g.name + ' holds ' + (d.role === 'banks' ? 'expert banks only' : 'experts') + ' (' + d.backend + ', ' + d.types.join('/') + '; ' + d.build + '), read at ' + v(line || g.bw).toFixed(0) + ' GB/s' + (line ? ' (bench line)' : ' x gpu_eta') + (hop ? ' + ' + v(hop).toFixed(3) + ' ms per layer crossed (' + hop.tag + ')' : ' (cross-backend hop UNKNOWN: not added)') + '.');
     });
     const smt = kn.smt ? v(box.cpu.smt_mult) : 1;
     const kern = kn.kernel2x ? 2 : 1;
@@ -163,8 +170,9 @@
     // NUMA page layout of the DRAM experts (recipe numa.layout): the box's measured CPU expert time vs interleave, 1 when unmeasured
     const layF = kn.numaLayout && box.numa_layout && box.numa_layout[kn.numaLayout] ? v(box.numa_layout[kn.numaLayout]) : 1;
     const zc = (E.zero_copy_gbs ? v(E.zero_copy_gbs) * 1e9 : 0);
+    // a card's hop per layer crossed, spread over the k routed picks of that layer (exact for whole layers on the card)
     const rawRate = (t, q) => {
-      if (t.kind === 'gpu') return t.bw * t.eta;
+      if (t.kind === 'gpu') return t.hop ? 1 / (1 / (t.bw * t.eta) + t.hop / (m.k * typeBytes(data, mk, q))) : t.bw * t.eta;
       const r = Math.min(t.bw, cpuRate(q) / (t.id === 'dram' ? layF : 1));
       return t.id === 'dram' ? r + zc : r;
     };
@@ -176,7 +184,7 @@
     if (hitR < 1) notes.push('GPU expert cache realizes ' + (100 * hitR).toFixed(0) + ' % of the planned GPU heat (' + hc.tag + ': ' + hc.src + '); the misses are read from DRAM.');
 
     // fixed allocations: dense, draft and KV on the engine's first usable GPU; lookup tables to the slowest tier with room
-    const g0 = tiers.find(t => t.kind === 'gpu' && t.engineOk) || tiers[0];
+    const g0 = tiers.find(t => t.kind === 'gpu' && t.engineOk && !t.banks) || tiers[0];
     const densePrec = kn.densePrec || 'q8_0';
     const denseGiB = denseGiBpre(E, m, data, kn);
     const split = eng === 'ik' && !!kn.perExpertTypes;
@@ -185,17 +193,15 @@
     // -ub auto: 4096 (prefill +45 %, E2 vs E1) when its compute buffer fits beside the non-expert weights + margin, else 512
     let ub = kn.ub || 'auto';
     if (ub === 'auto') {
-      const g = tiers.find(t => t.kind === 'gpu' && t.engineOk) || tiers[0];
-      const room = (g.total - g.reserves.reduce((a, r) => a + r.gib * GiB, 0)) / GiB - denseGiBpre(E, m, data, kn) - marginGiB;
+      const room = (g0.total - g0.reserves.reduce((a, r) => a + r.gib * GiB, 0)) / GiB - denseGiBpre(E, m, data, kn) - marginGiB;
       ub = (E.kv_gib !== undefined || !m.kv_gib_ub512 || room >= v(m.kv_gib) + 0.5) ? '4096' : '512';
-      if (ub === '512') notes.push('-ub 4096 does not fit beside the non-expert weights on ' + g.name + ': -ub 512 (prefill about 30 % slower, E1 24.5 vs E2 35 tok/s on droopy).');
+      if (ub === '512') notes.push('-ub 4096 does not fit beside the non-expert weights on ' + g0.name + ': -ub 512 (prefill about 30 % slower, E1 24.5 vs E2 35 tok/s on droopy).');
     }
     const kvGiB = kvGiBpre(E, m, Object.assign({}, kn, { ub }), mk);
     let draftOn = !!kn.draft && !!m.draft && !E.no_draft;
-    const gFirst = tiers.find(t => t.kind === 'gpu' && t.engineOk) || tiers[0];
-    if (draftOn && (gFirst.total - gFirst.reserves.reduce((a, r) => a + r.gib * GiB, 0)) / GiB < kvGiB + marginGiB + denseGiBpre(E, m, data, kn) + draftGiBpre(m, kn)) {
+    if (draftOn && (g0.total - g0.reserves.reduce((a, r) => a + r.gib * GiB, 0)) / GiB < kvGiB + marginGiB + denseGiBpre(E, m, data, kn) + draftGiBpre(m, kn)) {
       draftOn = false;
-      notes.push('The draft model does not fit beside the non-expert weights on ' + gFirst.name + ', so it is off here.');
+      notes.push('The draft model does not fit beside the non-expert weights on ' + g0.name + ', so it is off here.');
     }
     if (kn.draft && E.no_draft) notes.push(E.name.split(' (')[0] + ' has no draft/MTP path today.');
     const draftGiB = draftOn ? draftGiBpre(m, kn) : 0;
@@ -251,9 +257,11 @@
     const host = (hostMs(data, bk, mk, eng) + splitMs) / 1000;
     if (splitMs) notes.push('Split GGUF (per-expert types): +' + splitMs.toFixed(1) + ' ms/token host overhead (' + spS.tag + ', ' + spS.src + ').');
     const denseTime = denseGiB * GiB / (g0.bw * g0.eta);
-    const mult = draftOn ? (kn.draftMult !== undefined && kn.draftMult !== null ? kn.draftMult : draftDefault(data, bk, mk)) : 1;
+    const given = kn.draftMult !== undefined && kn.draftMult !== null, mult = draftOn ? (given ? kn.draftMult : draftDefault(data, bk, mk)) : 1;
+    // the draft's verify weight on CPU expert time (ledgerDrafts): with the draft on, decode = mult / (T + cpuW x CPU expert time)
+    const cpuW = draftOn && !given ? draftCpuW(data, bk, mk) : 0;
     return {
-      g0, data, bk, mk, eng, m, box, E, kn, tiers, rate, rawRate, hitR, missTi: dramT ? tiers.indexOf(dramT) : -1, cpuRate, types, host, denseTime, mult, fixed, copyTier, notes, f, smt, kern,
+      g0, data, bk, mk, eng, m, box, E, kn, tiers, rate, rawRate, hitR, missTi: dramT ? tiers.indexOf(dramT) : -1, cpuRate, types, host, denseTime, mult, cpuW, fixed, copyTier, notes, f, smt, kern,
       overlap: v(E.overlap) || 0, kldDense: v(data.types[densePrec].kld_dense) || 0, draftOn, bad, split, margin: mg, marginGiB, kvGiB, ub
     };
   }
@@ -328,6 +336,7 @@
     return data.models[mk].draft.mult_default;
   }
   function draftDefault(data, bk, mk) { return v(draftSrc(data, bk, mk)); }
+  function draftCpuW(data, bk, mk) { const d = draftSrc(data, bk, mk); return d && d.beta ? v(d.beta) : 0; }
   // split GGUF host ms/token: the model's own row (models[mk].split_host_ms) wins over the box fit, which is fitted on one model's split anchor
   function splitSrc(data, bk, mk) {
     const own = data.models[mk] && data.models[mk].split_host_ms;
@@ -380,10 +389,11 @@
       if (t.kind === 'gpu' && !t.engineOk) return;
       ctx.types.forEach(q => {
         const tq = data.types[q];
-        if (t.kind === 'gpu' && tq.gpu === false) return;
+        if (t.kind === 'gpu' && (tq.gpu === false || (t.drive && t.drive.types.indexOf(q) < 0))) return;
         const s = typeBytes(data, mk, q);
         const r = ctx.rate(t, q);
-        opts.push({ ti, q, s, kld: typeKld(data, mk, q), inv: 1 / r, copy: (t.kind === 'gpu' && ctx.copyTier) ? ctx.tiers.indexOf(ctx.copyTier) : -1 });
+        // tw: the option's weight in the draft-on token time (CPU-side expert time carries the draft's verify weight, evaluate: Tw)
+        opts.push({ ti, q, s, kld: typeKld(data, mk, q), inv: 1 / r, tw: t.kind === 'gpu' ? 1 : 1 + (ctx.cpuW || 0), copy: (t.kind === 'gpu' && ctx.copyTier) ? ctx.tiers.indexOf(ctx.copyTier) : -1 });
       });
     });
     const kL = m.k * m.L;
@@ -409,7 +419,7 @@
     const b = new Float64Array(groups.length * nO);
     for (let g = 0; g < groups.length; g++) {
       const G = groups[g];
-      for (let o = 0; o < nO; o++) { const O = opts[o]; b[g * nO + o] = HW[g] * O.kld / kL + G.H * lam * O.s * O.inv; }
+      for (let o = 0; o < nO; o++) { const O = opts[o]; b[g * nO + o] = HW[g] * O.kld / kL + G.H * lam * O.s * O.inv * O.tw; }
     }
     return b;
   }
@@ -555,10 +565,10 @@
     let gpuT = ctx.denseTime, cpuT = 0;
     tiers.forEach((t, i) => { if (t.kind === 'gpu') gpuT += timeT[i]; else cpuT += timeT[i]; });
     const T = ctx.host + (ctx.overlap ? Math.max(gpuT, cpuT) + (1 - ctx.overlap) * Math.min(gpuT, cpuT) : gpuT + cpuT);
-    const tokps = ctx.mult / T;
+    const Tw = T + (ctx.cpuW || 0) * cpuT, tokps = ctx.mult / Tw;
     const quality = qualityOf(ctx.data, kld);
     return {
-      T, tokps, kld, quality, gpuT, cpuT, host: ctx.host, dense: ctx.denseTime, bytesTok, timeT, capUse, heatT, cnt,
+      T, Tw, tokps, mult: ctx.mult * T / Tw, kld, quality, gpuT, cpuT, host: ctx.host, dense: ctx.denseTime, bytesTok, timeT, capUse, heatT, cnt,
       avgBpw: Array.from(bitsW, (b, i) => cnt[i] ? b / cnt[i] : 0), byType, copyIdx
     };
   }
@@ -576,6 +586,8 @@
     const order = ctx.order; // hot first by plan heat
     const lw = layerWeights(data, mk), wl = l => lw ? lw[l] : 1;
     const optOk = (t, q) => ctx.opts.some(O => O.ti === t && O.q === types[q]);
+    // a tier's time in the draft-on token (CPU-side expert time carries the draft's verify weight, as in evaluate's Tw)
+    const tw = t => tiers[t].kind === 'gpu' ? 1 : 1 + (ctx.cpuW || 0);
     // promote (same type) to faster tiers: never slower, only time drops
     for (let t = 0; t < tiers.length; t++) {
       for (const e of order) {
@@ -597,7 +609,7 @@
     if (targetTokps && !ctx.perExpert) {
       // whole-layer type upgrades (GGUF: one type per layer tensor), best quality gain per byte first
       const Tmax = ctx.mult / targetTokps;
-      let cur = evaluate(ctx, lay).T;
+      let cur = evaluate(ctx, lay).Tw;
       const glob = ctx.scope === 'global';
       const L = glob ? 1 : ctx.m.L, Ex = glob ? ctx.m.L * ctx.m.E : ctx.m.E;
       const cand = [];
@@ -620,7 +632,7 @@
           if (!optOk(t, q2)) { ok = false; break; }
           dCap[t] += sz[q2] - sz[q];
           if (tiers[t].kind === 'gpu' && copyIdx >= 0) dCap[copyIdx] += sz[q2] - sz[q];
-          dT += ctx.score[e] * (sz[q2] * inv[t][q2] - sz[q] * inv[t][q]);
+          dT += ctx.score[e] * (sz[q2] * inv[t][q2] - sz[q] * inv[t][q]) * tw(t);
         }
         if (!ok || cur + dT > Tmax || dCap.some((d, t) => d > capLeft[t])) continue;
         cur += dT; dCap.forEach((d, t) => capLeft[t] -= d);
@@ -629,7 +641,7 @@
     }
     if (targetTokps && ctx.perExpert) {
       const Tmax = ctx.mult / targetTokps;
-      let cur = evaluate(ctx, lay).T;
+      let cur = evaluate(ctx, lay).Tw;
       const cand = [];
       for (const e of order) {
         const t = lay.tier[e], q = lay.type[e];
@@ -648,7 +660,7 @@
         if (dS > capLeft[t]) continue;
         const dCopy = (tiers[t].kind === 'gpu' && copyIdx >= 0) ? dS : 0;
         if (dCopy && dCopy > capLeft[copyIdx]) continue;
-        const dT = ctx.score[e] * (sz[q2] * inv[t][q2] - sz[q] * inv[t][q]);
+        const dT = ctx.score[e] * (sz[q2] * inv[t][q2] - sz[q] * inv[t][q]) * tw(t);
         if (cur + dT > Tmax) continue;
         cur += dT; capLeft[t] -= dS; if (dCopy) capLeft[copyIdx] -= dCopy;
         lay.type[e] = q2;
@@ -1079,6 +1091,50 @@
     }
     return out;
   }
+  // ---------- screening: verdict-ready (data.checks.verdict_ready, data.cards, data.screen) ----------
+  // a screening row (runs/screen.jsonl) against its model's card conditions: FAIL (NOT verdict-ready) when the failure-shape
+  // rate passes shape_rate_max or a setting departs from the card with no recorded best-config sweep choosing that value;
+  // UNKNOWN when a compared card value or run setting is unknown; PASS = a keep/delete verdict may be given
+  const cardField = (card, p) => p.split('.').reduce((o, k) => (o ? o[k] : undefined), card);
+  function verdictReady(data, row) {
+    const C = data.checks.verdict_ready, card = (data.cards || {})[row.card], tol = v(C.eq_tol), max = v(C.shape_rate_max);
+    const same = (a, b) => typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) <= tol : String(a) === String(b);
+    const s = row.shapes || {}, rate = s.requests ? s.any / s.requests : null, bad = [], unk = [], dep = [];
+    if (!card) unk.push('no card conditions for ' + row.card + ' (data/cards)');
+    if (rate === null) unk.push('no requests recorded');
+    else if (rate > max) bad.push(`failure shapes on ${s.any} of ${s.requests} requests (${(100 * rate).toFixed(0)} %, over ${(100 * max).toFixed(0)} %): ` +
+      `cap hits ${s.cap_hit}, empty ${s.empty}, loops ${s.loop}, leaked tags ${s.leaked_tags}; answered only on retry ${s.retry_only}`);
+    const sweeps = ((data.screen || {}).rows || []).filter(r => r.purpose === 'sweep' && r.card === row.card && r.sweep && r.sweep.best);
+    Object.entries(v(C.fields)).forEach(([k, f]) => {
+      if (!card) return;
+      const used = (row.settings || {})[k], cv = cardField(card, f.card), want = cv && typeof cv === 'object' ? cv.v : null;
+      const has = x => x !== null && x !== undefined;
+      let off = null;
+      if (f.rule === 'unset') { if (has(used) && !(has(want) && same(used, want))) off = `${k} ${used}: the card sets ${has(want) ? want : 'none'}`; }
+      else if (!has(want)) { unk.push(`${k}: the card value is unknown (${cv && cv.src ? cv.src : 'no ' + f.card + ' on the card'})`); return; }
+      else if (!has(used)) { unk.push(`${k}: the run does not record it`); return; }
+      else if (f.rule === 'eq') { if (!same(used, want)) off = `${k} ${used} vs card ${want}`; }
+      else if (f.rule === 'min') { if (used < want) off = `${k} ${used} < card ${want}`; }
+      else if (f.rule === 'room') {
+        const out = (cardField(card, f.output) || {}).v, o = has(out) ? out : row.settings.max_output, need = Math.min(want, (row.prompt_tokens_max || 0) + o);
+        if (used < need) off = `${k} ${used} < ${need} (longest prompt ${row.prompt_tokens_max} + ${has(out) ? 'card' : 'run'} max output ${o}, at most the card context ${want})`;
+      }
+      if (!off) return;
+      const sw = sweeps.find(r => has(r.sweep.best[k]) && same(r.sweep.best[k], used));
+      dep.push(Object.assign({ field: k, text: off, src: (row.settings_src || {})[k] || null, card_src: cv ? cv.src : null }, sw ? { sweep: sw.id } : {}));
+    });
+    const open = dep.filter(d => !d.sweep), st = bad.length || open.length ? 'FAIL' : unk.length ? 'UNKNOWN' : 'PASS';
+    const head = st === 'PASS' ? 'verdict-ready' : st === 'FAIL' ? 'NOT verdict-ready' : 'verdict-ready UNKNOWN';
+    const parts = bad.concat(open.map(d => 'departs: ' + d.text + (d.src ? ' [' + d.src + ']' : '') + ', no recorded best-config sweep'),
+      dep.filter(d => d.sweep).map(d => d.text + ' (chosen by sweep ' + d.sweep + ')'), unk);
+    return { id: 'verdict_ready', label: C.label, status: st, rate, departures: dep, unknown: unk,
+      verdict: row.verdict || null, refused: st !== 'PASS' && !!row.verdict,
+      detail: head + (parts.length ? ': ' + parts.join('; ') : ': card conditions held, failure shapes ' + (100 * rate).toFixed(0) + ' % of requests') };
+  }
+  // every screening row with its check, newest first
+  function screenChecks(data) {
+    return ((data.screen || {}).rows || []).map(r => ({ row: r, check: verdictReady(data, r) })).sort((a, b) => String(b.row.when).localeCompare(String(a.row.when)));
+  }
   // ---------- pre-launch check of ONE concrete recipe (node report.js --check recipe.json) ----------
   // recipe: { id, box, model, engine, store: {split, types, tensor_types, read_share_by_type}, lowbit_share, banks_gib, rtr, ub,
   //           threads, draft, knobs, vram: {post_warmup_gib, gpu_total_gib}, decode_kl, files: [{path, holds, access}] }
@@ -1105,13 +1161,13 @@
     return { post: g(x.post_warmup_gib), peak: g(x.peak_gib), total: g(x.gpu_total_gib), converted: k !== 1 };
   }
   // gpu_split: { banks_gib: [per usable GPU], fixed_share: [per usable GPU] } - an engine that splits the model by layer over
-  // several cards (llama.cpp -sm layer). Each usable GPU (engine-capable, box order) holds its own reserves, fixed_share of the
+  // several cards (llama.cpp -sm layer). Each usable GPU (engine-capable, not banks-only, box order) holds its own reserves, fixed_share of the
   // fixed parts the single-GPU plan puts on g0 (dense, KV + compute buffers, draft), and its banks. Returns one row per card;
   // the worst card (least room) is the one the VRAM check judges. null when the recipe has no gpu_split.
   function splitPosts(ctx, r) {
     const gs = r.gpu_split;
     if (!gs) return null;
-    const cards = ctx.tiers.filter(t => t.kind === 'gpu' && t.engineOk);
+    const cards = ctx.tiers.filter(t => t.kind === 'gpu' && t.engineOk && !t.banks);
     const banks = gs.banks_gib || [], share = gs.fixed_share || cards.map(() => 1 / cards.length);
     if (banks.length !== cards.length || share.length !== cards.length)
       return { bad: 'gpu_split gives ' + banks.length + ' banks / ' + share.length + ' shares for ' + cards.length + ' usable GPUs (' + cards.map(c => c.name).join(', ') + ')' };
@@ -1759,7 +1815,8 @@
     if (E.no_solver) return un(E.unmodelled_why || (r.engine + ' has no planner model (it sizes and places its own caches)'));
     if (E.calibrated_builds && E.calibrated_builds.indexOf(r.engine_build) < 0)
       return un(r.engine + ' build ' + (r.engine_build || '(not given)') + ' is not a calibrated build (' + E.calibrated_builds.join(', ') + '): its host and lane rates are unmeasured');
-    const st = r.store || {}, pl = r.placement || {};
+    // a recorded recipe whose label alone states its per-card placement takes it from data.placements (the ledger stays as recorded)
+    const st = r.store || {}, pl = r.placement || (data.placements && data.placements[r.id]) || {};
     if (pl.mode === 'none' || pl.mode === 'interleave') return un('no per-expert placement (' + pl.mode + (pl.note ? ': ' + pl.note : '') + '): the planner places whole experts, the kernel spread these pages');
     const hdd = (r.files || []).filter(fl => (fl.access === 'on_file' || fl.access === 'mmap') && mountKind(box, fl.path).kind === 'hdd');
     if (hdd.length) return un('tensors read while serving sit on a rotational disk (' + hdd.map(x => x.holds).join(', ') + '): the planner has no seek-bound read model');
@@ -1774,7 +1831,6 @@
     out.heat_maps = { plan: heatCite(m, ctx.planName), score: heatCite(m, ctx.scoreName) };
     if (ctx.bad) return un('non-expert weights + KV do not fit ' + ctx.g0.name);
     if (r.draft && !ctx.draftOn) A.push('draft requested but off in the planner: ' + ctx.notes.filter(x => /draft|MTP/.test(x)).join(' '));
-    if (ctx.draftOn) A.push('draft speed-up x' + (df.draft ? df.draft.v : ctx.mult).toFixed(3) + (df.draft ? ' (measured combined configuration twins)' : ' (box x model fit)'));
     const N = m.L * m.E;
     const ty = storeTypes(data, r, ctx);
     if (ty.why) return un(ty.why);
@@ -1815,13 +1871,25 @@
       left[gi] -= cacheGiB * GiB;
       if (left[gi] < -0.01 * GiB) return un('moe_cache_gib ' + cacheGiB + ' exceeds the GPU banks');
     }
+    // pl.cards = {gpu id: layers} puts layers on the engine's other cards (a banks-only card through its second backend)
     const byLayers = pl.mode === 'gpu_layers';
     if (byLayers) {
-      const bad = (pl.layers || []).filter(l => !(l >= 0 && l < m.L));
-      if (bad.length || !(pl.layers || []).length) return un('placement gpu_layers needs layers in 0..' + (m.L - 1) + ' (MoE layer indices)' + (bad.length ? ', got ' + bad.join(' ') : ''));
-      for (const l of pl.layers) for (let x = 0; x < m.E; x++) { const e = l * m.E + x; tier[e] = gi; left[gi] -= sz[type[e]]; }
-      if (left[gi] < -0.01 * GiB) return un('placement gpu_layers: ' + pl.layers.length + ' layers of experts exceed the GPU banks by ' + (-left[gi] / GiB).toFixed(2) + ' GiB');
-      A.push('GPU: every expert of MoE layers ' + pl.layers.join(',') + ' (gpu_layers placement, not the hottest experts)');
+      const sets = Object.entries(Object.assign(pl.layers ? { [ctx.g0.gpu.id]: pl.layers } : {}, pl.cards || {}));
+      if (!sets.length) return un('placement gpu_layers needs layers (or cards) in 0..' + (m.L - 1) + ' (MoE layer indices)');
+      for (const [id, layers] of sets) {
+        const ti = ctx.tiers.findIndex(t => t.kind === 'gpu' && t.engineOk && t.gpu.id === id), t = ctx.tiers[ti];
+        if (ti < 0) return un('placement gpu_layers: ' + r.engine + ' drives no card ' + id + ' on ' + r.box);
+        const bad = layers.filter(l => !(l >= 0 && l < m.L));
+        if (bad.length || !layers.length) return un('placement gpu_layers needs layers in 0..' + (m.L - 1) + ' (MoE layer indices)' + (bad.length ? ', got ' + bad.join(' ') : ''));
+        for (const l of layers) for (let x = 0; x < m.E; x++) {
+          const e = l * m.E + x;
+          if (t.drive && t.drive.types.indexOf(ctx.types[type[e]]) < 0) return un('placement gpu_layers: ' + ctx.types[type[e]] + ' is not a type seen on ' + id + ' (' + t.drive.backend + ': ' + t.drive.types.join('/') + ')');
+          tier[e] = ti; left[ti] -= sz[type[e]];
+        }
+        if (left[ti] < -0.01 * GiB) return un('placement gpu_layers: ' + layers.length + ' layers of experts exceed the ' + (ti === gi ? 'GPU banks' : id + ' capacity') + ' by ' + (-left[ti] / GiB).toFixed(2) + ' GiB');
+        A.push('GPU ' + id + ': every expert of MoE layers ' + layers.join(',') + ' (gpu_layers placement, not the hottest experts)');
+      }
+      if (pl.src) A.push('placement ' + (pl.tag || 'untagged') + ': ' + pl.src);
     }
     let ng = 0;
     for (const e of ctx.order) {
@@ -1869,6 +1937,8 @@
     if (routing.why) return un(routing.why);
     if (routing.heat) A.push('decode timing uses sourced all-read tier fractions; within-tier type mix remains an estimate from ' + ctx.scoreName + '; storage, quality and prefill heat are unchanged');
     const ev = evaluate(ctx, { tier, type }, hEval, routing.heat);
+    // layers the token crosses to each card reached through a second backend (its picks / k): the weight of its hop term
+    ctx.tiers.forEach((t, i) => { if (t.drive && ev.heatT[i] > 0) (out.cross_layers = out.cross_layers || {})[t.gpu.id] = ev.heatT[i] / m.k; });
     const RR = E.recipe_rates || {}, rr = k => RR[k] ? v(RR[k]) : null;
     const h = ctx.score, gbw = ctx.g0.bw * ctx.g0.eta;
     // a trimmed cache miss is not read: evaluate() read every GPU-tier pick's miss share from DRAM, so take the dropped part out
@@ -1891,15 +1961,18 @@
     }
     if (r.split_mode === 'tensor') {
       // -sm tensor: every card reads its share of the dense weights at once; two reductions per layer cross PCIe (ESTIMATE)
-      const nc = ctx.tiers.filter(t => t.kind === 'gpu' && t.engineOk).length;
+      const nc = ctx.tiers.filter(t => t.kind === 'gpu' && t.engineOk && !t.banks).length;
       gpuT -= ctx.denseTime * (1 - 1 / nc);
       hostT += 2 * rr('layers_total') * rr('allreduce_ms') / 1000;
       A.push('-sm tensor over ' + nc + ' cards: dense read / ' + nc + ', + ' + (2 * rr('layers_total') * rr('allreduce_ms')).toFixed(1) + ' ms/token reductions (ESTIMATE)');
     }
     const T = hostT + (ctx.overlap ? Math.max(gpuT, cpuT) + (1 - ctx.overlap) * Math.min(gpuT, cpuT) : gpuT + cpuT);
     out.status = 'PREDICTED';
-    out.decode_tps = (df.draft && ctx.draftOn ? df.draft.v : ctx.mult) / T;
+    // the draft speed-up at this recipe's CPU share of the token (ledgerDrafts): x mult / (1 + cpuW x CPU expert time / T)
+    const dm = df.draft && ctx.draftOn ? df.draft.v : ctx.mult * T / (T + ctx.cpuW * cpuT);
+    out.decode_tps = dm / T;
     out.decode_tps_nodraft = 1 / T;
+    if (ctx.draftOn) A.push('draft speed-up x' + dm.toFixed(3) + (df.draft ? ' (measured combined configuration twins)' : ctx.cpuW ? ' (box x model fit x' + ctx.mult.toFixed(3) + ' at no CPU expert time, / (1 + ' + ctx.cpuW.toFixed(3) + ' x CPU share ' + (cpuT / T).toFixed(3) + '))' : ' (box x model fit)'));
     // an external draft file served to a model whose planner draft is its own MTP head: another draft, its speed-up unmodelled
     const xd = ctx.draftOn && m.draft.kind === 'mtp' ? (r.files || []).filter(fl => /draft/i.test(fl.holds || '')) : [];
     if (xd.length) {
@@ -2010,6 +2083,10 @@
     }
     if (spT) D.push(T('split GGUF host ms/token (' + r.model + ')', spT));
     D.push(T('GPU nameplate bandwidth GB/s (' + ctx.g0.name + ')', ctx.g0.gpu && ctx.g0.gpu.bw), T('GPU decode efficiency (share of nameplate)', data.assume.gpu_eta));
+    ctx.tiers.filter(t => t.drive && used.has(t.id)).forEach(t => D.push(t.bwTerm ? T('GPU read rate GB/s (' + t.gpu.id + ', ' + t.drive.backend + ' bench line)', t.bwTerm) : T('GPU nameplate bandwidth GB/s (' + t.gpu.id + ')', t.gpu.bw),
+      T('cross-backend hop ms per layer (' + t.gpu.id + ')', t.hopTerm)));
+    const pl = r.placement || (data.placements && data.placements[r.id]);
+    if (pl && pl.tag) D.push(T('per-card expert placement', { v: null, tag: pl.tag, src: pl.src }));
     D.push(T('non-expert GiB', denseSrc(E, m, ctx.kn)));
     [...allTypes].forEach(q => D.push(T('bits per weight ' + q, data.types[q].bpw)));
     D.push(T('routing heat, plan (' + ctx.planName + ')', m.heat.sets[ctx.planName]));
@@ -2032,7 +2109,8 @@
     if (out.moe_cache) D.push(T('MoE cache realization', RR.cache_realize), T('MoE cache upload GB/s', RR.cache_link_gbs));
     if (r.split_mode === 'tensor') D.push(T('-sm tensor reduction ms', RR.allreduce_ms), T('layers', RR.layers_total));
     const nodraft = D.slice();
-    if (ctx.draftOn) D.push(T('draft speed-up', out.decode_fit ? out.decode_fit.draft : ctx.kn.draftMult !== undefined && ctx.kn.draftMult !== null ? { v: ctx.kn.draftMult, tag: 'ESTIMATE', src: 'recipe knob draftMult (given, not measured)' } : draftSrc(data, r.box, r.model)));
+    if (ctx.draftOn) D.push(T(ctx.cpuW && !out.decode_fit ? 'draft speed-up at no CPU expert time' : 'draft speed-up', out.decode_fit ? out.decode_fit.draft : ctx.kn.draftMult !== undefined && ctx.kn.draftMult !== null ? { v: ctx.kn.draftMult, tag: 'ESTIMATE', src: 'recipe knob draftMult (given, not measured)' } : draftSrc(data, r.box, r.model)));
+    if (ctx.draftOn && !out.decode_fit && ctx.cpuW) D.push(T('draft verify weight on CPU expert time', draftSrc(data, r.box, r.model).beta));
     // prefill
     const pf = out.prefill, P = [];
     if (out.prefill_tps === null || out.prefill_tps === undefined) P.push({ term: 'prefill rate', value: null, evidence: 'unknown', tag: 'UNKNOWN', src: out.prefill_why });
@@ -2161,7 +2239,8 @@
     [['gpu', B.gpu_gb], ['dram', B.dram_gb], ['pmem', B.pmem_gb], ['nvme', B.nvme_gb]].forEach(([t, gb]) => { if (gb) out.push([t, B.type, gb]); });
     return out;
   }
-  function anchorTime(data, a, f, host, bx) {
+  // sink (optional): gets .cpu, the CPU-side expert seconds of the token (the draft fit reads the anchor's CPU share)
+  function anchorTime(data, a, f, host, sink) {
     const box = data.boxes[a.box];
     const g = box.gpus[0];
     const eta = v(data.assume.gpu_eta);
@@ -2173,6 +2252,7 @@
       const cpu = Bd * kappaOf(data, a.box, q) * f;
       const r = t === 'gpu' ? gbw : t === 'dram' ? Math.min(Bd, cpu) : t === 'pmem' ? (box.pmem ? Math.min(v(box.pmem.bw) * 1e9, cpu) : 1) : v(box.nvme.bw) * 1e9; // box.pmem.bw is swapped to the fitted value by applyCal
       T += gb * 1e9 / r;
+      if (sink && t !== 'gpu') sink.cpu = (sink.cpu || 0) + gb * 1e9 / r;
     });
     return T;
   }
@@ -2277,12 +2357,12 @@
           else cpuT += gb * 1e9 / (v(box.nvme.bw) * 1e9);
         });
         const p = 1 / ((eo.host_ms !== undefined ? eo.host_ms : v(E.host_ms)) / 1000 + Math.max(gpuT, cpuT));
-        cal.rows.push(Object.assign({}, a, { pred: p, pred_nodraft: p, resid: p / a.meas - 1 }));
+        cal.rows.push(Object.assign({}, a, { pred: p, pred_nodraft: p, resid: p / a.meas - 1, cpu_s: cpuT }));
         return;
       }
       const f = v(res.f), h = res.host[a.model] ? v(res.host[a.model]) : 0;
-      const base = 1 / anchorTime(data, a, f, h);
-      cal.rows.push(Object.assign({}, a, { pred_nodraft: base, pred: base, resid: base / a.meas - 1 }));
+      const sink = { cpu: 0 }, base = 1 / anchorTime(data, a, f, h, sink);
+      cal.rows.push(Object.assign({}, a, { pred_nodraft: base, pred: base, resid: base / a.meas - 1, cpu_s: sink.cpu }));
     });
     // split-model overhead: a split GGUF builds a chain per partition per layer; the measured split run minus the fitted model = extra ms/token
     anchors.filter(a => a.fit === 'split').forEach(a => {
@@ -2323,7 +2403,7 @@
     Object.keys(dm).forEach(key => {
       const [bk, mk] = key.split('|');
       const xs = dm[key];
-      cal.boxes[bk].draft[mk] = { v: xs.reduce((s, x) => s + x, 0) / xs.length, tag: 'FIT', src: ltSrc[key] || 'draft speed-up from ' + xs.length + ' measured arm(s) on ' + bk + ' (vs a measured no-draft twin where one exists, else vs the model)' };
+      cal.boxes[bk].draft[mk] = { v: xs.reduce((s, x) => s + x, 0) / xs.length, tag: 'FIT', runs: ltSrc[key] ? LT[key].map(x => x.id) : undefined, src: ltSrc[key] || 'draft speed-up from ' + xs.length + ' measured arm(s) on ' + bk + ' (vs a measured no-draft twin where one exists, else vs the model)' };
     });
     cal.rows.forEach(r => {
       if (r.draft && r.pred_nodraft) {
@@ -2346,34 +2426,125 @@
     return cal;
   }
 
+  // a ledger fit whose runs ran under a dated box condition (data.boxes[box].conditions; each data.recipes row carries the ids in
+  // box_conditions) names it: box_conditions [{box, id, short, from, to, runs}] and one clause per condition in its src
+  function withConds(data, fit) {
+    const by = {};
+    fit.runs.forEach(id => {
+      const row = (data.recipes || []).find(x => x.run_id === id);
+      ((row && row.box_conditions) || []).forEach(c => (by[row.box + '|' + c] = by[row.box + '|' + c] || []).push(id));
+    });
+    const cs = Object.keys(by).map(k => {
+      const [box, id] = k.split('|'), c = data.boxes[box].conditions.find(x => x.id === id);
+      return { box, id, short: c.short, from: c.from, to: c.to, runs: by[k] };
+    });
+    return cs.length ? Object.assign(fit, { box_conditions: cs, src: fit.src + cs.map(c => '; ' + c.runs.join(', ') + ' ran under ' + c.box + ' ' + c.short + ' (' + c.from + ' to ' + c.to + ')').join('') }) : fit;
+  }
+
   // Host ms/token from the run ledger where no anchor fits it: a box x model whose host is only borrowed or estimated takes the
   // mean residual of its clean ledger runs (measured no-draft ms/token minus the modelled GPU + CPU expert time of the run's own
-  // recipe). A run counts only when it went fine, is not a decode-fit holdout, carries no gate waiver (a waiver records a part
+  // recipe). A run counts only when it went fine, carries no confounded caveat, is not a decode-fit holdout, carries no gate waiver (a waiver records a part
   // of the recipe the planner does not describe, e.g. experts on a GPU it does not model) and is PREDICTED today; a fitted,
   // fixed or decode-profile host never moves. Changes nothing for a box x model without such a run.
   function ledgerHosts(data) {
     const cal = data.cal, by = {};
     (data.recipes || []).forEach(row => {
       const m = row.measured, r = row.recipe || {}, res = cal.boxes[row.box];
-      if (!m || m.bad || m.holdout || !(m.off > 0) || r.gate_waiver || r.kind === 'dllm' || r.decode_profile !== undefined || !res || !data.models[row.model]) return;
+      if (!m || m.bad || (m.caveat || []).length || m.holdout || !(m.off > 0) || r.gate_waiver || r.kind === 'dllm' || r.decode_profile !== undefined || !res || !data.models[row.model]) return;
       const h = res.host[row.model], fx = data.boxes[row.box].host_fixed;
       if ((h && h.tag !== 'ESTIMATE') || (fx && fx[data.models[row.model].host_group || row.model] !== undefined)) return;
       const p = predictRecipe(data, r);
-      if (p.status !== 'PREDICTED' || !p.ms_per_token) return;
+      if (p.status !== 'PREDICTED' || !p.ms_per_token || p.cross_layers) return;
       (by[row.box + '|' + row.model] = by[row.box + '|' + row.model] || []).push({ id: row.run_id, host: 1000 / m.off - (p.ms_per_token.total - p.ms_per_token.host), off: m.off, phase: m.off_phase });
     });
     Object.keys(by).forEach(k => {
       const [bk, mk] = k.split('|'), xs = by[k], hv = xs.reduce((a, x) => a + x.host, 0) / xs.length;
       if (!(hv >= 0)) return;
-      cal.boxes[bk].host[mk] = { v: hv, tag: 'FIT', runs: xs.map(x => x.id), src: 'host overhead ms/token fitted on ' + xs.length + ' clean run(s) in the run ledger on ' + bk + ' (no anchor): measured no-draft decode minus the modelled GPU and CPU expert time of each run\'s own recipe: ' +
-        xs.map(x => x.id + ' ' + x.phase + ' ' + x.off.toFixed(2) + ' tok/s -> ' + x.host.toFixed(1) + ' ms').join('; ') };
+      cal.boxes[bk].host[mk] = withConds(data, { v: hv, tag: 'FIT', runs: xs.map(x => x.id), src: 'host overhead ms/token fitted on ' + xs.length + ' clean run(s) in the run ledger on ' + bk + ' (no anchor): measured no-draft decode minus the modelled GPU and CPU expert time of each run\'s own recipe: ' +
+        xs.map(x => x.id + ' ' + x.phase + ' ' + x.off.toFixed(2) + ' tok/s -> ' + x.host.toFixed(1) + ' ms').join('; ') });
+    });
+  }
+
+  // the hop a token pays per layer it crosses to a card reached through a second backend (cal.boxes[box].hop[gpu id], ms),
+  // fitted after the host: on clean ledger runs that read experts from exactly one such card, measured no-draft decode minus
+  // every modelled term (the host included), over the layers crossed. A gate waiver does not keep a run out: the waivers on
+  // these runs name the card the planner did not model before this term
+  function ledgerHops(data) {
+    const by = {};
+    (data.recipes || []).forEach(row => {
+      const m = row.measured, r = row.recipe || {}, res = data.cal.boxes[row.box];
+      if (!m || m.bad || (m.caveat || []).length || m.holdout || !(m.off > 0) || r.kind === 'dllm' || r.decode_profile !== undefined || !res || !data.models[row.model]) return;
+      const p = predictRecipe(data, r), ids = Object.keys((p && p.cross_layers) || {});
+      if (p.status !== 'PREDICTED' || ids.length !== 1) return;
+      const k = row.box + '|' + ids[0], x = p.cross_layers[ids[0]];
+      (by[k] = by[k] || []).push({ id: row.run_id, hop: (1000 / m.off - p.ms_per_token.total) / x, layers: x, off: m.off, phase: m.off_phase });
+    });
+    Object.keys(by).forEach(k => {
+      const [bk, gid] = k.split('|'), xs = by[k], hv = xs.reduce((a, x) => a + x.hop, 0) / xs.length;
+      if (!(hv >= 0)) return;
+      const res = data.cal.boxes[bk];
+      res.hop = Object.assign({}, res.hop, { [gid]: withConds(data, { v: hv, tag: 'FIT', runs: xs.map(x => x.id), src: 'cross-backend hop ms per layer crossed to ' + gid + ', fitted on ' + xs.length + ' clean run(s) in the run ledger on ' + bk + ': measured no-draft decode minus every modelled term (host, dense, bank reads at the card line), over the layers crossed: ' +
+        xs.map(x => x.id + ' ' + x.phase + ' ' + x.off.toFixed(2) + ' tok/s, ' + x.layers.toFixed(1) + ' layers -> ' + x.hop.toFixed(3) + ' ms').join('; ') }) });
+    });
+  }
+
+  // the draft speed-up by where the experts sit: a draft step verifies several tokens in one forward, and the CPU expert
+  // time of that forward grows with the distinct experts the tokens route to (droopy-glm-glm-be1q4y-0909, conditions.draft_n)
+  // more than a GPU's read does. So with the draft on, decode = tau / (T + beta x CPU expert time): tau per box x model (the
+  // speed-up with every expert on a GPU) and beta per draft kind (the twins' what: an MTP head verifies inside the target's
+  // forward, a separate DSpark draft model puts its own verify work beside it), both fitted (least squares on the log
+  // speed-up) on the in-load ledger twins, each at the CPU share of the token that its own run's recipe gets from the planner
+  // today (after the host, hop and decode-profile fits). A kind whose twins do not identify beta (no box x model of the kind
+  // has twins at different CPU shares, or the fit runs to the top of the search) takes the beta pooled over every kind.
+  // Measured 10-21 (27 twins, error of the predicted speed-up with each twin left out of the fit): pooled beta 0.300 gave rms
+  // 0.069 held out (0.055 in sample); per kind (DSpark 0.076 on 19 droopy V4.1 twins, MTP 0.493 on GLM + Ornith) rms 0.068
+  // held out (0.053 in sample); per box x model with fallback rms 0.066-0.067, but only through one GLM twin whose held-out
+  // GLM-only fit sits at 2.8 next to the 4.0 search top (GLM alone is not identified). A box x model whose twins are not all
+  // PREDICTED keeps the plain mean; anchor-fitted ones keep theirs.
+  function ledgerDrafts(data) {
+    const cal = data.cal, LT = data.draft_twins || {}, by = {};
+    Object.keys(LT).forEach(k => {
+      const [bk, mk] = k.split('|'), d = cal.boxes[bk] && cal.boxes[bk].draft[mk];
+      if (!d || !d.runs) return;
+      const xs = LT[k].map(x => {
+        const row = (data.recipes || []).find(y => y.run_id === x.id), p = row && predictRecipe(data, row.recipe);
+        return p && p.status === 'PREDICTED' && p.ms_per_token ? { id: x.id, mult: x.mult, s: p.ms_per_token.cpu / p.ms_per_token.total } : null;
+      });
+      if (xs.every(x => x)) by[k] = xs;
+    });
+    const keys = Object.keys(by), kind = k => LT[k][0].what, top = v(data.assume.draft_cpu_beta_max);
+    // beta is seen only through twins of one box x model at different CPU shares
+    const spread = ks => ks.some(k => by[k].some(x => x.s !== by[k][0].s));
+    if (!spread(keys)) return;
+    const lt = (b, x) => Math.log(x.mult * (1 + b * x.s)), tau = (b, xs) => xs.reduce((a, x) => a + lt(b, x), 0) / xs.length;
+    const fit = (ks, what) => {
+      const err = b => ks.reduce((a, k) => { const t = tau(b, by[k]); return a + by[k].reduce((e, x) => e + (lt(b, x) - t) ** 2, 0); }, 0);
+      const [beta, e2] = golden(err, 0, top), all = [].concat(...ks.map(k => by[k]));
+      return { beta, ceiling: beta > top * (1 - 1e-6), fit: withConds(data, { v: beta, tag: 'FIT', kind: what, runs: all.map(x => x.id), src: 'draft verify weight on CPU expert time' + (what ? ' (' + what + ')' : ', pooled over every draft kind (taken by a kind whose own twins do not identify it)') + ': decode with the draft = tau / (T + beta x CPU expert time), beta fitted with a tau per box x model on ' + all.length + ' in-load ledger twins (' + ks.join(', ') + '; CPU share of each run\'s recipe as predicted today), rms log error ' + Math.sqrt(e2 / all.length).toFixed(3) }) };
+    };
+    const P = fit(keys).fit, kinds = {};
+    [...new Set(keys.map(kind))].forEach(w => {
+      const ks = keys.filter(k => kind(k) === w), f = spread(ks) && fit(ks, w);
+      if (f && !f.ceiling) kinds[w] = f.fit;
+    });
+    cal.draft_cpu = Object.assign({ pooled: P }, kinds);
+    keys.forEach(k => {
+      const [bk, mk] = k.split('|'), d = cal.boxes[bk].draft[mk], B = kinds[kind(k)] || P, beta = B.v, t = Math.exp(tau(beta, by[k]));
+      cal.boxes[bk].draft[mk] = withConds(data, Object.assign({}, d, { v: t, beta: B, src: 'draft speed-up with no CPU expert time (x' + t.toFixed(3) + ' / (1 + ' + beta.toFixed(3) + ' x CPU share), the ' + (kinds[kind(k)] ? kind(k) : 'pooled') + ' weight), fitted on ' + by[k].length + ' in-load twins in the run ledger (' + kind(k) + ' vs no draft, same load and prompts): ' +
+        by[k].map(x => x.id + ' x' + x.mult.toFixed(3) + ' at CPU share ' + x.s.toFixed(3) + ' (fit x' + (t / (1 + beta * x.s)).toFixed(3) + ')').join(', ') }));
+    });
+    cal.rows.forEach(r => {
+      const d = r.draft && r.pred_nodraft && cal.boxes[r.box].draft[r.model];
+      if (d && d.beta) { r.pred = r.pred_nodraft * v(d) / (1 + v(d.beta) * (r.cpu_s || 0) * r.pred_nodraft); r.resid = r.pred / r.meas - 1; }
     });
   }
 
   function applyCal(data) {
     data.cal = calibrate(data);
     ledgerHosts(data);
+    ledgerHops(data);
     data.cal.recipe_decode = fitRecipeDecode(data);
+    ledgerDrafts(data);
     return data.cal;
   }
 
@@ -2427,6 +2598,6 @@
     }, extra || {});
   }
 
-  const api = { layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, exportMap, LAMS };
+  const api = { verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

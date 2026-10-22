@@ -27,12 +27,12 @@
     const c = FM.checkRecipe(data, run.recipe, null, { predict: false }).checks.find(x => x.id === 'quality');
     return { status: c ? c.status : 'UNKNOWN', kl: null, top1: null, basis: 'planner quality check: ' + (c ? c.detail : 'none') };
   }
-  // per box and model: the fastest measured run that went fine, is predicted by the planner and passes quality
+  // per box and model: the fastest measured run that went fine and carries no confounded caveat, is predicted by the planner and passes quality
   function bestPassing(data, runs) {
     const skip = new Set(data.upgrade.settings.exclude_tags), out = {}, why = [];
     runs.forEach(run => {
       const r = run.recipe || {};
-      if (r.kind === 'dllm' || (run.tags || []).some(t => skip.has(t)) || ACC.wentBad(run).length) return;
+      if (r.kind === 'dllm' || (run.tags || []).some(t => skip.has(t)) || ACC.wentBad(run).length || require('./ledger.js').caveated(run).length) return;
       const ph = ACC.primaryPhase(run), meas = ph && ((run.measured || {}).decode_tps || {})[ph];
       if (!(meas > 0)) return;
       const k = run.box + '|' + run.model;

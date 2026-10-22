@@ -162,6 +162,33 @@ through the box's probed home mount.
 A launcher saves that output beside the recipe as `RECIPE.json.check.json` before it starts the run, and calls
 `tools/kit_record.sh` when the run ends.
 
+## Screening a model: card conditions and `verdict-ready`
+
+A quality round (planted defects, clean controls) judges a model only under the conditions its maker measured it under.
+`data/cards/KEY.json` holds those per model: the recommended sampling (temperature, top_p, top_k, min_p, presence
+penalty), the thinking mode with its control and effort, the chat template (sha256 of the template text) and reasoning
+parser, the context and the max output. Every value is `{v, tag, src}`: `READ` with the URL and line it was read from, or
+`UNKNOWN` with `v` null when the card does not say. The build refuses a value with no URL.
+
+`tools/record_screen.py --spec tools/screen_sources.json --write` reads a round into `runs/screen.jsonl`, one row per
+model arm: the settings the arm actually ran with (the request body over the server defaults from `/props`, the context
+from `server.log`, the template the server ran), and for every request its failure shapes: a cap hit (`finish` length),
+an empty answer, a loop (a line repeated in the output tail; `LOOP_*` settings, kept in the row), template tags in the
+visible answer; plus the items answered only on retry, the grades and the verdict the round gave.
+
+```
+node report.js --screen [--json]
+```
+
+The `verdict_ready` check (the Trust tab shows it beside the other hard checks) refuses a keep or delete verdict when:
+
+- more than `checks.verdict_ready.shape_rate_max` (default 20 %) of the requests end in a failure shape; or
+- a setting departs from the card (`checks.verdict_ready.fields`: same value for sampling, thinking and template; at
+  least the card max output; a context that holds the longest prompt plus the card max output) and no recorded
+  best-config sweep (a `purpose: sweep` row naming that value in `sweep.best`) chose it.
+
+It prints each departure with the source of the value the run used. An unknown card value makes it UNKNOWN, not PASS.
+
 ## Adding a box
 
 1. Probe it with `python3 probe/probe_box.py --ssh HOST --name NAME --write data/boxes/NAME.json`.
@@ -202,6 +229,12 @@ A recipe is a JSON file in `recipes/`. The fields are:
 
 Start from the recipe closest to your run. Check it with `node report.js --check recipes/NEW.json --strict` and fix every
 FAIL. Then decide whether each UNKNOWN is acceptable for your run.
+
+Ledger rows are never rewritten. A run found confounded after it was recorded (its phases are no clean measure of the
+recipe: identical switches decoded different texts, for example), or a field the recorder got wrong, goes into
+`runs/run_caveats.json` by run id: `kind: "confounded"` with `why` and `superseded_by`, and `correct` with a field's value
+and source. Both ledger readers (`src/ledger.py`, `src/ledger.js`) apply it. A confounded run stays in every run list with
+its caveat. It drops out of the fastest-run tables, the host, hop and draft fits, and the accuracy scores.
 
 ## dLLM (block-diffusion) recipes
 
@@ -266,8 +299,11 @@ negative bias means the planner predicted slower than the run.
   | odie LLaDA2.1-mini (block diffusion) | 4.1 % (n = 15) | |
   | odie / lassie, other block-diffusion models | 1.6-43.8 % (n = 2-4 each) | |
 
-  The in-load draft speed-up (1.198 GLM, 1.201 V4.1) matches the planner's multiplier (1.203, 1.259), so no draft term
-  is fitted. lassie's CPU-only V4.1 runs have no decode prediction yet.
+  The in-load draft speed-up (1.198 GLM, 1.201 V4.1) matched the planner's multiplier (1.203, 1.259) then. Since
+  2026-10-21 the speed-up depends on where the experts sit: decode with the draft = tau / (T + beta x CPU expert time),
+  tau per box x model and one beta fitted on the in-load ledger twins (beta 0.37: lassie Ornith-35B x1.13 with 41 % of
+  the token on CPU experts, x1.33 with every expert on the two GPUs). lassie's CPU-only V4.1 runs have no decode
+  prediction yet.
 - **Trend** (as of 2026-10-19): the gap was not shrinking for decode with drafts on (10-17 9.1 % n 6, 10-18 17.3 % n 1);
   no-draft decode and the launch-time gate miss share were falling. Most trend points hold one run.
 - **Prefill** has a rate only inside its measured cells (V4.1 -ub 4096 at 62-70 GiB PMem, GLM -ub 2048 at 0-16 GiB);
@@ -343,4 +379,5 @@ python3 build.py
 python3 -W error::ResourceWarning -m unittest discover -s tests
 node tests/test_accuracy.js
 node tests/test_advisor.js
+node tests/test_screen.js
 ```

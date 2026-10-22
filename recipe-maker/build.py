@@ -819,12 +819,34 @@ boxes = {
         'gpus': [{'id': '1080ti', 'pci': '0000:31:00.0', 'vendor': 'nvidia', 'name': 'GTX 1080 Ti (sm_61, PCIe 3)', 'vram_gib': n(10.9, M, D01 + ' 11 GB'), 'bw': n(484, R, 'lab notes (484 GB/s)'), 'engines': ['ik'],
                   'other': [], 'note': 'probe 2026-10-21: nvidia-smi reads the card (driver 580.178.04); the 10-17 driver/library mismatch is gone'},
                  {'id': 'mi25', 'pci': '0000:23:00.0', 'vendor': 'amd', 'name': 'Radeon Instinct MI25 (gfx900 Vega10, HBM2, PCIe 3 x16)', 'vram_gib': n(16368 / 1024, M, 'llama.cpp Vulkan device list 2026-10-20 (16,368 MiB)'),
-                  'bw': n(484, R, 'lab notes: 945 MHz HBM2 x 2048-bit = 484 GB/s plate'), 'engines': ['llamacpp'], 'other': [],
+                  'bw': n(484, R, 'lab notes: 945 MHz HBM2 x 2048-bit = 484 GB/s plate'), 'engines': ['llamacpp', 'ik'], 'other': [],
+                  # how an engine reaches a card through a second backend (model.js context): banks = routed experts only (dense
+                  # weights, KV and the draft stay on the engine's first card); the card reads at its bench line on that backend
+                  # (bench.gpu[backend], when the line was measured on this card); types = the expert types seen on it
+                  'drive': {'ik': {'backend': 'vulkan-radv', 'role': 'banks', 'types': ['q4_K', 'q6_K', KQM_TY, 'mxfp4'],
+                                   'build': 'ik_llama.cpp fork github.com/akapug/ik_llama.cpp branch mixed-cuda-vulkan-expert-banks (LLAMA_EXTRA_VULKAN=1, LLAMA_HOT_EXPERTS_DEVICE=Vulkan0)',
+                                   'src': 'SEEN in the run ledger: lassie-orn35-q4km-o2 / o6 / q6 (Ornith-35B Q4_K/Q6_K experts of 30-31 whole layers on the MI25, 13.5-14 GiB) and lassie-v41-q8-hs1 ... hs5 (V4.1 MXFP4 hottest experts, 14 GiB) on that build'}},
                   'note': 'Vulkan RADV only (no ROCm installed). 110 W cap = cap max (vBIOS 113-D0513500-N00); passive heatsink + owner shroud with a 120 mm fan: continuous load reaches HBM 93 C in ~4 min, fit plateau ~94.5 C vs 95 C crit (lab notes R1b, 2026-10-20): minutes of load are safe, sustained 110 W is marginal'}],
-        'dram': {'total_gib': n(938, M, PROBE + ' free -g 1007 GB'), 'usable_gib': n(850, E, 'ESTIMATE: builds run here'),
-                 'bw': n(257.7, M, D01 + ' NUMA-local read'), 'nodes': [{'name': 'node %d' % i, 'gib': 117.3} for i in range(8)]},
+        'dram': {'total_gib': n(1007.7, M, 'read-only probe 2026-10-21T20:41Z (boot 19:14:53Z, 16 of 16 DIMMs): MemTotal of the 8 nodes, free -g 1007'),
+                 'usable_gib': n(850, E, 'ESTIMATE: builds run here'),
+                 'bw': n(257.7, M, D01 + ' NUMA-local read'), 'nodes': [{'name': 'node %d' % i, 'gib': 125.9} for i in range(8)]},
         'pmem': None,
         'nvme': {'gib': n(70, M, PROBE + ' df / 76 GB free (SATA SSD, no NVMe)'), 'bw': n(0.5, E, 'ESTIMATE SATA')},
+        # dated hardware conditions: a ledger run whose time falls in [from, to) ran under the condition (data.recipes rows carry
+        # its id in box_conditions; the ledger rows stay as recorded). The planner reads today's box (the probe), not a condition
+        'conditions': [{'id': 'dimm-15of16', 'from': '2026-10-20T03:18Z', 'to': '2026-10-21T19:14Z', 'short': '15 of 16 DIMMs',
+                        'what': 'P2-DIMMD1 slightly unseated: 15 of 16 DIMMs (1006.5 GB instead of 1073.6 GB), NUMA node 4 on one channel '
+                                '(63 GiB, half its read bandwidth); the V4.1 tmpfs interleave (mm7) left node 4 out (nodes 0-3 and 5-7)',
+                        'affects': 'Expert reads from DRAM that touch node 4 ran on one channel there: a rows:0..7 split cuts every expert '
+                                   'across the 8 nodes and every thread waits on the slowest slice, so CPU expert time is plausibly slower '
+                                   '(V4.1 rows8, fs and hs runs; Ornith-35B o1/o3/o4/o5); the mm7 interleave runs read their weights from 7 full nodes '
+                                   '(14 of the 16 channels); experts resident on a GPU '
+                                   '(Ornith-35B o2/o6/q6, the card bench lines) barely notice: DRAM holds only what the host side reads',
+                        'tag': M, 'src': 'lassie kernel boot logs (journalctl -k "Memory:" per boot, read 2026-10-21T20:43Z): 1,073,622,536 K '
+                                         'on the boot 2026-10-09T09:27Z to 2026-10-19T23:39:32Z; 1,006,513,496 to 1,006,513,672 K on all 8 boots from '
+                                         '2026-10-20T03:18:12Z to the one that ended 2026-10-21T19:06:29Z (Initmem node 4 spans 64 GiB); the '
+                                         'owner reseated P2-DIMMD1 ~19:10Z; 1,073,622,360 K from the 2026-10-21T19:14:53Z boot (probe 20:41Z: '
+                                         '16 DIMMs, 8 nodes x ~126 GiB)'}],
         'showcase': {'model': 'orn35', 'src': 'run ledger: lassie-orn35-q4km-o6 (2026-10-21) 59.13 tok/s with MTP, every routed expert on the MI25 + GTX 1080 Ti, the fastest measured run on lassie'},
         'upgrades': {}, 'host_default': {}, 'host_fixed': {'glm': n(15, E, 'ESTIMATE: one anchor cannot fit both host and f; droopy V4.0 host is ~16 ms')},
         'threads_note': 'Naples: expert kernel 0.62x a reference EPYC at 64 threads (lab notes D2)',
@@ -1163,7 +1185,17 @@ sys.path.insert(0, SRC)
 import runs_tables  # noqa: E402
 RUNS = runs_tables.load_runs(os.path.join(HERE, 'runs', 'runs.jsonl'))
 _holdout = {rid for spec in json.load(open(os.path.join(HERE, 'data', 'decode-fits.json'))).values() for rid in spec['holdout']}
-recipes = runs_tables.recipes_from_runs(RUNS, _holdout)
+recipes = runs_tables.recipes_from_runs(RUNS, _holdout, boxes)
+# per-card expert placement of recorded recipes that state it only in their label (the ledger stays as recorded):
+# predictRecipe reads placements[recipe id] when the recipe has no placement of its own. gpu_layers: layers = MoE layer
+# indices on the engine's first card, cards = {gpu id: layers} on the others
+_o6 = 'run ledger %s label: "10 on the GTX 1080 Ti (blk 0-8 + 10, CUDA0, 4.67 GiB)", "30 main layers on the MI25 (blk 9 + 11-39, Vulkan, 13.49 GiB)"'
+_l1080, _lmi25 = list(range(9)) + [10], [9] + list(range(11, 40))
+placements = {rid: {'mode': 'gpu_layers', 'layers': _l1080, 'cards': {'mi25': _lmi25}, 'tag': tag, 'src': src} for rid, tag, src in [
+    ('lassie-orn35-q4km-o6', M, _o6 % 'lassie-orn35-q4km-o6'),
+    ('lassie-orn35-q4km-q6', M, _o6 % 'lassie-orn35-q4km-q6'),
+    ('lassie-orn35-q4km-o2', E, 'ESTIMATE: as lassie-orn35-q4km-o6 (the same split; its label gives "31 layers on the MI25 (14 GiB) and 10 on the GTX 1080 Ti" '
+                               'without blocks, and its heat file differs from o6\'s only by blk.40, the MTP block, which no-draft decode does not read)')]}
 decode_fits = runs_tables.decode_fits(HERE, RUNS, recipes)
 draft_twins = runs_tables.draft_twins(RUNS, _holdout)
 levers = runs_tables.levers_from_runs(json.load(open(os.path.join(HERE, 'runs', 'levers.json'))), RUNS, M)
@@ -1180,6 +1212,8 @@ assume = {
     'quality_a': n(round(qa, 3), QTAG, QSRC), 'quality_b': n(round(qb, 4), QTAG, QSRC), 'quality_pairs': QPAIRS,
     'cliff_bpw': n(2.6, P, 'quant-recipes rule 3: below about 2.6 bits average on the experts, coding and agent quality fall off a cliff'),
     'host_ref_box': 'droopy',
+    'draft_cpu_beta_max': n(4.0, P, 'PRIOR: the top of the search for the draft verify weight on CPU expert time (src/model.js ledgerDrafts; '
+                                     'the fit is the minimum inside 0 to this value, so a bound it lands on means the ledger twins ask for more)'),
 }
 
 knobs = {'freeDesktop': False, 'moveB70': 'none', 'addDRAM': False, 'addOptane': False, 'optaneBwScale': None, 'kernel2x': False,
@@ -1199,6 +1233,70 @@ conditions = {
         'workload': 'what the timed tokens were (prompt kind, cached depth, prompt and generation lengths): acceptance and expert heat follow the text',
     },
     'draft_only': ['draft_n'],
+}
+
+# ---------------- screening: card conditions and the verdict-ready check ----------------
+# data/cards/<key>.json: per model, the conditions its maker measured it under (sampling, thinking mode and its control,
+# chat template and reasoning parser, context and max output). Every value is {v, tag, src}: READ with the URL it was read
+# from, or UNKNOWN (v null) with why. runs/screen.jsonl: one row per model arm of a quality round (tools/record_screen.py):
+# the settings it ran with and each request's failure shapes. A keep/delete verdict on a model waits until the round ran
+# under its card conditions, or a recorded best-config sweep chose the departing value (owner 2026-10-21: Sage-A1.5 hit the
+# 32k cap on 11 of 14 requests and was deleted; those were configuration failures, not model failures)
+CARDS_DIR = os.path.join(HERE, 'data', 'cards')
+CARD_GROUPS = {'sampling': ('temperature', 'top_p', 'top_k', 'min_p', 'presence_penalty'), 'thinking': ('mode', 'effort', 'control'),
+               'template': ('chat_template', 'reasoning_parser'), 'limits': ('context', 'max_output')}
+SCREEN_SRC = 'runs/screen.jsonl'
+
+
+def load_cards(d):
+    """data/cards/*.json by key; a value without a URL source, or a null value not tagged UNKNOWN, is a build error"""
+    out = {}
+    for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+        if not f.endswith('.json'):
+            continue
+        c = json.load(open(os.path.join(d, f)))
+        if c.get('key') != f[:-5]:
+            raise ValueError('card %s: key %r is not its file name' % (f, c.get('key')))
+        for g, keys in CARD_GROUPS.items():
+            for k in keys:
+                x = (c.get(g) or {}).get(k)
+                if not isinstance(x, dict) or 'v' not in x or not x.get('tag') or not x.get('src'):
+                    raise ValueError('card %s: %s.%s needs {v, tag, src}' % (f, g, k))
+                if x['v'] is None and x['tag'] != 'UNKNOWN':
+                    raise ValueError('card %s: %s.%s is null, so its tag is UNKNOWN (got %s)' % (f, g, k, x['tag']))
+                if x['v'] is not None and 'https://' not in x['src']:
+                    raise ValueError('card %s: %s.%s = %r names no source URL' % (f, g, k, x['v']))
+                x['evidence'] = evidence_of(x['tag'], x['src'])
+        out[c['key']] = c
+    return out
+
+
+cards = load_cards(CARDS_DIR)
+_sp = os.path.join(HERE, SCREEN_SRC)
+screen = {'file': SCREEN_SRC, 'rows': [json.loads(x) for x in open(_sp) if x.strip()] if os.path.exists(_sp) else []}
+_nocard = sorted({r['card'] for r in screen['rows']} - set(cards))
+if _nocard:
+    raise ValueError('%s names cards with no data/cards file: %s' % (SCREEN_SRC, ', '.join(_nocard)))
+checks['verdict_ready'] = {
+    'label': 'verdict-ready: a keep/delete verdict needs the card conditions (or a recorded best-config sweep) and few failure shapes',
+    'shape_rate_max': {'v': 0.2, 'src': 'owner brief 2026-10-21: refuse a verdict when more than 20 % of the requests end in a failure shape'},
+    'eq_tol': {'v': 1e-6, 'src': 'two sampling numbers closer than this are the same setting (server defaults are rounded to 6 digits on intake)'},
+    # run setting -> the card value it is judged against and how: eq = the same value; min = at least the card value; room =
+    # the context holds the longest prompt plus the card max output (or the run's own, if the card states none), capped at the
+    # card context; unset = the card recommends none, so a run that sets one departs (unless the card names a value)
+    'fields': {'v': {'temperature': {'card': 'sampling.temperature', 'rule': 'eq'}, 'top_p': {'card': 'sampling.top_p', 'rule': 'eq'},
+                     'top_k': {'card': 'sampling.top_k', 'rule': 'eq'}, 'min_p': {'card': 'sampling.min_p', 'rule': 'eq'},
+                     'presence_penalty': {'card': 'sampling.presence_penalty', 'rule': 'eq'},
+                     'thinking_mode': {'card': 'thinking.mode', 'rule': 'eq'}, 'reasoning_effort': {'card': 'thinking.effort', 'rule': 'eq'},
+                     'reasoning_budget': {'card': 'thinking.budget', 'rule': 'unset'},
+                     'chat_template': {'card': 'template.chat_template', 'rule': 'eq'},
+                     'max_output': {'card': 'limits.max_output', 'rule': 'min'},
+                     'context': {'card': 'limits.context', 'rule': 'room', 'output': 'limits.max_output'}},
+               'src': 'the card fields a screening run sets (data/cards); the reasoning parser is recorded, not compared: engines name parsers differently, and a parser that fails shows as leaked template tags'},
+    'shapes': {'cap_hit': 'the request stopped at its max output (finish length)', 'empty': 'no visible answer',
+               'loop': 'a line repeats in the tail of the output (tools/record_screen.py LOOP_* settings, kept in each row as shape_rules)',
+               'leaked_tags': 'template tags (<think>, <|im_end|>, ...) in the visible answer: the parser or the template failed',
+               'retry_only': 'an item answered only on its retry (its first request is counted under the shapes above)'},
 }
 
 
@@ -1591,7 +1689,7 @@ data = {
     'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py', 'home': PUBLIC_HOME,
              'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}, 'left_out': left_out},
     'types': types, 'engines': engines, 'models': models, 'boxes': boxes, 'b70move': b70move, 'anchors': anchors, 'assume': assume, 'knobs': knobs, 'conditions': conditions, 'accuracy': accuracy, 'causes': causes, 'external': external, 'bench': bench,
-    'checks': checks, 'levers': levers, 'recipes': recipes, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'layer_maps': layer_maps, 'upgrade': upgrade,
+    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'layer_maps': layer_maps, 'upgrade': upgrade,
     'alloc3': {'src': 'homelab dsv41/skew/results/2026-10-08-alloc-3bpw.json (' + alloc['rule'] + ')', 'layers': alloc_layers, 'count': sum(len(x) for x in alloc_layers)} if alloc else None,
     'siblings': {'quant_priors': sibling('quant-priors.json'), 'quant_recipes': sibling('quant-recipes.json'),
                  'quant_priors_md': sibling_md('QUANT-PRIORS.md'), 'quant_recipes_md': sibling_md('QUANT-RECIPES.md')},

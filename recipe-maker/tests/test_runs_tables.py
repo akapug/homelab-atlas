@@ -31,6 +31,14 @@ class DraftTwins(unittest.TestCase):
                              run('q', {'m3': 9.0, 'm0': 8.0}, ['overlaps m2 prompt2', "placement off target {'N0': 9.7} GiB"])])
         self.assertEqual([x['id'] for x in out['droopy|glm']], ['q'])
 
+    def test_a_confounded_run_gives_no_twin_and_no_fit_input(self):
+        r = run('c', {'n4': 9.0, 'n0': 7.5}, model='v41')
+        r['measured']['caveats'] = [{'kind': 'confounded', 'why': 'w'}]
+        self.assertEqual(R.draft_twins([r, run('v', {'n4': 9.0, 'n0': 7.5}, model='v41')])['droopy|v41'][0]['id'], 'v')
+        rec = R.recipes_from_runs([dict(r, when='2026-10-21T23:34Z', engine='ik', recipe={}, sources=[])])[0]
+        self.assertEqual(rec['measured']['caveat'], ['confounded'], 'src/model.js host and hop fits skip it')
+        self.assertIn('{confounded: w}', rec['outcome'])
+
     def test_ledger_rows_feed_the_glm_and_v41_fits(self):
         out = R.draft_twins(R.load_runs(os.path.join(os.path.dirname(HERE), 'runs', 'runs.jsonl')))
         self.assertGreaterEqual(len(out['droopy|glm']), 2)
@@ -71,6 +79,46 @@ class Served(unittest.TestCase):
         self.assertEqual({k: m[k] for k in ('on', 'on_phase', 'off', 'off_phase', 'top1', 'holdout')},
                          {'on': 9.0, 'on_phase': 'n4', 'off': 7.0, 'off_phase': 'n0', 'top1': 0.97, 'holdout': True})
         self.assertIn('bad', m)
+
+
+class BoxConditions(unittest.TestCase):
+    C = [{'id': 'dimm', 'from': '2026-10-20T03:18Z', 'to': '2026-10-21T19:14Z'}]
+
+    def test_a_window_holds_from_its_start_up_to_its_end(self):
+        at = lambda w: R.conditions_at(self.C, w)
+        self.assertEqual([at(w) for w in ('2026-10-19T23:39Z', '2026-10-20T03:18Z', '2026-10-21T04:48:54Z', '2026-10-21T19:13:59Z', '2026-10-21T19:14Z')],
+                         [[], ['dimm'], ['dimm'], ['dimm'], []])
+        self.assertEqual(at(''), [], 'a row with no time is under no condition')
+
+    def test_recipes_carry_the_conditions_of_their_box_at_their_time(self):
+        rows = [dict(run(rid, {'n0': 7.0}, box=b), when=w, engine='ik', recipe={'id': rid}, sources=['x'])
+                for rid, b, w in (('in', 'lassie', '2026-10-21T04:48:54Z'), ('before', 'lassie', '2026-10-19T03:03Z'), ('other', 'droopy', '2026-10-21T04:48Z'))]
+        out = R.recipes_from_runs(rows, (), {'lassie': {'conditions': self.C}, 'droopy': {}})
+        self.assertEqual({r['id']: r['box_conditions'] for r in out}, {'in': ['dimm'], 'before': [], 'other': []})
+        self.assertEqual([r['box_conditions'] for r in R.recipes_from_runs(rows)], [[], [], []], 'no boxes given: none')
+
+
+class BuiltLassie(unittest.TestCase):
+    """data.json as built (the suite runs python3 build.py first)"""
+    @classmethod
+    def setUpClass(cls):
+        cls.data = json.load(open(os.path.join(os.path.dirname(HERE), 'data.json')))
+
+    def test_the_lassie_ledger_runs_in_the_dimm_window_are_tagged(self):
+        c = self.data['boxes']['lassie']['conditions'][0]
+        self.assertEqual((c['from'], c['to'], c['short'], c['tag']), ('2026-10-20T03:18Z', '2026-10-21T19:14Z', '15 of 16 DIMMs', 'MEASURED'))
+        tag = {r['run_id']: r['box_conditions'] for r in self.data['recipes'] if r['box'] == 'lassie'}
+        for rid in ('lassie-v41-split-mm7', 'lassie-v41-q8-fs1', 'lassie-v41-q8-hs5', 'lassie-orn35-q4km-o1', 'lassie-orn35-q4km-o6'):
+            self.assertEqual(tag[rid], [c['id']], rid)
+        self.assertEqual(tag['lassie-dllm-flash-q4-s-cache'], [], 'run on 10-19: 16 of 16 DIMMs')
+        self.assertTrue(all(r['box_conditions'] == [] for r in self.data['recipes'] if r['box'] != 'lassie'))
+
+    def test_lassie_dram_reads_the_reseated_16_dimms(self):
+        dram = self.data['boxes']['lassie']['dram']
+        self.assertGreater(dram['total_gib']['v'], 1000)
+        self.assertEqual(len(dram['nodes']), 8)
+        self.assertTrue(all(abs(x['gib'] - 126) < 1 for x in dram['nodes']), [x['gib'] for x in dram['nodes']])
+        self.assertEqual(dram['dimms']['v']['populated'], 16)
 
 
 class DecodeFits(unittest.TestCase):

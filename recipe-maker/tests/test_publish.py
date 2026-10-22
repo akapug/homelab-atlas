@@ -27,6 +27,41 @@ EXPORT = os.path.join(ROOT, 'tools', 'export_atlas.sh')   # neither ships in the
 NOW = datetime.datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
 
 
+class Caveats(unittest.TestCase):
+    """runs/run_caveats.json beside the ledger: read by src/ledger.py and src/ledger.js alike; the rows on disk stay as recorded"""
+    def setUp(self):
+        self.d = tempfile.mkdtemp(prefix='caveats-')
+        self.addCleanup(shutil.rmtree, self.d)
+        self.p = os.path.join(self.d, 'runs.jsonl')
+        rows = [{'id': 'a', 'when': '2026-10-21T23:34Z', 'measured': {'outcome': 'ok', 'wall_min': -1388.0, 'src': {'wall_min': 'kit'}}},
+                {'id': 'b', 'when': '2026-10-22T01:27Z', 'measured': {'outcome': 'ok'}}]
+        with open(self.p, 'w') as f:
+            f.writelines(json.dumps(r) + '\n' for r in rows)
+        with open(os.path.join(self.d, L.CAVEATS), 'w') as f:
+            json.dump({'_doc': 'x', 'a': {'kind': 'confounded', 'why': 'w', 'superseded_by': 'b', 'src': 's',
+                                          'correct': {'wall_min': {'v': 52.0, 'src': 'stamps'}}}}, f)
+
+    def test_overlay_on_read_raw_on_request(self):
+        a, b = L.rows(self.p)
+        self.assertEqual(a['measured']['caveats'], [{'kind': 'confounded', 'why': 'w', 'superseded_by': 'b'}])
+        self.assertEqual((a['measured']['wall_min'], a['measured']['src']), (52.0, {'wall_min': 'stamps', 'caveats': 's'}))
+        self.assertEqual((L.caveated(a), L.caveated(b)), (['confounded'], []))
+        self.assertEqual(L.rows(self.p, raw=True)[0]['measured']['wall_min'], -1388.0, 'the row on disk stays as recorded')
+
+    def test_node_reads_the_same_overlay(self):
+        js = "const L = require(%s); const r = L.rows(%s); console.log(JSON.stringify([r[0].measured, L.caveated(r[0]), L.caveated(r[1])]))" % (
+            json.dumps(os.path.join(ROOT, 'src', 'ledger.js')), json.dumps(self.p))
+        out = json.loads(subprocess.run(['node', '-e', js], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(out, [L.rows(self.p)[0]['measured'], ['confounded'], []])
+
+    def test_the_real_ledger_reads_ts1_confounded_with_its_wall(self):
+        r = next(x for x in L.rows(os.path.join(ROOT, 'runs', 'runs.jsonl')) if x['id'] == 'droopy-v41-v41fs-ts1-0026')
+        self.assertEqual(L.caveated(r), ['confounded'])
+        self.assertEqual(r['measured']['wall_min'], 52.0)
+        neg = [x['id'] for x in L.rows(os.path.join(ROOT, 'runs', 'runs.jsonl')) if ((x.get('measured') or {}).get('wall_min') or 0) < 0]
+        self.assertEqual(neg, [], 'no negative wall time is read')
+
+
 def row(i, day, model='m1'):
     return {'id': 'r%02d' % i, 'when': '2026-10-%02dT10:00Z' % day, 'model': model, 'pad': 'x' * 200}
 
@@ -407,6 +442,30 @@ class Curate(unittest.TestCase):
         self.assertIn('| b1 | Model One | ik | per lab notes | **11.00** (n4) |', md)
         self.assertIn('zz9 runs (held back)', md)
         self.assertIn('accuracy text', md)
+
+    def test_a_confounded_run_is_not_clean_and_shows_its_caveat(self):
+        # r3 (11.00) is the fastest clean ok1 run; a confounded caveat on it (ledger.overlay) hands the pick to r0 (10.00)
+        cv = {'r3': {'kind': 'confounded', 'why': 'text paths differ', 'superseded_by': 'r0', 'src': 'x'},
+              'r0': {'correct': {'wall_min': {'v': 52.0, 'src': 'kit stamps'}}}}
+        rows = [L.overlay(r, cv) for r in self.rows]
+        self.assertFalse(self.C.clean(next(r for r in rows if r['id'] == 'r3')))
+        self.assertEqual(self.C.best_runs(rows)[('b1', 'ok1')]['id'], 'r0')
+        md = self.C.results_md(rows, {'boxes': {'b1': {'cpu': {'desc': '1x test CPU'}}}, 'models': {'ok1': {'name': 'Model One'}}}, 'acc', self.man)
+        self.assertIn('| b1 | Model One | ik | per lab notes | **10.00** (n4) |', md)
+        line = next(x for x in md.splitlines() if x.startswith('| r3 |'))
+        self.assertIn('{confounded: text paths differ; superseded by r0}', line)
+        r0 = next(r for r in rows if r['id'] == 'r0')
+        self.assertEqual((r0['measured']['wall_min'], r0['measured']['src']['wall_min']), (52.0, 'kit stamps'))
+        self.assertNotIn('caveats', r0['measured'], 'a correction alone is no caveat')
+
+    def test_results_page_names_box_conditions_and_the_runs_under_them(self):
+        c = {'id': 'dimm', 'from': '2026-10-12T00:00Z', 'to': '2026-10-13T00:00Z', 'short': 'half the DIMMs', 'what': 'one DIMM out'}
+        md = self.C.results_md(self.rows, {'boxes': {'b1': {'cpu': {'desc': '1x test CPU'}, 'conditions': [c]}}, 'models': {'ok1': {'name': 'Model One'}}},
+                               'accuracy text', self.man)
+        self.assertIn('- **b1**: runs from 2026-10-12T00:00Z to 2026-10-13T00:00Z had half the DIMMs: one DIMM out', md)
+        line = lambda rid: next(x for x in md.splitlines() if x.startswith('| %s |' % rid))
+        self.assertIn('box: half the DIMMs', line('docs-42-run'))
+        self.assertNotIn('box:', line('r3'))
 
 
 @unittest.skipUnless(os.path.exists(EXPORT), 'the publishing tool is not in this copy')
