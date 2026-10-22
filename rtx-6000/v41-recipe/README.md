@@ -18,6 +18,7 @@ did, written out on their own.
 | [`launch.sh`](launch.sh) | the system settings, the environment and the `llama-server` command line | the launch, with the tier split at 8 threads (`split=8` in the `GGML_TIER_CTL` file) |
 | [`bench.py`](bench.py) | a client that does what our lab client did: a 64-token warm-up and a 13,000-character prefill to touch every expert page, then each prompt once per phase, greedy, 300 tokens, no prompt cache | the timing (ours ran its phases from the lab kit, and its warm-up text was different) |
 | [`recall-hot-experts.tsv`](recall-hot-experts.tsv), [`recall-placement.tsv`](recall-placement.tsv) | the 189k-token recall run's GPU hot list (129 experts, 2.2 GiB) and CPU placement, on the `prebind-f32-indexer` build | that run's `LLAMA_HOT_EXPERTS` and `LLAMA_EXPERT_PLACEMENT`, exact bytes; its haystack is our own notes and is not published |
+| [`patch-imatrix-keep-partial.py`](patch-imatrix-keep-partial.py) | our patch to `llama-imatrix`: with `IK_IMATRIX_KEEP_PARTIAL=1` it keeps an expert tensor that stock ik would drop at 5 % unseen experts | our pass ran with it set (see below) |
 | [`prompts.json`](prompts.json) | three public coding-agent prompts | **not** the run's prompts, see below |
 | [`SHA256SUMS`](SHA256SUMS) | hashes and sizes of the public sources, our store shards and our draft | checks. Its middle column is the size, so `sha256sum -c` needs the other two: `awk 'length($1)==64 {print $1"  "$3}' SHA256SUMS \| sha256sum -c --ignore-missing` in the download folder (the build scripts do this) |
 
@@ -70,7 +71,12 @@ scripts have not been run as written (they repeat steps our lab kit ran, which n
   when some experts saw no tokens (stock `llama-imatrix` drops a whole expert tensor when 5 % or more of its experts
   saw none). Neither the text nor the matrix is published. `build-store.sh` counts the routed-expert tensors in yours
   before it splits and stops if any are missing; a gate entry may be absent, because ik fuses gate with up and the
-  split uses up's. Any code-heavy imatrix of the 1017 weights that passes that count works; your shards will have our sizes (in `SHA256SUMS`) but not our hashes, and the
+  split uses up's. At our size the stock tool keeps every tensor: after 512 x 512 tokens no tensor had more than 2.3 %
+  of its 384 experts unseen (layer 39), under the 5 % limit. A shorter pass can lose tensors (one of ours lost layers
+  34-39 at 12 % unseen). [`patch-imatrix-keep-partial.py`](patch-imatrix-keep-partial.py) is our patch: with
+  `IK_IMATRIX_KEEP_PARTIAL=1` it keeps them, and it writes 0 for an unseen expert where stock ik writes a flat
+  value, so the split gives that expert its tensor's mean. Our pass ran with it set. Any code-heavy imatrix of the 1017 weights that passes the count
+  works; your shards will have our sizes (in `SHA256SUMS`) but not our hashes, and the
   q2_K quality will be close but not equal. Lucebox publishes one
   ([`v41-1017-262144.dat`](https://huggingface.co/Lucebox/DeepSeek-V4.1-Flash-1017-ROCMFP-GGUF/tree/30faf4aae57edae24420cec466fb9863f27feef1/imatrix));
   we did not use it, because its importance values correlated poorly with ours (median log correlation 0.17).

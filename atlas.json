@@ -156,7 +156,7 @@
    "engine": "Strata 477ac13c sm_86",
    "decode_tps": 49.13,
    "streams": 1,
-   "conditions": "every expert in RAM, VRAM expert cache, MTP 4, card thinking sampling, 32,768 window for the speed run (131,072 for the agent runs)",
+   "conditions": "every expert in RAM, VRAM expert cache, MTP 4, card thinking sampling, 32,768 window for the speed run (131,072 for the agent runs); upper median of 6 requests (3 coding prompts x 2, 300 tokens), 42.27-55.38",
    "quality": "agent eval 23/24 (21/24 inside 1,200 s)",
    "date": "2026-10-18",
    "status": "measured",

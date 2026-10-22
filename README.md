@@ -74,7 +74,8 @@ The ones we are proudest of, each with its conditions and quality check one clic
   RTX 6000 plus DDR4 and Optane, from public code. [One folder](rtx-6000/v41-recipe/) holds every input the run
   loaded but the prompts and the importance matrix (our quality harness and the lab launcher's checks are not in it either), with scripts that build the store from the public 508 GB weights (233 GB of new shards; the other three are the
   source's own, linked). At 189k tokens, on the build before the tier split, it recalled all 16 planted facts. [RTX 6000](rtx-6000/)
-- **GLM-5.3-Flash over the 25 tok/s line on a gaming card.** 26.69 tok/s on an RTX 3090 Ti plus 192 GB of DDR5,
+- **GLM-5.3-Flash over the 25 tok/s line on a gaming card.** 26.69 tok/s on an RTX 3090 Ti plus 192 GB of DDR5
+  (+17 % on the untrimmed arm run beside it, 22.77),
   by computing only the top 4 of the expert picks that miss VRAM on 16 of its layers, with its output still within
   our quality bar. The trim is not published yet, nor are the CPU-lane changes under the 23.08 it starts from.
   [3090 Ti](3090-ti/#glm-53-flash-a-route-trim-clears-25-toks)
@@ -89,11 +90,11 @@ The ones we are proudest of, each with its conditions and quality check one clic
 - **An 11 GB Pascal card earns its slot.** Moving DeepSeek V4.1's attention onto a GTX 1080 Ti first gave garbage
   text; one scheduler fix later it decoded 35 % faster than the CPUs alone
   without a draft (6.97 against 5.16; with the draft, 7.13 against 7.02). Then a profile showed the card spending 92
-  ms a token in F16 math it runs at 1/64 speed, so we wrote it a decode-attention kernel: 7.96 to 11.74 tok/s without
-  a draft, 12.09 with one, same binary, same prompts. A card from 2017, one kernel, +47 %.
+  ms a token in F16 math it runs at 1/64 speed, so we wrote it a decode-attention kernel. With all 16 DIMMs back and `-ub 512` (7.96 without the kernel, against
+  6.97 before), it went 7.96 to 11.74 tok/s without a draft, 12.09 with one, same binary, same prompts. A card from 2017, one kernel, +47 %.
   [1080 Ti](1080-ti/#one-kernel-47-)
 - **The B70, tuned.** Qwen3.8-27B at 74.6 tok/s at one stream once the drafter stopped reading a 2.5 GB output
-  layer for every guess (eager mode, 59.5 without the trick, same output), and 351 summed at eight streams in vLLM's
+  layer for every guess (eager mode, 59.5 without the trick, same output; the B70 page's 54.4 eager is another workload), and 351 summed at eight streams in vLLM's
   compiled mode with XPU graphs, which Intel does not support yet. Five vLLM changes and 18 llama.cpp SYCL patches
   got it there. [B70](b70/)
 

@@ -21,6 +21,12 @@ day). Results that change a headline number say so.
 ### Fixed
 - From the GPT-6.1 reader at 0491930 (its diff): `build-engine.sh` refuses a dirty source checkout instead of stamping a
   `SOURCE_SHA` that does not describe what it built.
+- From the round-6 Claude reader (80/76 at 6323216): the RTX 6000 page prints `launch.sh`'s exact command (the
+  tier split's three settings and the interleave weights were missing, so the page's command was the split-off arm);
+  the recipe ships our `llama-imatrix` keep-partial patch and says the stock tool keeps every tensor at our pass size
+  (at most 2.3 % of experts unseen, under its 5 % limit); the 3090 Ti 103-105 names its three requests, and the
+  Flash-Next 49.1 its six (upper median, 42.3-55.4); the 1080 Ti highlight explains 6.97 to 7.96; the GLM highlight
+  names its paired base; the B70 highlight says the 54.4 eager figure is another workload.
 - From the round-5 local readers (Qwen3.8 Flash-Next 72/57, Ornith 88/86 at 12aa2d5): `atlas.json` gains
   `quality_on_this_build: false` on the three results whose quality check ran on another build or card (the 12.69
   V4.1, the 3090 Ti 27B, the B70 Flash-Next); the front page says the 189k recall ran on the build before the tier

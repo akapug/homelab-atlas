@@ -21,7 +21,7 @@ a step. Terms: [GLOSSARY](../GLOSSARY.md).
 |---|---|---|---|---|---|
 | Qwen3.8-27B (dense) | vLLM 0.31.0 (official CUDA image) + [`draft-vocab`](../b70/vllm-xpu/draft-vocab.py) + [`length-finish`](../b70/vllm-xpu/length-finish.py); AutoRound int4 (the same checkpoint as the B70) | **103-105 decode** at 1 stream; **279-288** for 3 streams together; prefill 1,407-1,410 on a 16k prompt; 88-95 decode at 32k depth | MTP 3 with a 50,521-token draft vocabulary, fp8 KV, 57,344-token window, temperature 0, thinking off, 512 tokens out, idle server, 2026-10-07 | the checkpoint passed the [B70 entry's](../b70/#at-a-glance) correctness eval (41 of 41 exact) | [Qwen3.8-27B on vLLM CUDA](#qwen38-27b-on-vllm-cuda-about-104-toks) |
 | GLM-5.3-Flash (321B MoE) | the `glm53-flash-offload` engine (exllamav3-based), EXL3 3.05 bpw, 1,600 experts cached in VRAM, the rest computed on the CPU from RAM (a CPU lane on 14 cores, the same in the base and the trim runs) | **26.69 decode** with a route trim (keep 4 of 8 picks that miss VRAM, layers 29-44; not yet published); 23.08 without | 3 coding prompts x 300 tokens, greedy, thinking off, 32,768-token window, 2026-10-20 | KL 0.0154, top-1 0.975 against the same weights computed exactly on the GPU: **passes** our bar (KL at most 0.03, top-1 at least 0.97) | [GLM route trim](#glm-53-flash-a-route-trim-clears-25-toks), [moe-offload points 1-3](../moe-offload/#what-we-learned-measured) |
-| Qwen3.8 Flash-Next (125B MoE, 6B active) | [Strata](https://github.com/Niko1221/Strata) `477ac13c` built for sm_86, Q8_0, every expert in RAM, a VRAM expert cache | **49.1 decode** (median, one client); prefill about 1,620 at 15k | MTP 4, the model card's thinking sampling; speed at a 32,768-token window, agent runs at 131,072; 2026-10-18 | **23 of 24** agent tasks over 2 passes (21 of 24 inside the 20-minute limit) | [Flash-Next](#qwen38-flash-next-agent-work-from-ram) |
+| Qwen3.8 Flash-Next (125B MoE, 6B active) | [Strata](https://github.com/Niko1221/Strata) `477ac13c` built for sm_86, Q8_0, every expert in RAM, a VRAM expert cache | **49.1 decode** (upper median of 6 requests: 3 coding prompts x 2, 300 tokens each; 42.3-55.4); prefill about 1,620 at 15k | MTP 4, the model card's thinking sampling; speed at a 32,768-token window, agent runs at 131,072; 2026-10-18 | **23 of 24** agent tasks over 2 passes (21 of 24 inside the 20-minute limit) | [Flash-Next](#qwen38-flash-next-agent-work-from-ram) |
 | sabi-noema (a Qwen3.8-27B fine-tune) | llama.cpp `d454a20` CUDA, i1-Q4_K_M (16.55 GB) | 35.9-47.3 decode | no speculation, f16 KV, 49,152-token window, card sampling, thinking on, 2026-10-21 | **5 of 5** planted defects caught, each with a working test; 1 soft false positive on 2 clean controls | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
 | Qwen3.8-27B and a coding fine-tune (GGUF) | the same llama.cpp build, UD-Q4_K_XL and Q3 GGUFs | 38.0-46.1 decode | as above | 4 of 5 each | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
 | Sage-A1.5 | the same llama.cpp build, Q4_K_M (21.7 GB) | **154-171 decode**, no speculation; 202-215 with its MTP head in a separate speed-only probe over the first 4k output tokens (quality not screened with MTP) | card conditions: thinking on, 131,072-token context, up to 118,000 tokens out | 2 of 5 with 2 false claims: **fails** our bar. Fast, not reliable enough to review code | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
@@ -36,7 +36,7 @@ salted prompts so no prefix cache hits, an idle server, 512 tokens out.
 
 | measure | result |
 |---|---|
-| decode, 1 stream | 103-105 tok/s (95-107 over 10 runs) |
+| decode, 1 stream | 103-105 tok/s: the three decode requests of one pass (103.1, 104.2, 104.7); 95-107 over 10 runs |
 | decode, 3 streams | 279-288 tok/s together: output tokens over the wall time, each request's prefill included, so below three times one stream; each stream decodes at 96-100 once it starts |
 | prefill, 16k-token prompt | 1,407-1,410 tok/s (11.3 s) |
 | decode at 32k depth | 88-95 tok/s (24.7 s to the first token) |
@@ -125,7 +125,7 @@ weights, the KV cache and a cache of hot experts.
 - **Engine:** [Strata](https://github.com/Niko1221/Strata) at `477ac13c`, built for sm_86. Q8_0 GGUF from
   `unsloth/Qwen3.8-Flash-Next-GGUF`, every expert in RAM, expert cache sized automatically, MTP 4, a coding expert
   profile.
-- **Speed** (2026-10-18, one client, 32,768-token window): decode median 49.13 tok/s, cold prefill about 1,620 tok/s
+- **Speed** (2026-10-18, one client, 32,768-token window): decode 49.13 tok/s (the upper median of 6 requests, 3 coding prompts x 2 of 300 tokens; 42.27-55.38), cold prefill about 1,620 tok/s
   at 15k tokens.
 - **Agent work** (2026-10-18): our [agent eval](../b70/agent-eval/), Claude Code 2.1.291 in a sandbox on another box,
   the model card's thinking sampling (temperature 1.0, top_p 0.95, top_k 20), a 131,072-token window, 1,200 s per task.

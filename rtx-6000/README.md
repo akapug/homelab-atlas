@@ -96,25 +96,29 @@ benchmark client. [Its README](v41-recipe/README.md) says what each file did and
 | the layout as data | [`recipe-maker/recipes/droopy-v41-fs1c.json`](../recipe-maker/recipes/droopy-v41-fs1c.json) is the layout the 12.69 run (ledger id `droopy-v41-v41fs-ts2-0127`) used with the tier-split build; [`droopy-v41-fs1p.json`](../recipe-maker/recipes/droopy-v41-fs1p.json) is the same layout's pre-binding run (12.13 mean; 12.19 its fastest phase). Their `"verify": "fail"` means the launcher checks each node's placement after the load and stops the run if it is off target; it is not a failed run. Rows in [RESULTS.md](../recipe-maker/results/RESULTS.md) |
 | PMem as memory | the standard Linux route, as on this box: `ipmctl create -goal PersistentMemoryType=AppDirect` and a reboot (a full power cycle after a firmware update), `ndctl create-namespace --mode=devdax` on each region, then `daxctl reconfigure-device --mode=system-ram <daxX.Y>` onlines it as a NUMA node with no CPUs. `numactl -H` should show it |
 
-The launch, as our kit runs it (paths shortened; [`launch.sh`](v41-recipe/launch.sh) is the same command with the tier
-split's settings, `split=8` in the `GGML_TIER_CTL` file):
+The launch, exactly as [`launch.sh`](v41-recipe/launch.sh) runs it (its variables filled in for this box):
 
 ```bash
-# system state for the run: no automatic page migration, swap off
+# system state for the run: no automatic page migration, swap off, equal interleave weights
 echo 0 | sudo tee /proc/sys/kernel/numa_balancing
 echo false | sudo tee /sys/kernel/mm/numa/demotion_enabled
 sudo swapoff -a
+for n in 0 1 2; do echo 1 | sudo tee /sys/kernel/mm/mempolicy/weighted_interleave/node$n; done
+echo "split=8 prefetch=0" > tier.ctl                  # the tier split, as the measured run set it
 
 env GGML_CUDA_GRAPHS_PRE_AMPERE=1 GGML_AFFINITY_ONCE=1 LLAMA_MOE_OVERLAP=1 GGML_SCHED_OVERLAP=1 \
     GGML_SCHED_ASYNC_COPY=1 GGML_OMP_FAST_ENTRY=1 GGML_BARRIER_SPIN=1 GGML_MOE_GROUPS=2 GGML_MAIN_NO_MOE=1 \
     GGML_CUDA_PIN_STAGING=1 GGML_CUDA_PIN_MAX_MIB=4096 GGML_SCHED_INPLACE_FOLLOW=1 LLAMA_NO_HOST_WEIGHTS=1 \
+    GGML_TIER_CTL=tier.ctl GGML_TIER_RING_MIB=1024 GGML_TIER_PREFETCH_CPUS=39 \
     LLAMA_EXPERT_PLACEMENT=v41-recipe/placement.tsv LLAMA_HOT_EXPERTS=v41-recipe/hot-experts.tsv \
   numactl --interleave=0,1 --physcpubind=0-9,20-29,10-19,30-38 \
   llama-server -m DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00001-of-00010.gguf \
     -ngl 99 -fa 1 --no-mmap -t 39 -c 4096 -cr 0-9,20-29,10-19,30-38 --numa numactl -dple --cpu-moe \
     -md DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf -ngld 99 -draft "-ncmoe 3 --no-mmap" -cd 4096 \
-    --spec-type dspark:n_max=4,conf_cum_min=0.5 -ub 4096 -b 4096 -cuda offload-batch-size=100000
+    --spec-type dspark:n_max=4,conf_cum_min=0.5 -ub 4096 -b 4096 -cuda offload-batch-size=100000 --port 8790
 ```
+
+With `split=0` in `tier.ctl` the tier split is off: 12.35 and 12.44 in the table above, against 12.69 at `split=8`.
 
 - The placement file splits each CPU expert's rows over nodes 0 and 1 and adds one rule that keeps the draft
   model's 3 layers of experts on node 1; the format is in the fork's PATCHES.md.
