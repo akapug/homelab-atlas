@@ -6,6 +6,15 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+### Added
+- `rtx-6000/v41-recipe/`: every input of the 12.69 tok/s V4.1 run except the prompts and the importance matrix: the
+  engine build, scripts that build the split store and the draft from the public weights (with checksums), the
+  hot-expert list and placement file the run loaded, the launch and the benchmark client, plus three public stand-in
+  prompts. Its README says what each file did and where a rebuild differs.
+- The engine changes behind 12.69 are public: our ik_llama.cpp fork's branches `expert-prebind`,
+  `prebind-f32-indexer` and `tier-split`, plus `numa-experts` and `fa-tile-sinks`. The RTX 6000 page, the MoE offload
+  page, PATCHES.md and `atlas.json` (the 12.69 entry is now `measured`) say so.
+
 ### Changed
 - The publish scan now runs over the whole repository and comes back CLEAN. The few public strings it used to flag
   (heading anchors and commands that name Claude Code, the `noreply` author line in the SYCL patches, the eval's

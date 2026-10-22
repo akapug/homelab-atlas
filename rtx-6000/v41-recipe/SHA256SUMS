@@ -1,0 +1,32 @@
+# sha256  bytes  file. The sources are public: check them by hash. The store and draft are ours (not uploaded): a
+# rebuild should match their sizes; their bytes depend on the imatrix and the quantizer build (see README.md).
+
+## source: huggingface.co/mrfakename/DeepSeek-V4.1-Flash-1017-GGUF @ 2c97dba3934f27a99767a90830e7519cc7b8b2d9, folder Q8_0/
+1344d6af67cad84abe93da0f454a6bfa8aef3ec0022f71906e9edb40f23812b3  43322444352  DeepSeek-V4.1-Flash-1017-Q8_0-00001-of-00010.gguf
+b93249203c3bde33d7738a50ab976879514d49f5b9c3564f6270dee54142418f  43316676000  DeepSeek-V4.1-Flash-1017-Q8_0-00002-of-00010.gguf
+96e5fe684c77232b39bea4ca5e9d49fc0fb2082ea2bde93b5a9a08a4a6363284  43316676032  DeepSeek-V4.1-Flash-1017-Q8_0-00003-of-00010.gguf
+0a529b1909a0693f3b6c58804424ce27d190d616f19f7c45a3ad62533e943b7c  43316676032  DeepSeek-V4.1-Flash-1017-Q8_0-00004-of-00010.gguf
+812b6f08b3b87c20ea2a7e6f8afc946b6b99471404bcb172dd943f7a82ade95d  43316676032  DeepSeek-V4.1-Flash-1017-Q8_0-00005-of-00010.gguf
+ee1ba2a0d5b7f89e1e70929f4773bf8e19310a66dfa270af3269711cd5f2c51f  43316676032  DeepSeek-V4.1-Flash-1017-Q8_0-00006-of-00010.gguf
+89c73265da70f074b0c7ddcbdf86f151cb27d2258ad2dee99c28263d40ca0612  28877784064  DeepSeek-V4.1-Flash-1017-Q8_0-00007-of-00010.gguf
+096b13ad2b1875e043053d68cf4cd2cc1f54f4f5df9b07629c4f90be7b776559  104449677888  DeepSeek-V4.1-Flash-1017-Q8_0-00008-of-00010.gguf
+cdcd2cdd1657cd60354fdb63dc899731665448ed53229dfdd32dd2ca1d517945  104452537696  DeepSeek-V4.1-Flash-1017-Q8_0-00009-of-00010.gguf
+cb9325b45fc4c585caa83c24f2f6985b7a872ec0546e4fe5af98456631d0c33c  10268402880  DeepSeek-V4.1-Flash-1017-Q8_0-00010-of-00010.gguf
+
+## source: huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017 @ 1bae0e1088993b9b82de08f59de5be5a34e42170 (the draft head)
+3e8ac315c2bcca3e83c5e6e25c5758a75c03732063a6ff0c1b0e24b9ff49f6e6  2652728736  model-00044-of-00048.safetensors
+9c73b27c4343236790008979d5e0b565f687aa64440031b9e096fed1ab8039c5  2573998176  model-00045-of-00048.safetensors
+1dccc19a3741972c661de734572dc7d4b899e6e99bfbdf3ae4e057c707e5b339  2706402896  model-00046-of-00048.safetensors
+
+## our split store, shards 1-7 (shards 8-10 are the Q8_0 source shards 8-10, renamed or linked)
+a490f41331d5bb734d901da05bb89674eec2e6bfbcb9e0442d85d856c4362ef6  35906349856  DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00001-of-00010.gguf
+d759a24eb07cff46de192c5828270ecb633a3cb309108325fd2a643674f470af  35234448640  DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00002-of-00010.gguf
+39a5accafc48d7d7aa9fea46569328f7c1bc2177f1b59efb5ae9d20f281694eb  35057132832  DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00003-of-00010.gguf
+d0f068011c4d9b4e3dc92d929cab136e8a0c7f24e9e06e24d829fe766dc2003d  34934928672  DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00004-of-00010.gguf
+2f8c965f6db6246478aa99342a1037d4896205d01407ff4c7fbdfea8406af941  33978860832  DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00005-of-00010.gguf
+72aee8dff2752dda88fd7ba553e20662bccaddf02fdfc32baae960a036bc1d1c  34252023072  DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00006-of-00010.gguf
+cefdf15076ac74f552d1777a57c4fcd1ebf211e453a74476c8f9f40d8808f96c  23184521440  DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00007-of-00010.gguf
+
+## our DSpark draft: the converter's Q8_0 output, then that file with its routed experts requantized to q2_K (no imatrix)
+ff24b29fffe3b0bcead4978e5fa719d16c2474cbfea10c22cfac93d651451dc0  5141866144  DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf
+7aec4d638d20c27ccbfa08d4d6dca44f6acf9ca14cf954fb88096cc4e0a5c164  7972959936  DeepSeek-V4.1-Flash-1017-DSpark.gguf

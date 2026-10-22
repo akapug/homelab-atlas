@@ -59,7 +59,7 @@ the rest of the repo, are in the [GLOSSARY](GLOSSARY.md).
 | [`autoround-dequant-check.py`](b70/vllm-xpu/autoround-dequant-check.py) | no GPU needed | Python with numpy | CPU | [section 6](#autoround-dequant-checkpy-is-a-4-bit-checkpoint-sound) |
 | [`recipe-maker/`](recipe-maker/) | no GPU needed | Python 3 and node, standard library only | four boxes: RTX 3090 Ti, Quadro RTX 6000 + Optane, Arc Pro B70, EPYC CPU-only | [section 6](#recipe-maker-plan-a-moe-layout-before-you-run-it) |
 | `amdgpu` cold-boot wait (`psp_v3_1.c`) | AMD Vega 10 only | Ubuntu kernel 6.8 `amdgpu`, rebuilt | MI25 | [the MI25 entry](mi25/README.md#the-card-and-the-stack) |
-| ik_llama.cpp changes: expert and dense rows per NUMA node, no host weights, in-place ops follow their target, CUDA and Vulkan in one process, a bank device per layer | [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp) branches | ik_llama.cpp, MoE models with experts on the CPU | 2x EPYC 7601 with a GTX 1080 Ti and an MI25; 2x Xeon Gold 5215 with an RTX 6000 | [moe-offload, engine changes](moe-offload/README.md#engine-changes) |
+| ik_llama.cpp changes: expert and dense rows per NUMA node, no host weights, in-place ops follow their target, CUDA and Vulkan in one process, a bank device per layer, expert pre-binding, tier-concurrent expert reads, NUMA-local expert sharding, attention sinks on Pascal | [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp) branches | ik_llama.cpp, MoE models with experts on the CPU | 2x EPYC 7601 with a GTX 1080 Ti and an MI25; 2x Xeon Gold 5215 with an RTX 6000 | [moe-offload, engine changes](moe-offload/README.md#engine-changes) |
 
 ## Our machine
 
