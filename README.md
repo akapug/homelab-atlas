@@ -26,7 +26,7 @@ at a time unless it says otherwise.
 |---|---|---|---|
 | **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s**; GLM-5.3-Flash (321B MoE) at **26.69 tok/s** |
 | **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s**; **16 of 16** facts recalled from a 189k-token prompt |
-| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next at **87.1 tok/s** and **11 of 12** agent tasks; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams |
+| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next at **87.1 tok/s**, and **11 of 12** agent tasks on the build before; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams |
 | **2017 two-socket server** (Supermicro H11DSi) | 2x EPYC 7601, 1 TB DDR4 on 16 channels | [**GTX 1080 Ti** 11 GB](1080-ti/) and [**Radeon Instinct MI25** 16 GB](mi25/) | Ornith-1.5-35B-A3B at **59-60 tok/s** with every expert on the two retired cards; DeepSeek V4.1 Flash at **7.13 tok/s** |
 | the same server | [**its CPUs alone**](epyc-cpu/) | none | DeepSeek V4.1 Flash at **7.02 tok/s**, no GPU at all |
 
@@ -76,7 +76,8 @@ The ones we are proudest of, each with its conditions and quality check one clic
   [3090 Ti](3090-ti/#glm-53-flash-a-route-trim-clears-25-toks)
 - **Agent work from a model mostly in RAM.** Qwen3.8 Flash-Next passed 23 of 24 agent tasks on the 3090 Ti box
   (21 inside the time limit),
-  and 11 of 12 on one B70 at 87.1 tok/s, with 10,900 of its 24,576 experts in VRAM and the rest computed on the CPU. [3090 Ti](3090-ti/),
+  and 11 of 12 on one B70, with 10,900 of its 24,576 experts in VRAM and the rest computed on the CPU (the next build of
+  the same engine decodes it at 87.1 tok/s). [3090 Ti](3090-ti/),
   [B70](b70/)
 - **Two retired cards from rival vendors in one process.** A $50 MI25 and a GTX 1080 Ti hold every routed expert of
   Ornith-1.5-35B-A3B in a 2017 server: 59-60 tok/s with the model's own draft head, against 47 with the same draft

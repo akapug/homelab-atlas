@@ -79,7 +79,7 @@ rest. Layout: 2.2 GiB of hot experts, plain row placement, micro-batch 2048, a 2
 
 ## Reproduce the best V4.1 run
 
-Every input of the 12.69 run is in [`v41-recipe/`](v41-recipe/): the engine build, the store and draft builds from
+Every input of the 12.69 run that we can publish is in [`v41-recipe/`](v41-recipe/) (not the prompts or the importance matrix): the engine build, the store and draft builds from
 the public weights with their checksums, the hot-expert list and placement file the run loaded, the launch and the
 benchmark client. [Its README](v41-recipe/README.md) says what each file did and where your rebuild will differ.
 
@@ -120,7 +120,8 @@ env GGML_CUDA_GRAPHS_PRE_AMPERE=1 GGML_AFFINITY_ONCE=1 LLAMA_MOE_OVERLAP=1 GGML_
   2.2k tokens, so the window does not bind.
 - Shards 8 and 9 of the ten are not from the split store: they hold V4.1's engram tables (lookup tables, about a
   quarter of its parameters) and come from the Q8_0 store on an NVMe drive, read from the file while serving (the layout file marks them
-  `on_file` and lists where every shard sits). `-dple` does that: tables it defers stay mapped from the file while
+  `on_file` and lists where every shard sits). Shard 10 holds no routed experts either: the split store's copy is the
+  source's byte for byte. `-dple` does that: tables it defers stay mapped from the file while
   `--no-mmap` reads everything else into memory.
 - `node report.js --check` on this layout prints a quality line from its layer map (KL 0.0169, top-1 0.980,
   predicted). The measured figures are the ones in the table above: KL 0.0169, top-1 0.975.

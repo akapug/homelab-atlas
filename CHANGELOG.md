@@ -22,6 +22,11 @@ day). Results that change a headline number say so.
   instead of a system-wide pip install; the store size reads 233 GB; the card's command names the published hot-list
   and placement files, the warm-up prefill, `-dple`'s part, #2712's gain with and without the draft (+2.2 / +1.6 %),
   and the wider tier-split sweep (12 threads ties 8, 16 is lower).
+- From devindsflash and the two B70 readers at dc8a266: the V4.1 layouts keep the ledger's `ctx` (rewriting it had
+  turned `--check` UNMODELLED and failed `tests/test_decode_fit.js`) and carry the real `-c 4096` in `ctx_note`;
+  `SHA256SUMS` says how to feed it to `sha256sum -c`; the card says shard 10 is the source's too and claims every
+  input "we can publish"; the recipe says why 12.69 and not 12.71 heads it and what `hot` means in the placement
+  file; the Flash-Next headline no longer puts 87.1 tok/s and 11 of 12 on one build.
 
 ### Changed
 - The publish scan now runs over the whole repository and comes back CLEAN. The few public strings it used to flag

@@ -1,7 +1,8 @@
 # V4.1 on the RTX 6000 + Optane: every input of the 12.69 tok/s run
 
 Our fastest DeepSeek V4.1 Flash run on this box decoded **12.69 tok/s** with a 4-token draft (n4) and 10.29 without
-one (n0). A later sweep on the same build, layout and switches gave 12.71 / 10.29. This folder holds the inputs for
+one (n0), in a sweep whose two "off" arms framed it on the same load. A second load of the same build, layout and
+switches gave 12.71 / 10.29; we keep 12.69 as the headline because its sweep is the one the RTX 6000 page tables. This folder holds the inputs for
 that run, so you can rebuild it. The data files are the exact ones the run loaded; the scripts do what our lab kit
 did, written out on their own.
 
@@ -12,8 +13,8 @@ did, written out on their own.
 | [`build-store.sh`](build-store.sh) | downloads the public Q8_0 GGUF, checks it, and splits it into hot MXFP4 and cold q2_K experts | `-m DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00001-of-00010.gguf` |
 | [`hot-alloc.json`](hot-alloc.json) | which experts of each layer stay MXFP4 (hot); about 3 bits per weight overall | input of `build-store.sh` |
 | [`split.rules`](split.rules) | the quantize rule list the split script writes from those choices | `build-store.sh` checks that yours is the same |
-| [`hot-experts.tsv`](hot-experts.tsv) | 420 experts (7.0 GiB) kept on the GPU, per layer | `LLAMA_HOT_EXPERTS` |
-| [`placement.tsv`](placement.tsv) | where every CPU expert lives: hot ones split by rows over the two sockets, cold ones on the sockets or the Optane node, the draft's experts on socket 1 | `LLAMA_EXPERT_PLACEMENT` (the same bytes as the run's file) |
+| [`hot-experts.tsv`](hot-experts.tsv) | 420 experts (7.0 GiB) kept on the GPU, per layer: 365 from the store's hot (MXFP4) partition and 55 cold (q2_K, or q3_K for down projections of layers 0-9) ones | `LLAMA_HOT_EXPERTS` |
+| [`placement.tsv`](placement.tsv) | where every CPU expert lives (`hot` and `cold` in its tensor names are the store's MXFP4 and q2_K partitions, not GPU and CPU): hot ones split by rows over the two sockets, cold ones on the sockets or the Optane node, the draft's experts on socket 1 | `LLAMA_EXPERT_PLACEMENT` (the same bytes as the run's file) |
 | [`launch.sh`](launch.sh) | the system settings, the environment and the `llama-server` command line | the launch, with the tier split at 8 threads (`split=8` in the `GGML_TIER_CTL` file) |
 | [`bench.py`](bench.py) | a client that does what our lab client did: a 64-token warm-up and a 13,000-character prefill to touch every expert page, then each prompt once per phase, greedy, 300 tokens, no prompt cache | the timing (ours ran its phases from the lab kit, and its warm-up text was different) |
 | [`prompts.json`](prompts.json) | three public coding-agent prompts | **not** the run's prompts, see below |
