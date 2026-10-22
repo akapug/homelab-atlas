@@ -27,6 +27,8 @@ day). Results that change a headline number say so.
   `SHA256SUMS` says how to feed it to `sha256sum -c`; the card says shard 10 is the source's too and claims every
   input "we can publish"; the recipe says why 12.69 and not 12.71 heads it and what `hot` means in the placement
   file; the Flash-Next headline no longer puts 87.1 tok/s and 11 of 12 on one build.
+- Recipe Maker `--check`: the verdict line names what it could not judge (an UNKNOWN check, an UNMODELLED speed), so a
+  GO never reads as a pass for them (a cloud reader saw GO under an UNMODELLED prefill); `test_decode_fit.js` covers it.
 
 ### Changed
 - The publish scan now runs over the whole repository and comes back CLEAN. The few public strings it used to flag

@@ -162,4 +162,12 @@ test('legacy recipes and non-decode quantities keep their path; unsupported comp
   near(FM.predictRecipe(serialized, recipes.fs1c).decode_tps, predictions.fs1c.decode_tps);
 });
 
+test('--check names what it could not judge beside GO: fs1c decode is predicted, its prefill is not', () => {
+  const out = require('child_process').execFileSync('node', ['report.js', '--check', 'recipes/droopy-v41-fs1c.json'], { encoding: 'utf8' });
+  const verdict = out.trim().split('\n').pop();
+  assert(/^verdict: GO \(no FAIL\); not judged, so not passed: prefill UNMODELLED$/.test(verdict), verdict);
+  const fit = require('child_process').execFileSync('node', ['report.js', '--check', 'recipes/droopy-v41-lo-ba.json'], { encoding: 'utf8' });
+  assert(!/speed UNMODELLED/.test(fit.trim().split('\n').pop()), 'a predicted layout names no speed gap');
+});
+
 console.log(passed + ' tests passed');

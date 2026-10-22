@@ -25,7 +25,7 @@ if (ci >= 0) {
   try { rs = JSON.parse(fs.readFileSync(args[ci + 1], 'utf8')); } catch (e) { console.error('cannot read recipe ' + args[ci + 1] + ': ' + e.message); process.exit(2); }
   const list = Array.isArray(rs) ? rs : [rs];
   let worst = 0;
-  const outAll = [];
+  const outAll = [], gaps = [];
   for (const r of list) {
     // resolve symlinks only on the box itself (a link elsewhere says nothing about the box's disks)
     const here = os.hostname().split('.')[0] === r.box;
@@ -43,12 +43,16 @@ if (ci >= 0) {
       if (pr && pr.evidence) pr.evidence.forEach(e => console.log('  trust   ' + FM.fmtRollup(e)));
       res.notes.forEach(n => console.log('  note: ' + n));
     }
+    // what the gate could not judge: UNKNOWN checks and speeds it has no number for; GO never covers them
+    gaps.push(...res.checks.filter(c => c.status === 'UNKNOWN').map(c => c.id),
+      ...(!pr || pr.status !== 'PREDICTED' ? ['speed UNMODELLED'] : Number.isFinite(pr.prefill_tps) ? [] : ['prefill UNMODELLED']));
     const s = res.bad_input ? 2 : res.checks.some(c => c.status === 'FAIL') ? 1 : (args.includes('--strict') && res.checks.some(c => c.status === 'UNKNOWN')) ? 3 : 0;
     if (s === 2 || (s === 1 && worst !== 2) || (s === 3 && worst === 0)) worst = s;
   }
   // writeSync: console.log on a pipe is asynchronous and process.exit() would cut the JSON at 64 KiB
   if (args.includes('--json')) fs.writeSync(1, JSON.stringify(outAll.length === 1 ? outAll[0] : outAll, null, 1) + '\n');
-  else console.log(`verdict: ${['GO (no FAIL)', 'REFUSE (a hard check FAILs)', 'BAD INPUT', 'HOLD (UNKNOWN with --strict)'][worst]}`);
+  else console.log(`verdict: ${['GO (no FAIL)', 'REFUSE (a hard check FAILs)', 'BAD INPUT', 'HOLD (UNKNOWN with --strict)'][worst]}` +
+    (gaps.length ? `; not judged, so not passed: ${[...new Set(gaps)].join(', ')}` : ''));
   process.exit(worst);
 }
 

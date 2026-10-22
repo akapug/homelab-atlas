@@ -87,6 +87,8 @@ https://akapug.github.io/homelab-atlas/ (nothing to install).
    file, `families/KEY.py`.
 3. Copy the recipe in `recipes/` closest to your plan, point it at your box, model and files, and run
    `node report.js --check recipes/NEW.json --strict`. Fix every FAIL before you launch; read each `trust` line.
+   GO means no hard check failed; whatever the verdict line lists as "not judged" (an UNKNOWN check, an UNMODELLED
+   speed) has no answer either way.
 4. After the run, `tools/kit_record.sh RECIPE.json LOG...` adds it to the run ledger, and `node report.js --accuracy`
    shows how far the prediction was off. Each recorded run on your box narrows the next prediction for it.
 
