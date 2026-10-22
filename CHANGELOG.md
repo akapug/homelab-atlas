@@ -30,6 +30,7 @@ day). Results that change a headline number say so.
   the 11.88 row no longer claims the unpublished changes; the intro is less pleased with itself.
 
 ### Added
+- README: "Reviewed by its own hardware", what two local models on the two B70s found when they read the repo.
 - `tools/check_atlas.py`: checks every `atlas.json` number against the page it cites, and every Markdown link and
   anchor. `atlas.json` rows now carry the run ledger id where one exists.
 

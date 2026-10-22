@@ -117,6 +117,22 @@ Before you start:
 | [`AGENTS.md`](AGENTS.md), [`atlas.json`](atlas.json) | for coding agents: a dense map, naming crosswalk, and every headline result as data |
 | [`CHANGELOG.md`](CHANGELOG.md), [`CONTRIBUTING.md`](CONTRIBUTING.md) | what changed when, and how a result gets in |
 
+## Reviewed by its own hardware
+
+Before this README went out, both B70s read it at once: Qwen3.8 Flash-Next on one card and Ornith-1.5-35B-A3B on the
+other, each handed the README, AGENTS.md, the glossary and three entries (a 39k-token prompt), each asked to find the
+3090 Ti results, reproduce the best V4.1 run, and say what is wrong. Ornith did it on the card that also runs our
+household assistant, which stayed up throughout. A few cloud models read it too.
+
+| reader | where it ran | speed while reviewing | human / agent score | what it caught that we had missed |
+|---|---|---|---|---|
+| Qwen3.8 Flash-Next (IQ3_XXS) | one B70, XeStrata | 70.1 tok/s, 24,112 tokens in 6 min | 84 / 58 | the 12.69 run's quality check came from an earlier build; a speed run quoted at the wrong window |
+| Ornith-1.5-35B-A3B (GPTQ int4) | the other B70, vLLM, no draft | 15.6 tok/s at 39k tokens of context, 17 min | 86 / 82 | the 1080 Ti's "+35 %" holds only without a draft model; one table credited the public build with unpublished changes |
+
+Both ran with each model card's sampling, thinking on, one request each, 2026-10-22, against an earlier draft of these
+pages. Every finding above is fixed. The little ones also found things we have not fixed yet: the exact files behind
+the best V4.1 run are not public, and they said so.
+
 ## How numbers are reported here
 
 - Every number names its conditions: card, software version, model and quantization, context
