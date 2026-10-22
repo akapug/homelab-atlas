@@ -18,9 +18,9 @@ the load right after each measurement is printed as load_after, so a reading tak
   python3 serve-ab.py http://127.0.0.1:8000/v1 qwen27
   python3 serve-ab.py http://127.0.0.1:8000/v1 qwen27 --priority 100 --idle 20"""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import random
-import threading
 import time
 import urllib.request
 
@@ -77,6 +77,11 @@ def run(prompt, max_tokens, out):
             delta = d["choices"][0]["delta"] if d.get("choices") else {}
             if first is None and (delta.get("content") or delta.get("reasoning_content")):
                 first = time.time()
+    if not isinstance(usage, dict) or any(type(usage.get(k)) is not int or usage[k] <= 0
+                                          for k in ("prompt_tokens", "completion_tokens")):
+        raise ValueError("missing or invalid usage token counts")
+    if first is None:
+        raise ValueError("stream produced no content")
     out.append({"ttft": first - t0, "decode_s": time.time() - first, "prompt": usage["prompt_tokens"],
                 "out": usage["completion_tokens"]})
 
@@ -108,10 +113,11 @@ def depth():
 
 def streams3():
     r = []
-    th = [threading.Thread(target=run, args=(salt() + TASK, 512, r)) for _ in range(3)]
     t0 = time.time()
-    [t.start() for t in th]
-    [t.join() for t in th]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        jobs = [pool.submit(run, salt() + TASK, 512, r) for _ in range(3)]
+        for job in jobs:
+            job.result()
     wall = time.time() - t0
     return {"out_tok": sum(x["out"] for x in r), "tok_s": round(sum(x["out"] for x in r) / wall, 1),
             "per_stream": [round((x["out"] - 1) / x["decode_s"], 1) for x in r]}

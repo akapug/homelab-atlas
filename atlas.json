@@ -1,7 +1,7 @@
 {
  "schema": "homelab-atlas/1",
  "updated": "2026-10-22",
- "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). quality_on_this_build: false marks a result whose quality check ran on another build or card than the speed figure (its quality text says which); absent means the check ran on the configuration the result names. A result that needs several cards lists them all in cards; card is the one whose page it cites.",
+ "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). quality_on_this_build: false marks a result whose quality check ran on another build, card or configuration than the speed figure (its conditions and quality text say which); absent means the check ran on the configuration the result names. A result that needs several cards lists them all in cards; card is the one whose page it cites.",
  "boxes": [
   {
    "id": "snoopy",
@@ -157,7 +157,8 @@
    "decode_tps": 49.13,
    "streams": 1,
    "conditions": "every expert in RAM, VRAM expert cache, MTP 4, card thinking sampling, 32,768 window for the speed run (131,072 for the agent runs); upper median of 6 requests (3 coding prompts x 2, 300 tokens), 42.27-55.38",
-   "quality": "agent eval 23/24 (21/24 inside 1,200 s)",
+   "quality": "agent eval 23/24 (21/24 inside 1,200 s), at a 131,072-token window rather than the speed run's 32,768; not a quality check of the speed configuration",
+   "quality_on_this_build": false,
    "date": "2026-10-18",
    "status": "measured",
    "source": "3090-ti/#qwen38-flash-next-agent-work-from-ram"
@@ -216,7 +217,7 @@
    "engine": "ik_llama.cpp, our fork",
    "decode_tps": 16.06,
    "streams": 1,
-   "conditions": "MTP 3 + reduced draft vocabulary, p_min 0.75, mean of 4 prompts x 3 rounds",
+   "conditions": "MTP 3 + reduced draft vocabulary, p_min 0.75, mean of 4 prompts x 3 rounds; 4 coding-agent briefs, raw completion without a chat template, greedy, 256 tokens out, 34,816-token window, 39 threads",
    "quality": "KL 0.030, top-1 0.960 vs a 3-bit reference: miss",
    "date": "2026-10-20",
    "status": "measured",

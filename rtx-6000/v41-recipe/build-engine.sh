@@ -7,8 +7,8 @@
 # GGML_EXPERT_CHUNKING=OFF matters: ON cost this box about 20-24 % of GLM decode. Change -march and
 # CMAKE_CUDA_ARCHITECTURES for another box.
 set -euo pipefail
-# PIN is the public tip of tier-split. The 12.69 run used our private commit cde5fc20; 6d9992e2 is the same compiled
-# code with comments and one test flag renamed and later docs added, so build 6d9992e2 (cde5fc20 is not public).
+# PIN is the public tip of tier-split. The 12.69 run used our private commit 945fa93b; the public cde5fc20 is the same
+# compiled code with comments and one test flag renamed, and 6d9992e2 adds only PATCHES.md on top, so build 6d9992e2.
 PIN=6d9992e2b7fc888882d271b3d297ebc382c4e54c
 OUT=${OUT:-$HOME/build/ik-tier-split}; REF=${REF:-$PIN}; J=${J:-16}
 IMG=${IMG:-nvidia/cuda:12.6.3-devel-ubuntu24.04}

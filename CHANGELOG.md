@@ -19,6 +19,18 @@ day). Results that change a headline number say so.
   page, PATCHES.md and `atlas.json` (the 12.69 entry is now `measured`) say so.
 
 ### Fixed
+- From a fresh Claude reader (76/66 at 4ccfd53): the measured `tier-split` commit was named wrong. The 12.69 run used
+  our private `945fa93b`; the public `cde5fc20` is the same compiled code with comments and one test flag renamed, and
+  `6d9992e2` adds only PATCHES.md (`build-engine.sh`, the recipe README and the MoE offload page now say so). The RTX
+  6000 page's launch block sets `LD_LIBRARY_PATH` and runs `$ENGINE/bin/llama-server` as `launch.sh` does; its
+  placement note says cold experts also go to the Optane node (330 of 811 rules); the PMem share names its two counts;
+  the GLM 16.06 row gives its window, output length and prompts; the switch list points at the PATCHES.md that has
+  all of `launch.sh`'s switches. The recipe adds a placement check (`place_verify.py`) after the load, our imatrix
+  settings and timing, and a key to the lab names in `placement.tsv`. The GLM trim headline compares with the
+  same-session 22.77, not the 23.08 base run.
+- From the GPT-6.1 reader at 4ccfd53 (its diff): `serve-ab.py` waits for all three streams and fails on a worker
+  error or missing token counts instead of reporting a short `streams3` row; `atlas.json` marks the Flash-Next 49.13
+  agent eval as run at another window.
 - From the DeepSeek V4.1 Flash reader (trust 85, repro 83 at 12aa2d5): `tools/check_atlas.py --accuracy` now also
   fails when a launch-time decode line of `report.js` has no row in the Recipe Maker accuracy table, so a deleted row
   no longer passes (each of four deleted rows tried fails the check); the Recipe Maker README says to run `build.py`
@@ -87,7 +99,7 @@ day). Results that change a headline number say so.
   run names its build (`prebind-f32-indexer`) and ledger id, and its hot list and placement ship as
   `recall-hot-experts.tsv` and `recall-placement.tsv`; `build-store.sh` checks for PyYAML too, fails when
   `split.rules` differs, and has a `FETCH_ONLY=1` step so the imatrix command runs on a downloaded source;
-  `build-engine.sh` says why it pins public `6d9992e2` while the run used private `cde5fc20`, lists the host needs and
+  `build-engine.sh` says why it pins public `6d9992e2` while the run used a private commit, lists the host needs and
   packages libgomp; `launch.sh` sets weighted interleave only where the kernel has it and says CPU 39 sits idle; the
   card reads the window as 4,096 and the layout's `ctx` as a label; the B70 row says its 27B numbers predate the move;
   the GLM 23.08 note carries its conditions.

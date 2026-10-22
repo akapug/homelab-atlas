@@ -8,7 +8,7 @@ did, written out on their own.
 
 | file | what it is | how the run used it |
 |---|---|---|
-| [`build-engine.sh`](build-engine.sh) | builds [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp) branch `tier-split` at the pinned public commit `6d9992e2` (the compiled code of our measured private commit `cde5fc20`, with comments renamed) with our CMake flags, in the CUDA 12.6.3 container | the engine: `llama-server`, `llama-quantize`, `llama-imatrix` and the two tests |
+| [`build-engine.sh`](build-engine.sh) | builds [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp) branch `tier-split` at the pinned public commit `6d9992e2` (our measured private commit `945fa93b` with comments and one test flag renamed, published as `cde5fc20`, plus PATCHES.md; the same compiled code) with our CMake flags, in the CUDA 12.6.3 container | the engine: `llama-server`, `llama-quantize`, `llama-imatrix` and the two tests |
 | [`build-draft.sh`](build-draft.sh) | converts DeepSeek's draft head (DSpark, release shards 44-46) to GGUF, then makes its routed experts q2_K | `-md DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf` |
 | [`build-store.sh`](build-store.sh) | downloads the public Q8_0 GGUF, checks it, and splits it into hot MXFP4 and cold q2_K experts | `-m DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00001-of-00010.gguf` |
 | [`hot-alloc.json`](hot-alloc.json) | which experts of each layer stay MXFP4 (hot); about 3 bits per weight overall | input of `build-store.sh` |
@@ -30,12 +30,15 @@ QUANTIZE=$HOME/build/ik-tier-split/pkg/bin/llama-quantize OUT=$PWD/draft ./build
 # the Q8_0 source first, then an importance matrix of it (ours: 512 chunks of 512 tokens of code-heavy text, see below)
 IK=$HOME/build/ik-tier-split/src QUANTIZE=$HOME/build/ik-tier-split/pkg/bin/llama-quantize FETCH_ONLY=1 ./build-store.sh
 LD_LIBRARY_PATH=$HOME/build/ik-tier-split/pkg/lib $HOME/build/ik-tier-split/pkg/bin/llama-imatrix \
-  -m v41-1017-q8/Q8_0/DeepSeek-V4.1-Flash-1017-Q8_0-00001-of-00010.gguf -f <your text> -c 512 --chunks 512 -o imatrix.dat
+  -m v41-1017-q8/Q8_0/DeepSeek-V4.1-Flash-1017-Q8_0-00001-of-00010.gguf -f <your text> -o imatrix.dat \
+  -c 512 -b 512 -ub 512 --chunks 512 -t 20 --no-mmap -dple -ngl 99 -ot exps=CPU -fa 1 --no-ppl   # our pass's settings
 IK=$HOME/build/ik-tier-split/src QUANTIZE=$HOME/build/ik-tier-split/pkg/bin/llama-quantize \
   IMATRIX=$PWD/imatrix.dat OUT=$PWD/v41-1017-split ./build-store.sh
 ENGINE=$HOME/build/ik-tier-split/pkg STORE=$PWD/v41-1017-split \
-  DRAFT=$PWD/draft/DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf ./launch.sh &
-# after "server is listening" (about 45 min: the store is read from disk and placed over DRAM and PMem):
+  DRAFT=$PWD/draft/DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf ./launch.sh > server.log 2>&1 &
+# after "server is listening" (about 45 min: the store is read from disk and placed over DRAM and PMem),
+# check the placement landed where placement.tsv put it (exit 0 = on target), with the server's log:
+python3 ../../recipe-maker/tools/place_verify.py server.log
 PORT=8790 N=300 PHASES=n4:4,n0:0,n4b:4 python3 bench.py
 ```
 
@@ -52,7 +55,16 @@ The tier split is switched by a file: `GGML_TIER_CTL` names it, and the server r
 (`split=S prefetch=0|1 steal=0|1`) while it runs, so one load can time several settings. The 12.69 run had `split=8
 prefetch=0`; `GGML_TIER_RING_MIB` and `GGML_TIER_PREFETCH_CPUS` size and place the prefetch ring, which that setting
 leaves idle. The fork's [PATCHES.md on `tier-split`](https://github.com/akapug/ik_llama.cpp/blob/tier-split/PATCHES.md)
-lists every switch.
+lists the switches that branch adds; the one on [`fa-tile-sinks`](https://github.com/akapug/ik_llama.cpp/blob/fa-tile-sinks/PATCHES.md),
+a later branch with the same code underneath, lists every switch `launch.sh` sets (`GGML_MOE_GROUPS`,
+`LLAMA_NO_HOST_WEIGHTS` and `LLAMA_HOT_EXPERTS` among them).
+
+The `#` lines in `placement.tsv` are our generator's notes, kept because the file is the run's own bytes; the
+server skips them. Their names are ours: `v41r1` is this placement, `b1017heal` an earlier load whose free memory
+per node set one move, `DNODE` the draft's node (1), and the `.tsv`/`.json` files they cite are the generator's inputs
+(the rules they produced are the file). In the layout file's label, `v41r1b` is this placement again and
+`droopy-stack (stack cf2b2b86)` the engine switch set we first ran it with, on fork commit `cf2b2b86` (where
+`expert-prebind` starts); the 12.69 run used the same switches on the `tier-split` build.
 
 `launch.sh` is written for this box: two 10-core Xeons with 20 hardware threads each (NUMA nodes 0 and 1; the 39
 compute threads leave CPU 39 for the tier split's prefetch, which this run had off) and Optane as a CPU-less node 2. On another box, change `CPUS` and `T` and the node numbers in `placement.tsv`, and see
@@ -81,7 +93,8 @@ scripts have not been run as written (they repeat steps our lab kit ran, which n
   of its 384 experts unseen (layer 39), under the 5 % limit. A shorter pass can lose tensors (one of ours lost layers
   34-39 at 12 % unseen). [`patch-imatrix-keep-partial.py`](patch-imatrix-keep-partial.py) is our patch: with
   `IK_IMATRIX_KEEP_PARTIAL=1` it keeps them, and it writes 0 for an unseen expert where stock ik writes a flat
-  value, so the split gives that expert its tensor's mean. Our pass ran with it set. Any code-heavy imatrix of the 1017 weights that passes the count
+  value, so the split gives that expert its tensor's mean. Our pass ran with it set. On this box a 256-chunk pass with these settings (the whole Q8_0 held in DRAM and PMem) took about 3 h, an 11-minute load included, so 512 chunks should take about
+  twice that. Any code-heavy imatrix of the 1017 weights that passes the count
   works; your shards will have our sizes (in `SHA256SUMS`) but not our hashes, and the
   q2_K quality will be close but not equal. Lucebox publishes one
   ([`v41-1017-262144.dat`](https://huggingface.co/Lucebox/DeepSeek-V4.1-Flash-1017-ROCMFP-GGUF/tree/30faf4aae57edae24420cec466fb9863f27feef1/imatrix));

@@ -33,7 +33,7 @@ at a time unless it says otherwise.
 The fine print, card by card (the card pages carry the rest):
 - **RTX 3090 Ti.** Qwen3.8-27B: vLLM CUDA, int4, MTP 3 with a reduced draft vocabulary; the same checkpoint scored
   41 of 41 on our correctness eval on the B70. GLM-5.3-Flash: EXL3 3.05 bpw with a route trim that passes our quality
-  bar but is not published yet; 23.08 without it (the public image plus our CPU-lane changes, also unpublished; 14 cores, 3 coding prompts x 300 tokens,
+  bar but is not published yet; 22.77 without it in the same session, 23.08 in the base run (the public image plus our CPU-lane changes, also unpublished; 14 cores, 3 coding prompts x 300 tokens,
   greedy, thinking off, 32,768 window).
 - **RTX 6000.** 11.88 without, 12.69 with two newer changes of ours plus upstream ik_llama.cpp #2712, all public (our
   fork's branch `tier-split`); its quality check comes from the earlier build of the same store and layout.
