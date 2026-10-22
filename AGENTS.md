@@ -26,6 +26,7 @@ GitHub Pages site built from `docs/`. No build step for the Markdown.
 | `PATCHES.md` | every patch/tool by hardware: symptom, apply, check, undo | applying a fix |
 | `GLOSSARY.md` | terms | decoding shorthand |
 | `CHANGELOG.md`, `CONTRIBUTING.md` | history; what a result needs | adding results |
+| `tools/check_atlas.py` | atlas.json vs the cited pages, and every Markdown link | before a push |
 | `docs/` | GitHub Pages output for Recipe Maker (generated; do not hand-edit) | |
 
 ## Naming crosswalk
@@ -82,6 +83,8 @@ Ornith-1.5-35B-A3B, card 1 Qwen3.8 Flash-Next (2026-10-22).
 3. Commands: the card page's "Reproduce"; layouts as data in `recipe-maker/recipes/`; engine branches in
    `moe-offload/README.md#engine-changes`.
 4. `cd recipe-maker && node report.js --check recipes/<file>.json` checks a layout without a GPU.
+5. `python3 tools/check_atlas.py` checks that every `atlas.json` number appears on the page it cites and that every
+   relative link and anchor in the Markdown resolves. Run it before every push.
 
 ## Changing the repo
 

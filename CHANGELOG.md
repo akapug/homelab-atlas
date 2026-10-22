@@ -25,6 +25,10 @@ day). Results that change a headline number say so.
   condition they ran under; the MI25 page notes it too.
 - The Recipe Maker page carries a plain-text introduction and repository links for readers without JavaScript.
 
+### Added
+- `tools/check_atlas.py`: checks every `atlas.json` number against the page it cites, and every Markdown link and
+  anchor. `atlas.json` rows now carry the run ledger id where one exists.
+
 ## [2026.10.22]
 
 The atlas gets a shape: one page per card, a map up front, and a way to grow.

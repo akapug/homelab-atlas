@@ -175,7 +175,8 @@
    "date": "2026-10-22",
    "status": "unpublished-code",
    "public_fork_decode_tps": 11.88,
-   "source": "rtx-6000/#deepseek-v41-flash-the-best-run"
+   "source": "rtx-6000/#deepseek-v41-flash-the-best-run",
+   "ledger_id": "droopy-v41-v41fs-ts2-0127"
   },
   {
    "card": "quadro-rtx-6000",
@@ -268,11 +269,12 @@
    "decode_tps": 59.13,
    "streams": 1,
    "prefill_tps": 331,
-   "conditions": "every routed expert on GPUs (10 layers 1080 Ti, 30 MI25), MTP 3 (60.01 at MTP 2), 8,192 window, 3 prompts x 300",
+   "conditions": "every routed expert on GPUs (10 layers 1080 Ti, 30 MI25), MTP 3 (60.01 at MTP 2), 8,192 window, 3 prompts x 300; 15 of 16 DIMMs working (no experts on the CPUs)",
    "quality": "code-review screen 1/2, 1 false alarm",
    "date": "2026-10-21",
    "status": "measured",
-   "source": "mi25/#ornith-15-35b-a3b-on-the-mi25-and-a-gtx-1080-ti-about-60-toks"
+   "source": "mi25/#ornith-15-35b-a3b-on-the-mi25-and-a-gtx-1080-ti-about-60-toks",
+   "ledger_id": "lassie-orn35-q4km-o6"
   },
   {
    "card": "gtx-1080-ti",
@@ -283,11 +285,12 @@
    "decode_tps_no_draft": 6.97,
    "prefill_tps": 48.2,
    "streams": 1,
-   "conditions": "card holds attention, KV, dense weights; experts row-split over 8 NUMA nodes; DSpark n_max 4; 64 threads",
+   "conditions": "card holds attention, KV, dense weights; experts row-split over 8 NUMA nodes; DSpark n_max 4; 64 threads; 15 of 16 DIMMs working (node 4 on one channel)",
    "quality": "release-precision store (the reference)",
-   "date": "2026-10-21",
+   "date": "2026-10-20",
    "status": "measured",
-   "source": "1080-ti/"
+   "source": "1080-ti/",
+   "ledger_id": "lassie-v41-q8-fs3"
   },
   {
    "card": "cpu-only",
@@ -298,11 +301,12 @@
    "decode_tps_no_draft": 5.16,
    "prefill_tps": 36.2,
    "streams": 1,
-   "conditions": "experts + dense row-split over 8 NUMA nodes, 64 threads, DSpark n_max 4",
+   "conditions": "experts + dense row-split over 8 NUMA nodes, 64 threads, DSpark n_max 4; 15 of 16 DIMMs working (node 4 on one channel)",
    "quality": "release-precision store",
-   "date": "2026-10-21",
+   "date": "2026-10-20",
    "status": "measured",
-   "source": "epyc-cpu/"
+   "source": "epyc-cpu/",
+   "ledger_id": "lassie-v41-q8-rows8-dense-t64"
   }
  ]
 }
