@@ -20,15 +20,24 @@ p = sys.argv[1]
 if not os.path.exists(p + ".orig"):
     shutil.copy2(p, p + ".orig")
 s = open(p + ".orig").read()
-for old, new in (
+# (old, new, upstream): a hunk whose old text is gone but whose upstream fix is present is skipped. vLLM 0.31.0 (the
+# CUDA image of 3090-ti/vllm-cuda/Dockerfile) already has the streaming fix and still lacks the non-streaming one.
+for old, new, upstream in (
     ("                        if tools_streamed[i] and not tool_choice_function_name:\n",
      "                        # length-finish patch (homelab-atlas b70/vllm-xpu/length-finish.py): a length stop stays \"length\"\n"
      "                        if (tools_streamed[i] and not tool_choice_function_name\n"
-     "                                and output.finish_reason == \"stop\"):\n"),
+     "                                and output.finish_reason == \"stop\"):\n",
+     "                            tools_streamed[i]\n"
+     "                            and not tool_choice_function_name\n"
+     "                            and output.finish_reason == \"stop\"\n"),
     ("            is_finish_reason_tool_calls = auto_tools_called or (\n",
      "            # length-finish patch (homelab-atlas b70/vllm-xpu/length-finish.py): a length stop stays \"length\"\n"
-     "            is_finish_reason_tool_calls = (auto_tools_called and output.finish_reason == \"stop\") or (\n"),
+     "            is_finish_reason_tool_calls = (auto_tools_called and output.finish_reason == \"stop\") or (\n",
+     None),
 ):
+    if upstream and old not in s and s.count(upstream) == 1:
+        print(f"already upstream: {old.strip()}")
+        continue
     assert s.count(old) == 1, f"not found exactly once: {old.strip()}"
     s = s.replace(old, new)
 open(p, "w").write(s)
