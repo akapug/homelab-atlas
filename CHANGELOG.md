@@ -7,6 +7,9 @@ day). Results that change a headline number say so.
 ## [Unreleased]
 
 ### Added
+- GTX 1080 Ti: a split-K decode-attention kernel for DeepSeek V4's head size 512 with sinks (`LLAMA_FA_DEC=1`, our
+  fork's `fa-dec-sinks`) takes V4.1 Flash from 7.96 to 11.74 tok/s without a draft and 8.28 to 12.09 with one, in one
+  binary on the same prompts. Headline: V4.1 on the 2017 server now reads 12.09 (was 7.13 on 15 of 16 DIMMs).
 - `rtx-6000/v41-recipe/`: every input of the 12.69 tok/s V4.1 run except the prompts and the importance matrix: the
   engine build, scripts that build the split store and the draft from the public weights (with checksums), the
   hot-expert list and placement file the run loaded, the launch and the benchmark client, plus three public stand-in

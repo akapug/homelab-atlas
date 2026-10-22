@@ -17,6 +17,7 @@ All measured on this box, one request at a time, greedy, 3 coding-agent prompts 
 |---|---|---|---|---|---|
 | Ornith-1.5-35B-A3B | ik_llama.cpp with our changes, Q4_K_M; every routed expert on the GPUs: 10 layers on this card, 30 on the MI25 | **59.13 decode** with MTP 3 (60.01 with MTP 2), 44.62 without; prefill 331 | the model's own MTP head, 8,192-token window, 2026-10-21 | code-review screens: 1 of 2 plants found, 1 false alarm on the clean control | [the MI25 entry](../mi25/#ornith-15-35b-a3b-on-the-mi25-and-a-gtx-1080-ti-about-60-toks) |
 | gpt-oss-120b | ik_llama.cpp, MXFP4; experts of layers 0-2 on this card, the rest on the CPUs | **34.6 decode** (31.0 with every expert on the CPUs), no draft | 2026-10-21 | code-review screens: 1 of 2 plants, right on the clean control | [the MI25 entry](../mi25/#the-comparison-on-the-same-box-gpt-oss-120b) |
+| DeepSeek V4.1 Flash, with a decode-attention kernel for this card | ik_llama.cpp with our changes plus a split-K decode-attention kernel (`LLAMA_FA_DEC=1`); routed experts at release precision (MXFP4) in DRAM, rows split over all 8 nodes; this card holds attention, the KV cache and the dense weights | **11.74 decode** without a draft (7.96 with the kernel off), **12.09** with the DSpark draft (8.28 off), 13.22 on a long prompt; prefill 52 either way | one binary, kernel on and off, -ub 512, 8,192-token window, N=300, draft weights on the CPU, 16 of 16 DIMMs, 2026-10-22 | the kernel matches the CPU attention on 16 shapes (NMSE at most 1.4e-4, bar 1e-3) and a dropped sink fails; greedy texts equal the kernel-off run on 2 of 3 prompts and the long one, the third rounds differently and reads as correct | [below](#one-kernel-47-) |
 | DeepSeek V4.1 Flash | ik_llama.cpp with our changes; routed experts at release precision (MXFP4) in DRAM, rows split over all 8 nodes; this card holds attention, the KV cache and the dense weights | **7.13 decode** with the DSpark draft, **6.97** without; prefill 48.2 | 8,192-token window, 2026-10-20, 15 of 16 DIMMs (below) | the store is the release-precision reference the droopy runs are scored against | [moe-offload point 17](../moe-offload/#what-we-learned-measured) |
 | GLM-5.3-Flash | ik_llama.cpp `5f89bfc`, unsloth UD-Q3_K_XL; this card holds the 8.4 GB of non-expert weights, the experts stay in RAM | 9.65 decode with MTP 1, 8.63 without; prompt 60.6 | builds ran on the same box: a floor, not a clean number; 2026-10-02 | five of five easy prompts right (impression, no scored test) | (older run, before the engine changes on this page) |
 
@@ -47,6 +48,34 @@ With it the per-op sums agree with a CPU-only run to within rounding, and then t
 - Our reading: any device that cannot run this attention kernel would hit the same bug, not only Pascal.
 - A second fault, a GPU memory fault at warm-up when weights were pinned, went away with weights kept in plain host
   memory (`LLAMA_NO_HOST_WEIGHTS=1`).
+
+## One kernel, +47 %
+
+The table above stopped at 6.97 tok/s without a draft, and a profile said where the rest went. With a list of selected
+rows, V4's one-row decode attention took a cuBLAS F16 path, and this card runs F16 matrix math at 1/64 of its F32
+rate: about 92 of the 125 ms per token. So we wrote it a kernel: split-K flash decoding for head size 512 with
+attention sinks, 32 heads per block so each K row is read once for all of them, the sink added when the splits are
+merged. A consumer card from 2017, one kernel:
+
+| (16 of 16 DIMMs, one binary, N=300, -ub 512) | kernel off | `LLAMA_FA_DEC=1` |
+|---|---|---|
+| decode, no draft (3 prompts) | 7.96 (125.6 ms/token) | **11.74** (85.2 ms/token), +47 % |
+| decode, DSpark draft n4 | 8.28 | **12.09**, +46 % |
+| long prompt, n4 / n0 | 8.37 / 7.88 | **13.22** / 11.98 |
+| prefill | 52.0 | 52.2 |
+| draft acceptance | 0.895 | 0.885 |
+
+- The attention op as served (one row, 640 selected of 1,024 cached rows): 44.8 us, against 2,354.7 us on the old
+  path. Over 43 layers that is about 2 ms of attention per token.
+- Routed experts on the CPUs are now the floor, about 62 ms of a 77 ms graph.
+- The kernel-off column is the matched control; it reproduces the earlier run on this layout (8.31 / 7.95) and its
+  texts exactly. The co-tenants of the time (one process at about 75 % of one SMT sibling of a pinned core, another at
+  42-50 % of a core inside the thread list) ran in both arms.
+- Engine: commit `d3446fc3` on our fork's branch
+  [`fa-dec-sinks`](https://github.com/akapug/ik_llama.cpp/tree/fa-dec-sinks), test `tests/test-fattn-dec.cpp`.
+  Switches: `LLAMA_FA_DEC` (default 0 = off), `LLAMA_FA_DEC_MAX_Q` (dense rows it takes, default 5),
+  `LLAMA_FA_DEC_MAX_Q_SPARSE` (8), `LLAMA_FA_DEC_SPLITS` (0 = from the SM count). Ledger ids `lassie-v41-q8-fs3dec` and
+  `lassie-v41-q8-fs3hybc`.
 
 ## Reproduce
 

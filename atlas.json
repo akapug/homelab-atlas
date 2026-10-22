@@ -311,6 +311,22 @@
    "ledger_id": "lassie-v41-q8-fs3"
   },
   {
+   "card": "gtx-1080-ti",
+   "model": "DeepSeek V4.1 Flash",
+   "weights": "experts MXFP4 (release), rest Q8_0",
+   "engine": "ik_llama.cpp, our fork, commit d3446fc3 (branch fa-dec-sinks) with LLAMA_FA_DEC=1: split-K decode attention for head size 512 with sinks",
+   "decode_tps": 12.09,
+   "decode_tps_no_draft": 11.74,
+   "prefill_tps": 52.2,
+   "streams": 1,
+   "conditions": "card holds attention, KV, dense weights; experts row-split over 8 NUMA nodes; DSpark n_max 4, draft weights on the CPU; 64 threads; -ub 512; 8,192 window; 3 coding prompts x 300 tokens; 16 of 16 DIMMs; matched control in the same binary with the kernel off: 8.28 / 7.96 / 52.0",
+   "quality": "kernel vs CPU attention on 16 shapes, NMSE <= 1.4e-4 (bar 1e-3), dropped sink caught; greedy texts equal the kernel-off run on 2 of 3 prompts and the long prompt",
+   "date": "2026-10-22",
+   "status": "measured",
+   "source": "1080-ti/#one-kernel-47-",
+   "ledger_id": "lassie-v41-q8-fs3dec"
+  },
+  {
    "card": "cpu-only",
    "model": "DeepSeek V4.1 Flash",
    "weights": "experts MXFP4 (release), rest Q8_0",

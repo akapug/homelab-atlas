@@ -465,7 +465,7 @@ A near-lossless reference (Q8_0 on a large-memory CPU box) is the next step.
 ## Engine changes
 
 Our changes to ik_llama.cpp behind the box B and box D numbers are public in our fork, [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp).
-Each branch contains the one before it unless its row says otherwise; the last one carries them all:
+Each branch contains the one before it unless its row says otherwise:
 
 | branch | commit | adds |
 |---|---|---|
@@ -479,6 +479,7 @@ Each branch contains the one before it unless its row says otherwise; the last o
 | [`tier-split`](https://github.com/akapug/ik_llama.cpp/tree/tier-split) | `cde5fc20` (later commits change only docs) | tier-concurrent expert reads and the PMem prefetch ring: the box B 12.69 build |
 | [`numa-experts`](https://github.com/akapug/ik_llama.cpp/tree/numa-experts) | `11022436` | `mixed-cuda-vulkan-expert-banks` and `tier-split` merged; NUMA-local expert sharding |
 | [`fa-tile-sinks`](https://github.com/akapug/ik_llama.cpp/tree/fa-tile-sinks) | `68e08e6e` | attention sinks in the CUDA tile flash-attention kernel on Pascal |
+| [`fa-dec-sinks`](https://github.com/akapug/ik_llama.cpp/tree/fa-dec-sinks) | `d3446fc3` | split-K decode attention on Pascal (`LLAMA_FA_DEC`, the [1080 Ti's +47 %](../1080-ti/#one-kernel-47-)); the code of the branch above plus the kernel, but on our unedited lab history (internal names in commit messages and lab scripts, no PATCHES.md yet) |
 
 The fork's [PATCHES.md](https://github.com/akapug/ik_llama.cpp/blob/fa-tile-sinks/PATCHES.md) gives each switch, its default, the
 measured effect and the known limits. Its box letters are its own: its box A is our box D, and its box B is our box B.
