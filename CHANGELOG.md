@@ -39,6 +39,8 @@ day). Results that change a headline number say so.
   list right under it; the review-by-hardware section moves down and shrinks; Flash-Next's speed and agent runs name
   their two builds and windows; the EPYC page agrees with itself on 32 against 64 threads; atlas.json files the
   Ornith result under the MI25 too (`cards`), and `check_atlas.py` fails if any card has no result.
+- The planner's V4.1 error figures in PATCHES.md and its how-it-works page are the tool's current ones (21.9 % and
+  24.5 %, not the older 13.9 %), with the note that the gap is not closing yet.
 - Recipe Maker named GLM's quality reference (EXL3-3.05) on V4.1 checks too; each model family now names its own, and
   a measured KL beside a predicted top-1 says which is which.
 

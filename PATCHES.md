@@ -573,8 +573,10 @@ depend on the text.
 - **For.** Any Linux box: it probes yours read-only and reads a model's layout from its file headers, never the
   weights. Needs Python 3 and node, nothing to install.
 - **Measured.** Its decode prediction against our own runs (`node report.js --accuracy`): median error 2.5 % for
-  GLM-5.3-Flash on an RTX 3090 Ti box (8 runs), 13.9 % for DeepSeek V4.1 Flash and 15.6 % for GLM on the Optane
-  workstation (7 and 4 runs), 4.1 % for a block-diffusion model on an Arc Pro B70 (15 runs). Its pre-launch gate
+  GLM-5.3-Flash on an RTX 3090 Ti box (8 runs), 15.6 % for GLM on the Optane workstation (4 runs), 4.1 % for a
+  block-diffusion model on an Arc Pro B70 (15 runs). DeepSeek V4.1 Flash is where it is weakest: 21.9 % on the Optane
+  workstation (19 runs, predicting too slow) and 24.5 % on the 2017 server (10 runs, predicting too fast), as of
+  2026-10-22; the tool's trend table shows the gap is not closing yet. Its pre-launch gate
   failed 31 of the 47 runs that went bad (175 runs, 2026-10-22). On published community runs on hardware we do not own, the median error is
   17-59 % by hardware class.
 - **Run.** `python3 build.py`, open `index.html`; then [use it with your own

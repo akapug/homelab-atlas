@@ -299,6 +299,10 @@ negative bias means the planner predicted slower than the run.
   | odie LLaDA2.1-mini (block diffusion) | 4.1 % (n = 15) | |
   | odie / lassie, other block-diffusion models | 1.6-43.8 % (n = 2-4 each) | |
 
+  By 2026-10-22 (175 runs) the V4.1 cells had grown worse, not better: droopy V4.1 21.9 % (n = 19, bias -21.9 %; the
+  newest builds run faster than it predicts) and lassie V4.1 24.5 % (n = 10, bias +24.5 %). `node report.js
+  --accuracy` prints the current figures and, in its trend table, whether the gap is shrinking.
+
   The in-load draft speed-up (1.198 GLM, 1.201 V4.1) matched the planner's multiplier (1.203, 1.259) then. Since
   2026-10-21 the speed-up depends on where the experts sit: decode with the draft = tau / (T + beta x CPU expert time),
   tau per box x model and one beta fitted on the in-load ledger twins (beta 0.37: lassie Ornith-35B x1.13 with 41 % of
