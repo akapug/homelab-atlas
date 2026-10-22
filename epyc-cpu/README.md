@@ -44,7 +44,7 @@ sessions, so each is shown against its own baseline:
 - Row-splitting the dense weights too: +9 % with the draft, +17 % without. Both are our engine changes
   (`LLAMA_EXPERT_PLACEMENT` rules with `GGML_MOE_GROUPS=8`, `-cr` listing cores in node order); see
   [moe-offload, engine changes](../moe-offload/#engine-changes).
-- **More threads do not help.** 32 threads match 64 (point 15): no draft 4.73 against 4.42, at 406 W instead of 532 W.
+- **More threads do not help.** 32 threads beat 64 (point 15): no draft 4.73 against 4.42 (+7 %), at 406 W instead of 532 W.
   We keep 64 for agent turns, because prefill is 55 % faster.
 - **The low-bit store buys no speed here.** Experts at 2 bits for the cold ones run at the speed of the release
   store (6.53 against 6.64, point 10). Our reading, not settled: decode on this box is not bound by DRAM bytes, but by

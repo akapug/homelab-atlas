@@ -16,7 +16,7 @@ a step. Terms: [GLOSSARY](../GLOSSARY.md).
 
 | model | engine and weights | result | conditions | quality check | details |
 |---|---|---|---|---|---|
-| Qwen3.8-27B (dense) | vLLM 0.31.0 (official CUDA image) + [`draft-vocab`](../b70/vllm-xpu/draft-vocab.py) + [`length-finish`](../b70/vllm-xpu/length-finish.py); AutoRound int4 (the same checkpoint as the B70) | **103-105 decode** at 1 stream; **279-287** summed over 3 streams; prefill 1,407-1,410 on a 16k prompt; 88-95 decode at 32k depth | MTP 3 with a 50,521-token draft vocabulary, fp8 KV, 57,344-token window, temperature 0, thinking off, 512 tokens out, idle server, 2026-10-07 | the checkpoint passed the B70 entry's correctness eval (41 of 41 exact) | [Qwen3.8-27B on vLLM CUDA](#qwen38-27b-on-vllm-cuda-about-104-toks) |
+| Qwen3.8-27B (dense) | vLLM 0.31.0 (official CUDA image) + [`draft-vocab`](../b70/vllm-xpu/draft-vocab.py) + [`length-finish`](../b70/vllm-xpu/length-finish.py); AutoRound int4 (the same checkpoint as the B70) | **103-105 decode** at 1 stream; **279-287** summed over 3 streams; prefill 1,407-1,410 on a 16k prompt; 88-95 decode at 32k depth | MTP 3 with a 50,521-token draft vocabulary, fp8 KV, 57,344-token window, temperature 0, thinking off, 512 tokens out, idle server, 2026-10-07 | the checkpoint passed the [B70 entry's](../b70/#at-a-glance) correctness eval (41 of 41 exact) | [Qwen3.8-27B on vLLM CUDA](#qwen38-27b-on-vllm-cuda-about-104-toks) |
 | GLM-5.3-Flash (321B MoE) | the `glm53-flash-offload` engine (exllamav3-based), EXL3 3.05 bpw, 1,600 experts cached in VRAM, the rest computed on the CPU from RAM (14 cores for the 23.08 base in moe-offload, 16 threads in the trim runs) | **26.69 decode** with a route trim (keep 4 of 8 picks that miss VRAM, layers 29-44; not yet published); 23.08 without | 3 coding prompts x 300 tokens, greedy, thinking off, 32,768-token window, 2026-10-20 | KL 0.0154, top-1 0.975 against the same weights computed exactly on the GPU: **passes** our bar (KL at most 0.03, top-1 at least 0.97) | [GLM route trim](#glm-53-flash-a-route-trim-clears-25-toks), [moe-offload points 1-3](../moe-offload/#what-we-learned-measured) |
 | Qwen3.8 Flash-Next (125B MoE, 6B active) | [Strata](https://github.com/Niko1221/Strata) `477ac13c` built for sm_86, Q8_0, every expert in RAM, a VRAM expert cache | **49.1 decode** (median, one client); prefill about 1,620 at 15k | MTP 4, the model card's thinking sampling; speed at a 32,768-token window, agent runs at 131,072; 2026-10-18 | **23 of 24** agent tasks over 2 passes (21 of 24 inside the 20-minute limit) | [Flash-Next](#qwen38-flash-next-agent-work-from-ram) |
 | sabi-noema (a Qwen3.8-27B fine-tune) | llama.cpp `d454a20` CUDA, i1-Q4_K_M (16.55 GB) | 35.9-47.3 decode | no speculation, f16 KV, 49,152-token window, card sampling, thinking on, 2026-10-21 | **5 of 5** planted defects caught, each with a working test; 1 soft false positive on 2 clean controls | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
@@ -44,8 +44,8 @@ salted prompts so no prefix cache hits, an idle server, 512 tokens out.
 
 - **Against one B70** (B70 figures from other prompts, so provisional): CUDA decodes about 1.4x faster (B70: 74.6
   tok/s at 1 stream with MTP 3 and the same reduced draft vocabulary, from the
-  [draft-vocab measurement](../PATCHES.md#draft-vocabpy-cheaper-drafts-for-speculative-decoding); the B70's 61 in the
-  README is an earlier compiled-mode figure), and the B70 prefills about 1.15x faster (1,621 tok/s at 17.7k). Our reading, not
+  [draft-vocab measurement](../PATCHES.md#draft-vocabpy-cheaper-drafts-for-speculative-decoding); the B70's 61 is its
+  compiled-mode figure without the reduced vocabulary), and the B70 prefills about 1.15x faster (1,621 tok/s at 17.7k). Our reading, not
   measured directly: decode follows memory bandwidth (1,008 against 608 GB/s), prefill follows matrix throughput.
 - **The window is the cost.** 17.8 GiB of weights leave about 2 GiB for the fp8 KV cache, so the largest window that
   starts is 57,344 tokens (45,056 while the desktop holds about 1.1 GB of the card). One B70 holds 212,992. A
@@ -106,8 +106,9 @@ greedy, thinking off, two rounds per arm:
   does not prove.
 - The trim cuts CPU expert reads from about 170 to 137-145 per token.
 - The planner predicted the KL of each arm before the run (0.011-0.017); it under-predicted the failing arm's.
-- **Not yet published:** the trim is our change to the engine's routing (an environment switch). The untrimmed
-  23.08 recipe runs on the public image; see [moe-offload](../moe-offload/).
+- **Not yet published:** the trim is our change to the engine's routing, switched on by an environment variable we
+  will name when the change is public. Until then the public image reproduces the untrimmed 23.08, not 26.69; see
+  [moe-offload](../moe-offload/).
 
 ## Qwen3.8 Flash-Next: agent work from RAM
 

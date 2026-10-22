@@ -82,7 +82,8 @@ Ornith-1.5-35B-A3B, card 1 Qwen3.8 Flash-Next (2026-10-22).
 2. Follow its details link for conditions and quality check.
 3. Commands: the card page's "Reproduce"; layouts as data in `recipe-maker/recipes/`; engine branches in
    `moe-offload/README.md#engine-changes`.
-4. `cd recipe-maker && node report.js --check recipes/<file>.json` checks a layout without a GPU.
+4. `cd recipe-maker && python3 build.py && node report.js --check recipes/<file>.json` checks a layout without a GPU.
+   `build.py` (about 20 s, stdlib only) writes `data.json`, which is not in git; run it once per clone.
 5. `python3 tools/check_atlas.py` checks that every `atlas.json` number appears on the page it cites and that every
    relative link and anchor in the Markdown resolves. Run it before every push.
 

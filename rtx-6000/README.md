@@ -16,7 +16,7 @@ Terms: [GLOSSARY](../GLOSSARY.md).
 
 | model | engine and weights | result | conditions | quality check | details |
 |---|---|---|---|---|---|
-| DeepSeek V4.1 Flash | ik_llama.cpp with our changes; hot experts MXFP4, cold experts q2_K; 7.0 GiB of hot experts on the GPU, the rest in DRAM and PMem | **12.69 decode** (n4), 10.29 (n0), prefill 69.0 (this phase; the ledger's run summary gives 67.9) | DSpark draft model, n_max 4; 3 coding-agent prompts x 300 tokens; 2026-10-22. The build adds two changes not yet in our public fork (expert pre-binding, the tier split) and one upstream change | KL 0.0169, top-1 0.975 against the release-precision store (1,376 positions): passes our bar. Measured on the same store and layout with the earlier 10.6 tok/s build, not re-measured on this one. Upstream #2712 changes the indexer's arithmetic (draft acceptance moved from 0.890 to 0.908), so read this as the earlier build's check | [V4.1, the best run](#deepseek-v41-flash-the-best-run) |
+| DeepSeek V4.1 Flash | ik_llama.cpp with our changes; hot experts MXFP4, cold experts q2_K; 7.0 GiB of hot experts on the GPU, the rest in DRAM and PMem | **12.69 decode** (n4), 10.29 (n0), prefill 69.0 (this phase; the ledger's run summary gives 67.9) | DSpark draft model, n_max 4; 3 coding-agent prompts x 300 tokens; 2026-10-22. The build adds two changes not yet in our public fork (expert pre-binding, the tier split) and one upstream change | **Not re-measured on this build.** On the same store and layout with the earlier 10.6 tok/s build: KL 0.0169, top-1 0.975 against the release-precision store (1,376 positions), which passes our bar. Upstream #2712 changes the indexer's arithmetic (draft acceptance moved from 0.890 to 0.908), so read this as the earlier build's check | [V4.1, the best run](#deepseek-v41-flash-the-best-run) |
 | DeepSeek V4.1 Flash, same recipe on the public fork | as above, on the public fork's last branch | **11.88** (n4), 9.72 (n0), prefill 64.9 | as above, 2026-10-21 | as above | [Reproduce](#reproduce-the-best-v41-run) |
 | DeepSeek V4.1 Flash at 189k tokens | as above, 2.2 GiB of hot experts, 212,992-token window | **16 of 16 facts recalled** from a 189,454-token prompt; decode 7.18 at that depth (n0), prefill 57.7 at 110-190k | `--swa-compress`, micro-batch 2048, greedy, 2026-10-21 | the recall itself | [Long context](#v41-at-189k-tokens-every-fact-recalled) |
 | Ornith-1.5-122B (Qwen3.5-122B-A10B fine-tune) | ik_llama.cpp with our changes, Q4_K_M (70.6 GiB); experts of layers 0-8 on the GPU, the rest in DRAM | **31.6 decode** at 4,000 tokens of context (31.0 at 600), 27.1-27.3 without the draft; prefill 165.5 | its own MTP layer, n_max 3; 49,152-token window; 2026-10-20 | code-review screen: both planted defects found with an 8k thinking budget; agent tasks 0 of 3 in a configuration that limited it | [moe-offload points 19-20](../moe-offload/#what-we-learned-measured) |
@@ -86,7 +86,7 @@ What is public and what is not:
 | the model | DeepSeek V4.1 Flash 1017; we requantized the cold experts to q2_K with an importance matrix. The split store is not uploaded; the planner's [quant recipes](../recipe-maker/QUANT-RECIPES.md) list published stores |
 | the draft model | the DSpark draft that DeepSeek's V4.1 Flash 1017 release declares in its `config.json` (128 routed experts, top-3, block 5), converted to GGUF with its experts at Q2_K; our GGUF is not uploaded |
 | hot-expert lists and placement | [Recipe Maker](../recipe-maker/), [HOT-EXPERT-MAPS.md](../recipe-maker/HOT-EXPERT-MAPS.md) (how to capture a map for your own prompts) |
-| the layout as data | [`recipe-maker/recipes/droopy-v41-fs1c.json`](../recipe-maker/recipes/droopy-v41-fs1c.json) is the layout the 12.69 run (ledger id `v41fs-ts2-0127`) used with the tier-split build; [`droopy-v41-fs1p.json`](../recipe-maker/recipes/droopy-v41-fs1p.json) is the same layout's pre-binding run (12.13 mean; 12.19 its fastest phase). Their `"verify": "fail"` means the launcher checks each node's placement after the load and stops the run if it is off target; it is not a failed run. Rows in [RESULTS.md](../recipe-maker/results/RESULTS.md) |
+| the layout as data | [`recipe-maker/recipes/droopy-v41-fs1c.json`](../recipe-maker/recipes/droopy-v41-fs1c.json) is the layout the 12.69 run (ledger id `droopy-v41-v41fs-ts2-0127`) used with the tier-split build; [`droopy-v41-fs1p.json`](../recipe-maker/recipes/droopy-v41-fs1p.json) is the same layout's pre-binding run (12.13 mean; 12.19 its fastest phase). Their `"verify": "fail"` means the launcher checks each node's placement after the load and stops the run if it is off target; it is not a failed run. Rows in [RESULTS.md](../recipe-maker/results/RESULTS.md) |
 | PMem as memory | the standard Linux route, as on this box: `ipmctl create -goal PersistentMemoryType=AppDirect` and a reboot (a full power cycle after a firmware update), `ndctl create-namespace --mode=devdax` on each region, then `daxctl reconfigure-device --mode=system-ram <daxX.Y>` onlines it as a NUMA node with no CPUs. `numactl -H` should show it |
 
 **Public or not.** Built from the public branch, this command runs the configuration behind the public-fork figure
@@ -114,8 +114,13 @@ env GGML_CUDA_GRAPHS_PRE_AMPERE=1 GGML_AFFINITY_ONCE=1 LLAMA_MOE_OVERLAP=1 GGML_
 - The placement file splits each CPU expert's rows over nodes 0 and 1 and adds one rule that keeps the draft
   model's 3 layers of experts on node 1; the format is in the fork's PATCHES.md.
 - `-cr` lists the cores socket by socket, so MoE thread group g is socket g.
-- `-c 4096` is what our launch script passes; the run ledger's condition text says "-c unset", which is wrong. The
-  prompts are under 2.2k tokens, so the window does not bind.
+- `-c 4096` is what our launch script passes; the run ledger's condition text and the layout file's `ctx` say
+  "-c unset", which is wrong. The prompts are under 2.2k tokens, so the window does not bind.
+- Shards 8 and 9 of the ten are not from the split store: they hold V4.1's engram tables (lookup tables, about a
+  quarter of its parameters) and come from the Q8_0 store on an NVMe drive, read from the file while serving (the layout file marks them
+  `on_file` and lists where every shard sits).
+- `node report.js --check` on this layout prints a quality line from its layer map (KL 0.0169, top-1 0.980,
+  predicted). The measured figures are the ones in the table above: KL 0.0169, top-1 0.975.
 - For the 189k recall layout: 2.2 GiB of hot experts, `-ub 2048 -b 2048 -c 212992 --swa-compress`.
 - `GGML_SCHED_ASYNC_COPY` is in the public branch's `ggml/src/ggml-backend.cpp` but not yet described in the fork's
   PATCHES.md; without it the engine runs its default copy path.
@@ -132,8 +137,12 @@ What you cannot get from us yet, so your number will differ:
   quantization rules and the published stores to start from.
 - **Expert pre-binding and the tier split.** Not published yet; without them, expect the public-fork figure
   (11.88).
-- **Your hot-expert list.** Capture one on your own prompts ([HOT-EXPERT-MAPS.md](../recipe-maker/HOT-EXPERT-MAPS.md));
-  ours fits our prompts.
+- **Our hot-expert list and placement file** (`v41-hot7p0.tsv`, `v41-rows-hot7p0.placement.tsv`). They name experts
+  of our split store, ranked on our prompts, so they would mislead on yours. Capture a list on your own prompts
+  ([HOT-EXPERT-MAPS.md](../recipe-maker/HOT-EXPERT-MAPS.md)); the placement file holds the two rules described under
+  the command above, in the format of the fork's PATCHES.md.
+- **A quality check on the 12.69 build itself.** The one we have is from the earlier build of the same store and
+  layout. Until one runs on this build, read 12.69 as a speed figure.
 
 ## What did not work
 

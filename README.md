@@ -3,14 +3,14 @@
 *Old hardware. New tricks. Receipts attached.*
 
 Big local models on hardware you can actually get: a 2017 server off the used market, a 2019 workstation full of
-Optane, a gaming desktop, and a pair of Intel cards that cost less than one flagship. No rack of H100s was harmed in
+Optane, a gaming desktop, and a pair of Intel cards most people have not heard of. No rack of H100s was harmed in
 the making of this repo.
 
 The bet: as models lean on sparsity, speculative decoding and low-bit weights, memory bandwidth and software decide
 more than raw GPU compute, and most modest hardware runs well below what it can do, because tuning it is fiddly work.
 We did the fiddly work and wrote down exactly what happened. Every number names its conditions, every win links the patch behind
 it, and the losers stay in the notebook, because the next person with the same box needs those most. Some lessons
-were measured in tokens per second; a couple were measured in tripped breakers.
+were measured in tokens per second, and some in pages of confident garbage text.
 
 **Try Recipe Maker in your browser:** [akapug.github.io/homelab-atlas](https://akapug.github.io/homelab-atlas/).
 Pick one of our four boxes and see which layouts of a big MoE model fit it, how fast each should run, and how
@@ -26,7 +26,7 @@ linked page gives the full conditions and the quality check for every number.
 |---|---|---|---|
 | **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s** (vLLM CUDA, int4, MTP 3); GLM-5.3-Flash (321B MoE) at **26.69 tok/s** with its quality check passing (route trim not yet published; 23.08 without) |
 | **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s** (11.88 on public code; its quality check is from an earlier build of the same store), and **16 of 16** facts recalled from a 189k-token prompt |
-| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next (IQ3_S) at **87.1 tok/s** with **11 of 12** agent tasks passed; Qwen3.8-27B at 61 tok/s, **351** summed over 8 streams (compiled mode; 54.4 eager) |
+| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next (IQ3_S) at **87.1 tok/s** with **11 of 12** agent tasks passed; Qwen3.8-27B at **74.6 tok/s** (MTP 3 with a reduced draft vocabulary, output unchanged), **351** summed over 8 streams |
 | **2017 two-socket server** (Supermicro H11DSi) | 2x EPYC 7601, 1 TB DDR4 on 16 channels | [**GTX 1080 Ti** 11 GB](1080-ti/) and [**Radeon Instinct MI25** 16 GB](mi25/) | Ornith-1.5-35B-A3B at **59-60 tok/s** with every expert on the two retired cards; DeepSeek V4.1 Flash at 7.13 tok/s with a draft model (both with 15 of 16 DIMMs working) |
 | the same server | [**its CPUs alone**](epyc-cpu/) | none | DeepSeek V4.1 Flash at **7.02 tok/s** with its experts as released, no GPU at all (15 of 16 DIMMs working) |
 
@@ -59,7 +59,8 @@ The ones we are proudest of, each with its conditions and quality check one clic
   by computing only the top 4 of the expert picks that miss VRAM on 16 of its layers, with its output still within
   our quality bar. The trim is not published yet; 23.08 without it on the public image.
   [3090 Ti](3090-ti/#glm-53-flash-a-route-trim-clears-25-toks)
-- **Agent work from a model mostly in RAM.** Qwen3.8 Flash-Next passed 23 of 24 agent tasks on the 3090 Ti box,
+- **Agent work from a model mostly in RAM.** Qwen3.8 Flash-Next passed 23 of 24 agent tasks on the 3090 Ti box
+  (21 inside the time limit),
   and 11 of 12 on one B70 at 87.1 tok/s, with about half its experts computed on the CPU. [3090 Ti](3090-ti/),
   [B70](b70/)
 - **Two retired cards from rival vendors in one process.** A $50 MI25 and a GTX 1080 Ti hold every routed expert of
@@ -68,9 +69,10 @@ The ones we are proudest of, each with its conditions and quality check one clic
 - **An 11 GB Pascal card earns its slot.** Moving DeepSeek V4.1's attention onto a GTX 1080 Ti first gave garbage
   text; one scheduler fix later it decodes 35 % faster than the CPUs alone (without a draft model; 2 % with one).
   [1080 Ti](1080-ti/)
-- **The B70, tuned.** Qwen3.8-27B at 61 tok/s at one stream and 351 at eight in vLLM's compiled mode with XPU
-  graphs, which Intel does not support yet; 54.4 in eager mode, which is how our own servers ran. Five vLLM changes
-  and 18 llama.cpp SYCL patches got it there. [B70](b70/)
+- **The B70, tuned.** Qwen3.8-27B at 74.6 tok/s at one stream once the drafter stopped reading a 2.5 GB output
+  layer for every guess (eager mode, 59.5 without the trick, same output), and 351 summed at eight streams in vLLM's
+  compiled mode with XPU graphs, which Intel does not support yet. Five vLLM changes and 18 llama.cpp SYCL patches
+  got it there. [B70](b70/)
 
 ## Find your patch
 
@@ -119,19 +121,21 @@ Before you start:
 
 ## Reviewed by its own hardware
 
-Before this README went out, both B70s read it at once: Qwen3.8 Flash-Next on one card and Ornith-1.5-35B-A3B on the
-other, each handed the README, AGENTS.md, the glossary and three entries (a 39k-token prompt), each asked to find the
-3090 Ti results, reproduce the best V4.1 run, and say what is wrong. Ornith did it on the card that also runs our
-household assistant, which stayed up throughout. A few cloud models read it too.
+Before this README went out, we asked the B70s what they thought of it, both at once: Qwen3.8 Flash-Next on one card
+and Ornith-1.5-35B-A3B on the other, each handed the README, AGENTS.md, the glossary and three entries (a 39-41k-token
+prompt) and asked to find the 3090 Ti results, reproduce the best V4.1 run, and say what is wrong. Ornith did it on
+the card that also runs our household assistant, which stayed up throughout. They read it twice, and the second time
+both agent scores went down. Our reading: with what they had found fixed, they dwelt on the one thing we cannot fix
+today, that the best V4.1 run needs files we have not published. That complaint is fair, and the RTX 6000 page now
+lists every missing piece. A few cloud models read it too.
 
-| reader | where it ran | speed while reviewing | human / agent score | what it caught that we had missed |
+| reader | where it ran | speed while reviewing (first read; second read) | human / agent score (first; second) | what it caught that we had missed |
 |---|---|---|---|---|
-| Qwen3.8 Flash-Next (IQ3_XXS) | one B70, XeStrata | 70.1 tok/s, 24,112 tokens in 6 min | 84 / 58 | the 12.69 run's quality check came from an earlier build; a speed run quoted at the wrong window |
-| Ornith-1.5-35B-A3B (GPTQ int4) | the other B70, vLLM, no draft | 15.6 tok/s at 39k tokens of context, 17 min | 86 / 82 | the 1080 Ti's "+35 %" holds only without a draft model; one table credited the public build with unpublished changes |
+| Qwen3.8 Flash-Next (IQ3_XXS) | one B70, XeStrata | 70.1 tok/s, 24,112 tokens in 6 min; 71.1 tok/s, 18,015 tokens in 4.5 min | 84 / 58; 86 / 52 | the 12.69 run's quality check came from an earlier build; a speed run quoted at the wrong window; the GLM trim's public command gives 23.08, not 26.69 |
+| Ornith-1.5-35B-A3B (GPTQ int4) | the other B70, vLLM, no draft | 15.6 tok/s at 39k tokens of context, 17 min; 15.8 tok/s at 41k, 8.3 min | 86 / 82; 80 / 74 | the 1080 Ti's "+35 %" holds only without a draft model; one table credited the public build with unpublished changes; the 12.69 caveat sat at the end of its cell |
 
-Both ran with each model card's sampling, thinking on, one request each, 2026-10-22, against an earlier draft of these
-pages. Every finding above is fixed. The little ones also found things we have not fixed yet: the exact files behind
-the best V4.1 run are not public, and they said so.
+Both ran with each model card's sampling, thinking on, one request each, 2026-10-22; the first read saw an earlier
+draft of these pages, the second the pages as of that day's second round. Every finding in the table is fixed.
 
 ## How numbers are reported here
 

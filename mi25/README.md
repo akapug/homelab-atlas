@@ -10,7 +10,7 @@ It sits in box D of [the MoE offload entry](../moe-offload/): 2x EPYC 7601, 1 TB
 **The best result so far: a 35B MoE model at about 60 tok/s on two retired GPUs that nobody would pair.** The MI25
 (Vega 10, Vulkan only) and the GTX 1080 Ti (Pascal, CUDA) hold every routed expert of Ornith-1.5-35B-A3B between
 them, in one ik_llama.cpp process, in a 2017 server. With the model's own MTP draft head it decodes 59.1-60.0 tok/s
-on coding prompts, against 42.0 with the experts on the CPUs.
+on coding prompts, against 47.3 with the same draft head and the experts on the CPUs (42.0 with neither).
 [Details, commands and the quality screens below](#ornith-15-35b-a3b-on-the-mi25-and-a-gtx-1080-ti-about-60-toks).
 The same hardware does not help DeepSeek V4.1 Flash: [that result is negative](#as-a-hot-expert-store-for-deepseek-v41-stopped-bound-by-hop-latency),
 and we explain why.

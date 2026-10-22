@@ -28,6 +28,15 @@ day). Results that change a headline number say so.
 - Readers' round two: the README table says which headline needs unpublished code, which quant, and which ran one DIMM
   short; atlas.json windows, threads and dates match the card pages; the B70's 61 and 74.6 tok/s are told apart;
   the 11.88 row no longer claims the unpublished changes; the intro is less pleased with itself.
+- Readers' round three: the B70's headline is its fastest checked result, 74.6 tok/s at one stream with the reduced
+  draft vocabulary (61 was the compiled figure without it); the MI25 compares its 59-60 with the same draft on the
+  CPUs (47.3), not with no draft; the V4.1 ledger id is spelled as the ledger has it; the RTX 6000 page says where the
+  engram shards sit and which quality figures Recipe Maker predicts; AGENTS.md says to run `build.py` before
+  `report.js`; the intro no longer quotes an untold story or an unpriced price.
+- The local readers' second round: the 12.69 caveat leads its quality cell; the RTX 6000 page names the hot-expert and
+  placement files you cannot get from us; the GLM trim says the public image gives 23.08; the README shows both rounds.
+- Recipe Maker named GLM's quality reference (EXL3-3.05) on V4.1 checks too; each model family now names its own, and
+  a measured KL beside a predicted top-1 says which is which.
 
 ### Added
 - README: "Reviewed by its own hardware", what two local models on the two B70s found when they read the repo.
