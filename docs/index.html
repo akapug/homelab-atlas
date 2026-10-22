@@ -4,13 +4,26 @@
 <meta charset="utf-8">
 <link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Recipe Maker, from the Homelab Atlas: plan where each part of a big MoE model lives on your box (VRAM, DRAM per NUMA node, PMem, disk), predict its speed and quality, and compare with measured runs on four homelab boxes.">
 <title>Recipe Maker: plan where each part of a MoE model lives, per box</title>
 <link rel="stylesheet" href="src/app.css">
 </head>
 <body>
 <div class="viz-root" id="root">
 <a class="skip" href="#chart">Skip to the chart</a>
-<div class="wrap" id="app"><p>Loading...</p></div>
+<div class="wrap" id="app">
+<h1>Recipe Maker</h1>
+<p>Plan where each part of a big mixture-of-experts model lives on a box, predict its decode speed and quality, and
+compare the prediction with measured runs on four homelab boxes. This page draws an interactive planner and needs
+JavaScript; everything it shows is also plain text in the repository:</p>
+<ul>
+<li><a href="https://github.com/akapug/homelab-atlas#readme">Homelab Atlas README</a>: every box and card, with its best measured results</li>
+<li><a href="https://github.com/akapug/homelab-atlas/blob/main/AGENTS.md">AGENTS.md</a> and <a href="https://github.com/akapug/homelab-atlas/blob/main/atlas.json">atlas.json</a>: a map and the headline results as data</li>
+<li><a href="https://github.com/akapug/homelab-atlas/blob/main/recipe-maker/results/RESULTS.md">RESULTS.md</a>: every measured run, generated from the run ledger</li>
+<li><a href="https://github.com/akapug/homelab-atlas/tree/main/recipe-maker">recipe-maker/</a>: the planner's source, the run ledger (runs/) and how it works (docs/)</li>
+</ul>
+<p>Loading the planner...</p>
+</div>
 <div class="tip" id="tip" role="tooltip"></div>
 <div class="sr-only" id="live" aria-live="polite"></div>
 </div>

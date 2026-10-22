@@ -20,7 +20,7 @@ Four boxes, six GPUs from three vendors and five architectures, 1.5 TB of DRAM b
 page with its best results first, the commands to reproduce them, and what did not work. All results are one request at a time unless they say otherwise; the
 linked page gives the full conditions and the quality check for every number.
 
-| box | CPU and memory | card | best measured result |
+| box | CPU and memory | card | best measured result (fastest that passed its quality check) |
 |---|---|---|---|
 | **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s** (vLLM CUDA, int4, MTP 3); GLM-5.3-Flash (321B MoE) at **26.69 tok/s** with its quality check passing (route trim not yet published; 23.08 without) |
 | **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s**, and **16 of 16** facts recalled from a 189k-token prompt |

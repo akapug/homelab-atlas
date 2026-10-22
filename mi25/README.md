@@ -24,6 +24,10 @@ and one MTP layer that can draft tokens for the model. We ran ornith-ai's Q4_K_M
 20.2 GiB). Its routed experts total about 18.2 GiB. That does not fit on either card alone, but it fits on the two
 together.
 
+Measured 2026-10-21 with 15 of 16 of the server's DIMMs working (one was slightly unseated until 19:14Z that day;
+NUMA node 4 on one channel). This layout keeps no experts on the CPUs, so our reading is that it matters little here; the CPU-expert
+comparison rows ran the same way.
+
 **The layout.**
 - The GTX 1080 Ti (11 GB) holds attention, the DeltaNet layers, the KV cache, the router, the shared expert, the
   norms, the output head and the MTP layer (`-ngl 99 --cpu-moe`).

@@ -20,6 +20,10 @@ day). Results that change a headline number say so.
 - AGENTS.md explains how to read the run ledger (segments, null checks, what is private).
 - Flash-Next on the 3090 Ti: the speed window (32,768) and the agent-run window (131,072) are told apart; Sage-A1.5's
   MTP figure says it is a speed-only probe; the RTX 6000 reproduce section says which figure the public branch gives.
+- The EPYC and 1080 Ti pages name the recipe each V4.1 figure really used (the shipped recipe is the expert-row step;
+  the 7.02 and 7.13 runs are named by ledger id), and date the lassie runs to 2026-10-20/21 with the one-DIMM-short
+  condition they ran under; the MI25 page notes it too.
+- The Recipe Maker page carries a plain-text introduction and repository links for readers without JavaScript.
 
 ## [2026.10.22]
 
