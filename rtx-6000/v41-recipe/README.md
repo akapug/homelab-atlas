@@ -22,7 +22,7 @@ did, written out on their own.
 ## Rebuild it
 
 ```bash
-OUT=$HOME/build/ik-tier-split ./build-engine.sh                 # about 30-60 min on 16 cores
+OUT=$HOME/build/ik-tier-split ./build-engine.sh                 # about 15 min on 16 cores (see below)
 QUANTIZE=$HOME/build/ik-tier-split/pkg/bin/llama-quantize OUT=$PWD/draft ./build-draft.sh
 # an importance matrix of the Q8_0 source (ours: 512 chunks of 512 tokens of code-heavy text, see below):
 #   pkg/bin/llama-imatrix -m <Q8_0 shard 1> -f <your text> -c 512 --chunks 512 -o imatrix.dat
@@ -37,6 +37,10 @@ PORT=8790 N=300 PHASES=n4:4,n0:0,n4b:4 python3 bench.py
 `launch.sh` is written for this box: two 10-core Xeons with 20 hardware threads each (NUMA nodes 0 and 1; CPU 39 runs
 the tier split's copy thread, outside the 39 compute threads) and Optane as a CPU-less node 2. On another box, change `CPUS` and `T` and the node numbers in `placement.tsv`, and see
 [the planner](../../recipe-maker/) for a layout that fits.
+
+We ran `build-engine.sh` on 2026-10-22 (16 cores, about 15 min): it built `6d9992e2` with rc 0. That
+build box has no NVIDIA driver, so its binaries and tests were not run there; the other scripts have not been run as
+written (they repeat steps our lab kit ran, which needs the 500 GB download and the box).
 
 ## Where your rebuild will differ from ours
 

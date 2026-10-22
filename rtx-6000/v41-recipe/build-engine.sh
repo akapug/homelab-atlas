@@ -35,4 +35,5 @@ docker run --rm -v "$OUT":/o -e J="$J" -e U="$(id -u):$(id -g)" "$IMG" bash -euc
      /o/build/bin/test-expert-place /o/build/bin/test-tier-split /o/pkg/bin/
   for l in libcudart.so.12 libcublas.so.12 libcublasLt.so.12; do cp -L /usr/local/cuda/lib64/$l /o/pkg/lib/; done'
 (cd "$OUT/pkg" && sha256sum bin/* lib/* > SHA256SUMS)
-echo "built $(cat "$OUT/SOURCE_SHA") into $OUT/pkg; check: $OUT/pkg/bin/test-tier-split 8 (every arm must print OK)"
+echo "built $(cat "$OUT/SOURCE_SHA") into $OUT/pkg; on a host with the NVIDIA driver, check:"
+echo "  LD_LIBRARY_PATH=$OUT/pkg/lib $OUT/pkg/bin/test-tier-split"
