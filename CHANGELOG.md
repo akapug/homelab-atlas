@@ -19,6 +19,11 @@ day). Results that change a headline number say so.
   page, PATCHES.md and `atlas.json` (the 12.69 entry is now `measured`) say so.
 
 ### Fixed
+- From the DeepSeek V4.1 Flash reader (trust 85, repro 83 at 12aa2d5): `tools/check_atlas.py --accuracy` now also
+  fails when a launch-time decode line of `report.js` has no row in the Recipe Maker accuracy table, so a deleted row
+  no longer passes (each of four deleted rows tried fails the check); the Recipe Maker README says to run `build.py`
+  before the Python tests (the suite reads the built data) and drops `test_screen.js`, which does not exist; the V4.1
+  context correction names its real source (the rows' `lab notes`; the caveats file and launcher stay home).
 - From the GPT-6.1 reader at 0491930 (its diff): `build-engine.sh` refuses a dirty source checkout instead of stamping a
   `SOURCE_SHA` that does not describe what it built.
 - From the round-6 local readers (Flash-Next 86/62, Ornith 87/88 at 6323216): the 26.69 says it is the coding
@@ -55,8 +60,8 @@ day). Results that change a headline number say so.
   The recipe README gives our matrix's size as collected, 789 MB (it said 1.56 GB).
 - The droopy V4.1 window: 13 runs (the 12.69 run among them) were recorded as "server default (-c unset)"; our
   launcher sets `-c 4096` when no window is given, and every server log of them reads `ctx_size = 4096`. The Recipe
-  Maker ledger now corrects the field through `runs/run_caveats.json` (with its source; the rows on disk stay as
-  recorded), its layout files read 4096, and the RTX 6000 page says so. Recipe Maker can now correct any recipe field
+  Maker ledger now corrects the field through our caveats file (`runs/run_caveats.json`, which stays home because
+  its sources are lab notes; the published rows carry the corrected value, and our rows on disk stay as recorded), its layout files read 4096, and the RTX 6000 page says so. Recipe Maker can now correct any recipe field
   that way (`recipe.<dotted path>`).
 - From the round-4 readers: the 3090 Ti 3-stream figure is 279-288 and says what it is (all tokens over the wall
   time, prefill included; each stream decodes at 96-100); the 22.20 GLM figure says it predates layer-ahead warm-up;

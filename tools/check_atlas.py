@@ -103,18 +103,33 @@ if '--accuracy' in sys.argv:
                 [l for l in head.splitlines() if l.startswith('decode_tps_nodraft ')],
                 [l for l in replay.splitlines() if l.startswith('decode_tps ')]]
     cell = re.compile(r'([\d.]+) % \((\d+) runs?, bias ([+-][\d.]+) %\)')
+    group = re.compile(r'([\d.]+)-([\d.]+) % \((\d+)-(\d+) runs each\)')
+    line = re.compile(r'^\S+\s+(\w+)/\S+\s+n\s+(\d+)\s+median \|err\|\s+([\d.]+) %')
+    seen, groups = set(), []
     for row in open(os.path.join(rm, 'README.md')).read().splitlines():
         cols = [c.strip() for c in row.strip('|').split('|')]
-        if len(cols) != 4 or not cell.search(row):
+        if len(cols) != 4 or not (cell.search(row) or group.search(row)):
             continue
         box = cols[0].split(',')[0].strip()
+        if group.fullmatch(cols[1]):   # a row that covers several small groups by range, e.g. "odie / lassie, ..."
+            groups.append(({b.strip() for b in box.split('/')}, group.fullmatch(cols[1])))
         for col, lines in zip(cols[1:], sections):
             m = cell.fullmatch(col)
             if not m:
                 continue
             want = re.compile(r'^\S+\s+%s/\S+.*\bn\s+%s\s+median \|err\|\s+%s %%\s+bias %s %%' % (re.escape(box), m[2], re.escape(m[1]), re.escape(m[3])))
-            if not any(want.search(l) for l in lines):
+            hit = [l for l in lines if want.search(l)]
+            if not hit:
                 misses.append(f'recipe-maker/README.md accuracy table: "{cols[0]}" cell "{col}" is not what report.js --accuracy prints')
+            if lines is sections[0]:
+                seen.update(hit)
+    # the other direction: every launch-time line report.js prints is in the table, as its own row or inside a range row
+    for l in sections[0]:
+        b, n, err = line.match(l).groups() if line.match(l) else (None, 0, 0)
+        covered = l in seen or any(b in boxes and float(g[1]) <= float(err) <= float(g[2]) and int(g[3]) <= int(n) <= int(g[4])
+                                   for boxes, g in groups)
+        if not covered:
+            misses.append(f'recipe-maker/README.md accuracy table: no row for report.js line "{l.strip()}"')
 
 print('\n'.join(misses) or 'atlas.json and links: OK' + (' (and the accuracy table)' if '--accuracy' in sys.argv else ''))
 sys.exit(1 if misses else 0)

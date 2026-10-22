@@ -113,7 +113,7 @@ capture one for your model with `tools/heat-capture/` and convert it with `tools
 | `results/RESULTS.md` | every measured run with its conditions, and the accuracy report |
 | `QUANT-PRIORS.md`, `QUANT-RECIPES.md` | desk research on published quants, with links; the build reads their JSON twins |
 | `tools/` | run recording, bench sweeps, routing capture, placement check |
-| `tests/` | `python3 -m unittest discover -s tests`, then `node tests/test_accuracy.js`, `node tests/test_advisor.js` and `node tests/test_screen.js` |
+| `tests/` | `python3 build.py` first (several tests read the `data.json` it writes), then `python3 -m unittest discover -s tests`, `node tests/test_accuracy.js`, `node tests/test_advisor.js` and `node tests/test_decode_fit.js`; `node tests/test_screen.js` needs the private quality-round ledger and is not in the public copy |
 | `docs/how-it-works.md` | the reference: evidence tags, the gate's checks, recipe fields, the models behind each number, honest limits |
 
 ---

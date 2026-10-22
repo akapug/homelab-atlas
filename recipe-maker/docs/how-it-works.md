@@ -387,5 +387,6 @@ python3 build.py
 python3 -W error::ResourceWarning -m unittest discover -s tests
 node tests/test_accuracy.js
 node tests/test_advisor.js
-node tests/test_screen.js
+node tests/test_decode_fit.js
+node tests/test_screen.js          # needs the private quality-round ledger; not in the public copy
 ```

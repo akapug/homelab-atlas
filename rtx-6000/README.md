@@ -124,8 +124,9 @@ With `split=0` in `tier.ctl` the tier split is off: 12.35 and 12.44 in the table
   model's 3 layers of experts on node 1; the format is in the fork's PATCHES.md.
 - `-cr` lists the cores socket by socket, so MoE thread group g is socket g.
 - The window was 4,096 tokens (`-c 4096`, our launcher's default); the prompts are under 2.2k tokens, so it does not
-  bind. Our recorder first wrote it down as "server default (-c unset)"; the ledger now carries the correction with
-  its source, and the layout file reads 4096.
+  bind. Our recorder first wrote it down as "server default (-c unset)". The public ledger now carries 4096 on those
+  13 runs; its source reads "lab notes" here because the evidence is ours: the launcher script (not published) sets
+  `-c 4096` when no window is given, and each run's server log reads `ctx_size = 4096`. The layout file reads 4096.
 - Shards 8 and 9 of the ten are not from the split store: they hold V4.1's engram tables (lookup tables, about a
   quarter of its parameters) and come from the Q8_0 store on an NVMe drive, read from the file while serving (the layout file marks them
   `on_file` and lists where every shard sits). Shard 10 holds no routed experts either: the split store's copy is the
