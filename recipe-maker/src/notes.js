@@ -198,7 +198,7 @@ Expert heat is still the pre-1017 routing counts.
 **Pre-launch check**: \`node report.js --check <recipe.json> [more.json ...] [--json] [--strict]\` prints PASS / FAIL / UNKNOWN per hard
 check for one concrete recipe (box, model, engine, store types + per-tensor types, banks GiB, -rtr, ub, threads, draft, VRAM
 reading, NUMA headroom, files with access mode -> disk tier from the box's mount table). Exit 0 = GO, 1 = a FAIL (refuse the run),
-2 = bad input, 3 = UNKNOWN under --strict. File paths resolve symlinks only when run on the box itself; from the hub pass
+2 = bad input, 3 = UNKNOWN or an UNMODELLED speed under --strict. File paths resolve symlinks only when run on the box itself; from the hub pass
 readlink -f paths. Example recipes in recipes/:
 
 | recipe | verdict | not PASS |

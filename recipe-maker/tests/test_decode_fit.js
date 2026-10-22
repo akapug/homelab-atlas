@@ -168,6 +168,9 @@ test('--check names what it could not judge beside GO: fs1c decode is predicted,
   assert(/^verdict: GO \(no FAIL\); not judged, so not passed: prefill UNMODELLED$/.test(verdict), verdict);
   const fit = require('child_process').execFileSync('node', ['report.js', '--check', 'recipes/droopy-v41-lo-ba.json'], { encoding: 'utf8' });
   assert(!/speed UNMODELLED/.test(fit.trim().split('\n').pop()), 'a predicted layout names no speed gap');
+  const strict = require('child_process').spawnSync('node', ['report.js', '--check', 'recipes/droopy-v41-fs1c.json', '--strict'], { encoding: 'utf8' });
+  assert.strictEqual(strict.status, 3, '--strict holds on the unmodelled prefill');
+  assert(/^verdict: HOLD \(not judged, with --strict\); not judged, so not passed: prefill UNMODELLED$/.test(strict.stdout.trim().split('\n').pop()), strict.stdout);
 });
 
 console.log(passed + ' tests passed');

@@ -19,6 +19,12 @@ day). Results that change a headline number say so.
   page, PATCHES.md and `atlas.json` (the 12.69 entry is now `measured`) say so.
 
 ### Fixed
+- From devindsflash at 0491930 (86/80): `check_atlas.py` now finds each atlas number as a whole number inside the
+  section its anchor names (it caught two: the Flash-Next entry now cites the B70 page, and a 69.0 that reads as 69),
+  and walks `docs/` for links too (only the generated `docs/page/` is skipped); Recipe Maker `--check --strict` holds
+  (exit 3) on an UNMODELLED speed as well as an UNKNOWN check, with a test; the recipe scripts no longer leave an
+  empty entry (the current directory) on `LD_LIBRARY_PATH`; the front page says the folder holds scripts that build
+  the store from the public weights, not the weights.
 - From the round-3 readers (Claude at 0491930; Qwen3.8 Flash-Next 86/72 and Ornith 88/85 at 9e05692): the 189k recall
   run names its build (`prebind-f32-indexer`) and ledger id, and its hot list and placement ship as
   `recall-hot-experts.tsv` and `recall-placement.tsv`; `build-store.sh` checks for PyYAML too, fails when

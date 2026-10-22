@@ -9,7 +9,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 QUANTIZE=${QUANTIZE:?QUANTIZE=<llama-quantize>}; OUT=$(realpath -m "${OUT:-$PWD/draft}")
 REV=1bae0e1088993b9b82de08f59de5be5a34e42170; JIG=8ce0968539b1a6795f3413c2783dfa5646b4688a
 HF=$(command -v hf || command -v huggingface-cli) || { echo "needs the Hugging Face CLI: pip install -U huggingface_hub"; exit 1; }
-export LD_LIBRARY_PATH="$(dirname "$QUANTIZE")/../lib:${LD_LIBRARY_PATH:-}"   # the CUDA libraries build-engine.sh packaged
+export LD_LIBRARY_PATH="$(dirname "$QUANTIZE")/../lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"   # the CUDA libraries build-engine.sh packaged
 mkdir -p "$OUT/st" "$OUT/in"
 "$HF" download deepseek-ai/DeepSeek-V4.1-Flash-1017 --revision $REV --local-dir "$OUT/st" \
   --include 'model-0004[4-6]-of-00048.safetensors' '*.json' '*.py' 'tokenizer*'

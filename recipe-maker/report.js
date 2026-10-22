@@ -17,7 +17,7 @@ FM.applyCal(data);
 const v = FM.v, GiB = FM.GiB;
 
 // ---------- pre-launch check of one recipe: node report.js --check recipe.json [--json] [--strict] ----------
-// exit 0 = no FAIL (UNKNOWN allowed unless --strict), 1 = a hard check FAILs (refuse the launch), 2 = bad input, 3 = UNKNOWN with --strict
+// exit 0 = no FAIL (UNKNOWN or UNMODELLED allowed unless --strict), 1 = a hard check FAILs (refuse the launch), 2 = bad input, 3 = UNKNOWN or UNMODELLED with --strict
 const ci = args.indexOf('--check');
 if (ci >= 0) {
   const os = require('os');
@@ -44,14 +44,16 @@ if (ci >= 0) {
       res.notes.forEach(n => console.log('  note: ' + n));
     }
     // what the gate could not judge: UNKNOWN checks and speeds it has no number for; GO never covers them
-    gaps.push(...res.checks.filter(c => c.status === 'UNKNOWN').map(c => c.id),
-      ...(!pr || pr.status !== 'PREDICTED' ? ['speed UNMODELLED'] : Number.isFinite(pr.prefill_tps) ? [] : ['prefill UNMODELLED']));
-    const s = res.bad_input ? 2 : res.checks.some(c => c.status === 'FAIL') ? 1 : (args.includes('--strict') && res.checks.some(c => c.status === 'UNKNOWN')) ? 3 : 0;
+    const gap = [...res.checks.filter(c => c.status === 'UNKNOWN').map(c => c.id),
+      ...(!pr || pr.status !== 'PREDICTED' ? ['speed UNMODELLED'] : Number.isFinite(pr.prefill_tps) ? [] : ['prefill UNMODELLED'])];
+    gaps.push(...gap);
+    // --strict holds on anything unjudged: an UNKNOWN check or a speed the planner has no number for
+    const s = res.bad_input ? 2 : res.checks.some(c => c.status === 'FAIL') ? 1 : (args.includes('--strict') && gap.length) ? 3 : 0;
     if (s === 2 || (s === 1 && worst !== 2) || (s === 3 && worst === 0)) worst = s;
   }
   // writeSync: console.log on a pipe is asynchronous and process.exit() would cut the JSON at 64 KiB
   if (args.includes('--json')) fs.writeSync(1, JSON.stringify(outAll.length === 1 ? outAll[0] : outAll, null, 1) + '\n');
-  else console.log(`verdict: ${['GO (no FAIL)', 'REFUSE (a hard check FAILs)', 'BAD INPUT', 'HOLD (UNKNOWN with --strict)'][worst]}` +
+  else console.log(`verdict: ${['GO (no FAIL)', 'REFUSE (a hard check FAILs)', 'BAD INPUT', 'HOLD (not judged, with --strict)'][worst]}` +
     (gaps.length ? `; not judged, so not passed: ${[...new Set(gaps)].join(', ')}` : ''));
   process.exit(worst);
 }

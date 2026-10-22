@@ -70,8 +70,8 @@ lived in that box until 2026-10-07; their older pages say so where it matters.
 The ones we are proudest of, each with its conditions and quality check one click away.
 
 - **A 748B model on a 2019 workstation, at long context.** DeepSeek V4.1 Flash decodes 12.69 tok/s on one Quadro
-  RTX 6000 plus DDR4 and Optane, from public code, with every input but the prompts and the importance matrix in
-  [one folder](rtx-6000/v41-recipe/). At 189k tokens it recalled all 16 planted facts. [RTX 6000](rtx-6000/)
+  RTX 6000 plus DDR4 and Optane, from public code. [One folder](rtx-6000/v41-recipe/) holds every input but the
+  prompts and the importance matrix, with scripts that build the 233 GB store from the public 508 GB weights. At 189k tokens it recalled all 16 planted facts. [RTX 6000](rtx-6000/)
 - **GLM-5.3-Flash over the 25 tok/s line on a gaming card.** 26.69 tok/s on an RTX 3090 Ti plus 192 GB of DDR5,
   by computing only the top 4 of the expert picks that miss VRAM on 16 of its layers, with its output still within
   our quality bar. The trim is not published yet; 23.08 without it on the public image.

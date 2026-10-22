@@ -2,7 +2,9 @@
 """Check atlas.json against the pages it cites, and every relative Markdown link in the repo.
 
 For each result: its source page exists, its #anchor is a heading there, and every number in decode_tps,
-decode_tps_no_draft and prefill_tps appears in that page's text; every card in atlas.json has at least one result
+decode_tps_no_draft and prefill_tps appears as a whole number in the section the anchor names (the heading down to
+the next heading of its level or higher; the whole page when the source has no anchor). It catches a number missing
+from its section, not one that drifted to another number the same section also prints. Every card in atlas.json has at least one result
 (by card, or in a result's cards list). With --accuracy, also the planner accuracy table in recipe-maker/README.md
 against `node report.js --accuracy`. Exit 1 on any miss. Python 3, standard library.
 Run from anywhere: python3 tools/check_atlas.py
@@ -26,6 +28,22 @@ def anchors(md):
     return {slug(h) for h in re.findall(r'^#+\s+(.*)$', text, re.M)}
 
 
+def section(md, frag):
+    """the text under the heading whose slug is frag, down to the next heading of the same or a higher level"""
+    lines, out, level = open(md).read().splitlines(), [], 0
+    fence = False
+    for l in lines:
+        fence ^= l.startswith('```')
+        m = None if fence else re.match(r'^(#+)\s+(.*)$', l)
+        if level and m and len(m[1]) <= level:
+            break
+        if level:
+            out.append(l)
+        elif m and slug(m[2]) == frag:
+            level = len(m[1])
+    return '\n'.join(out)
+
+
 def numbers(value):
     return value if isinstance(value, list) else [value]
 
@@ -47,14 +65,15 @@ for r in atlas['results']:
         continue
     if frag and frag not in anchors(md):
         misses.append(f"{r['card']} {r['model']}: no heading #{frag} in {path}")
-    text = open(md).read()
+    text = section(md, frag) if frag else open(md).read()
     for key in ('decode_tps', 'decode_tps_no_draft', 'prefill_tps'):
         for n in numbers(r.get(key)) if r.get(key) is not None else []:
-            if shown(n) not in text:
-                misses.append(f"{r['card']} {r['model']}: {key} {shown(n)} not on {path}")
+            # a whole number: 12.69 is not inside 112.69 or 12.695; 69.0 may print as 69 or 69.0
+            if not re.search(r'(?<![\d.,])%s%s(?![\d]|\.\d|,\d)' % (re.escape(shown(n)), '' if '.' in shown(n) else r'(?:\.0+)?'), text):
+                misses.append(f"{r['card']} {r['model']}: {key} {shown(n)} not in {r['source']}")
 
 for d, dirs, files in os.walk(ROOT):
-    dirs[:] = [x for x in dirs if x not in ('.git', 'docs')]
+    dirs[:] = [x for x in dirs if x != '.git' and os.path.relpath(os.path.join(d, x), ROOT) != os.path.join('docs', 'page')]
     for f in (x for x in files if x.endswith('.md')):
         md = os.path.join(d, f)
         for link in re.findall(r'\]\(([^)\s]+)\)', open(md).read()):

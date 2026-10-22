@@ -16,7 +16,7 @@ IK=${IK:?IK=<ik_llama.cpp checkout>}; QUANTIZE=${QUANTIZE:?QUANTIZE=<llama-quant
 OUT=$(realpath -m "${OUT:-$PWD/v41-1017-split}"); SRCDIR=$(realpath -m "${SRCDIR:-$PWD/v41-1017-q8}"); J=${J:-16}
 REV=2c97dba3934f27a99767a90830e7519cc7b8b2d9
 HF=$(command -v hf || command -v huggingface-cli) || { echo "needs the Hugging Face CLI: pip install -U huggingface_hub"; exit 1; }
-export LD_LIBRARY_PATH="$(dirname "$QUANTIZE")/../lib:${LD_LIBRARY_PATH:-}"   # the CUDA libraries build-engine.sh packaged
+export LD_LIBRARY_PATH="$(dirname "$QUANTIZE")/../lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"   # the CUDA libraries build-engine.sh packaged
 
 # 1. the source: the Q8_0 GGUF of the 1017 release, checked against our hashes
 "$HF" download mrfakename/DeepSeek-V4.1-Flash-1017-GGUF --revision $REV --local-dir "$SRCDIR" --include 'Q8_0/*'

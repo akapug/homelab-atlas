@@ -24,7 +24,7 @@ exec env GGML_CUDA_GRAPHS_PRE_AMPERE=1 GGML_AFFINITY_ONCE=1 LLAMA_MOE_OVERLAP=1 
   GGML_CUDA_PIN_STAGING=1 GGML_CUDA_PIN_MAX_MIB=4096 GGML_SCHED_INPLACE_FOLLOW=1 LLAMA_NO_HOST_WEIGHTS=1 \
   GGML_TIER_CTL="$ctl" GGML_TIER_RING_MIB=1024 GGML_TIER_PREFETCH_CPUS=39 \
   LLAMA_EXPERT_PLACEMENT="$here/placement.tsv" LLAMA_HOT_EXPERTS="$here/hot-experts.tsv" \
-  LD_LIBRARY_PATH="$ENGINE/lib:${LD_LIBRARY_PATH:-}" \
+  LD_LIBRARY_PATH="$ENGINE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   numactl --interleave=0,1 --physcpubind="$CPUS" \
   "$ENGINE/bin/llama-server" -m "$STORE/DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00001-of-00010.gguf" \
     -ngl 99 -fa 1 --no-mmap -t "$T" -c 4096 -cr "$CPUS" --numa numactl -dple --cpu-moe \

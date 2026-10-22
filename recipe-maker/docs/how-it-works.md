@@ -135,10 +135,10 @@ node report.js --check RECIPE.json [--strict] [--json]
 
 | exit | verdict | meaning |
 |---|---|---|
-| 0 | GO | no check FAILs (with `--strict`, none is UNKNOWN either) |
+| 0 | GO | no check FAILs (with `--strict`, nothing is unjudged either) |
 | 1 | REFUSE | a hard check FAILs: do not launch |
 | 2 | BAD INPUT | unreadable recipe, or an unknown box, model or engine |
-| 3 | HOLD | `--strict` only: a check is UNKNOWN |
+| 3 | HOLD | `--strict` only: a check is UNKNOWN, or the planner has no decode or prefill number for the layout (UNMODELLED) |
 
 The recipe passes through these checks in order:
 
