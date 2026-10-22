@@ -6,6 +6,11 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+## [2026.10.22.1]
+
+The 12.69 tok/s V4.1 run becomes rebuildable from public code and weights, and the 1080 Ti gets a decode-attention
+kernel of its own.
+
 ### Added
 - GTX 1080 Ti: a split-K decode-attention kernel for DeepSeek V4's head size 512 with sinks (`LLAMA_FA_DEC=1`, our
   fork's `fa-dec-sinks`) takes V4.1 Flash from 7.96 to 11.74 tok/s without a draft and 8.28 to 12.09 with one, in one
