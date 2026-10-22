@@ -129,7 +129,7 @@
     1407,
     1410
    ],
-   "conditions": "MTP 3, 50,521-token draft vocabulary, fp8 KV, 57,344 window, temperature 0, thinking off, 512 out; 279-288 for 3 streams together (output tokens over the wall time, prefill included)",
+   "conditions": "MTP 3, 50,521-token draft vocabulary, fp8 KV, 57,344 window, temperature 0, thinking off, 512 out; decode_tps is one pass's three requests (95-107 over 10 runs); 279-288 for 3 streams together (output tokens over the wall time, prefill included)",
    "quality": "41/41 exact on the B70 correctness eval (same checkpoint)",
    "quality_on_this_build": false,
    "date": "2026-10-07",

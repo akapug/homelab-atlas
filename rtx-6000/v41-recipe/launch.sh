@@ -16,8 +16,9 @@ sudo swapoff -a
 wi=/sys/kernel/mm/mempolicy/weighted_interleave                  # equal weights, where the kernel has them
 [ ! -d $wi ] || for n in 0 1 2; do echo 1 | sudo tee $wi/node$n >/dev/null; done
 
-ctl=$(mktemp)                                                       # the tier split, as the measured run set it
-echo "split=$SPLIT prefetch=0" > "$ctl"
+ctl=${TIER_CTL:-$PWD/tier.ctl}                                     # the tier split, as the measured run set it; the server
+echo "split=$SPLIT prefetch=0" > "$ctl"                             # re-reads this file, so edit it between bench runs
+echo "tier split control file: $ctl" >&2
 
 exec env GGML_CUDA_GRAPHS_PRE_AMPERE=1 GGML_AFFINITY_ONCE=1 LLAMA_MOE_OVERLAP=1 GGML_SCHED_OVERLAP=1 \
   GGML_SCHED_ASYNC_COPY=1 GGML_OMP_FAST_ENTRY=1 GGML_BARRIER_SPIN=1 GGML_MOE_GROUPS=2 GGML_MAIN_NO_MOE=1 \

@@ -24,7 +24,7 @@ at a time unless it says otherwise.
 
 | box | CPU and memory | card | best measured result |
 |---|---|---|---|
-| **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s**; GLM-5.3-Flash (321B MoE) at **26.69 tok/s** |
+| **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s** (95-107 over 10 runs); GLM-5.3-Flash (321B MoE) at **26.69 tok/s** |
 | **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s**; **16 of 16** facts recalled from a 189k-token prompt (the same store, the build before the tier split) |
 | **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next at **87.1 tok/s**, and **11 of 12** agent tasks on the build before; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams in compiled mode (the 27B was measured with the cards in the AM5 box, before they moved here) |
 | **2017 two-socket server** (Supermicro H11DSi) | 2x EPYC 7601, 1 TB DDR4 on 16 channels | [**GTX 1080 Ti** 11 GB](1080-ti/) and [**Radeon Instinct MI25** 16 GB](mi25/) | Ornith-1.5-35B-A3B at **59-60 tok/s** with every expert on the two retired cards; DeepSeek V4.1 Flash at **12.09 tok/s** (11.74 without a draft) |

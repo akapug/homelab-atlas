@@ -19,6 +19,11 @@ day). Results that change a headline number say so.
   page, PATCHES.md and `atlas.json` (the 12.69 entry is now `measured`) say so.
 
 ### Fixed
+- From the round-8 readers (Claude 78/72 at f4b3012; Flash-Next 77/63 and Ornith 88/82 at 4ccfd53): the Recipe Maker's
+  "fastest clean run" table no longer lists a run that failed its own quality gate (the GLM 27.60 trim arm; the
+  26.69 arm that passes now leads); `launch.sh` writes the tier-split control file to `./tier.ctl` (or `$TIER_CTL`)
+  and prints its path, so one load can time several settings as the page says; the 3090 Ti 27B headline gives its
+  10-run range (95-107) beside the one-pass 103-105; the 12.69 quality cell links the earlier build it came from.
 - From a fresh Claude reader (76/66 at 4ccfd53): the measured `tier-split` commit was named wrong. The 12.69 run used
   our private `945fa93b`; the public `cde5fc20` is the same compiled code with comments and one test flag renamed, and
   `6d9992e2` adds only PATCHES.md (`build-engine.sh`, the recipe README and the MoE offload page now say so). The RTX

@@ -52,7 +52,8 @@ source's own, and the server reads the engram tables in 8 and 9 from the file wh
 drive). The other shards are read once at the load.
 
 The tier split is switched by a file: `GGML_TIER_CTL` names it, and the server re-reads its one line
-(`split=S prefetch=0|1 steal=0|1`) while it runs, so one load can time several settings. The 12.69 run had `split=8
+(`split=S prefetch=0|1 steal=0|1`) while it runs, so one load can time several settings: `launch.sh` writes it to
+`./tier.ctl` (or `$TIER_CTL`), and you rewrite that line between `bench.py` runs. The 12.69 run had `split=8
 prefetch=0`; `GGML_TIER_RING_MIB` and `GGML_TIER_PREFETCH_CPUS` size and place the prefetch ring, which that setting
 leaves idle. The fork's [PATCHES.md on `tier-split`](https://github.com/akapug/ik_llama.cpp/blob/tier-split/PATCHES.md)
 lists the switches that branch adds; the one on [`fa-tile-sinks`](https://github.com/akapug/ik_llama.cpp/blob/fa-tile-sinks/PATCHES.md),

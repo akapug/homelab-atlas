@@ -464,6 +464,16 @@ class Curate(unittest.TestCase):
         self.assertEqual((r0['measured']['wall_min'], r0['measured']['src']['wall_min']), (52.0, 'kit stamps'))
         self.assertNotIn('caveats', r0['measured'], 'a correction alone is no caveat')
 
+    def test_a_run_that_failed_its_quality_gate_is_not_clean(self):
+        # r3 (11.00) is the fastest ok1 run; a failed KL gate of its own hands the pick to r0 (10.00); PASS keeps it
+        fail = [dict(r, measured=dict(r['measured'], kl_verdict='FAIL')) if r['id'] == 'r3' else r for r in self.rows]
+        self.assertFalse(self.C.clean(next(r for r in fail if r['id'] == 'r3')))
+        self.assertEqual(self.C.best_runs(fail)[('b1', 'ok1')]['id'], 'r0')
+        gate = [dict(r, measured=dict(r['measured'], kl_gate={'verdict': 'FAIL (top-1)'})) if r['id'] == 'r3' else r for r in self.rows]
+        self.assertEqual(self.C.best_runs(gate)[('b1', 'ok1')]['id'], 'r0')
+        ok = [dict(r, measured=dict(r['measured'], kl_verdict='PASS')) if r['id'] == 'r3' else r for r in self.rows]
+        self.assertEqual(self.C.best_runs(ok)[('b1', 'ok1')]['id'], 'r3')
+
     def test_results_page_names_box_conditions_and_the_runs_under_them(self):
         c = {'id': 'dimm', 'from': '2026-10-12T00:00Z', 'to': '2026-10-13T00:00Z', 'short': 'half the DIMMs', 'what': 'one DIMM out'}
         md = self.C.results_md(self.rows, {'boxes': {'b1': {'cpu': {'desc': '1x test CPU'}, 'conditions': [c]}}, 'models': {'ok1': {'name': 'Model One'}}},
