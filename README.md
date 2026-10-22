@@ -159,7 +159,7 @@ published. Fair, and the RTX 6000 page now lists every missing piece.
 | Ornith-1.5-35B-A3B (GPTQ int4) | the other B70, vLLM, no draft | 15.6 tok/s; 15.8 tok/s, at about 40k tokens of context | 86 / 82; 80 / 74 | the 1080 Ti's "+35 %" holds only without a draft; a table credited the public build with unpublished changes |
 
 Each model card's sampling, thinking on, one request each, 2026-10-22. Every finding in the table is fixed. Cloud
-models from three other families read it too, over four rounds; what they caught is in the [CHANGELOG](CHANGELOG.md).
+models from several families read it too, over four rounds; what they caught is in the [CHANGELOG](CHANGELOG.md).
 
 ## How it evolves
 
