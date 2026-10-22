@@ -90,7 +90,7 @@ Ornith-1.5-122B; its first agent runs failed in a configuration of ours that lim
 - Repeated on box B with expert chunking off: +0.7 % (+0.5 to +0.8 %, higher on all 12 prompt pairs), with
   identical drafts and identical output text.
 
-**7. More Optane would add capacity, not speed, on box B.**
+**7. More Optane would buy room more than speed on box B.**
 - Box B has 2 PMem sticks. We modelled filling socket 0 to six DDR4 + six PMem DIMMs.
 - Our planner predicts V4.1 at 12.1-12.5 tok/s (+15-18 %) and GLM at about 16.2 (+3 %).
 - After that, the bind is per-token fixed overhead plus CPU expert compute. Even infinitely fast PMem gives V4.1 only +23 %.

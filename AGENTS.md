@@ -86,7 +86,8 @@ Ornith-1.5-35B-A3B, card 1 Qwen3.8 Flash-Next (2026-10-22).
    `build.py` (about 20 s, stdlib only) writes `data.json`, which is not in git; run it once per clone.
 5. `python3 tools/check_atlas.py` checks that every `atlas.json` number appears on the page it cites, that every card
    has at least one result (a multi-card result lists all its cards in `cards`), and that every relative link and
-   anchor in the Markdown resolves. Run it before every push.
+   anchor in the Markdown resolves. `--accuracy` also checks the planner accuracy table in `recipe-maker/README.md`
+   against `node report.js --accuracy`; run it after the ledger changes. Run it before every push.
 
 ## Changing the repo
 

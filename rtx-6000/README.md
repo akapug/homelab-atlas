@@ -155,7 +155,8 @@ What you cannot get from us yet, so your number will differ:
   token ([point 21](../moe-offload/#what-we-learned-measured)).
 - **A block drafter** (verifying 8+ tokens a pass) would not pay on this box: a pass over 8 tokens costs 2.7-2.9x a
   pass over 1 ([point 12](../moe-offload/#what-we-learned-measured)).
-- **More Optane** would add capacity, not speed: the planner predicts +15-18 % for V4.1 from 4 more sticks
+- **More Optane** would buy room more than speed: the planner predicts +15-18 % for V4.1 from 4 more sticks over the
+  build of the time, and no more than +23 % even from infinitely fast PMem
   ([point 7](../moe-offload/#what-we-learned-measured), a prediction).
 - **Ornith-1.5-122B as an agent**: 0 of 3 tasks in a configuration that limited it (a 262k window that does not fit
   beside its weights on a 24 GB card; a 45-minute wall at 18 tok/s). Not yet a verdict on the model.

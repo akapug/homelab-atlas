@@ -39,7 +39,7 @@ The fine print, card by card (the card pages carry the rest):
 - **B70.** Flash-Next: IQ3_S on XeStrata; the speed run (xe0.1.45, 262,144-token window, 2026-10-19) and the agent
   tasks (xe0.1.40.2.2, 229,376-token window, 2026-10-18) used two builds of the same setup. Qwen3.8-27B: 74.6 in eager
   mode with MTP 3 and the reduced draft vocabulary, which leaves the output unchanged; the 351 is compiled mode without
-  it.
+  it. Both were measured while the B70s sat in the Ryzen 9950X3D box, before they moved on 2026-10-07.
 - **1080 Ti and MI25.** Ornith: Q4_K_M with its own MTP draft head; on our code-review screens it found 1 of 2 planted
   defects and raised one false alarm. V4.1: the DSpark draft model, experts at release precision (the quality
   reference itself). Both ran with 15 of 16 DIMMs working.

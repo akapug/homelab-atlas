@@ -3,7 +3,8 @@
 
 For each result: its source page exists, its #anchor is a heading there, and every number in decode_tps,
 decode_tps_no_draft and prefill_tps appears in that page's text; every card in atlas.json has at least one result
-(by card, or in a result's cards list). Exit 1 on any miss. Python 3, standard library.
+(by card, or in a result's cards list). With --accuracy, also the planner accuracy table in recipe-maker/README.md
+against `node report.js --accuracy`. Exit 1 on any miss. Python 3, standard library.
 Run from anywhere: python3 tools/check_atlas.py
 """
 import json, os, re, sys
@@ -68,5 +69,33 @@ for d, dirs, files in os.walk(ROOT):
             if frag and dest.endswith('.md') and os.path.exists(dest) and frag not in anchors(dest):
                 misses.append(f'{os.path.relpath(md, ROOT)}: no heading for {link}')
 
-print('\n'.join(misses) or 'atlas.json and links: OK')
+# --accuracy: the planner accuracy table in recipe-maker/README.md against what `node report.js --accuracy` prints
+# (builds data.json first if it is missing). Each cell "P % (N runs, bias B %)" must be a line of the matching section
+# for the row's box: column 1 the launch-time decode lines, 2 the no-draft lines, 3 the replay with today's planner.
+if '--accuracy' in sys.argv:
+    import subprocess
+    rm = os.path.join(ROOT, 'recipe-maker')
+    if not os.path.exists(os.path.join(rm, 'data.json')):
+        subprocess.run([sys.executable, 'build.py'], cwd=rm, check=True, capture_output=True)
+    out = subprocess.run(['node', 'report.js', '--accuracy'], cwd=rm, check=True, capture_output=True, text=True).stdout
+    head, _, replay = out.partition("-- the same with today's planner")
+    replay = replay.partition('\n-- ')[0]
+    sections = [[l for l in head.splitlines() if l.startswith('decode_tps ')],
+                [l for l in head.splitlines() if l.startswith('decode_tps_nodraft ')],
+                [l for l in replay.splitlines() if l.startswith('decode_tps ')]]
+    cell = re.compile(r'([\d.]+) % \((\d+) runs?, bias ([+-][\d.]+) %\)')
+    for row in open(os.path.join(rm, 'README.md')).read().splitlines():
+        cols = [c.strip() for c in row.strip('|').split('|')]
+        if len(cols) != 4 or not cell.search(row):
+            continue
+        box = cols[0].split(',')[0].strip()
+        for col, lines in zip(cols[1:], sections):
+            m = cell.fullmatch(col)
+            if not m:
+                continue
+            want = re.compile(r'^\S+\s+%s/\S+.*\bn\s+%s\s+median \|err\|\s+%s %%\s+bias %s %%' % (re.escape(box), m[2], re.escape(m[1]), re.escape(m[3])))
+            if not any(want.search(l) for l in lines):
+                misses.append(f'recipe-maker/README.md accuracy table: "{cols[0]}" cell "{col}" is not what report.js --accuracy prints')
+
+print('\n'.join(misses) or 'atlas.json and links: OK' + (' (and the accuracy table)' if '--accuracy' in sys.argv else ''))
 sys.exit(1 if misses else 0)

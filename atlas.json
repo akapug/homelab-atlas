@@ -204,7 +204,7 @@
    "quality": "code-review screen 2/2 with 8k thinking; agent 0/3 in a limiting config",
    "date": "2026-10-20",
    "status": "measured",
-   "source": "rtx-6000/"
+   "source": "rtx-6000/#at-a-glance"
   },
   {
    "card": "quadro-rtx-6000",
@@ -217,7 +217,7 @@
    "quality": "KL 0.030, top-1 0.960 vs a 3-bit reference: miss",
    "date": "2026-10-20",
    "status": "measured",
-   "source": "rtx-6000/"
+   "source": "rtx-6000/#at-a-glance"
   },
   {
    "card": "arc-pro-b70-1",
@@ -306,7 +306,7 @@
    "quality": "release-precision store (the reference)",
    "date": "2026-10-20",
    "status": "measured",
-   "source": "1080-ti/",
+   "source": "1080-ti/#at-a-glance",
    "ledger_id": "lassie-v41-q8-fs3"
   },
   {
@@ -322,7 +322,7 @@
    "quality": "release-precision store",
    "date": "2026-10-20",
    "status": "measured",
-   "source": "epyc-cpu/",
+   "source": "epyc-cpu/#at-a-glance",
    "ledger_id": "lassie-v41-q8-rows8-dense-t64"
   }
  ]

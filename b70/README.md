@@ -20,7 +20,7 @@ One B70 per row, one request at a time unless the row says otherwise. Terms: [GL
 | Qwen3.8-27B (dense) | vLLM (llm-scaler 0.26.0-b2) + [our changes](vllm-xpu/) with the [reduced draft vocabulary](vllm-xpu/#3-a-smaller-vocabulary-for-the-mtp-drafter-draft-vocabpy), AutoRound int4 | **74.6 decode** at 1 stream (59.5 without the reduced vocabulary) | MTP 3, eager, fp8 KV, 131,072-token window, 1,024-token replies summarizing a log, Ryzen host, 2026-09 | output unchanged by design (every draft is checked against the full vocabulary); 41 of 41 exact on our correctness eval with it in production | [vLLM notes, section 3](vllm-xpu/#3-a-smaller-vocabulary-for-the-mtp-drafter-draft-vocabpy) |
 | Qwen3.8-27B (dense), many streams | vLLM (llm-scaler 0.26.0-b2) + [our changes](vllm-xpu/), AutoRound int4, without the reduced vocabulary | **61.2-61.5 decode** at 1 stream, **351.4** summed at 8 | MTP 3, compiled mode with XPU graphs (not yet supported by Intel; 54.4 at 1 stream in eager mode, which our servers ran), 1.5k-token prompts, Ryzen host, 2026-09 | 41 of 41 exact on our correctness eval; 22 of 24 [agent tasks](agent-eval/) | [Results](#results) |
 | Qwen3.8 Flash-Next (125B MoE, 6B active) | [XeStrata](https://github.com/chriscorbell/intel-arc-pro-b70-qwen38-flash-next) (the SYCL port of Strata), GSQ-RCO IQ3_S; about 10,900 of its 24,576 experts in VRAM, the rest computed on the CPU | **87.1 decode** (median of 3 runs, 512 tokens, one code prompt); 79.9 on the installed server at a short prompt, 70.4 after a 67.6k prompt | MTP 4, int8 KV, Threadripper host; speed: XeStrata xe0.1.45, 262,144-token window, 2026-10-19; agent tasks: xe0.1.40.2.2, 229,376-token window, 2026-10-18; card 1 has served the smaller IQ3_XXS since 2026-10-20 | **11 of 12** agent tasks in one pass; 3 of 3 real repository changes | [moe-offload point 22](../moe-offload/#what-we-learned-measured) |
-| Ornith-1.5-35B-A3B (35B MoE, 3B active) | vLLM (llm-scaler 0.26.0-b2), int4 | **198 decode** at 1 stream, 290 summed at 2; 164-167 with 4 host cores while builds ran on the other CCD | MTP 3 with the smaller drafter vocabulary, 1,200-1,500-token replies, Ryzen host, 2026-10-04 | 17 of 24 agent tasks; 31 of 40 household questions | [Ornith-1.5-35B-A3B](ornith-35b-a3b.md) |
+| Ornith-1.5-35B-A3B (35B MoE, 3B active) | vLLM (llm-scaler 0.26.0-b2), int4 | **198 decode** at 1 stream, 290 summed at 2; 164-167 with 4 host cores while builds ran on the other CCD | MTP 3 with the smaller drafter vocabulary, 1,200-1,500-token replies, 6 host cores, Ryzen host, 2026-10-04 | 17 of 24 agent tasks; 31 of 40 household questions | [Ornith-1.5-35B-A3B](ornith-35b-a3b.md) |
 
 What the two cards serve today (2026-10-22): card 1 runs Qwen3.8 Flash-Next (IQ3_XXS since 2026-10-20) as a coding
 model; card 2 runs Ornith-1.5-35B-A3B (a prequantized GPTQ copy since 2026-10-19, MTP off for the reason in
@@ -46,7 +46,8 @@ speculative decoding with the model's own MTP head, 3 draft tokens.
 
 Later, the [reduced draft vocabulary](vllm-xpu/#3-a-smaller-vocabulary-for-the-mtp-drafter-draft-vocabpy) took one
 stream to 74.6 tok/s (eager, 1,024-token replies summarizing a log; 59.5 without it on the same settings), with the same tokens
-accepted a step.
+accepted a step. The 54.4 eager figure above comes from a different workload (1.5k-token prompts), so the two eager
+figures are not a pair.
 
 The card's limit for one stream without speculation is ~35 tok/s: each step reads ~16.5 GB of
 weights, and we measured ~590 GB/s sustained (608 nameplate). vLLM compiled reaches 32.8

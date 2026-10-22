@@ -41,6 +41,10 @@ day). Results that change a headline number say so.
   Ornith result under the MI25 too (`cards`), and `check_atlas.py` fails if any card has no result.
 - The planner's V4.1 error figures in PATCHES.md and its how-it-works page are the tool's current ones (21.9 % and
   24.5 %, not the older 13.9 %), with the note that the gap is not closing yet.
+- Readers' round five: Recipe Maker's accuracy table carries the tool's current figures (175 runs), and
+  `check_atlas.py --accuracy` now fails when it drifts from `report.js --accuracy`; the B70 headline says which box it
+  was measured in; the two B70 eager figures say they come from different workloads; "more Optane" no longer
+  contradicts its own +15-18 %; every atlas.json source has an anchor; the test list names only tests that ship.
 - Recipe Maker named GLM's quality reference (EXL3-3.05) on V4.1 checks too; each model family now names its own, and
   a measured KL beside a predicted top-1 says which is which.
 

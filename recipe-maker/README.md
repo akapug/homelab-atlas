@@ -33,18 +33,18 @@ Every measured run, the fastest clean run per box and model with its conditions,
 
 ## How close are its predictions?
 
-From `node report.js --accuracy` on the shipped ledger (2026-10-21). Error = (predicted - measured) / measured, scored
+From `node report.js --accuracy` on the shipped ledger (175 runs, 2026-10-22). Error = (predicted - measured) / measured, scored
 only on runs that finished cleanly and were not disturbed; a negative bias means the planner predicted slower. The first
 two columns score what the planner said when each run launched; the last replays every run through today's planner.
 
 | Box / model / engine | Decode (draft on) | Decode (no draft) | Decode (draft on), today's planner |
 | --- | ---: | ---: | ---: |
 | snoopy, GLM-5.3-Flash, glmlite | 2.5 % (8 runs, bias -0.8 %) | | 2.5 % (8 runs, bias -0.8 %) |
-| droopy, DeepSeek V4.1 Flash, ik_llama.cpp | 20.2 % (14 runs, bias -19.3 %) | 23.3 % (11 runs, bias -23.3 %) | 19.5 % (14 runs, bias -18.5 %) |
-| droopy, GLM-5.3-Flash, ik_llama.cpp | 15.6 % (4 runs, bias -10.6 %) | 19.8 % (8 runs, bias -19.8 %) | 16.1 % (4 runs, bias -10.6 %) |
+| droopy, DeepSeek V4.1 Flash, ik_llama.cpp | 21.9 % (19 runs, bias -21.9 %) | 26.3 % (15 runs, bias -26.3 %) | 22.2 % (19 runs, bias -22.2 %) |
+| droopy, GLM-5.3-Flash, ik_llama.cpp | 15.6 % (4 runs, bias -10.6 %) | 19.8 % (8 runs, bias -19.8 %) | 15.8 % (4 runs, bias -10.5 %) |
 | droopy, Ornith-1.5-122B, ik_llama.cpp (in sample: its host term is fitted on this one run) | 1.3 % (1 run, bias +1.3 %) | 0.4 % (1 run, bias -0.4 %) | 1.3 % (1 run, bias +1.3 %) |
 | lassie, DeepSeek V4.1 Flash, ik_llama.cpp | 24.5 % (10 runs, bias +24.5 %) | 10.8 % (9 runs, bias +10.8 %) | 26.9 % (11 runs, bias +26.9 %) |
-| lassie, Ornith-1.5-35B-A3B, ik_llama.cpp | 14.6 % (4 runs, bias +14.6 %) | 9.7 % (4 runs, bias -9.7 %) | 1.1 % (3 runs, bias +1.1 %) |
+| lassie, Ornith-1.5-35B-A3B, ik_llama.cpp | 16.1 % (4 runs, bias +16.1 %) | 9.7 % (4 runs, bias -9.7 %) | 1.2 % (3 runs, bias +1.2 %) |
 | odie, LLaDA2.1-mini (block diffusion), one Arc Pro B70 | 4.1 % (15 runs, bias -1.5 %) | | 4.1 % (15 runs, bias -1.5 %) |
 | odie / lassie, other block-diffusion models | 1.6-43.8 % (2-4 runs each) | | 1.6-43.8 % (2-4 runs each) |
 
@@ -111,7 +111,7 @@ capture one for your model with `tools/heat-capture/` and convert it with `tools
 | `results/RESULTS.md` | every measured run with its conditions, and the accuracy report |
 | `QUANT-PRIORS.md`, `QUANT-RECIPES.md` | desk research on published quants, with links; the build reads their JSON twins |
 | `tools/` | run recording, bench sweeps, routing capture, placement check |
-| `tests/` | `python3 -m unittest discover -s tests`, then `node tests/test_accuracy.js`, `node tests/test_advisor.js` and `node tests/test_screen.js` |
+| `tests/` | `python3 -m unittest discover -s tests`, then `node tests/test_accuracy.js`, `node tests/test_advisor.js` and `node tests/test_decode_fit.js` (the screening test stays with the private screening ledger) |
 | `docs/how-it-works.md` | the reference: evidence tags, the gate's checks, recipe fields, the models behind each number, honest limits |
 
 ---

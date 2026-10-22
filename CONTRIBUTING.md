@@ -36,7 +36,8 @@ does not reproduce our number on the same hardware, that is a bug, and an issue 
 
 - Every push that changes results or structure adds a CHANGELOG line under Unreleased; cut a dated tag when a batch
   lands (`git tag -a v2026.10.22 -m "..."`, `.N` for a second the same day). Tags are never moved or deleted.
-- `python3 tools/check_atlas.py` passes: every `atlas.json` number is on the page it cites, every link resolves.
+- `python3 tools/check_atlas.py` passes: every `atlas.json` number is on the page it cites, every card has a result,
+  every link resolves. After a change to the run ledger, run it with `--accuracy` too.
 - Plain English, short sentences, conditions on every number.
 - No secrets, private paths, LAN addresses or personal details. Our own pushes run Recipe Maker's export scanner
   (`tools/export_atlas.sh --scan-only`, in the private source tree) and must come back clean.
