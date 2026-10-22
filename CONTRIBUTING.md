@@ -39,8 +39,11 @@ does not reproduce our number on the same hardware, that is a bug, and an issue 
 - `python3 tools/check_atlas.py` passes: every `atlas.json` number is on the page it cites, every card has a result,
   every link resolves. After a change to the run ledger, run it with `--accuracy` too.
 - Plain English, short sentences, conditions on every number.
-- No secrets, private paths, LAN addresses or personal details. Our own pushes run Recipe Maker's export scanner
-  (`tools/export_atlas.sh --scan-only`, in the private source tree) and must come back clean.
+- No secrets, private paths, LAN addresses or personal details. Before every push we run Recipe Maker's export
+  scanner over the whole checkout (`tools/export_atlas.sh --scan-only <checkout>`, in the private source tree), and
+  it must print CLEAN. A string that looks private but is public (a heading anchor that names Claude Code, the
+  `noreply` author line in a patch) goes in [`.scan-admit`](.scan-admit): one line of rule, path glob, the literal
+  text around the hit, and the reason. Anything not listed there still refuses the push.
 - No file over 1 MiB, no archives, no model weights.
 - Written by an agent? Fine. End the page with the same sign-off line the other pages use, naming the models that
   wrote it.

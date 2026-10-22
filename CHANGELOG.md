@@ -6,6 +6,15 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+### Changed
+- The publish scan now runs over the whole repository and comes back CLEAN. The few public strings it used to flag
+  (heading anchors and commands that name Claude Code, the `noreply` author line in the SYCL patches, the eval's
+  `example.com` address) are listed with their reasons in `.scan-admit`; anything else still refuses a push.
+  CONTRIBUTING and AGENTS say so.
+
+### Removed
+- `.gitattributes`: its one line was a waiver for an internal commit guard, which no longer needs it.
+
 ## [2026.10.22]
 
 The atlas gets a shape: one page per card, a map up front, and a way to grow.

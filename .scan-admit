@@ -1,0 +1,16 @@
+# Public strings the publish scan (Recipe Maker's tools/export_atlas.sh --scan-only) would otherwise refuse.
+# One per line: rule | path glob | literal | reason. A hit is admitted only when its rule, its path and the literal
+# around the matched text all agree; anything else still refuses. Keep this list short and every reason true.
+internal id | README.md | (b70/qwen36-35b-a3b.md#claude-code-on-it) | anchor of the public heading "Claude Code on it"
+internal id | PATCHES.md | (b70/qwen36-35b-a3b.md#claude-code-on-it) | anchor of the public heading "Claude Code on it"
+internal id | PATCHES.md | (#claude-code-on-a-local-model-settings-not-patches) | anchor of a heading in this file
+internal id | b70/agent-eval/Dockerfile | npm install -g @anthropic-ai/claude-code | the public npm package of the agent harness
+internal id | b70/agent-eval/README.md | (https://github.com/anthropics/claude-code) | the harness's public repository
+internal id | b70/agent-eval/README.md | docker build -t agent-eval:claude . | image tag named after the harness
+internal id | b70/agent-eval/run.py | -- claude --dangerously-skip-permissions --model opus | usage line: the harness's own command
+internal id | b70/agent-eval/sandbox-agent.sh | Arguments go to claude. | the harness's own command
+internal id | b70/agent-eval/sandbox-agent.sh | CLAUDE_CONFIG_DIR=/tmp/home/.claude | the harness's config directory inside the sandbox
+internal id | b70/agent-eval/sandbox-agent.sh | agent-eval:claude claude --dangerously-skip-permissions | the image tag and the harness's own command
+e-mail address | b70/agent-eval/run.py | user.email=eval@example.com | reserved example domain (RFC 2606) for the eval's git commits
+e-mail address | b70/llama.cpp-sycl/patches/*.patch | <akapug@users.noreply.github.com> | GitHub's public no-reply author address in git format-patch headers
+lab notes pointer | docs/README.md | docs/README.md | this repository's own docs folder, not a lab-notes page
