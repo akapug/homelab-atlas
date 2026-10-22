@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Build the engine of the 12.69 run: akapug/ik_llama.cpp branch tier-split, CUDA for the Quadro RTX 6000 (sm_75), CPU
 # code for Cascade Lake (AVX-512 + VNNI), in the CUDA 12.6.3 container. Our measured package used these flags.
+# The binaries need, on the host: the NVIDIA driver (libcuda.so.1, even llama-quantize links it) and glibc 2.39 or
+# newer (Ubuntu 24.04 or later); pkg/lib carries the CUDA runtime, cuBLAS and libgomp.
 #   OUT=$HOME/build/ik-tier-split ./build-engine.sh        -> $OUT/pkg/bin (llama-server + tests) and $OUT/pkg/lib
 # GGML_EXPERT_CHUNKING=OFF matters: ON cost this box about 20-24 % of GLM decode. Change -march and
 # CMAKE_CUDA_ARCHITECTURES for another box.
 set -euo pipefail
-# REF pins the branch tip we published (its code is cde5fc20, the measured build; later commits change only docs).
+# PIN is the public tip of tier-split. The 12.69 run used our private commit cde5fc20; 6d9992e2 is the same compiled
+# code with comments and one test flag renamed and later docs added, so build 6d9992e2 (cde5fc20 is not public).
 PIN=6d9992e2b7fc888882d271b3d297ebc382c4e54c
 OUT=${OUT:-$HOME/build/ik-tier-split}; REF=${REF:-$PIN}; J=${J:-16}
 IMG=${IMG:-nvidia/cuda:12.6.3-devel-ubuntu24.04}
@@ -33,7 +36,8 @@ docker run --rm -v "$OUT":/o -e J="$J" -e U="$(id -u):$(id -g)" "$IMG" bash -euc
   mkdir -p /o/pkg/bin /o/pkg/lib
   cp /o/build/bin/llama-server /o/build/bin/llama-cli /o/build/bin/llama-perplexity /o/build/bin/llama-quantize /o/build/bin/llama-imatrix /o/build/bin/test-backend-ops \
      /o/build/bin/test-expert-place /o/build/bin/test-tier-split /o/pkg/bin/
-  for l in libcudart.so.12 libcublas.so.12 libcublasLt.so.12; do cp -L /usr/local/cuda/lib64/$l /o/pkg/lib/; done'
+  for l in libcudart.so.12 libcublas.so.12 libcublasLt.so.12; do cp -L /usr/local/cuda/lib64/$l /o/pkg/lib/; done
+  cp -L /usr/lib/x86_64-linux-gnu/libgomp.so.1 /o/pkg/lib/'
 (cd "$OUT/pkg" && sha256sum bin/* lib/* > SHA256SUMS)
 echo "built $(cat "$OUT/SOURCE_SHA") into $OUT/pkg; on a host with the NVIDIA driver, check:"
 echo "  LD_LIBRARY_PATH=$OUT/pkg/lib $OUT/pkg/bin/test-tier-split"

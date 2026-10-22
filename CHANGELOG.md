@@ -19,6 +19,14 @@ day). Results that change a headline number say so.
   page, PATCHES.md and `atlas.json` (the 12.69 entry is now `measured`) say so.
 
 ### Fixed
+- From the round-3 readers (Claude at 0491930; Qwen3.8 Flash-Next 86/72 and Ornith 88/85 at 9e05692): the 189k recall
+  run names its build (`prebind-f32-indexer`) and ledger id, and its hot list and placement ship as
+  `recall-hot-experts.tsv` and `recall-placement.tsv`; `build-store.sh` checks for PyYAML too, fails when
+  `split.rules` differs, and has a `FETCH_ONLY=1` step so the imatrix command runs on a downloaded source;
+  `build-engine.sh` says why it pins public `6d9992e2` while the run used private `cde5fc20`, lists the host needs and
+  packages libgomp; `launch.sh` sets weighted interleave only where the kernel has it and says CPU 39 sits idle; the
+  card reads the window as 4,096 and the layout's `ctx` as a label; the B70 row says its 27B numbers predate the move;
+  the GLM 23.08 note carries its conditions.
 - From a fresh Claude reader at dc8a266: the README no longer calls the 12.69 changes unpublished; `build-engine.sh`
   pins the measured commit and also builds `llama-imatrix`, with the imatrix command beside the others; the store and
   draft scripts find the packaged CUDA libraries, use `hf` (or the older `huggingface-cli`), and stop with a hint

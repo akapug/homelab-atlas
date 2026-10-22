@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Launch DeepSeek V4.1 Flash 1017 the way our fastest run on the Quadro RTX 6000 + Optane box did (12.69-12.71 tok/s n4).
-# Box: 2 sockets of 10 cores, 20 threads each (NUMA nodes 0 and 1; CPU 39 runs the tier split's copy thread) plus Optane PMem as CPU-less node 2.
+# Box: 2 sockets of 10 cores, 20 threads each (NUMA nodes 0 and 1) plus Optane PMem as CPU-less node 2. The 39 compute
+# threads leave CPU 39 free: it is the tier split's prefetch CPU, idle here because this run had prefetch off.
 # Change CPUS/T and the node numbers in placement.tsv for another box.
 #   ENGINE=<dir with bin/llama-server from the tier-split branch>  STORE=<split store dir>  DRAFT=<draft gguf>  ./launch.sh
 # Needs root for the three system settings. Restore them afterwards (numa_balancing, demotion, swap).
@@ -12,7 +13,8 @@ CPUS=${CPUS:-0-9,20-29,10-19,30-38}; T=${T:-39}; PORT=${PORT:-8790}; SPLIT=${SPL
 echo 0 | sudo tee /proc/sys/kernel/numa_balancing >/dev/null       # no automatic page migration
 echo false | sudo tee /sys/kernel/mm/numa/demotion_enabled >/dev/null
 sudo swapoff -a
-for n in 0 1 2; do echo 1 | sudo tee /sys/kernel/mm/mempolicy/weighted_interleave/node$n >/dev/null; done
+wi=/sys/kernel/mm/mempolicy/weighted_interleave                  # equal weights, where the kernel has them
+[ ! -d $wi ] || for n in 0 1 2; do echo 1 | sudo tee $wi/node$n >/dev/null; done
 
 ctl=$(mktemp)                                                       # the tier split, as the measured run set it
 echo "split=$SPLIT prefetch=0" > "$ctl"

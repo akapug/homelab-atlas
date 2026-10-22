@@ -8,7 +8,7 @@ did, written out on their own.
 
 | file | what it is | how the run used it |
 |---|---|---|
-| [`build-engine.sh`](build-engine.sh) | builds [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp) branch `tier-split` at the pinned commit (its code is the measured `cde5fc20`) with our CMake flags, in the CUDA 12.6.3 container | the engine: `llama-server`, `llama-quantize`, `llama-imatrix` and the two tests |
+| [`build-engine.sh`](build-engine.sh) | builds [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp) branch `tier-split` at the pinned public commit `6d9992e2` (the compiled code of our measured private commit `cde5fc20`, with comments renamed) with our CMake flags, in the CUDA 12.6.3 container | the engine: `llama-server`, `llama-quantize`, `llama-imatrix` and the two tests |
 | [`build-draft.sh`](build-draft.sh) | converts DeepSeek's draft head (DSpark, release shards 44-46) to GGUF, then makes its routed experts q2_K | `-md DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf` |
 | [`build-store.sh`](build-store.sh) | downloads the public Q8_0 GGUF, checks it, and splits it into hot MXFP4 and cold q2_K experts | `-m DeepSeek-V4.1-Flash-1017-hotmxfp4-coldq2k-00001-of-00010.gguf` |
 | [`hot-alloc.json`](hot-alloc.json) | which experts of each layer stay MXFP4 (hot); about 3 bits per weight overall | input of `build-store.sh` |
@@ -17,6 +17,7 @@ did, written out on their own.
 | [`placement.tsv`](placement.tsv) | where every CPU expert lives (`hot` and `cold` in its tensor names are the store's MXFP4 and q2_K partitions, not GPU and CPU): hot ones split by rows over the two sockets, cold ones on the sockets or the Optane node, the draft's experts on socket 1 | `LLAMA_EXPERT_PLACEMENT` (the same bytes as the run's file) |
 | [`launch.sh`](launch.sh) | the system settings, the environment and the `llama-server` command line | the launch, with the tier split at 8 threads (`split=8` in the `GGML_TIER_CTL` file) |
 | [`bench.py`](bench.py) | a client that does what our lab client did: a 64-token warm-up and a 13,000-character prefill to touch every expert page, then each prompt once per phase, greedy, 300 tokens, no prompt cache | the timing (ours ran its phases from the lab kit, and its warm-up text was different) |
+| [`recall-hot-experts.tsv`](recall-hot-experts.tsv), [`recall-placement.tsv`](recall-placement.tsv) | the 189k-token recall run's GPU hot list (129 experts, 2.2 GiB) and CPU placement, on the `prebind-f32-indexer` build | that run's `LLAMA_HOT_EXPERTS` and `LLAMA_EXPERT_PLACEMENT`, exact bytes; its haystack is our own notes and is not published |
 | [`prompts.json`](prompts.json) | three public coding-agent prompts | **not** the run's prompts, see below |
 | [`SHA256SUMS`](SHA256SUMS) | hashes and sizes of the public sources, our store shards and our draft | checks. Its middle column is the size, so `sha256sum -c` needs the other two: `awk 'length($1)==64 {print $1"  "$3}' SHA256SUMS \| sha256sum -c --ignore-missing` in the download folder (the build scripts do this) |
 
@@ -25,18 +26,25 @@ did, written out on their own.
 ```bash
 OUT=$HOME/build/ik-tier-split ./build-engine.sh                 # about 15 min on 16 cores (see below)
 QUANTIZE=$HOME/build/ik-tier-split/pkg/bin/llama-quantize OUT=$PWD/draft ./build-draft.sh
-# an importance matrix of the Q8_0 source (ours: 512 chunks of 512 tokens of code-heavy text, see below):
-#   pkg/bin/llama-imatrix -m <Q8_0 shard 1> -f <your text> -c 512 --chunks 512 -o imatrix.dat
+# the Q8_0 source first, then an importance matrix of it (ours: 512 chunks of 512 tokens of code-heavy text, see below)
+IK=$HOME/build/ik-tier-split/src QUANTIZE=$HOME/build/ik-tier-split/pkg/bin/llama-quantize FETCH_ONLY=1 ./build-store.sh
+LD_LIBRARY_PATH=$HOME/build/ik-tier-split/pkg/lib $HOME/build/ik-tier-split/pkg/bin/llama-imatrix \
+  -m v41-1017-q8/Q8_0/DeepSeek-V4.1-Flash-1017-Q8_0-00001-of-00010.gguf -f <your text> -c 512 --chunks 512 -o imatrix.dat
 IK=$HOME/build/ik-tier-split/src QUANTIZE=$HOME/build/ik-tier-split/pkg/bin/llama-quantize \
-  IMATRIX=<your imatrix .dat> OUT=$PWD/v41-1017-split ./build-store.sh
+  IMATRIX=$PWD/imatrix.dat OUT=$PWD/v41-1017-split ./build-store.sh
 ENGINE=$HOME/build/ik-tier-split/pkg STORE=$PWD/v41-1017-split \
   DRAFT=$PWD/draft/DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf ./launch.sh &
 # after "server is listening" (about 45 min: the store is read from disk and placed over DRAM and PMem):
 PORT=8790 N=300 PHASES=n4:4,n0:0,n4b:4 python3 bench.py
 ```
 
-`launch.sh` is written for this box: two 10-core Xeons with 20 hardware threads each (NUMA nodes 0 and 1; CPU 39 runs
-the tier split's copy thread, outside the 39 compute threads) and Optane as a CPU-less node 2. On another box, change `CPUS` and `T` and the node numbers in `placement.tsv`, and see
+**The host needs** an NVIDIA driver (every binary links `libcuda.so.1`, `llama-quantize` too), glibc 2.39 or newer
+(Ubuntu 24.04 or later; the build container's), Docker for the two builds, Python 3 with numpy and PyYAML, the Hugging
+Face CLI, about 1 TB of disk, and for the run itself the RAM and Optane of this box (or a layout from the planner).
+`pkg/lib` carries the CUDA runtime, cuBLAS and libgomp.
+
+`launch.sh` is written for this box: two 10-core Xeons with 20 hardware threads each (NUMA nodes 0 and 1; the 39
+compute threads leave CPU 39 for the tier split's prefetch, which this run had off) and Optane as a CPU-less node 2. On another box, change `CPUS` and `T` and the node numbers in `placement.tsv`, and see
 [the planner](../../recipe-maker/) for a layout that fits.
 
 We ran `build-engine.sh` on 2026-10-22 (16 cores, about 15 min): it built `6d9992e2` with rc 0. That
