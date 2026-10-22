@@ -6,6 +6,38 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+## [2026.10.22]
+
+The atlas gets a shape: one page per card, a map up front, and a way to grow.
+
+### Added
+- README: "Reviewed by its own hardware", what two local models on the two B70s found when they read the repo.
+- `tools/check_atlas.py`: checks every `atlas.json` number against the page it cites, and every Markdown link and
+  anchor. `atlas.json` rows now carry the run ledger id where one exists.
+- Card pages for the hardware that had none: [RTX 3090 Ti](3090-ti/), [Quadro RTX 6000 + Optane](rtx-6000/),
+  [GTX 1080 Ti](1080-ti/) and [the EPYC CPUs alone](epyc-cpu/), each with its best results first, the commands to
+  reproduce them, what did not work and what is not measured yet.
+- RTX 3090 Ti results: Qwen3.8-27B on vLLM 0.31.0 CUDA at 103-105 tok/s (MTP 3, draft vocabulary +28 %);
+  GLM-5.3-Flash at 26.69 tok/s with a route trim that passes the quality bar; Flash-Next 23 of 24 agent tasks;
+  four models in code-review rounds.
+- [`3090-ti/vllm-cuda/Dockerfile`](3090-ti/vllm-cuda/Dockerfile): vLLM's official 0.31.0 CUDA image with
+  `draft-vocab` and `length-finish`.
+- RTX 6000 + Optane: DeepSeek V4.1 Flash at 12.69 tok/s (was 11.88), the tier split measured step by step, the full
+  reproduce command, 16 of 16 facts recalled at 189k tokens.
+- README hardware table with every box and card, a "pick a path" table, and newer highlights.
+- [GLOSSARY.md](GLOSSARY.md), [AGENTS.md](AGENTS.md), [atlas.json](atlas.json), [CONTRIBUTING.md](CONTRIBUTING.md)
+  and this changelog.
+- B70 entry: an at-a-glance table for both cards and what each serves today.
+- Agent eval: later results (2026-10-05 to 10-18), local and hosted.
+
+### Changed
+- `length-finish.py` skips the streaming half when vLLM already has it upstream (vLLM 0.31.0).
+- PATCHES.md: the machine description now matches where the cards are (the B70s moved to a Threadripper box on
+  2026-10-07); the RTX 6000, GTX 1080 Ti and RTX 3090 Ti are measured, no longer listed as untested hardware.
+- MoE offload: the best-result table adds GLM-5.3-Flash with the route trim on box A and V4.1 at 12.69 on box B, and
+  links each box to its card page.
+- MI25: the B70 comparison figure now names its conditions and source.
+
 ### Fixed
 - Recipe Maker's gate counts now match what `node report.js --accuracy` prints on the shipped ledger (175 runs: 31 of
   47 bad runs caught, 16 missed, 24 false alarms); three pages had three older counts.
@@ -47,40 +79,6 @@ day). Results that change a headline number say so.
   contradicts its own +15-18 %; every atlas.json source has an anchor; the test list names only tests that ship.
 - Recipe Maker named GLM's quality reference (EXL3-3.05) on V4.1 checks too; each model family now names its own, and
   a measured KL beside a predicted top-1 says which is which.
-
-### Added
-- README: "Reviewed by its own hardware", what two local models on the two B70s found when they read the repo.
-- `tools/check_atlas.py`: checks every `atlas.json` number against the page it cites, and every Markdown link and
-  anchor. `atlas.json` rows now carry the run ledger id where one exists.
-
-## [2026.10.22]
-
-The atlas gets a shape: one page per card, a map up front, and a way to grow.
-
-### Added
-- Card pages for the hardware that had none: [RTX 3090 Ti](3090-ti/), [Quadro RTX 6000 + Optane](rtx-6000/),
-  [GTX 1080 Ti](1080-ti/) and [the EPYC CPUs alone](epyc-cpu/), each with its best results first, the commands to
-  reproduce them, what did not work and what is not measured yet.
-- RTX 3090 Ti results: Qwen3.8-27B on vLLM 0.31.0 CUDA at 103-105 tok/s (MTP 3, draft vocabulary +28 %);
-  GLM-5.3-Flash at 26.69 tok/s with a route trim that passes the quality bar; Flash-Next 23 of 24 agent tasks;
-  four models in code-review rounds.
-- [`3090-ti/vllm-cuda/Dockerfile`](3090-ti/vllm-cuda/Dockerfile): vLLM's official 0.31.0 CUDA image with
-  `draft-vocab` and `length-finish`.
-- RTX 6000 + Optane: DeepSeek V4.1 Flash at 12.69 tok/s (was 11.88), the tier split measured step by step, the full
-  reproduce command, 16 of 16 facts recalled at 189k tokens.
-- README hardware table with every box and card, a "pick a path" table, and newer highlights.
-- [GLOSSARY.md](GLOSSARY.md), [AGENTS.md](AGENTS.md), [atlas.json](atlas.json), [CONTRIBUTING.md](CONTRIBUTING.md)
-  and this changelog.
-- B70 entry: an at-a-glance table for both cards and what each serves today.
-- Agent eval: later results (2026-10-05 to 10-18), local and hosted.
-
-### Changed
-- `length-finish.py` skips the streaming half when vLLM already has it upstream (vLLM 0.31.0).
-- PATCHES.md: the machine description now matches where the cards are (the B70s moved to a Threadripper box on
-  2026-10-07); the RTX 6000, GTX 1080 Ti and RTX 3090 Ti are measured, no longer listed as untested hardware.
-- MoE offload: the best-result table adds GLM-5.3-Flash with the route trim on box A and V4.1 at 12.69 on box B, and
-  links each box to its card page.
-- MI25: the B70 comparison figure now names its conditions and source.
 
 ---
 
