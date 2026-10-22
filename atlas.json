@@ -1,7 +1,7 @@
 {
  "schema": "homelab-atlas/1",
  "updated": "2026-10-22",
- "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). A result that needs several cards lists them all in cards; card is the one whose page it cites.",
+ "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). quality_on_this_build: false marks a result whose quality check ran on another build or card than the speed figure (its quality text says which); absent means the check ran on the configuration the result names. A result that needs several cards lists them all in cards; card is the one whose page it cites.",
  "boxes": [
   {
    "id": "snoopy",
@@ -131,6 +131,7 @@
    ],
    "conditions": "MTP 3, 50,521-token draft vocabulary, fp8 KV, 57,344 window, temperature 0, thinking off, 512 out; 279-288 for 3 streams together (output tokens over the wall time, prefill included)",
    "quality": "41/41 exact on the B70 correctness eval (same checkpoint)",
+   "quality_on_this_build": false,
    "date": "2026-10-07",
    "status": "measured",
    "source": "3090-ti/#qwen38-27b-on-vllm-cuda-about-104-toks"
@@ -172,6 +173,7 @@
    "streams": 1,
    "conditions": "DSpark draft n_max 4, 7.0 GiB hot experts on GPU, rest DRAM+PMem, 3 coding-agent prompts x 300 tokens; -c 4096; ledger id droopy-v41-v41fs-ts2-0127 (its run summary prefill 67.9); layout recipe-maker/recipes/droopy-v41-fs1c.json",
    "quality": "KL 0.0169, top-1 0.975 vs release-precision store: pass; measured with the earlier 10.6 build of the same store and layout, not re-measured on this build",
+   "quality_on_this_build": false,
    "date": "2026-10-22",
    "status": "measured",
    "public_fork_decode_tps": 11.88,
@@ -229,6 +231,7 @@
    "streams": 1,
    "conditions": "~10,900 of 24,576 experts in VRAM, rest on CPU, MTP 4, int8 KV; speed: XeStrata xe0.1.45, 262,144 window, median of 3 x 512 tokens, one code prompt; agent runs: xe0.1.40.2.2, 229,376 window, 2026-10-18; card 1 serves IQ3_XXS since 2026-10-20",
    "quality": "agent eval 11/12 (one pass); 3/3 real repository changes",
+   "quality_on_this_build": false,
    "date": "2026-10-19",
    "status": "measured",
    "source": "b70/#at-a-glance"

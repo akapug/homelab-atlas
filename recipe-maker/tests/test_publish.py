@@ -341,7 +341,7 @@ class Curate(unittest.TestCase):
                         'sources': 'lab notes', 'placeholder': ['measured.src'], 'labels_keep': ['class', 'phases', 'evidence'],
                         'labels_placeholder': ['evidence']},
                'rewrite': [['\\bdocs/\\d+', 'lab notes', 'a doc']], 'rewrite_skip': ['tests/*.js'],
-               'results': 'results/RESULTS.md'}
+               'results': 'results/RESULTS.md', 'recipes': {'keep': ['rk.json']}}
         def run(i, model, dec, deg=None, rid=None):
             m = {'outcome': 'ok', 'decode_tps': {'n4': dec, 'n0': dec / 2}, 'notes': 'see ' + DOC + '42', 'src': {'decode_tps': 'b1:~/runs/x.json'}}
             if deg:
@@ -358,6 +358,7 @@ class Curate(unittest.TestCase):
             'tests/t.js': "recipe('r3.json'); // " + DOC + "9 stays in test code\n",
             'recipes/r3.json': json.dumps({'id': 'r3', 'note': DOC + '7'}),
             'recipes/r0.json': json.dumps({'id': 'r0'}),
+            'recipes/rk.json': json.dumps({'id': 'rk'}),
             'runs/runs.jsonl': ''.join(json.dumps(r) + '\n' for r in rows),
             'runs/labels.json': json.dumps({'_doc': 'labels', 'docs-42-run': {'causes': [{'class': 'interference', 'phases': ['m0'], 'evidence': 'private'}]}}),
             'runs/levers.json': json.dumps({'levers': [{'lever': 'a', 'before': [{'run': 'r0'}], 'after': [{'run': 'r3'}]},
@@ -376,8 +377,9 @@ class Curate(unittest.TestCase):
 
     def test_what_ships(self):
         have = sorted(os.path.relpath(os.path.join(a, f), self.out) for a, _, fs in os.walk(self.out) for f in fs)
-        # recipes: r3 is both the fastest clean run of (b1, ok1) and named by a test; r0 is neither; secret.txt is 'never'
-        self.assertEqual(have, ['README.md', 'build.py', 'recipes/r3.json', 'runs/labels.json', 'runs/left_out.json', 'runs/levers.json',
+        # recipes: r3 is both the fastest clean run of (b1, ok1) and named by a test; rk is on the manifest's keep list;
+        # r0 is none of these; secret.txt is 'never'
+        self.assertEqual(have, ['README.md', 'build.py', 'recipes/r3.json', 'recipes/rk.json', 'runs/labels.json', 'runs/left_out.json', 'runs/levers.json',
                                 'runs/runs.jsonl', 'tests/t.js'])
 
     def test_left_out_names_the_skipped_model_per_box(self):

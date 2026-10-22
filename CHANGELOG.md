@@ -21,6 +21,12 @@ day). Results that change a headline number say so.
 ### Fixed
 - From the GPT-6.1 reader at 0491930 (its diff): `build-engine.sh` refuses a dirty source checkout instead of stamping a
   `SOURCE_SHA` that does not describe what it built.
+- From the round-5 local readers (Qwen3.8 Flash-Next 72/57, Ornith 88/86 at 12aa2d5): `atlas.json` gains
+  `quality_on_this_build: false` on the three results whose quality check ran on another build or card (the 12.69
+  V4.1, the 3090 Ti 27B, the B70 Flash-Next); the front page says the 189k recall ran on the build before the tier
+  split, and that the recipe folder holds every input the run loaded but the prompts and the importance matrix (our
+  quality harness and the lab launcher's checks are not in it either). Recipe Maker's publishing test covers the
+  manifest's keep list.
 - GLM-5.3-Flash on the 3090 Ti: the pages said the untrimmed 23.08 ran on the public image. It ran the public image
   with our unpublished CPU-lane changes mounted over it (the layer-ahead warm-up among them), as did every trim arm;
   the README, the 3090 Ti and MoE offload pages and `atlas.json` now say so. The base and trim runs used the same CPU
