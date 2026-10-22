@@ -1,5 +1,7 @@
 # Homelab Atlas
 
+*Old hardware. New tricks. Receipts attached.*
+
 Big local models on hardware you can actually get: a 2017 server off the used market, a 2019 workstation full of
 Optane, a gaming desktop, and a pair of Intel cards that cost less than one flagship. No rack of H100s was harmed in
 the making of this repo.

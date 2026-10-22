@@ -62,7 +62,8 @@ sessions, so each is shown against its own baseline:
   is the expert-row step (6.64 / 4.45). The 7.02 / 5.16 run (ledger id `lassie-v41-q8-rows8-dense-t64` in
   [RESULTS.md](../recipe-maker/results/RESULTS.md)) uses the same files and adds row rules over nodes 0-7 for the
   attention weights (q_a, q_b, kv, output_b, and output_a in 8 groups), the shared experts and the output head, about
-  0.97 GiB per node; its recipe file is not exported yet.
+  0.97 GiB per node. Its full recipe is the `recipe` field of that row in the run ledger
+  ([`recipe-maker/runs/`](../recipe-maker/runs/), the numbered segments).
 
 ## What did not work
 

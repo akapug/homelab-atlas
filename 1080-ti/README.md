@@ -57,7 +57,8 @@ With it the per-op sums agree with a CPU-only run to within rounding, and then t
 - The layouts as data: [`recipe-maker/recipes/lassie-orn35-q4km-o6.json`](../recipe-maker/recipes/lassie-orn35-q4km-o6.json)
   (the Ornith run), and [`lassie-v41-q8-rows8.json`](../recipe-maker/recipes/lassie-v41-q8-rows8.json), the CPU-only
   expert-row step the V4.1 layout grew from. The 7.13 run itself is ledger id `lassie-v41-q8-fs3` in
-  [RESULTS.md](../recipe-maker/results/RESULTS.md); its recipe file is not exported yet.
+  [RESULTS.md](../recipe-maker/results/RESULTS.md); its full recipe is the `recipe` field of that row in the run ledger
+  ([`recipe-maker/runs/`](../recipe-maker/runs/)).
 
 ## What did not work
 
