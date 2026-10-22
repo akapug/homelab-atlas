@@ -1,0 +1,308 @@
+{
+ "schema": "homelab-atlas/1",
+ "updated": "2026-10-22",
+ "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches).",
+ "boxes": [
+  {
+   "id": "snoopy",
+   "letter": "A",
+   "name": "AM5 desktop",
+   "cpu": "Ryzen 9 9950X3D, 16 cores",
+   "memory": "192 GB DDR5, 4 DIMMs at 5200 MT/s",
+   "cards": [
+    "rtx-3090-ti"
+   ]
+  },
+  {
+   "id": "droopy",
+   "letter": "B",
+   "name": "HP Z8 G4 workstation (2019)",
+   "cpu": "2x Xeon Gold 5215, 10 cores each",
+   "memory": "192 GB DDR4-2666 (12 channels) + 256 GB Optane PMem 100 (App Direct)",
+   "cards": [
+    "quadro-rtx-6000"
+   ]
+  },
+  {
+   "id": "odie",
+   "letter": "C",
+   "name": "TRX40 workstation",
+   "cpu": "Threadripper 3960X, 24 cores",
+   "memory": "128 GB DDR4, 4 x 32 GB",
+   "cards": [
+    "arc-pro-b70-1",
+    "arc-pro-b70-2"
+   ],
+   "history": "B70s were in snoopy until 2026-10-07"
+  },
+  {
+   "id": "lassie",
+   "letter": "D",
+   "name": "Supermicro H11DSi server (2017)",
+   "cpu": "2x EPYC 7601, 32 cores each, 8 NUMA nodes",
+   "memory": "1 TB DDR4-2400, 16 x 64 GB LRDIMM, 16 channels",
+   "cards": [
+    "gtx-1080-ti",
+    "mi25",
+    "cpu-only"
+   ]
+  }
+ ],
+ "cards": [
+  {
+   "id": "rtx-3090-ti",
+   "box": "snoopy",
+   "model": "NVIDIA GeForce RTX 3090 Ti",
+   "vram_gb": 24,
+   "arch": "Ampere sm_86",
+   "bus": "PCIe 4 x16",
+   "page": "3090-ti/"
+  },
+  {
+   "id": "quadro-rtx-6000",
+   "box": "droopy",
+   "model": "NVIDIA Quadro RTX 6000",
+   "vram_gb": 24,
+   "arch": "Turing sm_75",
+   "bus": "PCIe 3 x16",
+   "page": "rtx-6000/"
+  },
+  {
+   "id": "arc-pro-b70-1",
+   "box": "odie",
+   "model": "Intel Arc Pro B70",
+   "vram_gb": 32,
+   "arch": "Xe2",
+   "bus": "PCIe 4 x16",
+   "page": "b70/",
+   "serves": "Qwen3.8 Flash-Next (2026-10-22)"
+  },
+  {
+   "id": "arc-pro-b70-2",
+   "box": "odie",
+   "model": "Intel Arc Pro B70",
+   "vram_gb": 32,
+   "arch": "Xe2",
+   "bus": "PCIe 4 x16",
+   "page": "b70/",
+   "serves": "Ornith-1.5-35B-A3B (2026-10-22)"
+  },
+  {
+   "id": "gtx-1080-ti",
+   "box": "lassie",
+   "model": "NVIDIA GeForce GTX 1080 Ti",
+   "vram_gb": 11,
+   "arch": "Pascal sm_61",
+   "bus": "PCIe 3",
+   "page": "1080-ti/"
+  },
+  {
+   "id": "mi25",
+   "box": "lassie",
+   "model": "AMD Radeon Instinct MI25",
+   "vram_gb": 16,
+   "arch": "Vega 10 gfx900, HBM2",
+   "bus": "PCIe 3 x16",
+   "page": "mi25/"
+  },
+  {
+   "id": "cpu-only",
+   "box": "lassie",
+   "model": "2x AMD EPYC 7601 (no GPU)",
+   "vram_gb": 0,
+   "arch": "Zen 1, AVX2",
+   "page": "epyc-cpu/"
+  }
+ ],
+ "results": [
+  {
+   "card": "rtx-3090-ti",
+   "model": "Qwen3.8-27B",
+   "weights": "AutoRound int4",
+   "engine": "vLLM 0.31.0 CUDA + draft-vocab + length-finish",
+   "decode_tps": [
+    103,
+    105
+   ],
+   "streams": 1,
+   "prefill_tps": [
+    1407,
+    1410
+   ],
+   "conditions": "MTP 3, 50,521-token draft vocabulary, fp8 KV, 57,344 window, temperature 0, thinking off, 512 out; 279-287 summed at 3 streams",
+   "quality": "41/41 exact on the B70 correctness eval (same checkpoint)",
+   "date": "2026-10-07",
+   "status": "measured",
+   "source": "3090-ti/#qwen38-27b-on-vllm-cuda-about-104-toks"
+  },
+  {
+   "card": "rtx-3090-ti",
+   "model": "GLM-5.3-Flash",
+   "weights": "EXL3 3.05 bpw",
+   "engine": "glm53-flash-offload (exllamav3-based) + route trim keep4 L29-44",
+   "decode_tps": 26.69,
+   "streams": 1,
+   "conditions": "1,600 experts cached in VRAM, 14 CPU cores, 3 coding prompts x 300 tokens, greedy, thinking off, 32,768 window",
+   "quality": "KL 0.0154, top-1 0.975: pass",
+   "date": "2026-10-20",
+   "status": "unpublished-code",
+   "source": "3090-ti/#glm-53-flash-a-route-trim-clears-25-toks"
+  },
+  {
+   "card": "rtx-3090-ti",
+   "model": "Qwen3.8 Flash-Next",
+   "weights": "Q8_0",
+   "engine": "Strata 477ac13c sm_86",
+   "decode_tps": 49.13,
+   "streams": 1,
+   "conditions": "every expert in RAM, VRAM expert cache, MTP 4, card thinking sampling, 131,072 window",
+   "quality": "agent eval 23/24 (21/24 inside 1,200 s)",
+   "date": "2026-10-18",
+   "status": "measured",
+   "source": "3090-ti/#qwen38-flash-next-agent-work-from-ram"
+  },
+  {
+   "card": "quadro-rtx-6000",
+   "model": "DeepSeek V4.1 Flash",
+   "weights": "split store: hot experts MXFP4, cold q2_K",
+   "engine": "ik_llama.cpp, our fork + expert pre-binding + tier split + upstream #2712",
+   "decode_tps": 12.69,
+   "decode_tps_no_draft": 10.29,
+   "prefill_tps": 69.0,
+   "streams": 1,
+   "conditions": "DSpark draft n_max 4, 7.0 GiB hot experts on GPU, rest DRAM+PMem, 3 coding-agent prompts x 300 tokens",
+   "quality": "KL 0.0169, top-1 0.975 vs release-precision store: pass",
+   "date": "2026-10-22",
+   "status": "unpublished-code",
+   "public_fork_decode_tps": 11.88,
+   "source": "rtx-6000/#deepseek-v41-flash-the-best-run"
+  },
+  {
+   "card": "quadro-rtx-6000",
+   "model": "DeepSeek V4.1 Flash",
+   "weights": "split store",
+   "engine": "ik_llama.cpp, our fork",
+   "decode_tps": 7.18,
+   "streams": 1,
+   "prefill_tps": 57.7,
+   "conditions": "189,454-token prompt, 212,992 window, --swa-compress, micro-batch 2048, n0",
+   "quality": "recall 16/16",
+   "date": "2026-10-21",
+   "status": "measured",
+   "source": "rtx-6000/#v41-at-189k-tokens-every-fact-recalled"
+  },
+  {
+   "card": "quadro-rtx-6000",
+   "model": "Ornith-1.5-122B",
+   "weights": "Q4_K_M",
+   "engine": "ik_llama.cpp, our fork",
+   "decode_tps": 31.6,
+   "streams": 1,
+   "prefill_tps": 165.5,
+   "conditions": "MTP n_max 3, experts of layers 0-8 on GPU, 4,000 tokens of context, 49,152 window",
+   "quality": "code-review screen 2/2 with 8k thinking; agent 0/3 in a limiting config",
+   "date": "2026-10-20",
+   "status": "measured",
+   "source": "rtx-6000/"
+  },
+  {
+   "card": "quadro-rtx-6000",
+   "model": "GLM-5.3-Flash",
+   "weights": "unsloth UD-Q4_K_XL",
+   "engine": "ik_llama.cpp, our fork",
+   "decode_tps": 16.06,
+   "streams": 1,
+   "conditions": "MTP 3 + reduced draft vocabulary, p_min 0.75, mean of 4 prompts x 3 rounds",
+   "quality": "KL 0.030, top-1 0.960 vs a 3-bit reference: miss",
+   "date": "2026-10-20",
+   "status": "measured",
+   "source": "rtx-6000/"
+  },
+  {
+   "card": "arc-pro-b70-1",
+   "model": "Qwen3.8 Flash-Next",
+   "weights": "GSQ-RCO IQ3_S",
+   "engine": "XeStrata xe0.1.45",
+   "decode_tps": 87.1,
+   "streams": 1,
+   "conditions": "~10,900 experts in VRAM, rest on CPU, MTP 4, int8 KV, 262,144 window, median of 3 x 512 tokens, one code prompt",
+   "quality": "agent eval 11/12 (one pass); 3/3 real repository changes",
+   "date": "2026-10-19",
+   "status": "measured",
+   "source": "moe-offload/#what-we-learned-measured"
+  },
+  {
+   "card": "arc-pro-b70-1",
+   "model": "Qwen3.8-27B",
+   "weights": "AutoRound int4",
+   "engine": "vLLM llm-scaler 0.26.0-b2 + inc-q40, compiled",
+   "decode_tps": [
+    61.2,
+    61.5
+   ],
+   "streams": 1,
+   "conditions": "MTP 3, 1.5k prompts; 351.4 summed at 8 streams; measured in snoopy",
+   "quality": "41/41 exact; agent 22/24",
+   "date": "2026-09",
+   "status": "measured",
+   "source": "b70/#results"
+  },
+  {
+   "card": "arc-pro-b70-2",
+   "model": "Ornith-1.5-35B-A3B",
+   "weights": "sym_int4 at load",
+   "engine": "vLLM llm-scaler 0.26.0-b2",
+   "decode_tps": 198,
+   "streams": 1,
+   "conditions": "MTP 3 + draft vocabulary, 6 host cores, 1,500-token replies; 290 summed at 2; measured in snoopy",
+   "quality": "agent 17/24; household 31/40",
+   "date": "2026-10-04",
+   "status": "measured",
+   "source": "b70/ornith-35b-a3b.md#speed"
+  },
+  {
+   "card": "gtx-1080-ti",
+   "model": "Ornith-1.5-35B-A3B",
+   "weights": "Q4_K_M",
+   "engine": "ik_llama.cpp, our fork, CUDA + Vulkan banks",
+   "decode_tps": 59.13,
+   "streams": 1,
+   "prefill_tps": 331,
+   "conditions": "every routed expert on GPUs (10 layers 1080 Ti, 30 MI25), MTP 3 (60.01 at MTP 2), 8,192 window, 3 prompts x 300",
+   "quality": "code-review screen 1/2, 1 false alarm",
+   "date": "2026-10-21",
+   "status": "measured",
+   "source": "mi25/#ornith-15-35b-a3b-on-the-mi25-and-a-gtx-1080-ti-about-60-toks"
+  },
+  {
+   "card": "gtx-1080-ti",
+   "model": "DeepSeek V4.1 Flash",
+   "weights": "experts MXFP4 (release), rest Q8_0",
+   "engine": "ik_llama.cpp, our fork",
+   "decode_tps": 7.13,
+   "decode_tps_no_draft": 6.97,
+   "prefill_tps": 48.2,
+   "streams": 1,
+   "conditions": "card holds attention, KV, dense weights; experts row-split over 8 NUMA nodes; DSpark n_max 4; 64 threads",
+   "quality": "release-precision store (the reference)",
+   "date": "2026-10-21",
+   "status": "measured",
+   "source": "1080-ti/"
+  },
+  {
+   "card": "cpu-only",
+   "model": "DeepSeek V4.1 Flash",
+   "weights": "experts MXFP4 (release), rest Q8_0",
+   "engine": "ik_llama.cpp, our fork",
+   "decode_tps": 7.02,
+   "decode_tps_no_draft": 5.16,
+   "prefill_tps": 36.2,
+   "streams": 1,
+   "conditions": "experts + dense row-split over 8 NUMA nodes, 64 threads, DSpark n_max 4",
+   "quality": "release-precision store",
+   "date": "2026-10-21",
+   "status": "measured",
+   "source": "epyc-cpu/"
+  }
+ ]
+}

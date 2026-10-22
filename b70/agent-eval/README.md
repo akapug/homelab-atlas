@@ -71,6 +71,23 @@ the MoE went 6/6 then 3/6 with thinking capped.
 
 Twelve small tasks is still a small suite, but the gap held when the suite doubled.
 
+## Later results (2026-10-05 to 2026-10-18)
+
+The same 12 tasks and hidden checks, Claude Code 2.1.291 in the same sandbox, 1,200 s per task unless a row says
+otherwise. These rows are not in `results.csv`; each links the entry with its conditions.
+
+| model, where | passed | conditions | entry |
+|---|---|---|---|
+| Qwen3.8 Flash-Next, Q8_0 on an RTX 3090 Ti + DDR5 (Strata) | 23 / 24 (21 / 24 inside the limit) | 2 passes, the model card's thinking sampling, MTP 4, 2026-10-18 | [3090 Ti](../../3090-ti/#qwen38-flash-next-agent-work-from-ram) |
+| Qwen3.8 Flash-Next, IQ3_S on one B70 (XeStrata) | 11 / 12 | 1 pass, median 410 s a task, 2026-10-18 | [moe-offload point 22](../../moe-offload/#what-we-learned-measured) |
+| Ornith-1.5-35B-A3B on one B70 (vLLM, MTP 3) | 17 / 24 | 2 passes, 2026-10-05 | [Ornith on the B70](../ornith-35b-a3b.md) |
+| DeepSeek V4.1 Flash, hosted | 22 / 24 | 2 passes, the provider's own serving settings | reference only |
+| GLM-5.3-Flash, hosted | 23 / 24 | 2 passes, the provider's settings; a second free provider also 23 / 24 with a 3,600 s limit | reference only |
+
+The hosted rows are a ceiling to aim at, not local results. Qwen3.8-27B's 22 of 24 from 2026-09-24 above is still
+the best local dense score; Flash-Next on the 3090 Ti box matched the hosted GLM's 23 of 24 when
+runs past the limit count.
+
 ## Running it
 
 The agent runs in a container that sees only the task's working copy ([`Dockerfile`](Dockerfile),

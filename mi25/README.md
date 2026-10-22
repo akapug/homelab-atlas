@@ -59,8 +59,8 @@ the median for the whole box during the run. All MEASURED, 2026-10-21.
 - Same-binary text check: the n0 texts of o6 and o2 are byte-identical, and so are those of o5 and o1. The bank
   arms and the CPU arms differ from each other. Our reading: rounding, because the experts are computed by other
   kernels. All texts read coherently.
-- For scale: the same model, as `sym_int4` under vLLM on one current Intel Arc Pro B70, decodes about 198 tok/s at
-  one stream ([the B70 entry](../b70/ornith-35b-a3b.md)). This entry is about what old parts can do, not a claim that
+- For scale: the same model, as `sym_int4` under vLLM on one current Intel Arc Pro B70, decodes 198 tok/s at
+  one stream with MTP 3 and 6 host cores ([the B70 entry](../b70/ornith-35b-a3b.md#speed), 2026-10-04). This entry is about what old parts can do, not a claim that
   they beat a new card.
 
 **Real chat requests at the model card's sampling.** The o6 layout served three long code-review requests through

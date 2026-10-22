@@ -4,8 +4,9 @@ Every patch and tool in this repo, grouped by the hardware it needs, then by the
 Each entry says what goes wrong without it (the symptom you would see), who it is for, what we
 measured and where this repo shows it, and how to apply it, check it and undo it.
 
-Everything here was measured on [our machine](#our-machine). Where an entry says **untested**, we
-have not run it on that hardware, and the entry says why it may or may not carry over.
+Everything here was measured on [our machines](#our-machine). Where an entry says **untested**, we
+have not run it on that hardware, and the entry says why it may or may not carry over. The words used here, and in
+the rest of the repo, are in the [GLOSSARY](GLOSSARY.md).
 
 ## Words used here
 
@@ -41,9 +42,10 @@ have not run it on that hardware, and the entry says why it may or may not carry
 | entry | kind | software it needs | measured on | details |
 |---|---|---|---|---|
 | [`strict-tools.py`](b70/vllm-xpu/strict-tools.py) | any GPU | llm-scaler 0.26.0-b2's vLLM, the `qwen3_coder` tool parser | B70 | [section 1](#strict-toolspy-tool-names-the-model-cannot-get-wrong) |
-| [`length-finish.py`](b70/vllm-xpu/length-finish.py) | any GPU | llm-scaler 0.26.0-b2's vLLM | B70 | [section 1](#length-finishpy-a-cut-off-tool-call-says-it-was-cut-off) |
+| [`length-finish.py`](b70/vllm-xpu/length-finish.py) | any GPU | llm-scaler 0.26.0-b2's vLLM, or vLLM 0.31.0 (non-streaming half only) | B70; RTX 3090 Ti | [section 1](#length-finishpy-a-cut-off-tool-call-says-it-was-cut-off) |
 | [`effort-template.py`](b70/vllm-xpu/effort-template.py) | any GPU | Qwen3.8-27B served by vLLM | B70 | [section 1](#effort-templatepy-qwen38-accepts-the-usual-effort-words) |
-| [`draft-vocab.py`](b70/vllm-xpu/draft-vocab.py), its lists and [`draft-vocab-build.py`](b70/vllm-xpu/draft-vocab-build.py) | any GPU | llm-scaler 0.26.0-b2's vLLM, a Qwen MTP head | B70 | [section 1](#draft-vocabpy-cheaper-drafts-for-speculative-decoding) |
+| [`draft-vocab.py`](b70/vllm-xpu/draft-vocab.py), its lists and [`draft-vocab-build.py`](b70/vllm-xpu/draft-vocab-build.py) | any GPU | llm-scaler 0.26.0-b2's vLLM or vLLM 0.31.0 CUDA, a Qwen MTP head | B70; RTX 3090 Ti | [section 1](#draft-vocabpy-cheaper-drafts-for-speculative-decoding) |
+| [`3090-ti/vllm-cuda/Dockerfile`](3090-ti/vllm-cuda/Dockerfile) | any NVIDIA GPU vLLM supports | Docker, vLLM's official 0.31.0 CUDA image (pinned by digest) | RTX 3090 Ti | [the 3090 Ti entry](3090-ti/#qwen38-27b-on-vllm-cuda-about-104-toks) |
 | llama.cpp [`0015`, `0016`](b70/llama.cpp-sycl/patches/) | any GPU | llama.cpp `94256114c2`, MTP speculation | B70 (SYCL) | [section 1](#llamacpp-0015-and-0016-speculative-decoding-that-keeps-to-its-limits) |
 | [`fix-699.py`](b70/vllm-xpu/fix-699.py) | Intel only | llm-scaler 0.26.0-b2, int4, compiled mode | B70 | [section 2](#fix-699py-compiled-mode-starts) |
 | [`inc-q40.diff`](b70/vllm-xpu/inc-q40.diff) or [`inc-q40.py`](b70/vllm-xpu/inc-q40.py) | Intel only | llm-scaler 0.26.0-b2, an AutoRound int4 checkpoint | B70 | [section 2](#inc-q40-autoround-int4-checkpoints-on-the-fast-kernels) |
@@ -61,10 +63,13 @@ have not run it on that hardware, and the entry says why it may or may not carry
 
 ## Our machine
 
-If yours matches, this is the configuration every number below comes from.
+Four boxes; the [README](README.md#the-hardware) has the full table. The B70 numbers in sections 1-4 come from the
+configuration below. If yours matches, this is what they were measured on.
 
-- **The model server**: an AMD Ryzen 9 9950X3D (AM5) with two Intel Arc Pro B70 (32 GB each), on Linux
-  with the kernel's `xe` driver. vLLM runs from `intel/llm-scaler-vllm:0.26.0-b2` in Docker, one model
+- **The B70 model server, until 2026-10-07**: an AMD Ryzen 9 9950X3D (AM5) with two Intel Arc Pro B70 (32 GB each), on Linux
+  with the kernel's `xe` driver. Since 2026-10-07 the two B70s sit in a Threadripper 3960X box (TRX40, 128 GB DDR4),
+  one serving Qwen3.8 Flash-Next and one Ornith-1.5-35B-A3B ([the B70 entry](b70/)); the Ryzen box now holds an
+  [RTX 3090 Ti](3090-ti/). Back then: vLLM runs from `intel/llm-scaler-vllm:0.26.0-b2` in Docker, one model
   per card, both in eager mode (no compiled graphs), with an fp8 KV cache, 8 requests at a time and
   MTP 3:
   - Qwen3.8-27B (dense), from the AutoRound int4 checkpoint through `inc-q40`, a 212,992-token window,
@@ -72,12 +77,11 @@ If yours matches, this is the configuration every number below comes from.
   - Qwen3.6-35B-A3B (mixture of experts, about 3B active per token), BF16 quantized to int4 at load,
     its full 262,144-token window, with `draft-vocab`, `strict-tools` and `length-finish`;
   - `serving-cpu-guard` on the host, because the same machine also runs builds and tests.
-- **An NVIDIA Quadro RTX 6000** (24 GB, Turing) in an HP Z8 G4, running llama.cpp CUDA builds. Nothing
-  in this repo was measured on it yet, apart from one fix to another project
-  ([below](#nvidia-quadro-rtx-6000-turing-24-gb)).
+- **An NVIDIA Quadro RTX 6000** (24 GB, Turing) with 256 GB of Optane PMem in an HP Z8 G4: big MoE models through
+  our ik_llama.cpp fork ([its entry](rtx-6000/)).
 - **An NVIDIA GTX 1080 Ti** (11 GB, Pascal) and an **AMD Radeon Instinct MI25** (16 GB, Vega 10) in a two-socket
-  EPYC 7601 server with 1 TB of DRAM. Their numbers are in [the MI25 entry](mi25/) and [moe-offload](moe-offload/);
-  none of the patches above was measured on them.
+  EPYC 7601 server with 1 TB of DRAM: [the 1080 Ti](1080-ti/), [the MI25](mi25/), [the CPUs alone](epyc-cpu/).
+  None of the section 2-4 patches applies to them.
 - **The client**: Claude Code, reaching the local models through an Anthropic-to-OpenAI proxy (a fork
   of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)).
 
@@ -167,6 +171,9 @@ is also listed on its own below. How to start the image on your GPU is in Intel'
 - **Apply.** In site-packages:
   `python3 length-finish.py vllm/entrypoints/openai/chat_completion/serving.py`.
 - **Check.** `python3 length-cut-check.py 8000 <served model name>` prints `finish_reason=length`.
+- **On vLLM 0.31.0** the streaming half is already upstream: the script says `already upstream` for it, patches the
+  non-streaming half, and leaves one marker instead of two. The [3090 Ti image](3090-ti/vllm-cuda/Dockerfile) applies
+  it this way.
 - **Undo.** Copy `serving.py.orig` back.
 
 ### `effort-template.py`: Qwen3.8 accepts the usual effort words
@@ -465,11 +472,20 @@ against the CPU with `test-backend-ops`; the counts are in the notes.
   which launch fewer kernels from Python and may be less sensitive. We did not try the server on the
   larger-cache CCD.
 
-## 5. Hardware nothing here was measured on
+## 5. NVIDIA, AMD and other hardware
+
+### NVIDIA RTX 3090 Ti (Ampere, 24 GB)
+
+Measured: [its entry](3090-ti/). Of the section 1 patches, `draft-vocab.py` and the non-streaming half of
+`length-finish.py` run on vLLM's official 0.31.0 CUDA image, built by [one Dockerfile](3090-ti/vllm-cuda/Dockerfile);
+with them Qwen3.8-27B decodes 103-105 tok/s at one stream (MTP 3; the reduced draft vocabulary adds 28 %).
+`strict-tools.py` is upstream in 0.31.0 as `--tool-strict-level parameter`. `effort-template.py` and llama.cpp `0015`
+and `0016` are untested here.
 
 ### NVIDIA Quadro RTX 6000 (Turing, 24 GB)
 
-One of our cards, not yet measured for this repo.
+Measured with big MoE models through our ik_llama.cpp fork: [its entry](rtx-6000/). The section 1 vLLM patches are
+untested on it.
 
 - **Usable as is** (nothing GPU-specific in them): the
   [Claude Code settings](#claude-code-on-a-local-model-settings-not-patches), the
@@ -490,7 +506,7 @@ One of our cards, not yet measured for this repo.
 
 ### NVIDIA GTX 1080 Ti (Pascal, 11 GB)
 
-One of our cards. It cannot hold the models above on its own: Qwen3.8-27B at 4 bits is 18 GB of weights
+Measured: [its entry](1080-ti/). It cannot hold the models above on its own: Qwen3.8-27B at 4 bits is 18 GB of weights
 before any cache. What we measured on it: small models under llama.cpp Vulkan beside an MI25 ([the MI25
 entry](mi25/)), and DeepSeek V4.1 Flash with attention, KV cache and the dense weights on the card and the
 experts on the CPUs, at 7.13 tok/s ([moe-offload](moe-offload/), points 11 and 17). Beside an MI25 it holds 10

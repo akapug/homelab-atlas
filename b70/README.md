@@ -6,6 +6,30 @@ The Arc Pro B70 is a 32 GB Xe2 (Battlemage) workstation card. One card holds a 2
 layers and 16 attention layers, plus a multi-token-prediction head usable for speculative
 decoding), and the patches that got us there.
 
+**Box:** since 2026-10-07 the two B70s sit in a Threadripper 3960X box (TRX40, 24 cores, 128 GB DDR4 as 4 x 32 GB,
+both cards on PCIe 4 x16); the [MoE offload entry](../moe-offload/) calls it box C. Before that they were in the
+Ryzen 9 9950X3D box that now holds the [RTX 3090 Ti](../3090-ti/), and the results under "Results" below were
+measured there.
+
+## At a glance
+
+One B70 per row, one request at a time unless the row says otherwise. Terms: [GLOSSARY](../GLOSSARY.md).
+
+| model | engine and weights | result | conditions | quality check | details |
+|---|---|---|---|---|---|
+| Qwen3.8-27B (dense) | vLLM (llm-scaler 0.26.0-b2) + [our changes](vllm-xpu/), AutoRound int4 | **61.2-61.5 decode** at 1 stream, **351.4** summed at 8 | MTP 3, compiled mode, 1.5k-token prompts, Ryzen host, 2026-09 | 41 of 41 exact on our correctness eval; 22 of 24 [agent tasks](agent-eval/) | [Results](#results) |
+| Qwen3.8 Flash-Next (125B MoE, 6B active) | [XeStrata](https://github.com/chriscorbell/intel-arc-pro-b70-qwen38-flash-next) (the SYCL port of Strata), GSQ-RCO IQ3_S; about 10,900 experts in VRAM, the rest computed on the CPU | **87.1 decode** (median of 3 runs, 512 tokens, one code prompt); 79.9 on the installed server at a short prompt, 70.4 after a 67.6k prompt | MTP 4, int8 KV, 262,144-token window, Threadripper host, 2026-10-18/20 | **11 of 12** agent tasks in one pass; 3 of 3 real repository changes | [moe-offload point 22](../moe-offload/#what-we-learned-measured) |
+| Ornith-1.5-35B-A3B (35B MoE, 3B active) | vLLM (llm-scaler 0.26.0-b2), int4 | **198 decode** at 1 stream, 290 summed at 2; 164-167 with 4 host cores while builds ran on the other CCD | MTP 3 with the smaller drafter vocabulary, 1,200-1,500-token replies, Ryzen host, 2026-10-04 | 17 of 24 agent tasks; 31 of 40 household questions | [Ornith-1.5-35B-A3B](ornith-35b-a3b.md) |
+
+What the two cards serve today (2026-10-22): card 1 runs Qwen3.8 Flash-Next (IQ3_XXS since 2026-10-20) as a coding
+model; card 2 runs Ornith-1.5-35B-A3B (a prequantized GPTQ copy since 2026-10-19, MTP off for the reason in
+[its entry](ornith-35b-a3b.md#a-bug-mtp-garbled-about-3--of-replies-from-the-first-token)) for a household assistant
+and a coding agent.
+
+Card 2 has also run block-diffusion models on a stock diffusion engine (q4_0, 2026-10-19): LLaDA2.1-mini at 59.71 tok/s
+over 33 HumanEval prompts, Ling-mini-2.0 at 147.46 over 4 short prompts. Their conditions are in
+[RESULTS.md](../recipe-maker/results/RESULTS.md); nothing tuned yet.
+
 ## Results
 
 Aggregate decode tok/s, one B70, prompts at ~1.5k and ~16k tokens, 4-bit weights. "MTP 3" is
