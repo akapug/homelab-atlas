@@ -19,16 +19,31 @@ the predictions compare with our measured runs. Nothing to install.
 ## The hardware
 
 Four boxes, six GPUs from three vendors and five architectures, 1.5 TB of DRAM between them. Each card has its own
-page with its best results first, the commands to reproduce them, and what did not work. All results are one request at a time unless they say otherwise; the
-linked page gives the full conditions and the quality check for every number.
+page with its best results first, the commands to reproduce them, and what did not work. Every result is one request
+at a time unless it says otherwise.
 
-| box | CPU and memory | card | best measured result (fastest that passed its quality check) |
+| box | CPU and memory | card | best measured result |
 |---|---|---|---|
-| **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s** (vLLM CUDA, int4, MTP 3); GLM-5.3-Flash (321B MoE) at **26.69 tok/s** with its quality check passing (route trim not yet published; 23.08 without) |
-| **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s** (11.88 on public code; its quality check is from an earlier build of the same store), and **16 of 16** facts recalled from a 189k-token prompt |
-| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next (IQ3_S) at **87.1 tok/s** with **11 of 12** agent tasks passed; Qwen3.8-27B at **74.6 tok/s** (MTP 3 with a reduced draft vocabulary, output unchanged), **351** summed over 8 streams |
-| **2017 two-socket server** (Supermicro H11DSi) | 2x EPYC 7601, 1 TB DDR4 on 16 channels | [**GTX 1080 Ti** 11 GB](1080-ti/) and [**Radeon Instinct MI25** 16 GB](mi25/) | Ornith-1.5-35B-A3B at **59-60 tok/s** with every expert on the two retired cards; DeepSeek V4.1 Flash at 7.13 tok/s with a draft model (both with 15 of 16 DIMMs working) |
-| the same server | [**its CPUs alone**](epyc-cpu/) | none | DeepSeek V4.1 Flash at **7.02 tok/s** with its experts as released, no GPU at all (15 of 16 DIMMs working) |
+| **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s**; GLM-5.3-Flash (321B MoE) at **26.69 tok/s** |
+| **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s**; **16 of 16** facts recalled from a 189k-token prompt |
+| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next at **87.1 tok/s** and **11 of 12** agent tasks; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams |
+| **2017 two-socket server** (Supermicro H11DSi) | 2x EPYC 7601, 1 TB DDR4 on 16 channels | [**GTX 1080 Ti** 11 GB](1080-ti/) and [**Radeon Instinct MI25** 16 GB](mi25/) | Ornith-1.5-35B-A3B at **59-60 tok/s** with every expert on the two retired cards; DeepSeek V4.1 Flash at **7.13 tok/s** |
+| the same server | [**its CPUs alone**](epyc-cpu/) | none | DeepSeek V4.1 Flash at **7.02 tok/s**, no GPU at all |
+
+The fine print, card by card (the card pages carry the rest):
+- **RTX 3090 Ti.** Qwen3.8-27B: vLLM CUDA, int4, MTP 3 with a reduced draft vocabulary; the same checkpoint scored
+  41 of 41 on our correctness eval on the B70. GLM-5.3-Flash: EXL3 3.05 bpw with a route trim that passes our quality
+  bar but is not published yet; 23.08 without it, on the public image.
+- **RTX 6000.** 11.88 on our public code; the 12.69 adds two changes not published yet plus upstream ik_llama.cpp
+  #2712, and its quality check comes from the earlier build of the same store and layout.
+- **B70.** Flash-Next: IQ3_S on XeStrata; the speed run (xe0.1.45, 262,144-token window, 2026-10-19) and the agent
+  tasks (xe0.1.40.2.2, 229,376-token window, 2026-10-18) used two builds of the same setup. Qwen3.8-27B: 74.6 in eager
+  mode with MTP 3 and the reduced draft vocabulary, which leaves the output unchanged; the 351 is compiled mode without
+  it.
+- **1080 Ti and MI25.** Ornith: Q4_K_M with its own MTP draft head; on our code-review screens it found 1 of 2 planted
+  defects and raised one false alarm. V4.1: the DSpark draft model, experts at release precision (the quality
+  reference itself). Both ran with 15 of 16 DIMMs working.
+- **EPYC alone.** V4.1 with the same release-precision weights and draft model, same DIMM condition.
 
 Names you will meet on the card pages and in Recipe Maker: the desktop is **snoopy**, the workstation **droopy**, the
 Threadripper **odie** and the server **lassie**; the [MoE offload entry](moe-offload/) calls them boxes A, B, C and D.
@@ -61,7 +76,7 @@ The ones we are proudest of, each with its conditions and quality check one clic
   [3090 Ti](3090-ti/#glm-53-flash-a-route-trim-clears-25-toks)
 - **Agent work from a model mostly in RAM.** Qwen3.8 Flash-Next passed 23 of 24 agent tasks on the 3090 Ti box
   (21 inside the time limit),
-  and 11 of 12 on one B70 at 87.1 tok/s, with about half its experts computed on the CPU. [3090 Ti](3090-ti/),
+  and 11 of 12 on one B70 at 87.1 tok/s, with 10,900 of its 24,576 experts in VRAM and the rest computed on the CPU. [3090 Ti](3090-ti/),
   [B70](b70/)
 - **Two retired cards from rival vendors in one process.** A $50 MI25 and a GTX 1080 Ti hold every routed expert of
   Ornith-1.5-35B-A3B in a 2017 server: 59-60 tok/s with the model's own draft head, against 47 with the same draft
@@ -119,24 +134,6 @@ Before you start:
 | [`AGENTS.md`](AGENTS.md), [`atlas.json`](atlas.json) | for coding agents: a dense map, naming crosswalk, and every headline result as data |
 | [`CHANGELOG.md`](CHANGELOG.md), [`CONTRIBUTING.md`](CONTRIBUTING.md) | what changed when, and how a result gets in |
 
-## Reviewed by its own hardware
-
-Before this README went out, we asked the B70s what they thought of it, both at once: Qwen3.8 Flash-Next on one card
-and Ornith-1.5-35B-A3B on the other, each handed the README, AGENTS.md, the glossary and three entries (a 39-41k-token
-prompt) and asked to find the 3090 Ti results, reproduce the best V4.1 run, and say what is wrong. Ornith did it on
-the card that also runs our household assistant, which stayed up throughout. They read it twice, and the second time
-both agent scores went down. Our reading: with what they had found fixed, they dwelt on the one thing we cannot fix
-today, that the best V4.1 run needs files we have not published. That complaint is fair, and the RTX 6000 page now
-lists every missing piece. A few cloud models read it too.
-
-| reader | where it ran | speed while reviewing (first read; second read) | human / agent score (first; second) | what it caught that we had missed |
-|---|---|---|---|---|
-| Qwen3.8 Flash-Next (IQ3_XXS) | one B70, XeStrata | 70.1 tok/s, 24,112 tokens in 6 min; 71.1 tok/s, 18,015 tokens in 4.5 min | 84 / 58; 86 / 52 | the 12.69 run's quality check came from an earlier build; a speed run quoted at the wrong window; the GLM trim's public command gives 23.08, not 26.69 |
-| Ornith-1.5-35B-A3B (GPTQ int4) | the other B70, vLLM, no draft | 15.6 tok/s at 39k tokens of context, 17 min; 15.8 tok/s at 41k, 8.3 min | 86 / 82; 80 / 74 | the 1080 Ti's "+35 %" holds only without a draft model; one table credited the public build with unpublished changes; the 12.69 caveat sat at the end of its cell |
-
-Both ran with each model card's sampling, thinking on, one request each, 2026-10-22; the first read saw an earlier
-draft of these pages, the second the pages as of that day's second round. Every finding in the table is fixed.
-
 ## How numbers are reported here
 
 - Every number names its conditions: card, software version, model and quantization, context
@@ -146,6 +143,22 @@ draft of these pages, the second the pages as of that day's second round. Every 
 - Measured means measured. Estimates are labelled as such, and so are the limits of what we tried.
 - Repeated runs are all reported, as ranges.
 - What did not work stays in, on the page of the card it failed on.
+
+## Reviewed by its own hardware
+
+Before this README went out, we asked the two B70s what they thought of it, both at once: Qwen3.8 Flash-Next on one
+card, Ornith-1.5-35B-A3B on the other (the card that also runs our household assistant, which stayed up). Each got
+the README, AGENTS.md, the glossary and three entries, about 40k tokens, and was asked to find results, reproduce the
+best V4.1 run and say what is wrong. They read it twice. The second time both agent scores went down: with their
+first findings fixed, they dwelt on what we cannot fix today, that the best V4.1 run needs files we have not
+published. Fair, and the RTX 6000 page now lists every missing piece.
+
+| reader | where it ran | speed while reviewing (1st; 2nd read) | human / agent score (1st; 2nd) | what it caught |
+|---|---|---|---|---|
+| Qwen3.8 Flash-Next (IQ3_XXS) | one B70, XeStrata | 70.1 tok/s; 71.1 tok/s | 84 / 58; 86 / 52 | the 12.69 run's quality check came from an earlier build; a speed run quoted at the wrong window; the GLM trim's public command gives 23.08 |
+| Ornith-1.5-35B-A3B (GPTQ int4) | the other B70, vLLM, no draft | 15.6 tok/s; 15.8 tok/s, at about 40k tokens of context | 86 / 82; 80 / 74 | the 1080 Ti's "+35 %" holds only without a draft; a table credited the public build with unpublished changes |
+
+Each model card's sampling, thinking on, one request each, 2026-10-22. Every finding in the table is fixed.
 
 ## How it evolves
 

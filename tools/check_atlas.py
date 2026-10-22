@@ -2,7 +2,8 @@
 """Check atlas.json against the pages it cites, and every relative Markdown link in the repo.
 
 For each result: its source page exists, its #anchor is a heading there, and every number in decode_tps,
-decode_tps_no_draft and prefill_tps appears in that page's text. Exit 1 on any miss. Python 3, standard library.
+decode_tps_no_draft and prefill_tps appears in that page's text; every card in atlas.json has at least one result
+(by card, or in a result's cards list). Exit 1 on any miss. Python 3, standard library.
 Run from anywhere: python3 tools/check_atlas.py
 """
 import json, os, re, sys
@@ -33,7 +34,11 @@ def shown(n):
 
 
 misses = []
-for r in json.load(open(os.path.join(ROOT, 'atlas.json')))['results']:
+atlas = json.load(open(os.path.join(ROOT, 'atlas.json')))
+covered = {c for r in atlas['results'] for c in r.get('cards', [r['card']])}
+misses += [f"card {c['id']}: no result names it (card or cards)" for c in atlas['cards'] if c['id'] not in covered]
+misses += [f"{r['model']}: card {r['card']} is not listed in its cards" for r in atlas['results'] if r['card'] not in r.get('cards', [r['card']])]
+for r in atlas['results']:
     path, _, frag = r['source'].partition('#')
     md = page(path)
     if not os.path.exists(md):

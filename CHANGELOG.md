@@ -35,6 +35,10 @@ day). Results that change a headline number say so.
   `report.js`; the intro no longer quotes an untold story or an unpriced price.
 - The local readers' second round: the 12.69 caveat leads its quality cell; the RTX 6000 page names the hot-expert and
   placement files you cannot get from us; the GLM trim says the public image gives 23.08; the README shows both rounds.
+- Readers' round four: the README hardware table keeps one clean headline per card and moves its fine print to a
+  list right under it; the review-by-hardware section moves down and shrinks; Flash-Next's speed and agent runs name
+  their two builds and windows; the EPYC page agrees with itself on 32 against 64 threads; atlas.json files the
+  Ornith result under the MI25 too (`cards`), and `check_atlas.py` fails if any card has no result.
 - Recipe Maker named GLM's quality reference (EXL3-3.05) on V4.1 checks too; each model family now names its own, and
   a measured KL beside a predicted top-1 says which is which.
 

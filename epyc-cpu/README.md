@@ -67,7 +67,7 @@ sessions, so each is shown against its own baseline:
 
 ## What did not work
 
-- **More threads**: 96 and 128 (SMT siblings) were slower than 64; 32 matched 64 in decode.
+- **More threads**: 96 and 128 (SMT siblings) were slower than 64; 32 beat 64 in decode by 7 % without the draft ([point 15](../moe-offload/#what-we-learned-measured)), and lost in prefill (23.7 against 36.8).
 - **A smaller store**: 2-bit cold experts gave no speed on this box (above).
 - **A block drafter** would not pay: a pass over 8 tokens costs 2.7x a pass over 1
   ([point 12](../moe-offload/#what-we-learned-measured)).
