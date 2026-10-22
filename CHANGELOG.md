@@ -12,6 +12,12 @@ day). Results that change a headline number say so.
 - The B70's 61 / 351 tok/s headline names its condition: compiled mode with XPU graphs (54.4 eager).
 - The agent eval's main table says how its 24 runs per config split over the two rounds.
 - Three pages still signed off with an old workspace link.
+- The V4.1 12.69 run: its quality check is marked as measured on the earlier build; the layout file is the one that
+  run used; `-c 4096` explained; a list of what you cannot get from us yet (prompts, store, draft, two changes) and
+  the PMem setup steps.
+- GLM's 26.69 says its route trim is not published yet, everywhere it appears.
+- The README names the boxes (snoopy, droopy, odie, lassie; A-D) where a human meets them.
+- AGENTS.md explains how to read the run ledger (segments, null checks, what is private).
 
 ## [2026.10.22]
 

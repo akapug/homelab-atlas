@@ -60,6 +60,21 @@ Ornith-1.5-35B-A3B, card 1 Qwen3.8 Flash-Next (2026-10-22).
   the card page for a headline; use RESULTS.md for per-run detail.
 - `atlas.json` mirrors the card pages; if they disagree, the card page wins and `atlas.json` is the bug.
 
+## The run ledger, read correctly
+
+- `recipe-maker/runs/runs.jsonl` is the live segment and may be empty; the rows are in the sealed segments
+  `runs.0001.jsonl` ... read in order, then `runs.jsonl`. 175 rows on 2026-10-22.
+- Each row: `recipe` (what was launched), `check` (the pre-launch gate's verdict per check), `prediction`,
+  `measured` (per-phase decode, prefill, draft acceptance, residency, system state), `sources`.
+- A check whose result is null was not evaluated for that run. It is not a PASS.
+- `measured.src` says where each number came from; "lab notes" = our run logs, which are not published.
+- `recipes/*.json` `numa.verify: "fail"` = the launcher checks per-node placement after the load and stops an
+  off-target run. It is a setting, not a failed run.
+- `runs/screen.jsonl` (quality-round ledger) and `tools/screen_sources.json` are private and not shipped; code that
+  reads them reports unknown without them.
+- Raw server logs and our benchmark prompts are not published. Card pages say so under "What you cannot get from us
+  yet" where it changes what you can reproduce.
+
 ## Verifying a claim
 
 1. Find the row in `atlas.json` (`source` field) or the card page's "At a glance".

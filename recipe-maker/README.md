@@ -106,7 +106,7 @@ capture one for your model with `tools/heat-capture/` and convert it with `tools
 | `probe/` | the box probe and the model intake |
 | `data/` | probed boxes, model layouts, hot-expert maps, layer maps, the upgrade catalog |
 | `runs/` | the run ledger (`runs.jsonl`, older rows in numbered segments), bench terms, cause labels, community measurements |
-| `data/cards/`, `runs/screen.jsonl` | each model's card conditions (sampling, thinking, template, context, output) with sources, and the quality-round ledger the `verdict-ready` check reads (`node report.js --screen`) |
+| `data/cards/` | each model's card conditions (sampling, thinking, template, context, output) with sources. The quality-round ledger the `verdict-ready` check reads (`runs/screen.jsonl`, `node report.js --screen`) is kept private and not shipped; without it that check reports unknown |
 | `recipes/` | example recipes: the fastest clean run per box and model, and the ones the tests use |
 | `results/RESULTS.md` | every measured run with its conditions, and the accuracy report |
 | `QUANT-PRIORS.md`, `QUANT-RECIPES.md` | desk research on published quants, with links; the build reads their JSON twins |
