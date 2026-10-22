@@ -21,6 +21,11 @@ day). Results that change a headline number say so.
 ### Fixed
 - From the GPT-6.1 reader at 0491930 (its diff): `build-engine.sh` refuses a dirty source checkout instead of stamping a
   `SOURCE_SHA` that does not describe what it built.
+- From the round-6 local readers (Flash-Next 86/62, Ornith 87/88 at 6323216): the 26.69 says it is the coding
+  prompts' figure and gives the same arm's agent-brief figure (24.65) beside it, on the 3090 Ti page and in
+  `atlas.json`; the B70 351 names its vocabulary and prompts; the recipe README explains the tier split's control file
+  (`split=S prefetch=0|1 steal=0|1`, re-read while the server runs); `bench.py` says when it runs the public
+  stand-in prompts.
 - From the round-6 Claude reader (80/76 at 6323216): the RTX 6000 page prints `launch.sh`'s exact command (the
   tier split's three settings and the interleave weights were missing, so the page's command was the split-off arm);
   the recipe ships our `llama-imatrix` keep-partial patch and says the stock tool keeps every tensor at our pass size

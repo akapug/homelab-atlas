@@ -143,7 +143,7 @@
    "engine": "glm53-flash-offload (exllamav3-based) + route trim keep4 L29-44",
    "decode_tps": 26.69,
    "streams": 1,
-   "conditions": "1,600 experts cached in VRAM, a CPU lane on 14 cores as in the 23.08 base; the base also runs our unpublished CPU-lane changes over the public image, 3 coding prompts x 300 tokens plus 4 real coding-agent briefs (1.5-2.2k tokens) x 256 tokens, two rounds per arm (mean of the two rounds' medians of 6 requests; +17 % against 22.77 untrimmed in the same session), greedy, thinking off, 32,768 window",
+   "conditions": "1,600 experts cached in VRAM, a CPU lane on 14 cores as in the 23.08 base; the base also runs our unpublished CPU-lane changes over the public image, decode_tps is on 3 coding prompts x 300 tokens, two rounds (mean of the two rounds' medians of 6 requests; +17 % against 22.77 untrimmed in the same session); the same arm on 4 real coding-agent briefs (1.5-2.2k tokens) x 256 tokens gave 24.65 against 20.17, greedy, thinking off, 32,768 window",
    "quality": "KL 0.0154, top-1 0.975: pass",
    "date": "2026-10-20",
    "status": "unpublished-code",

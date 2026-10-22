@@ -13,6 +13,9 @@ BASE = 'http://127.0.0.1:%s' % os.environ.get('PORT', '8790')
 N = int(os.environ.get('N', '300'))
 PHASES = [(t, int(n)) for t, n in (p.split(':') for p in os.environ.get('PHASES', 'n4:4,n0:0,n4b:4').split(','))]
 prompts = json.load(open(sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), 'prompts.json')))
+if len(sys.argv) < 2:
+    print('note: prompts.json holds public stand-ins; the 12.69 run used private prompts, so expect a different figure',
+          file=sys.stderr)
 
 
 def post(prompt, n, n_max=0):

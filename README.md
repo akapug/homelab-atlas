@@ -94,7 +94,7 @@ The ones we are proudest of, each with its conditions and quality check one clic
   6.97 before), it went 7.96 to 11.74 tok/s without a draft, 12.09 with one, same binary, same prompts. A card from 2017, one kernel, +47 %.
   [1080 Ti](1080-ti/#one-kernel-47-)
 - **The B70, tuned.** Qwen3.8-27B at 74.6 tok/s at one stream once the drafter stopped reading a 2.5 GB output
-  layer for every guess (eager mode, 59.5 without the trick, same output; the B70 page's 54.4 eager is another workload), and 351 summed at eight streams in vLLM's
+  layer for every guess (eager mode, 59.5 without the trick, same output; the B70 page's 54.4 eager is another workload), and 351 summed at eight streams (full drafter vocabulary, 1.5k-token prompts) in vLLM's
   compiled mode with XPU graphs, which Intel does not support yet. Five vLLM changes and 18 llama.cpp SYCL patches
   got it there. [B70](b70/)
 
