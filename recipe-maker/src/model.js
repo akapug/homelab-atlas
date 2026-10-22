@@ -1049,6 +1049,8 @@
     // (d) quality gate on the 2-bit share of routed reads
     {
       const Q = C.quality, fam = Q.families[data.models[f.model].kld_family] || Q.families[f.model];
+      // each family names its own gate reference (GLM: the EXL3 3.05 store; V4.1: the 1017 Q8_0); a borrowed GLM line keeps GLM's
+      const ref = 'KL vs ' + ((fam && fam.slope_kl && fam.ref) || Q.families.glm.ref);
       const sh = f.lowbit_share || 0;
       let st = 'PASS', d = '2-bit share ' + (100 * sh).toFixed(1) + ' %';
       // the family's own fitted line once it has measured points (build.py), else the GLM line as an ESTIMATE
@@ -1060,17 +1062,17 @@
       const ms = f.store_type && !f.trim && (Q.stores || {})[f.model + '|' + f.store_type];
       if (ms) {
         st = v(ms.kl) <= Q.bar_kl && ms.top1 >= Q.bar_top1 ? 'PASS' : 'FAIL';
-        d = 'store ' + f.store_type + ' MEASURED on the gate: KL vs EXL3-3.05 ' + v(ms.kl).toFixed(4) + ' (bar ' + Q.bar_kl + '), top-1 ' + ms.top1.toFixed(3) + ' (bar ' + Q.bar_top1 + '), n ' + ms.n + ' (' + ms.src.split(':')[0] + ')';
+        d = 'store ' + f.store_type + ' MEASURED on the gate: ' + ref + ' ' + v(ms.kl).toFixed(4) + ' (bar ' + Q.bar_kl + '), top-1 ' + ms.top1.toFixed(3) + ' (bar ' + Q.bar_top1 + '), n ' + ms.n + ' (' + ms.src.split(':')[0] + ')';
       } else if (f.lowbit_share === null) {
         d = '2-bit share unknown: a store type is 2-bit but ' + (f.lowbit_why || 'the layout cannot be built');
-        if (measured) { st = f.decode_kl <= Q.bar_kl ? 'PASS' : 'FAIL'; d += '; measured KL vs EXL3-3.05 ' + f.decode_kl.toFixed(4) + ' (bar ' + Q.bar_kl + ')'; }
+        if (measured) { st = f.decode_kl <= Q.bar_kl ? 'PASS' : 'FAIL'; d += '; measured ' + ref + ' ' + f.decode_kl.toFixed(4) + ' (bar ' + Q.bar_kl + ')'; }
         else st = 'UNKNOWN';
       } else if ((f.trim_kl === null || f.trim_why) && f.trim) {
         st = 'UNKNOWN'; d += '; route trim KL UNKNOWN: ' + (f.trim_why || 'no layer map');
       } else if (lm && (sh > 1e-6 || f.trim_kl) && f.lowbit_eff !== undefined && f.lowbit_eff !== null) {
         // the layer map: 2-bit reads weighted by their layers' sensitivity, on the map's own calibrated line, plus the trim KL
         const p = mapQuality(data, f.model, f.lowbit_eff, f.trim_kl || 0), kl = measured ? f.decode_kl : p.kl;
-        d += ', layer-map weighted ' + (100 * f.lowbit_eff).toFixed(1) + ' %' + (f.trim_kl ? ', route trim KL ' + f.trim_kl.toFixed(4) : '') + ': ' + (measured ? 'measured KL vs EXL3-3.05 ' : 'PREDICTED (layer map, ' + lm.points.length + ' calibration points) KL vs EXL3-3.05 ') + kl.toFixed(4) + ' (bar ' + Q.bar_kl + '), top-1 ' + p.top1.toFixed(3) + ' (bar ' + Q.bar_top1 + ')';
+        d += ', layer-map weighted ' + (100 * f.lowbit_eff).toFixed(1) + ' %' + (f.trim_kl ? ', route trim KL ' + f.trim_kl.toFixed(4) : '') + ': ' + (measured ? 'measured ' + ref + ' ' : 'PREDICTED (layer map, ' + lm.points.length + ' calibration points) ' + ref + ' ') + kl.toFixed(4) + ' (bar ' + Q.bar_kl + '), ' + (measured ? 'predicted top-1 ' : 'top-1 ') + p.top1.toFixed(3) + ' (bar ' + Q.bar_top1 + ')';
         if (fam && (fam.engines || []).indexOf(f.engine) >= 0) {
           st = (kl <= Q.bar_kl && (measured || p.top1 >= Q.bar_top1)) ? 'PASS' : (!measured && kl <= Q.bar_kl * 1.15) ? 'UNKNOWN' : 'FAIL';
           if (st === 'UNKNOWN') d += '; within 15 % of the bar';
@@ -1078,7 +1080,7 @@
       } else if (sh > 1e-6) {
         const p = pred(sh);
         const kl = measured ? f.decode_kl : p.kl;
-        d += ': ' + (measured ? 'measured KL vs EXL3-3.05 ' : 'predicted KL vs EXL3-3.05 ') + kl.toFixed(4) + ' (bar ' + Q.bar_kl + '), top-1 ' + p.top1.toFixed(3) + ' (bar ' + Q.bar_top1 + ')';
+        d += ': ' + (measured ? 'measured ' + ref + ' ' : 'predicted ' + ref + ' ') + kl.toFixed(4) + ' (bar ' + Q.bar_kl + '), ' + (measured ? 'predicted top-1 ' : 'top-1 ') + p.top1.toFixed(3) + ' (bar ' + Q.bar_top1 + ')';
         if (fam && fam.unmeasured) { st = 'UNKNOWN'; d += '; ' + fam.note; }
         else if (fam && (fam.engines || []).indexOf(f.engine) >= 0) {
           st = (kl <= Q.bar_kl && (measured || p.top1 >= Q.bar_top1)) ? 'PASS' : (!measured && kl <= Q.bar_kl * 1.15) ? 'UNKNOWN' : 'FAIL';

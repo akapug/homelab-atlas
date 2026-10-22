@@ -1137,14 +1137,14 @@ checks = {
         'evidence': n(16, M, S + ' 14:58Z B0 -rtr arm')},
     'quality': {
         'label': 'quality gate: KL vs EXL3-3.05 vs share of routed reads at 2 bits',
-        'rule': 'paired decode KL vs EXL3-3.05 (the exact GPU path of the EXL3 3.05 bpw store on snoopy, ref-topk512.json) <= 0.03 and top-1 >= 0.97 (p3-run.log thresholds); KL grows with the share of routed reads served by 2-bit experts. The gate\'s reference is the EXL3 3.05 bpw store, not BF16, so every report calls it "KL vs EXL3-3.05", never plain "KL"',
+        'rule': 'paired decode KL vs EXL3-3.05 (the exact GPU path of the EXL3 3.05 bpw store on snoopy, ref-topk512.json) <= 0.03 and top-1 >= 0.97 (p3-run.log thresholds); KL grows with the share of routed reads served by 2-bit experts. The gate\'s reference is the EXL3 3.05 bpw store, not BF16, so every report calls it "KL vs EXL3-3.05", never plain "KL". Other families name their own reference (family ref; V4.1: the 1017 Q8_0 with the experts as released)',
         'bar_kl': 0.03, 'bar_top1': 0.97,
         # whole store files measured on the same gate (paired decode KL vs the gate reference), keyed model|store type
         'stores': {
             'glm|ud_q3kxl': {'kl': n(0.05029, M, 'a2f 10-18: droopy glm-be1q3a2f kl-gate.json'), 'top1': 0.9492, 'n': 926,
                              'src': 'a2f + q3f 10-18 (droopy, ik mtpub-unpublished): Unsloth UD-Q3_K_XL as shipped vs ref-topk512.json (A = the EXL3 3.05 store exact GPU path, snoopy kl-1328; NOT a BF16 reference), 6 standard prompts, 926 positions: KL 0.0503 / top-1 0.949 (a2f, GPU prefill offload 32). Offload ruled out: on the same first 5 prompts (768 positions) q3f without offload read KL 0.0489 / top-1 0.953 vs a2f 0.0504 / 0.949. Agrees with Unsloth\'s own KLD vs BF16 (0.160 / top-1 86.3 % for UD-Q3_K_XL against 0.049 / 92.2 % for UD-Q4_K_XL)'}},
         'families': {
-            'glm': {'engines': ['glmlite'], 'tag': 'FIT',
+            'glm': {'engines': ['glmlite'], 'tag': 'FIT', 'ref': 'EXL3-3.05',
                     'base_kl': n(0.00446, M, GR + 'k2e-1450-kl.json ref served_A_vs_B1: 3.05 lane on vs exact = 0.00446 (top-1 0.9914); two-run floor 0.00472'),
                     'base_top1': 0.9914,
                     'points': [{'share': round(30 / 42, 3), 'kl': 0.07217, 'top1': 0.9397, 'run': 'snoopy-glm-p3-1503', 'src': GR + 'p3-1503-kl.json served (lane on): P3 middle 30 of 42 layers K=2 -> 0.714 of routed reads at 2.05 bpw', 'tag': M},
@@ -1154,7 +1154,7 @@ checks = {
                     'note': 'linear in share through (0, base), least squares over the measured points. P4 S25 (per expert, coldest first) cost MORE KL per 2-bit read than P3 (whole layers): (0.0393 - 0.0045) / 0.304 = 0.114 vs (0.0722 - 0.0045) / 0.714 = 0.095 per unit share; P4 S15 (0.192 -> 0.0298) sits above the line too. The layer map (data/layer-maps.json, src/model.js layerMap) explains the gap: P3 cut the middle layers 8-37 whole, S15/S25 spread the coldest experts over every layer including the sensitive early band, so the gate reads the map-weighted share when the map calibrates'},
             'fnx': {'engines': [], 'tag': 'UNKNOWN', 'unmeasured': True,
                     'note': 'Flash-Next: no KL vs 2-bit share and no agent eval yet (scout measurements 3-4); quality ~GLM-5.3-Flash on public boards only'},
-            'v41': {'engines': ['ik'], 'tag': 'FIT',
+            'v41': {'engines': ['ik'], 'tag': 'FIT', 'ref': '1017 Q8_0',
                     'base_kl': n(0.0, M, 'v41kl ref-r1.json floor_gen_vs_forced: the reference (1017 Q8_0, MXFP4 experts as released) generation path vs the forced scoring path on the same server, 320 positions, KL 0.0 / top-1 1.0 (lassie CPU build unpublished build, slot erased per prompt). External check of this reference (10-18 19:45Z, MEASURED, v41kl res/unsloth-u2.json sha 4b73f058): unsloth DeepSeek-V4.1-Flash-1017 UD-Q4_K_XL (experts = the release MXFP4) served by unslothai/llama.cpp 4a314d3a (CPU, FA off, no repack, mmap, swa-full) vs ref-r1.json over the same 1376 positions: KL 0.00276 (median 1.9e-6, p99 0.053, max 0.224), top-1 0.984; std 0.00289 / 0.982, code 0.00247 / 0.988. Below the 6.1e-3 / 0.977 that unsloth measured against the DeepSeek official reference, so the ik V4.1 forward and this reference are confirmed; ~0.003 is the cross-engine floor under the store points'),
                     'base_top1': 1.0,
                     'points': [{'share': 0.225, 'kl': 0.01689, 'top1': 0.9746, 'tag': M, 'run': 'droopy-v41-b1017-kl-lassie',

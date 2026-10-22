@@ -213,7 +213,7 @@ t('quality fit: V4.1 has its own line on ik (reference floor + the 1017 split + 
   assert.strictEqual(at(0.225).status, 'PASS', at(0.225).detail);
   // since the layer map (2026-10-19) the V4.1 check reads the map's two fitted bands (exactly determined by the two points, so
   // the 1017 split reproduces its measured 0.0169), no longer the line's 0.0143 / 0.983
-  assert.ok(/PREDICTED \(layer map, 2 calibration points\) KL vs EXL3-3\.05 0\.0169 .*top-1 0\.980/.test(at(0.225).detail), at(0.225).detail);
+  assert.ok(/PREDICTED \(layer map, 2 calibration points\) KL vs 1017 Q8_0 0\.0169 .*top-1 0\.980/.test(at(0.225).detail), at(0.225).detail);
   assert.strictEqual(at(0.3).status, 'PASS', at(0.3).detail);
   assert.strictEqual(at(0.65).status, 'FAIL', at(0.65).detail);
   assert.ok(!/borrowed from GLM/.test(at(0.65).detail), at(0.65).detail);
@@ -401,7 +401,7 @@ t('quality: per-layer types give the 2-bit share of the layout the prediction pl
   const eff = dm.d.reduce((a, x, l) => a + x * w[l], 0) / dm.d.length, mq = FM.mapQuality(data, 'v41', eff, 0);
   assert.strictEqual(lm.status, 'calibrated');
   assert.ok(eff < sh, 'the q3_K layers 0-13 weigh more but carry no 2-bit reads: weighted ' + eff + ' < plain ' + sh);
-  assert.ok(q.detail.includes('PREDICTED (layer map, 2 calibration points) KL vs EXL3-3.05 ' + mq.kl.toFixed(4)), q.detail);
+  assert.ok(q.detail.includes('PREDICTED (layer map, 2 calibration points) KL vs 1017 Q8_0 ' + mq.kl.toFixed(4)), q.detail);
   assert.ok(q.detail.includes('top-1 ' + mq.top1.toFixed(3)), q.detail);
   assert.ok(Math.abs(mq.kl - 0.0404) < 0.002, 'the q3q2 requant point: ' + mq.kl);
   assert.ok(res.notes.some(x => /^2-bit share 6\d\.\d % of routed reads from the layout types: layers 0-13 q3_K/.test(x)));
