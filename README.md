@@ -16,8 +16,8 @@ the predictions compare with our measured runs. Nothing to install.
 
 ## The hardware
 
-Four boxes, six GPUs from three vendors and five architectures, 1.5 TB of DRAM between them. Each card has its own page with its best results first, the commands
-to reproduce them, and what did not work. All results are one request at a time unless they say otherwise; the
+Four boxes, six GPUs from three vendors and five architectures, 1.5 TB of DRAM between them. Each card has its own
+page with its best results first, the commands to reproduce them, and what did not work. All results are one request at a time unless they say otherwise; the
 linked page gives the full conditions and the quality check for every number.
 
 | box | CPU and memory | card | best measured result |
@@ -52,18 +52,20 @@ The ones we are proudest of, each with its conditions and quality check one clic
 
 - **A 748B model on a 2019 workstation, at long context.** DeepSeek V4.1 Flash decodes 12.69 tok/s on one Quadro
   RTX 6000 plus DDR4 and Optane: 11.88 on our public fork, plus upstream ik_llama.cpp #2712 and two changes of ours
-  not published yet. At 189k tokens
-  it recalled all 16 planted facts. [RTX 6000](rtx-6000/)
+  not published yet. At 189k tokens it recalled all 16 planted facts. [RTX 6000](rtx-6000/)
 - **GLM-5.3-Flash over the 25 tok/s line on a gaming card.** 26.69 tok/s on an RTX 3090 Ti plus 192 GB of DDR5,
   by computing only the top 4 of the expert picks that miss VRAM on 16 of its layers, with its output still within
-  our quality bar. The trim is not published yet; 23.08 without it on the public image. [3090 Ti](3090-ti/#glm-53-flash-a-route-trim-clears-25-toks)
+  our quality bar. The trim is not published yet; 23.08 without it on the public image.
+  [3090 Ti](3090-ti/#glm-53-flash-a-route-trim-clears-25-toks)
 - **Agent work from a model mostly in RAM.** Qwen3.8 Flash-Next passed 23 of 24 agent tasks on the 3090 Ti box,
   and 11 of 12 on one B70 at 87.1 tok/s, with about half its experts computed on the CPU. [3090 Ti](3090-ti/),
   [B70](b70/)
 - **Two retired cards from rival vendors in one process.** A $50 MI25 and a GTX 1080 Ti hold every routed expert of
-  Ornith-1.5-35B-A3B in a 2017 server: 59-60 tok/s, against 47 with the experts on the CPUs. [MI25](mi25/)
+  Ornith-1.5-35B-A3B in a 2017 server: 59-60 tok/s with the model's own draft head, against 47 with the same draft
+  and the experts on the CPUs. [MI25](mi25/)
 - **An 11 GB Pascal card earns its slot.** Moving DeepSeek V4.1's attention onto a GTX 1080 Ti first gave garbage
-  text; one scheduler fix later it gives +35 % over the CPUs alone. [1080 Ti](1080-ti/)
+  text; one scheduler fix later it decodes 35 % faster than the CPUs alone (without a draft model; 2 % with one).
+  [1080 Ti](1080-ti/)
 - **The B70, tuned.** Qwen3.8-27B at 61 tok/s at one stream and 351 at eight in vLLM's compiled mode with XPU
   graphs, which Intel does not support yet; 54.4 in eager mode, which is how our own servers ran. Five vLLM changes
   and 18 llama.cpp SYCL patches got it there. [B70](b70/)

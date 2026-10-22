@@ -18,6 +18,8 @@ day). Results that change a headline number say so.
 - GLM's 26.69 says its route trim is not published yet, everywhere it appears.
 - The README names the boxes (snoopy, droopy, odie, lassie; A-D) where a human meets them.
 - AGENTS.md explains how to read the run ledger (segments, null checks, what is private).
+- Flash-Next on the 3090 Ti: the speed window (32,768) and the agent-run window (131,072) are told apart; Sage-A1.5's
+  MTP figure says it is a speed-only probe; the RTX 6000 reproduce section says which figure the public branch gives.
 
 ## [2026.10.22]
 

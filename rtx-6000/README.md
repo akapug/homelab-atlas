@@ -89,6 +89,9 @@ What is public and what is not:
 | the layout as data | [`recipe-maker/recipes/droopy-v41-fs1c.json`](../recipe-maker/recipes/droopy-v41-fs1c.json) is the layout the 12.69 run (ledger id `v41fs-ts2-0127`) used with the tier-split build; [`droopy-v41-fs1p.json`](../recipe-maker/recipes/droopy-v41-fs1p.json) is the same layout's pre-binding run (12.19). Their `"verify": "fail"` means the launcher checks each node's placement after the load and stops the run if it is off target; it is not a failed run. Rows in [RESULTS.md](../recipe-maker/results/RESULTS.md) |
 | PMem as memory | the standard Linux route, as on this box: `ipmctl create -goal PersistentMemoryType=AppDirect` and a reboot (a full power cycle after a firmware update), `ndctl create-namespace --mode=devdax` on each region, then `daxctl reconfigure-device --mode=system-ram <daxX.Y>` onlines it as a NUMA node with no CPUs. `numactl -H` should show it |
 
+**Public or not.** Built from the public branch, this command runs the configuration behind the public-fork figure
+(11.88). The 12.69 figure also needs upstream #2712 and our two unpublished changes.
+
 The launch, as our kit runs it (paths shortened; the placement and hot-expert file names are ours):
 
 ```bash
