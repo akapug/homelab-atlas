@@ -97,7 +97,8 @@ Ornith-1.5-35B-A3B, card 1 Qwen3.8 Flash-Next (2026-10-22).
 - New card: new folder with the card-page sections (box, at a glance, details, reproduce, what did not work, not
   measured yet), a README hardware row, an `atlas.json` entry.
 - Every page ends with the sign-off line used on the other pages.
-- Before every push, the export scanner over the whole checkout prints CLEAN. Admitted public strings live in
+- Before every push, the export scanner over the whole checkout prints CLEAN (the scanner lives in our private source
+  tree, so for an outside pull request a maintainer runs it). Admitted public strings live in
   `.scan-admit` (rule | path glob | literal | reason); keep it short, and never admit a credential or a private name.
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for what a result needs.
 
