@@ -21,6 +21,7 @@ a step. Terms: [GLOSSARY](../GLOSSARY.md).
 |---|---|---|---|---|---|
 | Qwen3.8-27B (dense) | vLLM 0.31.0 (official CUDA image) + [`draft-vocab`](../b70/vllm-xpu/draft-vocab.py) + [`length-finish`](../b70/vllm-xpu/length-finish.py); AutoRound int4 (the same checkpoint as the B70) | **103-105 decode** at 1 stream (one pass; 95-107 over 10 runs); **279-288** for 3 streams together; prefill 1,407-1,410 on a 16k prompt; 88-95 decode at 32k depth | MTP 3 with a 50,521-token draft vocabulary, fp8 KV, 57,344-token window, temperature 0, thinking off, 512 tokens out, idle server, 2026-10-07 | the checkpoint passed the [B70 entry's](../b70/#at-a-glance) correctness eval (41 of 41 exact) | [Qwen3.8-27B on vLLM CUDA](#qwen38-27b-on-vllm-cuda-about-104-toks) |
 | GLM-5.3-Flash (321B MoE) | the `glm53-flash-offload` engine (exllamav3-based), EXL3 3.05 bpw, 1,600 experts cached in VRAM, the rest computed on the CPU from RAM (a CPU lane on 14 cores, the same in the base and the trim runs) | **26.69 decode** with a route trim (keep 4 of 8 picks that miss VRAM, layers 29-44; not yet published); 23.08 without | 3 coding prompts x 300 tokens, two rounds (the arm's 4 agent briefs: 24.65), greedy, thinking off, 32,768-token window, 2026-10-20 | KL 0.0154, top-1 0.975 against the same weights computed exactly on the GPU: **passes** our bar (KL at most 0.03, top-1 at least 0.97) | [GLM route trim](#glm-53-flash-a-route-trim-clears-25-toks), [moe-offload points 1-3](../moe-offload/#what-we-learned-measured) |
+| DeepSeek V4.1 Flash (748B MoE) | Strata built for sm_86 by us (not published yet), GSQ-RCO IQ2_XS experts; dense layers and hot experts in the card, the other 13,827 experts (134.2 GB) copied into RAM at load and computed on the CPU | **27.39 decode** (median over 217 agent requests with at least 50 tokens out; p10 25.57); prefill 240.5 (median over 85 reads of at least 1,000 tokens) | DSpark Q8_0 draft model (auto, confidence 0.65), 65,536-token window, served to a coding agent during our agent eval, 2026-10-24 | **13 of 15** agent tasks; no KL check against the release weights (not measured), and the experts are 2-bit | [V4.1 on a gaming card](#deepseek-v41-flash-27-toks-on-a-gaming-card) |
 | Qwen3.8 Flash-Next (125B MoE, 6B active) | [Strata](https://github.com/Niko1221/Strata) `477ac13c` built for sm_86, Q8_0, every expert in RAM, a VRAM expert cache | **49.1 decode** (upper median of 6 requests: 3 coding prompts x 2, 300 tokens each; 42.3-55.4); prefill about 1,620 at 15k | MTP 4, the model card's thinking sampling; speed at a 32,768-token window, agent runs at 131,072; 2026-10-18 | **23 of 24** agent tasks over 2 passes (21 of 24 inside the 20-minute limit) | [Flash-Next](#qwen38-flash-next-agent-work-from-ram) |
 | sabi-noema (a Qwen3.8-27B fine-tune) | llama.cpp `d454a20` CUDA, i1-Q4_K_M (16.55 GB) | 35.9-47.3 decode | no speculation, f16 KV, 49,152-token window, card sampling, thinking on, 2026-10-21 | **5 of 5** planted defects caught, each with a working test; 1 soft false positive on 2 clean controls | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
 | Qwen3.8-27B and a coding fine-tune (GGUF) | the same llama.cpp build, UD-Q4_K_XL and Q3 GGUFs | 38.0-46.1 decode | as above | 4 of 5 each | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
@@ -136,6 +137,28 @@ weights, the KV cache and a cache of hot experts.
 - The same model on one B70 with XeStrata decodes at 80-87 tok/s; see [the B70 entry](../b70/) and
   [moe-offload point 22](../moe-offload/#what-we-learned-measured).
 - The recipe as the planner records it: [`recipe-maker/recipes/snoopy-flash-next-strata-q8.json`](../recipe-maker/recipes/snoopy-flash-next-strata-q8.json).
+
+## DeepSeek V4.1 Flash: 27 tok/s on a gaming card
+
+Measured 2026-10-24. DeepSeek V4.1 Flash is a 748B mixture-of-experts model. Here it runs on one RTX 3090 Ti plus 192 GB
+of DDR5, served to a coding agent for real tasks: **27.39 tok/s decode**, the median over 217 requests that each
+generated at least 50 tokens (p10 25.57). Prefill was 240.5 tok/s, the median over 85 prompt reads of at least
+1,000 tokens. That is more than twice our best V4.1 result on the [RTX 6000 + Optane box](../rtx-6000/) (12.69).
+
+- **Weights.** GSQ-RCO IQ2_XS experts: 2-bit, so much smaller than the release precision. That size is what lets the
+  CPU part fit in RAM. We have not checked these weights against the release weights with KL and top-1 (not measured),
+  so this row is not comparable with the RTX 6000 row's quality check.
+- **Placement.** Dense layers and the hot experts are in the card (23.0 of 24.0 GB in use after load). The other 13,827
+  experts (134.2 GB) are copied into RAM at load and computed on the CPU (Ryzen 9 9950X3D, native Zen 5 build). No
+  expert is read from disk while decoding.
+- **Engine.** [Strata](https://github.com/Niko1221/Strata), built for sm_86 by us; that build is not published yet.
+  The draft model is the DSpark Q8_0 drafter, set to auto with confidence 0.65.
+- **Workload.** Real agent tasks, not a benchmark prompt: 65,536-token window, prompts up to 34,588 tokens, with a
+  median of 97.6 % of each prompt reused from the cache.
+- **Quality.** **13 of 15** agent tasks passed: 11 of 12 on our task battery and 2 of 3 on real-repository tasks.
+  One failed its hidden check. In the other, the context was compacted twice on a 17,000-line file at the 65,536 window
+  and the agent made no edit. A bigger window is the obvious next arm. That is the same score as Flash-Next
+  (Q8_0 + MTP, 131,072 window) on the same harness.
 
 ## Code-review rounds: four models on one card
 

@@ -16,6 +16,43 @@ were measured in tokens per second, and some in pages of confident garbage text.
 Pick one of our four boxes and see which layouts of a big MoE model fit it, how fast each should run, and how
 the predictions compare with our measured runs. Nothing to install.
 
+## What's new (2026-10-24)
+
+- **DeepSeek V4.1 Flash at 27.4 tok/s on a gaming card.** One RTX 3090 Ti plus 192 GB of DDR5 decodes the 748B model
+  at 27.39 tok/s (median over 217 real agent requests), with 13 of 15 agent tasks passed. The experts are 2-bit and
+  not yet KL-checked against the release weights. [3090 Ti](3090-ti/#deepseek-v41-flash-27-toks-on-a-gaming-card)
+- **32 agents on two B70s, 377.9 tok/s.** A build that combines the winning switches reaches 11.81 tok/s per agent,
+  0.729 tok/s per watt. Served to our own coding agents and timed over whole requests, 16 agents each got 13.1 to 14.8
+  tok/s. Reading prompts is now the gap to close, not decode. [32 agents](b70/many-agents.md#newer-build-3779-toks-at-32-agents)
+- **No silent fallback.** A 35B MoE moved to the Optane box took 96 s for a chat request because 3.7 GB of its CPU
+  experts had landed on Optane while DRAM had room. After one restart that bound them to DRAM, plus a smaller window,
+  the same request took 0.59 s. Every recipe now declares where each part lives, the run proves it, and an unlogged
+  path counts as unknown. [RTX 6000](rtx-6000/#no-silent-fallback-experts-on-optane-by-accident)
+- **Next: the same tasks, judged blind.** We are building an eval that gives a local model the same task brief and
+  starting commit as a past frontier-model session. Reviewers from two other model families then compare the two diffs
+  without knowing which is which. No results yet.
+- **The goal for all of it:** kits anyone with the same hardware and an AI subscription can rerun end to end, from
+  the weights to the agent-task score.
+
+## Best result per model
+
+The fastest result per model that has a quality check beside it. The card pages hold every condition. Decode is
+tokens per second for one request. "Many agents" is the total over all agents decoding at once.
+
+| model | best one-request decode | where | many agents at once | tok/s per W | quality check | date |
+|---|---|---|---|---|---|---|
+| DeepSeek V4.1 Flash (748B MoE) | **27.39** | [RTX 3090 Ti](3090-ti/#deepseek-v41-flash-27-toks-on-a-gaming-card) + 192 GB DDR5, 2-bit experts | not measured | not measured | 13 of 15 agent tasks; no KL check | 2026-10-24 |
+| the same, release-precision hot experts | 12.69 | [Quadro RTX 6000](rtx-6000/#deepseek-v41-flash-the-best-run) + DDR4 + Optane | not measured | not measured | KL 0.0169, top-1 0.975 (earlier build of the same store); 16 of 16 facts at 189k | 2026-10-22 |
+| the same, no GPU | 7.02 | [2x EPYC 7601](epyc-cpu/) | not measured | not measured | release-precision weights | 2026-10-20 |
+| GLM-5.3-Flash (321B MoE) | **26.69** | [RTX 3090 Ti](3090-ti/#glm-53-flash-a-route-trim-clears-25-toks) + DDR5, route trim (unpublished) | not measured | not measured | KL 0.0154, top-1 0.975: passes | 2026-10-20 |
+| Qwen3.8 Flash-Next (125B MoE, 6B active) | **87.1** | [one Arc Pro B70](b70/) | **377.9** over 32 agents, 11.81 each, on [two B70s](b70/many-agents.md#newer-build-3779-toks-at-32-agents) (unpublished batching) | **0.729** (cards + CPU package) | 11 of 12 agent tasks (one-card build); the batched build has no quality run yet | 2026-10-24 |
+| Qwen3.8-27B (dense) | **103-105** | [RTX 3090 Ti](3090-ti/#qwen38-27b-on-vllm-cuda-about-104-toks) | 351 over 8 streams on [a B70](b70/) | not measured | 41 of 41 correctness eval | 2026-10-07 |
+| Ornith-1.5-35B-A3B | **198** | [one Arc Pro B70](b70/ornith-35b-a3b.md#speed) | 290 over 2 streams | not measured | 17 of 24 agent tasks | 2026-10-04 |
+| the same, on retired cards | 59-60 | [GTX 1080 Ti + MI25](mi25/); 59.6 on the [RTX 6000](rtx-6000/#no-silent-fallback-experts-on-optane-by-accident) | not measured | not measured | code-review screen 1 of 2 | 2026-10-21 |
+| Ornith-1.5-122B | **31.6** | [Quadro RTX 6000](rtx-6000/) + DDR4 | not measured | not measured | both planted defects found | 2026-10-20 |
+
+"Not measured" means exactly that; it is not a zero.
+
 ## The hardware
 
 Four boxes, six GPUs from three vendors and five architectures, 1.5 TB of DRAM between them. Each card has its own
@@ -24,9 +61,9 @@ at a time unless it says otherwise.
 
 | box | CPU and memory | card | best measured result |
 |---|---|---|---|
-| **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s** (95-107 over 10 runs); GLM-5.3-Flash (321B MoE) at **26.69 tok/s** |
+| **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s** (95-107 over 10 runs); DeepSeek V4.1 Flash (748B MoE) at **27.39 tok/s** with 2-bit experts; GLM-5.3-Flash (321B MoE) at **26.69 tok/s** |
 | **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s**; **16 of 16** facts recalled from a 189k-token prompt (the same store, the build before the tier split) |
-| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next for **32 agents at once: 329.6 tok/s** summed, about 10.3 each, with 2 slots of 262,144 tokens and 30 of 131,072 (349.6 with short prompts in 131,072-token slots); at **87.1 tok/s** for one, and **11 of 12** agent tasks on the build before; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams in compiled mode (the 27B was measured with the cards in the AM5 box, before they moved here) |
+| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next for **32 agents at once: 377.9 tok/s** summed, 11.81 each, in 131,072-token slots (329.6 in the mixed shape with 2 slots of 262,144 tokens); at **87.1 tok/s** for one, and **11 of 12** agent tasks on the build before; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams in compiled mode (the 27B was measured with the cards in the AM5 box, before they moved here) |
 | **2017 two-socket server** (Supermicro H11DSi) | 2x EPYC 7601, 1 TB DDR4 on 16 channels | [**GTX 1080 Ti** 11 GB](1080-ti/) and [**Radeon Instinct MI25** 16 GB](mi25/) | Ornith-1.5-35B-A3B at **59-60 tok/s** with every expert on the two retired cards; DeepSeek V4.1 Flash at **12.09 tok/s** (11.74 without a draft) |
 | the same server | [**its CPUs alone**](epyc-cpu/) | none | DeepSeek V4.1 Flash at **7.02 tok/s**, no GPU at all |
 

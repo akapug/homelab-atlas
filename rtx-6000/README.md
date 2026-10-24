@@ -21,6 +21,7 @@ Terms: [GLOSSARY](../GLOSSARY.md).
 | DeepSeek V4.1 Flash at 189k tokens | the same store on our fork's branch `prebind-f32-indexer` (no tier split); 2.2 GiB of hot experts, 212,992-token window | **16 of 16 facts recalled** from a 189,454-token prompt; decode 7.18 at that depth (n0), prefill 57.7 at 110-190k | `--swa-compress`, micro-batch 2048, greedy, 2026-10-21 | the recall itself | [Long context](#v41-at-189k-tokens-every-fact-recalled) |
 | Ornith-1.5-122B (Qwen3.5-122B-A10B fine-tune) | ik_llama.cpp with our changes, Q4_K_M (70.6 GiB); experts of layers 0-8 on the GPU, the rest in DRAM | **31.6 decode** at 4,000 tokens of context (31.0 at 600), 27.1-27.3 without the draft; prefill 165.5 | its own MTP layer, n_max 3; 49,152-token window; 2026-10-20 | code-review screen: both planted defects found with an 8k thinking budget; agent tasks 0 of 3 in a configuration that limited it | [moe-offload points 19-20](../moe-offload/#what-we-learned-measured) |
 | GLM-5.3-Flash (321B) | ik_llama.cpp with our changes, unsloth UD-Q4_K_XL; hot experts on the GPU, CPU experts row-split over both sockets | **16.06 decode** (mean of 4 prompts x 3 rounds), 12.30 without the draft | MTP 3 with a reduced draft vocabulary, p_min 0.75, expert chunking off; 4 coding-agent briefs (ours, private), raw completion without a chat template, greedy, 256 tokens out, 34,816-token window, 39 threads; 2026-10-20 | KL 0.030, top-1 0.960 against a 3-bit reference: a measured miss of that reference; fidelity to BF16 unmeasured | [moe-offload points 2, 4-6, 13-14](../moe-offload/#what-we-learned-measured) |
+| Ornith-1.5-35B-A3B | llama.cpp b11175 CUDA, Q4_K_M plus its vision projector; experts of 12 layers on the CPU, bound to DRAM node 0 | **59.6 decode** on a short reply, thinking off | 32,768-token window, 2 slots, beside an embedding server on the same card (21.6 of 23.0 GB used); 2026-10-24 | none on this box; it serves a household assistant | [No silent fallback](#no-silent-fallback-experts-on-optane-by-accident) |
 | Qwen3.6-35B-A3B | llama.cpp b11175 CUDA, UD-Q4_K_XL (22.9 GB), experts of 19 layers in RAM | 38 decode fresh, 28.5 at 165k depth; 81-119 on edit output with n-gram drafting | 262,144-token window, 2026-09-29 | - | served as a coding agent's model in late September 2026 |
 
 ## DeepSeek V4.1 Flash: the best run
@@ -156,6 +157,22 @@ What you cannot get from us, so your number will differ:
   our shard sizes but not our bytes, and its q2_K experts are close to ours, not equal.
 - **A quality check on the 12.69 build itself.** The one we have is from the earlier build of the same store and
   layout. Until one runs on this build, read 12.69 as a speed figure.
+
+## No silent fallback: experts on Optane by accident
+
+Measured 2026-10-24. We moved a household assistant (Ornith-1.5-35B-A3B, a 35B MoE) to this box. A chat request through
+its proxy took **96 s** and decode ran at 19.4 tok/s. The box had DRAM to spare, yet 3.7 of the 10 GB of CPU experts
+were paged on the Optane PMem node, and the threads were spread over both sockets. Nothing in the launch asked for
+that: the kernel placed the pages where it found room.
+
+The fix was one restart with a smaller KV cache, fewer CPU expert layers and the CPU part bound to DRAM node 0. After
+it, the same chat request took **0.59 s** and a tool call 3.48 s. A second fit (experts of 12 layers on the CPU instead of
+19, a 32,768-token window, 2 slots) decodes **59.6 tok/s** on a short reply. Context, offload, slots, threads and
+placement changed together, so these numbers do not isolate what Optane alone cost.
+
+The lesson we now apply to every recipe: the plan declares where each part lives, the run proves it, and a path that
+was not logged counts as unknown, never as fine. We keep this case, with the buffer placement before and after,
+as a test for the planner.
 
 ## What did not work
 

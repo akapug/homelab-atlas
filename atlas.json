@@ -164,6 +164,21 @@
    "source": "3090-ti/#qwen38-flash-next-agent-work-from-ram"
   },
   {
+   "card": "rtx-3090-ti",
+   "model": "DeepSeek V4.1 Flash",
+   "weights": "GSQ-RCO IQ2_XS experts",
+   "engine": "Strata, our sm_86 build (unpublished)",
+   "decode_tps": 27.39,
+   "prefill_tps": 240.5,
+   "streams": 1,
+   "conditions": "dense layers and hot experts in the card, 13,827 experts (134.2 GB) copied into RAM at load and computed on the CPU; DSpark Q8_0 draft model (auto, confidence 0.65); 65,536-token window; median over 217 agent requests with at least 50 tokens out (p10 25.57); prefill median over 85 reads of at least 1,000 tokens",
+   "quality": "agent eval 13/15 (battery 11/12, real repository 2/3); no KL check against the release weights (not measured)",
+   "date": "2026-10-24",
+   "status": "unpublished-code",
+   "source": "3090-ti/#deepseek-v41-flash-27-toks-on-a-gaming-card",
+   "ledger_id": "snoopy-v41-gsq-iq2xs-strata-ramcopy-eval"
+  },
+  {
    "card": "quadro-rtx-6000",
    "model": "DeepSeek V4.1 Flash",
    "weights": "split store: hot experts MXFP4, cold q2_K",
@@ -222,6 +237,19 @@
    "date": "2026-10-20",
    "status": "measured",
    "source": "rtx-6000/#at-a-glance"
+  },
+  {
+   "card": "quadro-rtx-6000",
+   "model": "Ornith-1.5-35B-A3B",
+   "weights": "Q4_K_M + vision projector",
+   "engine": "llama.cpp b11175 CUDA",
+   "decode_tps": 59.6,
+   "streams": 1,
+   "conditions": "experts of 12 layers on the CPU bound to DRAM node 0, 32,768-token window, 2 slots, beside an embedding server on the same card; short reply, thinking off",
+   "quality": "none on this box (not measured)",
+   "date": "2026-10-24",
+   "status": "measured",
+   "source": "rtx-6000/#no-silent-fallback-experts-on-optane-by-accident"
   },
   {
    "card": "arc-pro-b70-1",
@@ -313,6 +341,25 @@
    "date": "2026-10-24",
    "status": "unpublished-code",
    "source": "b70/many-agents.md#at-a-glance"
+  },
+  {
+   "card": "arc-pro-b70-1",
+   "cards": [
+    "arc-pro-b70-1",
+    "arc-pro-b70-2"
+   ],
+   "model": "Qwen3.8 Flash-Next",
+   "weights": "GSQ-RCO IQ3_XXS",
+   "engine": "XeStrata + our batched-decode branches (unpublished)",
+   "decode_tps": 377.9,
+   "streams": 32,
+   "conditions": "32 agents, every slot 131,072, prompts of about 14k; the combined build of the winning switches; 11.81 tok/s per agent (slowest 11.80); 404.3 W cards + 114.3 W CPU package = 518.6 W, not wall power: 0.729 tok/s per W; one 60 s window (run served-c8-base). Served to real coding agents and timed over whole requests, 16 agents got 13.1-14.8 each (lab result, not in the ledger)",
+   "quality": "no parity, agent or KL check on this build (not measured)",
+   "quality_on_this_build": false,
+   "date": "2026-10-24",
+   "status": "unpublished-code",
+   "source": "b70/many-agents.md#newer-build-3779-toks-at-32-agents",
+   "ledger_id": "odie-fnx-iq3xxs-2xb70-sweep-served-c8-base-1024"
   },
   {
    "card": "mi25",

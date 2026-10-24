@@ -6,6 +6,18 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+### Added
+- README: **What's new** and **Best result per model**, one table with the best measured one-request decode, the
+  many-agent total and tok/s per watt where measured, and the quality check for each model.
+- `3090-ti/`: DeepSeek V4.1 Flash at 27.39 tok/s on one RTX 3090 Ti plus DDR5 (2-bit experts, Strata built for sm_86 by
+  us), median over 217 real agent requests, 13 of 15 agent tasks; no KL check yet. Headline: the AM5 row of the README
+  table adds it.
+- `b70/many-agents.md`: a build that combines the winning switches, 377.9 tok/s over 32 agents (11.81 each, 0.729 tok/s
+  per W), and whole-request numbers from serving it to our own coding agents (16 agents at 13.1 to 14.8 each).
+  Headline: the B70 row of the README table now leads with 377.9.
+- `rtx-6000/`: Ornith-1.5-35B-A3B at 59.6 tok/s, and how 3.7 GB of its CPU experts landed on Optane by accident (a
+  96 s chat request; 0.59 s after one restart).
+
 ## [2026.10.24]
 
 Two Arc Pro B70s serve 32 agents at once, and three $10 network cards link three boxes at 56 Gb/s.

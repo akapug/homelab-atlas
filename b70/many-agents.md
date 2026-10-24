@@ -8,6 +8,11 @@ and 30 subagents with 131,072-token slots, with one 248k-token prompt and two 11
 the same box peaks at **349.6 tok/s, 10.92 each**. The model is Qwen3.8 Flash-Next (125B MoE, 6B active) at IQ3_XXS,
 and the engine is XeStrata with our batching changes.
 
+**Newer (2026-10-24, later the same day):** a build that combines the switches that won, run in the uniform shape,
+reaches **377.9 tok/s, 11.81 per agent**, at 0.729 tok/s per W; see [Newer build: 377.9 tok/s at 32
+agents](#newer-build-3779-toks-at-32-agents). As a live server for real coding agents, counting whole requests
+with their prompt reading, 16 agents each got 13.1 to 14.8 tok/s.
+
 Measured 2026-10-23 and 2026-10-24 (UTC). The engine changes behind these numbers are on our XeStrata branches and are
 **not published yet**. The work is still running: the last section
 lists what is in progress.
@@ -20,6 +25,7 @@ lists what is in progress.
 | model | Qwen3.8 Flash-Next, GSQ-RCO IQ3_XXS, its layers split across the two cards |
 | engine | [XeStrata](https://github.com/chriscorbell/intel-arc-pro-b70-qwen38-flash-next) plus our batched-decode branches (unpublished) |
 | useful shape (run M32c) | **329.6 tok/s total over 32 agents, each 10.27 to 10.32 tok/s**: 2 slots of 262,144 and 30 of 131,072, one 248k-token and two 114k-token prompts among them; 400.1 W for the cards + 129.1 W CPU package = 529.2 W, **0.623 tok/s per W**; 52.0 GiB of host RAM pinned for older KV |
+| newer build, uniform (run served-c8-base) | **377.9 tok/s total, 11.81 per agent (slowest 11.80)**, every slot 131,072, prompts of about 14k; 404.3 W + 114.3 W = 518.6 W, **0.729 tok/s per W**; the build combines the switches that won (below); no parity or quality run on this build yet (not measured) |
 | uniform peak (run C2bs) | **349.6 tok/s total, 10.92 tok/s per agent (slowest 10.92)**, every slot 131,072, prompts of about 14k; 404.4 W + 131.1 W = 535.5 W, **0.653 tok/s per W** (0.864 per card W); 47.7 GiB pinned |
 | against its control | the same build with its four new switches off (C2a): 337.1 tok/s, so the switches are worth +3.7 % |
 | quality check | the engine's card parity suites pass with 0 failures on the C2bs build; the M32c build adds the server's slot fix and later engine changes, and its own parity run is not part of this page; no agent or KL check on either build yet (not measured) |
@@ -118,6 +124,30 @@ prompts; the other 29 had the usual ~14k.
   the only change).
 - M32c is 5.7 % below the uniform peak (C2bs, 349.6). M32c and C2bs differ in
   build as well as shape, so that figure is our reading, not a matched comparison.
+
+## Newer build: 377.9 tok/s at 32 agents
+
+Measured 2026-10-24. One build carries every switch that won its own arm; its full environment is in the run ledger
+(`odie-fnx-iq3xxs-2xb70-sweep-served-c8-base-1024`). It
+uses the uniform shape and the same rate probe as C2bs: 32 slots of 131,072 tokens, prompts of about 14k, one 60 s window.
+
+| run | total tok/s | per agent (slowest) | watts (cards + CPU package) | tok/s per W |
+|---|---|---|---|---|
+| served-c8-base (the combined build) | **377.9** | 11.81 (11.80) | 404.3 + 114.3 = 518.6 | **0.729** |
+| served-c8-oasync (plus an asynchronous output copy) | 378.4 | 11.82 (11.82) | 515.0 | 0.735 |
+| served-c8-q81 | 373.6 | 11.67 | 512.7 | 0.729 |
+| served-c8-all (every candidate switch on) | 375.2 | 11.72 | 513.6 | 0.731 |
+
+The four runs sit within about 1 %, which one window per run does not resolve, so the asynchronous copy is not a
+measured win (our reading). Against C2bs (349.6) the combined build is +8.1 %, with build and switches changed together.
+
+**What the rate probe leaves out.** It counts decode tokens once every agent is decoding. Real agents also wait while
+the server reads their prompts. We then served the same build to our own coding agents at 16 agents at once and timed
+whole requests, prompt reading included: each agent got **13.1 to 14.8 tok/s**, with 13.7 to 130 s before the first
+token and 6,500 to 12,000 tokens out per request. At 32 agents it was about 8 tok/s each. Those are lab results, not in
+the public ledger. The gap between the probe's 11.8 and about 8 at 32 agents is prompt reading competing with
+decode. Closing it is the next piece of work: the decode figure is the ceiling, and the time spent reading prompts
+is what is left to cut.
 
 ## Reproduce
 
