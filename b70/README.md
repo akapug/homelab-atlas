@@ -79,7 +79,7 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
   assistant and a coding agent from one card with the house first: it coded 17 of 24 against Qwen3.6's 13, a
   speculative-decoding bug that garbled 3 % of replies and its repro, thinking with a budget, photos, and voice on CPUs.
 - [`many-agents.md`](many-agents.md): both cards serving 32 agents at once with Qwen3.8 Flash-Next, 349.6 tok/s in
-  total at 10.92 each and 131,072 tokens of context per agent, with every switch we tried, the losers and why they lost.
+  total at 10.92 each and a 131,072-token context slot per agent, with every switch we tried, the losers and why they lost.
 - [`agent-eval/`](agent-eval/): can a local model finish real repository work? Twelve tasks with
   hidden checks, a sandboxed runner, and 72 runs: on all twelve, the dense 27B finished 22 of 24
   and the MoE 15 of 24 (p = 0.036), at little more speed once the tasks got hard.

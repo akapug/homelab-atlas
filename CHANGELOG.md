@@ -12,7 +12,7 @@ Two Arc Pro B70s serve 32 agents at once, and three $10 network cards link three
 
 ### Added
 - `b70/many-agents.md`: Qwen3.8 Flash-Next (IQ3_XXS) across both B70s on our batched XeStrata branches (not published
-  yet) serves 32 agents at 349.6 tok/s in total, 10.92 each, every agent a 131,072-token slot, at 0.653 tok/s per watt
+  yet) serves 32 agents at 349.6 tok/s in total, 10.92 each, every agent a 131,072-token context slot, at 0.653 tok/s per watt
   of card plus CPU package power (one 60 s window, synthetic coding-agent prompts). The page has the ladder from 24
   agents, k8v4 against int8 KV, a matched control for the new switches (+3.7 %), every switch we tried with its
   verdict, why the losers lost, a mixed 2 x 262,144 + 30 x 131,072 run, and what is still running. Headline: the B70

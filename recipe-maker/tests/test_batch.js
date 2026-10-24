@@ -5,6 +5,8 @@ const FM = require('../src/model.js');
 const data = JSON.parse(fs.readFileSync('data.json', 'utf8'));
 const clone = x => JSON.parse(JSON.stringify(x));
 const B = data.batch, v = FM.v;
+// a copy without the batch term's ledger rows (the public export) builds data.batch as null: nothing here to test
+if (!B) { console.log('skip: no batch term in this build (its ledger rows are not in this copy)'); process.exit(0); }
 const TAGS = new Set(['MEASURED', 'READ', 'PRIOR', 'ESTIMATE', 'FIT']);
 let passed = 0;
 const test = (name, fn) => { fn(); passed++; console.log('ok ' + name); };
