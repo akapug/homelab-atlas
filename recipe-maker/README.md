@@ -7,8 +7,8 @@ a quality bar.
 
 - **Predicts before you run:** decode tokens per second with and without a draft model, VRAM peak, free memory per
   NUMA node, and the share of routed reads at low bit widths, for each layout it proposes or each recipe you write.
-- **Refuses bad launches:** `node report.js --check RECIPE.json` is a pre-launch gate. On the 200 runs in the shipped
-  ledger (2026-10-24) it failed 31 of the 57 runs that later went bad (9 of those 57 are many-agent rate probes on an
+- **Refuses bad launches:** `node report.js --check RECIPE.json` is a pre-launch gate. On the 201 runs in the shipped
+  ledger (2026-10-24) it failed 31 of the 58 runs that later went bad (10 of those 58 are many-agent rate probes on an
   engine it does not model, which the ledger marks degraded because the client cancels its streams after the timed
   window); `node report.js --accuracy` prints the current
   count.
@@ -35,7 +35,7 @@ Every measured run, the fastest clean run per box and model with its conditions,
 
 ## How close are its predictions?
 
-From `node report.js --accuracy` on the shipped ledger (200 runs, 2026-10-24). Error = (predicted - measured) / measured, scored
+From `node report.js --accuracy` on the shipped ledger (201 runs, 2026-10-24). Error = (predicted - measured) / measured, scored
 only on runs that finished cleanly and were not disturbed; a negative bias means the planner predicted slower. The first
 two columns score what the planner said when each run launched; the last replays every run through today's planner.
 
@@ -50,8 +50,8 @@ two columns score what the planner said when each run launched; the last replays
 | odie, LLaDA2.1-mini (block diffusion), one Arc Pro B70 | 4.1 % (15 runs, bias -1.5 %) | | 4.1 % (15 runs, bias -1.5 %) |
 | odie / lassie, other block-diffusion models | 1.6-43.8 % (2-4 runs each) | | 1.6-43.8 % (2-4 runs each) |
 
-The pre-launch gate, over the same ledger (200 runs, 2026-10-24): 31 runs it failed went bad (10 of them for the
-cause the failing check names), 26 runs went bad with no check failing (9 of them the many-agent rate probes above), and 24 runs it failed ran fine. On a box it has never seen, expect the
+The pre-launch gate, over the same ledger (201 runs, 2026-10-24): 31 runs it failed went bad (10 of them for the
+cause the failing check names), 27 runs went bad with no check failing (10 of them the many-agent rate probes above), and 24 runs it failed ran fine. On a box it has never seen, expect the
 gap it shows on published community measurements (17-59 % by hardware class, `node report.js --external`) until your
 own runs are in the ledger. Where it is still weak: [docs/how-it-works.md#honest-limits](docs/how-it-works.md#honest-limits).
 

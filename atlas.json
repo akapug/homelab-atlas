@@ -288,6 +288,24 @@
    "model": "Qwen3.8 Flash-Next",
    "weights": "GSQ-RCO IQ3_XXS",
    "engine": "XeStrata + our batched-decode branches (unpublished)",
+   "decode_tps": 329.6,
+   "streams": 32,
+   "conditions": "32 agents at once in a mixed shape: 2 slots of 262,144 tokens + 30 of 131,072, with one 248k-token and two 114k-token prompts in flight, the rest ~14k; every agent 10.27-10.32 tok/s; layer split 25 across both B70s, 2 batch groups, k8v4 KV with the newest 4,096 tokens per agent in VRAM and older KV in pinned host RAM (52.0 GiB), no speculation in the batch, thinking on; tokens counted over a 60 s window once all agents decode; 529.2 W = 400.1 W for the two cards + 129.1 W CPU package, not wall power: 0.623 tok/s per W; one run (M32c), a later build than the 349.6 with the server's slot fix",
+   "quality": "no agent or KL check on this build (not measured); the engine card parity suites passed on the 349.6 build",
+   "date": "2026-10-24",
+   "status": "unpublished-code",
+   "source": "b70/many-agents.md#at-a-glance",
+   "quality_on_this_build": false
+  },
+  {
+   "card": "arc-pro-b70-1",
+   "cards": [
+    "arc-pro-b70-1",
+    "arc-pro-b70-2"
+   ],
+   "model": "Qwen3.8 Flash-Next",
+   "weights": "GSQ-RCO IQ3_XXS",
+   "engine": "XeStrata + our batched-decode branches (unpublished)",
    "decode_tps": 349.6,
    "streams": 32,
    "conditions": "32 agents at once, 10.92 tok/s each (slowest 10.92), every agent a 131,072-token slot; layer split 25 across both B70s, 2 batch groups, k8v4 KV with the newest 4,096 tokens per agent in VRAM and older KV in pinned host RAM (47.7 GiB), no speculation in the batch, thinking on; synthetic load: 8 coding-agent prompts of ~14k tokens, tokens counted over a 60 s window once all agents decode; 535.5 W = 404.4 W for the two cards + 131.1 W CPU package, not wall power: 0.653 tok/s per W; one run (C2bs); the same build with its four new switches off gave 337.1",

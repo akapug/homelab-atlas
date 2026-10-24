@@ -26,7 +26,7 @@ at a time unless it says otherwise.
 |---|---|---|---|
 | **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s** (95-107 over 10 runs); GLM-5.3-Flash (321B MoE) at **26.69 tok/s** |
 | **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s**; **16 of 16** facts recalled from a 189k-token prompt (the same store, the build before the tier split) |
-| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next for **32 agents at once: 349.6 tok/s** summed, 10.92 each, a 131,072-token context slot each; at **87.1 tok/s** for one, and **11 of 12** agent tasks on the build before; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams in compiled mode (the 27B was measured with the cards in the AM5 box, before they moved here) |
+| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next for **32 agents at once: 329.6 tok/s** summed, about 10.3 each, with 2 slots of 262,144 tokens and 30 of 131,072 (349.6 with short prompts in 131,072-token slots); at **87.1 tok/s** for one, and **11 of 12** agent tasks on the build before; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams in compiled mode (the 27B was measured with the cards in the AM5 box, before they moved here) |
 | **2017 two-socket server** (Supermicro H11DSi) | 2x EPYC 7601, 1 TB DDR4 on 16 channels | [**GTX 1080 Ti** 11 GB](1080-ti/) and [**Radeon Instinct MI25** 16 GB](mi25/) | Ornith-1.5-35B-A3B at **59-60 tok/s** with every expert on the two retired cards; DeepSeek V4.1 Flash at **12.09 tok/s** (11.74 without a draft) |
 | the same server | [**its CPUs alone**](epyc-cpu/) | none | DeepSeek V4.1 Flash at **7.02 tok/s**, no GPU at all |
 
@@ -41,9 +41,9 @@ The fine print, card by card (the card pages carry the rest):
   tasks (xe0.1.40.2.2, 229,376-token window, 2026-10-18) used two builds of the same setup. Qwen3.8-27B: 74.6 in eager
   mode with MTP 3 and the reduced draft vocabulary, which leaves the output unchanged; the 351 is compiled mode without
   it. Both were measured while the B70s sat in the Ryzen 9950X3D box, before they moved on 2026-10-07. The 32-agent
-  run: IQ3_XXS across both cards on our batched XeStrata branches (not published yet), k8v4 KV, a synthetic load of
-  coding-agent prompts of about 14k tokens, one 60 s window; its quality check so far is the engine's card parity
-  suites.
+  runs: IQ3_XXS across both cards on our batched XeStrata branches (not published yet), k8v4 KV, a synthetic load of
+  coding-agent prompts (about 14k tokens, plus one 248k and two 114k in the mixed run), one 60 s window each; the
+  quality check so far is the engine's card parity suites on the 349.6 build.
 - **1080 Ti and MI25.** Ornith: Q4_K_M with its own MTP draft head; on our code-review screens it found 1 of 2 planted
   defects and raised one false alarm. V4.1: the DSpark draft model, experts at release precision (the quality
   reference itself); the 12.09 adds our decode-attention kernel for the 1080 Ti, checked against the CPU attention on
@@ -98,8 +98,10 @@ The ones we are proudest of, each with its conditions and quality check one clic
   ms a token in F16 math it runs at 1/64 speed, so we wrote it a decode-attention kernel. With all 16 DIMMs back and `-ub 512` (7.96 without the kernel, against
   6.97 before), it went 7.96 to 11.74 tok/s without a draft, 12.09 with one, same binary, same prompts. A card from 2017, one kernel, +47 %.
   [1080 Ti](1080-ti/#one-kernel-47-)
-- **32 agents on one box, each with a 131k-token context slot.** Two Arc Pro B70s in a 2019 Threadripper box serve Qwen3.8 Flash-Next
-  to 32 agents at once: 349.6 tok/s in total, 10.92 tok/s each, 0.653 tok/s per watt of card plus CPU package power.
+- **32 coding agents on one box.** Two Arc Pro B70s in a 2019 Threadripper box serve Qwen3.8 Flash-Next to 2 top-level
+  agents with 262k-token slots and 30 subagents with 131k-token slots at once, a 248k-token conversation among them:
+  329.6 tok/s in total, every agent at 10.27 to 10.32 tok/s, 0.623 tok/s per watt of card plus CPU package power. With
+  short prompts in 131k slots it peaks at 349.6.
   Going from 24 agents to 32 cost no extra power, so the agent count is the knob. The page keeps the switches that
   lost and why: a warm-up trap that faked our early kernel readings, and fusions that cost more than the launch they
   saved. The batched engine is not published yet. [32 agents](b70/many-agents.md)

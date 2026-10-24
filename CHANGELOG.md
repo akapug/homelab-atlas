@@ -12,17 +12,19 @@ Two Arc Pro B70s serve 32 agents at once, and three $10 network cards link three
 
 ### Added
 - `b70/many-agents.md`: Qwen3.8 Flash-Next (IQ3_XXS) across both B70s on our batched XeStrata branches (not published
-  yet) serves 32 agents at 349.6 tok/s in total, 10.92 each, every agent a 131,072-token context slot, at 0.653 tok/s per watt
-  of card plus CPU package power (one 60 s window, synthetic coding-agent prompts). The page has the ladder from 24
+  yet) serves 32 agents at once in a coding team's shape, 2 top-level agents with 262,144-token slots and 30 subagents
+  with 131,072, a 248k-token conversation among them: 329.6 tok/s in total, every agent 10.27-10.32 tok/s, 0.623 tok/s
+  per watt of card plus CPU package power. With every slot 131,072 and short prompts it peaks at 349.6 (10.92 each,
+  0.653 per watt). One 60 s window per run, synthetic coding-agent prompts. The page has the ladder from 24
   agents, k8v4 against int8 KV, a matched control for the new switches (+3.7 %), every switch we tried with its
-  verdict, why the losers lost, a mixed 2 x 262,144 + 30 x 131,072 run, and what is still running. Headline: the B70
+  verdict, why the losers lost, the server slot fix that took the mixed shape from 31 decoding agents to 32, and what is still running. Headline: the B70
   row in the README table now leads with it; `atlas.json` has the result (`unpublished-code`).
 - `network/`: three used ConnectX-3 cards at $10.19 each, cross-flashed from QCBT to FCBT firmware, as a switchless
   triangle: 52.6 Gb/s RDMA per link in InfiniBand mode, 52.3-52.6 RoCE and about 50 Gb/s parallel TCP in 56GbE
   Ethernet mode; flashing over the cable when a box cannot flash its own card.
-- Recipe Maker export at fit-viz 44980fd: the **Agents at once** view and `node report.js --curve` (total and
+- Recipe Maker export at fit-viz 50ad5c1: the **Agents at once** view and `node report.js --curve` (total and
   per-agent tok/s by agent count, the host-memory ceiling, tok/s per watt), the batch-window kernel planner
-  (`--window`), the KV host-memory check for streamed KV, and the many-agent runs above in the ledger (200 rows).
+  (`--window`), the KV host-memory check for streamed KV, and the many-agent runs above in the ledger (201 rows).
   The accuracy table and gate counts in its README are recomputed on the new ledger.
   Its tok/s per watt uses the watts each run measured, within the boundary the run row states; it no longer calls them
   wall watts.

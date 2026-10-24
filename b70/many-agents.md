@@ -1,9 +1,11 @@
 # 32 agents on two B70s: Qwen3.8 Flash-Next, batched
 
 How many coding agents can one box serve at once, each fast enough to work with? On the Threadripper box (a 2019
-Threadripper 3960X, 128 GB DDR4, two Arc Pro B70 32 GB cards), the answer so far is **32 agents at 10.92 tok/s each,
-349.6 tok/s in total**, every agent holding a 131,072-token context slot, at **0.653 tok/s per watt** of card plus CPU
-package power. The model is Qwen3.8 Flash-Next (125B MoE, 6B active) at IQ3_XXS, and the engine is XeStrata with our
+Threadripper 3960X, 128 GB DDR4, two Arc Pro B70 32 GB cards), the answer so far is **32 agents at about 10.3 tok/s
+each, 329.6 tok/s in total**, in the shape a coding team uses: 2 top-level agents with 262,144-token context slots and
+30 subagents with 131,072-token slots, with one 248k-token conversation and two 114k-token ones in flight. That is
+**0.623 tok/s per watt** of card plus CPU package power. With every agent in a 131,072-token slot and short prompts,
+the same box peaks at **349.6 tok/s, 10.92 each**. The model is Qwen3.8 Flash-Next (125B MoE, 6B active) at IQ3_XXS, and the engine is XeStrata with our
 batching changes.
 
 Measured 2026-10-23 and 2026-10-24 (UTC). The engine changes behind these numbers are on our XeStrata branches and are
@@ -17,11 +19,10 @@ lists what is in progress.
 | box | Threadripper 3960X (24 cores), 128 GB DDR4, 2x Arc Pro B70 32 GB on PCIe 4 x16 (box C, `odie` in Recipe Maker) |
 | model | Qwen3.8 Flash-Next, GSQ-RCO IQ3_XXS, its layers split across the two cards |
 | engine | [XeStrata](https://github.com/chriscorbell/intel-arc-pro-b70-qwen38-flash-next) plus our batched-decode branches (unpublished) |
-| result | **349.6 tok/s total, 10.92 tok/s per agent (slowest agent 10.92), 32 agents** (run C2bs below) |
-| power | 404.4 W for the two cards + 131.1 W CPU package = 535.5 W; **0.653 tok/s per W** (0.864 per card W) |
+| useful shape (run M32c) | **329.6 tok/s total over 32 agents, each 10.27 to 10.32 tok/s**: 2 slots of 262,144 and 30 of 131,072, one 248k-token and two 114k-token prompts among them; 400.1 W for the cards + 129.1 W CPU package = 529.2 W, **0.623 tok/s per W**; 52.0 GiB of host RAM pinned for older KV |
+| uniform peak (run C2bs) | **349.6 tok/s total, 10.92 tok/s per agent (slowest 10.92)**, every slot 131,072, prompts of about 14k; 404.4 W + 131.1 W = 535.5 W, **0.653 tok/s per W** (0.864 per card W); 47.7 GiB pinned |
 | against its control | the same build with its four new switches off (C2a): 337.1 tok/s, so the switches are worth +3.7 % |
-| memory | 47.7 GiB of host RAM pinned for older KV |
-| quality check | the engine's card parity suites pass with 0 failures on this build; no agent or KL check on the batched build yet (not measured) |
+| quality check | the engine's card parity suites pass with 0 failures on the C2bs build; the M32c build adds the server's slot fix and later engine changes, and its own parity run is not part of this page; no agent or KL check on either build yet (not measured) |
 
 ## Conditions
 
@@ -100,17 +101,23 @@ Why the losers lost, and what that taught us:
 
 ## Mixed context: 2 agents at 262,144, 30 at 131,072
 
-Top-level agents want more context than their subagents, so we also ran 2 big slots of 262,144 tokens beside 30 slots
-of 131,072 (C2bs's build and switches; k8v4). One agent had a 248k-token prompt and two had
-114k-token prompts.
+Top-level agents want more context than their subagents, so the shape we care most about is 2 big slots of 262,144
+tokens beside 30 slots of 131,072 (k8v4, C2bs's switches). One agent had a 248k-token prompt and two had 114k-token
+prompts; the other 29 had the usual ~14k.
 
-- Both slot sizes batch in one window. The 248k-token agent decoded at the same rate as the rest: 10.03 tok/s (the
-  median agent).
-- **295.6 tok/s over the 31 agents that got a slot**, 0.543 tok/s per W, 52.0 GiB pinned. Loading took 1,760 s,
-  most of it the 248k-token prompt.
-- One agent got no slot for the whole window while a big slot sat idle, and two started late. The server gives a big
-  slot only to a request that does not fit a small one. Letting a short request borrow an idle big slot should fix it;
-  that change is not written yet.
+| run | build | agents decoding | total tok/s | per agent | tok/s per W (cards + CPU) | pinned host RAM | loading |
+|---|---|---|---|---|---|---|---|
+| M32b | second build | 31 of 32 | 295.6 | 10.03 (median; one agent 0) | 0.543 | 52.0 GiB | 1,760 s |
+| **M32c** | **a later build of the same branches, with the slot fix below** | **32 of 32** | **329.6** | **10.27 to 10.32** | **0.623** | **52.0 GiB** | **957 s** |
+
+- Both slot sizes batch in one window, and the 248k-token agent decodes at the same rate as the rest (10.30 tok/s in
+  M32c).
+- In M32b one agent got no slot for the whole window while a big slot sat idle, and two started late: the server gave
+  a big slot only to a request that did not fit a small one. The fix lets a short request use an idle big slot. With it,
+  every agent decodes and the total is 11.5 % higher (M32c, which also runs on a later engine build, so the fix is not
+  the only change).
+- M32c is 5.7 % below the uniform peak (C2bs, 349.6). M32c and C2bs differ in
+  build as well as shape, so that figure is our reading, not a matched comparison.
 
 ## Reproduce
 
@@ -125,9 +132,9 @@ today:
 
 ## In progress (no results yet)
 
-Running or queued when this page was written (2026-10-24 05:00 UTC): 48 and 64 agents at 131,072 each (a first
+Running or queued when this page was written (2026-10-24 05:30 UTC): 48 and 64 agents at 131,072 each (a first
 48-agent run hit the server's slot cap and does not count); every slot at
-262,144; the big-slot fix above; the L2 prefetch for the hc reads; moving more layers to the first card, since card 2's
+262,144; the L2 prefetch for the hc reads; moving more layers to the first card, since card 2's
 stage takes 47.9 ms of each 16-row window against card 1's 40.1 ms (measured under the profiler, which itself costs
 about 4.6 %); and the shared-memory shared expert at the server level. Each lands here with its numbers, and the losers
 stay in.
