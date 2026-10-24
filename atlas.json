@@ -1,6 +1,6 @@
 {
  "schema": "homelab-atlas/1",
- "updated": "2026-10-22",
+ "updated": "2026-10-24",
  "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). quality_on_this_build: false marks a result whose quality check ran on another build, card or configuration than the speed figure (its conditions and quality text say which); absent means the check ran on the configuration the result names. A result that needs several cards lists them all in cards; card is the one whose page it cites.",
  "boxes": [
   {
@@ -278,6 +278,23 @@
    "date": "2026-10-04",
    "status": "measured",
    "source": "b70/ornith-35b-a3b.md#speed"
+  },
+  {
+   "card": "arc-pro-b70-1",
+   "cards": [
+    "arc-pro-b70-1",
+    "arc-pro-b70-2"
+   ],
+   "model": "Qwen3.8 Flash-Next",
+   "weights": "GSQ-RCO IQ3_XXS",
+   "engine": "XeStrata + our batched-decode branches (unpublished)",
+   "decode_tps": 349.6,
+   "streams": 32,
+   "conditions": "32 agents at once, 10.92 tok/s each (slowest 10.92), every agent a 131,072-token slot; layer split 25 across both B70s, 2 batch groups, k8v4 KV with the newest 4,096 tokens per agent in VRAM and older KV in pinned host RAM (47.7 GiB), no speculation in the batch, thinking on; synthetic load: 8 coding-agent prompts of ~14k tokens, tokens counted over a 60 s window once all agents decode; 535.5 W = 404.4 W for the two cards + 131.1 W CPU package, not wall power: 0.653 tok/s per W; one run (C2bs); the same build with its four new switches off gave 337.1",
+   "quality": "engine card parity suites: 0 failures on this build; no agent or KL check on the batched build (not measured)",
+   "date": "2026-10-24",
+   "status": "unpublished-code",
+   "source": "b70/many-agents.md#at-a-glance"
   },
   {
    "card": "mi25",

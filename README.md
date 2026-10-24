@@ -26,7 +26,7 @@ at a time unless it says otherwise.
 |---|---|---|---|
 | **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s** (95-107 over 10 runs); GLM-5.3-Flash (321B MoE) at **26.69 tok/s** |
 | **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s**; **16 of 16** facts recalled from a 189k-token prompt (the same store, the build before the tier split) |
-| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next at **87.1 tok/s**, and **11 of 12** agent tasks on the build before; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams in compiled mode (the 27B was measured with the cards in the AM5 box, before they moved here) |
+| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next for **32 agents at once: 349.6 tok/s** summed, 10.92 each, 131,072 tokens of context each; at **87.1 tok/s** for one, and **11 of 12** agent tasks on the build before; Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams in compiled mode (the 27B was measured with the cards in the AM5 box, before they moved here) |
 | **2017 two-socket server** (Supermicro H11DSi) | 2x EPYC 7601, 1 TB DDR4 on 16 channels | [**GTX 1080 Ti** 11 GB](1080-ti/) and [**Radeon Instinct MI25** 16 GB](mi25/) | Ornith-1.5-35B-A3B at **59-60 tok/s** with every expert on the two retired cards; DeepSeek V4.1 Flash at **12.09 tok/s** (11.74 without a draft) |
 | the same server | [**its CPUs alone**](epyc-cpu/) | none | DeepSeek V4.1 Flash at **7.02 tok/s**, no GPU at all |
 
@@ -40,7 +40,10 @@ The fine print, card by card (the card pages carry the rest):
 - **B70.** Flash-Next: IQ3_S on XeStrata; the speed run (xe0.1.45, 262,144-token window, 2026-10-19) and the agent
   tasks (xe0.1.40.2.2, 229,376-token window, 2026-10-18) used two builds of the same setup. Qwen3.8-27B: 74.6 in eager
   mode with MTP 3 and the reduced draft vocabulary, which leaves the output unchanged; the 351 is compiled mode without
-  it. Both were measured while the B70s sat in the Ryzen 9950X3D box, before they moved on 2026-10-07.
+  it. Both were measured while the B70s sat in the Ryzen 9950X3D box, before they moved on 2026-10-07. The 32-agent
+  run: IQ3_XXS across both cards on our batched XeStrata branches (not published yet), k8v4 KV, a synthetic load of
+  coding-agent prompts of about 14k tokens, one 60 s window; its quality check so far is the engine's card parity
+  suites.
 - **1080 Ti and MI25.** Ornith: Q4_K_M with its own MTP draft head; on our code-review screens it found 1 of 2 planted
   defects and raised one false alarm. V4.1: the DSpark draft model, experts at release precision (the quality
   reference itself); the 12.09 adds our decode-attention kernel for the 1080 Ti, checked against the CPU attention on
@@ -61,6 +64,8 @@ lived in that box until 2026-10-07; their older pages say so where it matters.
 | A model that finishes real repository work, locally | [the agent eval](b70/agent-eval/), then Flash-Next on [a 3090 Ti](3090-ti/#qwen38-flash-next-agent-work-from-ram) or [a B70](moe-offload/#what-we-learned-measured) |
 | A frontier-size MoE (DeepSeek V4.1 Flash, GLM-5.3-Flash) on a box with lots of RAM | [MoE offload](moe-offload/), then [the RTX 6000 + Optane page](rtx-6000/#reproduce-the-best-v41-run) for the full command |
 | To plan a layout before downloading 400 GB of weights | [Recipe Maker](recipe-maker/), or [in the browser](https://akapug.github.io/homelab-atlas/) |
+| To serve many coding agents from one box | [32 agents on two B70s](b70/many-agents.md): the agent count is the knob, and per-watt rises with it |
+| A fast link between boxes for little money | [a 56 Gb/s triangle from three $10 cards](network/), no switch |
 | To make an Intel Arc Pro B70 go fast | [the B70 entry](b70/) and its [patches](PATCHES.md#2-intel-arc-pro-b70-with-vllm) |
 | To put a cheap old card to work | [MI25](mi25/) ($50, 16 GB HBM2, Vulkan), [GTX 1080 Ti](1080-ti/) |
 | No GPU at all | [EPYC CPUs alone](epyc-cpu/): where the bytes sit matters more than how many cores compute |
@@ -93,6 +98,13 @@ The ones we are proudest of, each with its conditions and quality check one clic
   ms a token in F16 math it runs at 1/64 speed, so we wrote it a decode-attention kernel. With all 16 DIMMs back and `-ub 512` (7.96 without the kernel, against
   6.97 before), it went 7.96 to 11.74 tok/s without a draft, 12.09 with one, same binary, same prompts. A card from 2017, one kernel, +47 %.
   [1080 Ti](1080-ti/#one-kernel-47-)
+- **32 agents on one box, at 131k context each.** Two Arc Pro B70s in a 2019 Threadripper box serve Qwen3.8 Flash-Next
+  to 32 agents at once: 349.6 tok/s in total, 10.92 tok/s each, 0.653 tok/s per watt of card plus CPU package power.
+  Going from 24 agents to 32 cost no extra power, so the agent count is the knob. The page keeps the switches that
+  lost and why: a warm-up trap that faked our early kernel readings, and fusions that cost more than the launch they
+  saved. The batched engine is not published yet. [32 agents](b70/many-agents.md)
+- **56 Gb/s between three boxes for about $136.** Used ConnectX-3 cards at $10.19 each, cross-flashed to their
+  faster sibling's firmware, and copper cables, no switch: 52.3 to 52.7 Gb/s of RDMA per link. [Network](network/)
 - **The B70, tuned.** Qwen3.8-27B at 74.6 tok/s at one stream once the drafter stopped reading a 2.5 GB output
   layer for every guess (eager mode, 59.5 without the trick, same output; the B70 page's 54.4 eager is another workload), and 351 summed at eight streams (full drafter vocabulary, 1.5k-token prompts) in vLLM's
   compiled mode with XPU graphs, which Intel does not support yet. Five vLLM changes and 18 llama.cpp SYCL patches
@@ -132,7 +144,8 @@ Before you start:
 |---|---|
 | [`3090-ti/`](3090-ti/) | RTX 3090 Ti: Qwen3.8-27B on vLLM CUDA, GLM-5.3-Flash with a route trim, Flash-Next agent runs, four models reviewing code |
 | [`rtx-6000/`](rtx-6000/) | Quadro RTX 6000 + Optane: DeepSeek V4.1 Flash best run and its full command, 189k-token recall, GLM, Ornith-1.5-122B |
-| [`b70/`](b70/) | Arc Pro B70: vLLM and llama.cpp patches, Qwen3.8-27B, [Qwen3.6-35B-A3B](b70/qwen36-35b-a3b.md), [Ornith-1.5-35B-A3B](b70/ornith-35b-a3b.md) serving a household assistant and a coding agent from one card, [the agent eval](b70/agent-eval/), [benchmarks](b70/bench/) |
+| [`b70/`](b70/) | Arc Pro B70: [32 agents on two cards](b70/many-agents.md), vLLM and llama.cpp patches, Qwen3.8-27B, [Qwen3.6-35B-A3B](b70/qwen36-35b-a3b.md), [Ornith-1.5-35B-A3B](b70/ornith-35b-a3b.md) serving a household assistant and a coding agent from one card, [the agent eval](b70/agent-eval/), [benchmarks](b70/bench/) |
+| [`network/`](network/) | three used ConnectX-3 cards as a 56 Gb/s triangle between three boxes: flash, setup, every link measured |
 | [`1080-ti/`](1080-ti/) | GTX 1080 Ti: V4.1 attention on a card with no kernel for it, and the fix |
 | [`mi25/`](mi25/) | Radeon Instinct MI25: a $50 card under Vulkan, a cold-boot fix, experts banked beside a CUDA card, heat |
 | [`epyc-cpu/`](epyc-cpu/) | 2x EPYC 7601 with no GPU: placing bytes across 8 NUMA nodes |

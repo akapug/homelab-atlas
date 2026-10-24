@@ -26,7 +26,9 @@
     theme: load('theme', 'auto'),
     heat: load('heat', {}),
     sel: null,
-    table: false
+    table: false,
+    curve: load('curve', null),
+    curveMin: load('curveMin', null)
   };
   data.overrides = load('overrides', { kappa: {}, kld: {} });
   // deep link: ?box=droopy&layout=v41-ik-t20 (kinds t20, t25, fast, pt<tok/s>; or owner) wins over the saved box; #section scrolls
@@ -487,10 +489,103 @@
     return { svg: s, leg, call };
   }
 
+  // ---------- agents at once (data.curves; src/model.js curveReport) ----------
+  // the configs with a curve, measured-range readouts first, each by its headline total; the chosen one (st.curve, else the
+  // build's default: the window model's frontier run)
+  function curveList(min) {
+    return FM.curveReports(data, { min }).filter(r => r.ok).sort((a, b) => a.headline.extrapolated - b.headline.extrapolated || b.headline.total - a.headline.total);
+  }
+  function curveChart(R, key, W, title, ymaxIn) {
+    const H = 190, L = 44, Rm = 12, T = 22, B = 30, max = R.max, hc = R.host.ceiling, f = R.fit;
+    const ys = R.rows.map(r => r[key]), ymax = ymaxIn || Math.max(...ys, ...R.rows.flatMap(r => r.measured.map(m => key === 'total' ? m.tps : m.tps / r.n))) * 1.1;
+    const X = n => L + (W - L - Rm) * (n - 1) / (max - 1), Y = y => T + (H - T - B) * (1 - y / ymax);
+    const step = ymax > 200 ? 100 : ymax > 80 ? 20 : ymax > 40 ? 10 : 5;
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="width:${W}px;max-width:100%" aria-hidden="true" focusable="false"><text x="${L}" y="13" class="ink" font-weight="600">${esc(title)}</text>`;
+    for (let y = 0; y <= ymax; y += step) s += `<line x1="${L}" x2="${W - Rm}" y1="${Y(y)}" y2="${Y(y)}" stroke="var(--grid)"/><text x="${L - 6}" y="${Y(y) + 4}" text-anchor="end">${y}</text>`;
+    [1, 8, 16, 24, 32, 40, 48, 56, 64].filter(n => n <= max).forEach(n => { s += `<text x="${X(n)}" y="${H - B + 14}" text-anchor="middle">${n}</text>`; });
+    s += `<text x="${(L + W - Rm) / 2}" y="${H - 3}" text-anchor="middle">agents working at once</text>`;
+    // past the host-memory ceiling: hatched, labelled
+    if (hc !== null && hc < max) s += `<rect x="${X(hc + 0.5)}" y="${T}" width="${X(max) - X(hc + 0.5)}" height="${H - T - B}" fill="var(--neutral-2)" opacity="0.35"/><text x="${X(hc + 0.5) + 4}" y="${T + 12}">over host memory</text>`;
+    if (key === 'each') s += `<line x1="${L}" x2="${W - Rm}" y1="${Y(R.min)}" y2="${Y(R.min)}" stroke="var(--crit)" stroke-dasharray="4 3"/><text x="${W - Rm}" y="${Y(R.min) - 4}" text-anchor="end">${R.min} tok/s each</text>`;
+    // the curve: solid over the measured counts, dashed past them
+    const path = rows => rows.map((r, i) => (i ? 'L' : 'M') + X(r.n).toFixed(1) + ' ' + Y(r[key]).toFixed(1)).join(' ');
+    const inR = R.rows.filter(r => r.n <= f.n_max), outR = R.rows.filter(r => r.n >= f.n_max);
+    s += `<path d="${path(inR)}" fill="none" stroke="var(--s1)" stroke-width="2"/>`;
+    if (outR.length > 1) s += `<path d="${path(outR)}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-dasharray="5 4"/>`;
+    const hn = R.headline.n;
+    if (hn >= 1) s += `<line x1="${X(hn)}" x2="${X(hn)}" y1="${T}" y2="${H - B}" stroke="var(--text-secondary)" stroke-dasharray="2 3"/>`;
+    R.rows.forEach(r => r.measured.forEach(m => { const y = key === 'total' ? m.tps : m.tps / r.n; s += `<circle cx="${X(r.n)}" cy="${Y(y)}" r="4.5" fill="${m.used ? 'var(--s1)' : 'var(--surface-1)'}" stroke="var(--surface-1)" stroke-width="2"/>${m.used ? '' : `<circle cx="${X(r.n)}" cy="${Y(y)}" r="4" fill="none" stroke="var(--s1)" stroke-width="1.5"/>`}`; }));
+    // hover columns, one per agent count
+    const cw = (W - L - Rm) / (max - 1);
+    R.rows.forEach(r => { s += `<rect data-k="cv" data-n="${r.n}" x="${X(r.n) - cw / 2}" y="${T}" width="${cw}" height="${H - T - B}" fill="transparent"/>`; });
+    return s + '</svg>';
+  }
+  function curveTip(n) {
+    const R = st.curveR, r = R && R.rows[n - 1];
+    if (!r) return '';
+    const notes = [r.measured.length ? 'measured ' + r.measured.map(m => f1(m.tps) + (m.used ? '' : ' (not fitted)')).join(', ') + ' tok/s total' : '', r.extrapolated ? 'past the largest measured count (' + R.fit.n_max + '): extrapolated' : '', r.beyond_slots ? 'needs the engine started with --batch ' + n + ' or more' : '', r.fits_host === false ? 'more slots than host memory safely holds (' + R.host.ceiling + ')' : ''].filter(Boolean);
+    return `<b>${n} agent${n > 1 ? 's' : ''} at once</b><br>${f1(r.total)} tok/s in total, ${f1(r.each)} tok/s each${notes.length ? '<br><span class="muted">' + esc(notes.join('; ')) + '</span>' : ''}`;
+  }
+  function curveHTML() {
+    const S = data.curves.settings, min = st.curveMin || v(S.min_each_tps), list = curveList(min);
+    if (!list.length) return '<h2 id="agents-h">How many agents at once</h2><p class="muted">No ledger run measured two or more agent counts in this build.</p>';
+    const R = list.find(r => r.cfg.key === st.curve) || list.find(r => r.cfg.key === data.curves.default) || list[0], c = R.cfg, H = R.headline, I = R.headline_in_memory, S2 = R.second, hc = R.host;
+    st.curveR = R;
+    const AW = app.clientWidth || 720, W = Math.round(Math.max(280, Math.min(AW >= 980 ? (AW - 60) / 2 : AW - 40, 620)));
+    const ag = n => n + ' agent' + (n === 1 ? '' : 's');
+    let h = `<h2 id="agents-h">How many agents at once</h2><p class="small muted">An agent here is one coding assistant session asking the model for text. More agents at once make more text in total, but each one gets a smaller share. These curves come from runs we measured on our own boxes; between and past them the model fills in.</p>`;
+    h += `<div class="row"><label style="max-width:100%">setup <select id="c-curve" style="max-width:100%">${list.map(r => `<option value="${esc(r.cfg.key)}" ${r === R ? 'selected' : ''}>${esc(r.cfg.box + ': ' + (r.cfg.label || r.cfg.id))}</option>`).join('')}</select></label>`;
+    h += `<label title="${esc(S.min_each_tps.src)}">each agent needs at least <input type="number" id="c-cmin" min="1" max="200" step="1" value="${min}" style="width:5em"> tok/s</label></div>`;
+    h += `<div class="callout" id="curve-head"><p style="margin:0 0 4px"><b style="font-size:18px">${H.n >= 1 ? ag(H.n) + (H.at_max ? ' or more' : '') : 'No agent count'}</b> can work at once with each getting at least ${min} tok/s${H.n >= 1 ? `; together they make <b>${f1(H.total)} tok/s</b> (${f1(H.each)} each).` : '.'}</p>`;
+    if (R.fit_warn) h += `<p class="small" style="margin:0">The measured runs do not sit well on one curve here (off by up to ${(100 * R.fit.err_max).toFixed(0)} %), so read these numbers loosely.</p>`;
+    if (H.extrapolated) h += `<p class="small" style="margin:0">That is past the most agents we measured (${R.fit.n_max}), so it is a projection.</p>`;
+    if (I) h += `<p class="small" style="margin:0"><b>Host memory caps it lower:</b> the engine pins host memory for every agent slot, and only ${ag(hc.ceiling)} fit safely on ${esc(c.box)}. Within that: ${ag(I.n)}, ${f1(I.total)} tok/s in total (${f1(I.each)} each).${hc.with_lend_drop !== undefined ? ` Dropping the duplicate expert copy of the layer split (STRATA_STAGE_LEND_DROP=1) would make room for ${hc.with_lend_drop}.` : ''}</p>`;
+    else if (hc.ceiling !== null && !hc.all_fit) h += `<p class="small" style="margin:0">Host memory holds up to ${ag(hc.ceiling)} on ${esc(c.box)}.${hc.with_lend_drop !== undefined ? ` With STRATA_STAGE_LEND_DROP=1: ${hc.with_lend_drop}.` : ''}</p>`;
+    h += `<p class="small" style="margin:0">At ${R.second_min} tok/s or more each: ${ag(S2.n)}, ${f1(S2.total)} tok/s in total. However many agents join, this setup tops out near ${f1(R.asymptote)} tok/s in total.</p>`;
+    h += `<p class="small muted" style="margin:0">${R.power.length ? 'Power: ' + R.power.map(p => `${ag(p.n)} at ${f1(p.watts)} W = ${f2(p.tps_per_w)} tok/s per watt`).join('; ') + (H.tps_per_w ? `; at the headline ${f2(H.tps_per_w)} tok/s per watt (${H.watts.tag === 'MEASURED' ? 'measured' : 'between measured counts'})` : '') : 'Power: no watts recorded for these runs yet.'}</p></div>`;
+    h += `<div class="grid2"><div>${curveChart(R, 'total', W, 'Total tok/s, all agents together')}</div><div>${curveChart(R, 'each', W, 'tok/s each agent gets')}</div></div>`;
+    h += `<p class="small muted">Solid line: between the agent counts we measured; dashed: projected past them. Filled dots: measured runs (hollow: shown but not used, e.g. one agent on the single-stream path). Shaded: more agent slots than host memory safely holds. Hover a chart for any agent count.</p>`;
+    h += `<p class="sr-only">${esc(`${c.label}: at ${min} tok/s each, ${H.n} agents, ${f1(H.total)} tok/s total; at ${R.second_min} each, ${S2.n} agents; asymptote ${f1(R.asymptote)} tok/s; host memory holds ${hc.ceiling === null ? 'an unknown number of' : hc.ceiling} slots.`)}</p>`;
+    const pick = new Set(v(S.table_n).concat([H.n, S2.n, I ? I.n : 0, hc.ceiling || 0]));
+    h += `<details><summary>As a table, and how it is worked out</summary><table class="small"><thead><tr><th>agents</th><th>total tok/s</th><th>each</th><th>measured</th><th>note</th></tr></thead><tbody>` +
+      R.rows.filter(r => pick.has(r.n)).map(r => `<tr><td>${r.n}</td><td>${f1(r.total)}</td><td>${f1(r.each)}</td><td>${r.measured.map(m => f1(m.tps) + (m.used ? '' : '*')).join(', ')}</td><td>${esc([r.extrapolated ? 'projected' : '', r.fits_host === false ? 'over host memory' : '', r.beyond_slots ? 'needs --batch ' + r.n : ''].filter(Boolean).join(', '))}</td></tr>`).join('') + '</tbody></table>';
+    const f = R.fit;
+    h += `<p class="small muted">The engine splits the agents into ${v(c.groups)} group${v(c.groups) > 1 ? 's' : ''} that take turns through ${v(c.stages)} pipeline stage${v(c.stages) > 1 ? 's' : ''} (one per GPU). Each turn costs a fixed time plus a little per agent, so total speed rises with agents but flattens. Fitted to the measured points ${chip({ tag: 'FIT', src: 'n / total = ' + f.A.toPrecision(4) + ' x max(G, S) + ' + f.B.toPrecision(4) + ' x max(G, S) x n / G; G groups in use, S stages; max error ' + (100 * f.err_max).toFixed(1) + ' %' })}${f.win ? `; the runs' own stage times give a turn of ${f.win.a !== null ? f2(f.win.a) + ' ms + ' + f.win.b.toFixed(2) + ' ms per agent in a group' : f2(f.win.pts[0].t) + ' ms at ' + f.win.pts[0].r + ' agents a group'}, ${(100 * f.win.eff).toFixed(0)} % efficient` : ''}. Runs: ${c.runs.map(esc).join(', ')}. Host memory: ${esc(hc.first_over ? hc.first_over.detail : 'every slot count fits')}.</p></details>`;
+    return h;
+  }
+
+  // Network recipes use the same window report as the CLI. Many unlike quantities belong in a table, not on a shared
+  // chart axis: capacity, resume latency and freed slot-seconds never masquerade as decode throughput. Existing theme tokens
+  // and typography carry the hierarchy; state is spelled out rather than encoded in a new categorical palette.
+  const networkOriginal = { catalog: data.network, window: data.window };
+  function networkHTML() {
+    const keys = Object.keys((data.window || {}).configs || {});
+    if (!data.network || !keys.length) return '<h2 id="network-h">Kernel and network recipes</h2><p>No private window/catalog inputs in this build.</p>';
+    const key = keys.includes(st.networkWindow) ? st.networkWindow : keys.includes(data.network.settings.default_window) ? data.network.settings.default_window : keys[0], W = data.window.configs[key];
+    const report = FM.winReport(data, key, { agents: st.networkAgents || v(W.settings.plan_agents) });
+    window.FIT_NETWORK_REPORT = report;
+    const frontier = report.frontier, rows = frontier ? frontier.candidates : report.network, ranked = frontier ? frontier.shared_rank : [];
+    const detail = x => [x.status, ...(x.comparison ? x.comparison.why : []), ...(x.checks || []).map(c => c.id + ': ' + c.detail)].join('; ');
+    const editor = st.networkEditor || JSON.stringify({ catalog: data.network, profile_identity: Object.fromEntries(['mode', 'evidence_config', 'metric'].map(k => [k, W.profile && W.profile[k]])), frontier_identity: Object.fromEntries(['mode', 'evidence_config', 'metric'].map(k => [k, W.frontier && W.frontier[k]])) }, null, 2);
+    let h = `<h2 id="network-h">Kernel and network recipes</h2><p>The measured one-box headline stays <b id="network-onebox">${frontier ? f1(frontier.tps) : 'unknown'}</b> in its original run's units. Cross-box rows are modeled separately. ${st.networkApplied ? '<b>Browser-only assumptions applied; these are not new measurements.</b>' : ''}</p>`;
+    h += `<div class="row"><label>Window <select id="network-window">${keys.map(k => `<option value="${esc(k)}" ${key === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select></label><label>Agents <select id="network-agents">${v(W.settings.agents_grid).filter(n => n >= v(W.min_batched_agents)).map(n => `<option ${n === report.plan.N ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>`;
+    h += `<p id="network-rank-summary">${ranked.length} comparable modeled rows. Shared rank requires the same mode, evidence configuration and metric on the profile, measured frontier and recipe. Unknown rates or allocations cannot win. Historical hc-read fast/slow observations are separate modes; neither is assigned to an old profile by assumption.</p>`;
+    h += '<div class="network-scroll"><table id="network-ranking" class="small"><thead><tr><th>Rank</th><th>Lever or recipe</th><th>Kind / boxes</th><th>Modeled total / s</th><th>Per W</th><th>State and evidence</th></tr></thead><tbody>';
+    h += rows.map(x => `<tr data-network-id="${esc(x.id)}" data-eligible="${x.eligible}"><td>${x.eligible ? ranked.findIndex(y => y.id === x.id) + 1 : '—'}</td><td>${esc(x.lever)}</td><td>${esc(x.origin || x.kind)}${x.boxes ? '<br>' + esc(x.boxes.join(' + ')) : ''}</td><td>${x.eligible ? f2(x.at_frontier) : 'unranked'}</td><td>${f2(x.modeled_per_watt)}</td><td>${esc(detail(x))}${x.evidence && x.evidence.length ? '<br>Attempts: ' + x.evidence.map(esc).join(', ') : ''}</td></tr>`).join('');
+    h += '</tbody></table></div><p class="small muted">Per-W counts idle system draw plus incremental CPU and GPU draw on every borrowed box once. It is not wall-plug by assumption. Useful accepted-work/J remains unknown without a measured fidelity flag and an accepted-token metric.</p>';
+    h += report.network.map(x => `<details class="network-detail" data-recipe-detail="${esc(x.id)}"><summary>${esc(x.lever)} — ${esc(x.status)}</summary><p>${esc(x.src)}</p><dl>${Object.entries(x.metrics).filter(([, z]) => typeof z === 'number' || z === null).map(([k, z]) => `<dt>${esc(k)}</dt><dd>${z === null ? 'unknown' : esc(z)}</dd>`).join('')}</dl><p>Next check: ${esc(x.test)}<br>Falsifier: ${esc(x.falsifier)}</p><pre>${esc(JSON.stringify({ checks: x.checks, resources: x.resources, transfers: x.transfers, power: x.power, attempts: x.attempts }, null, 2))}</pre><button type="button" data-network-export="${esc(x.id)}">Prepare existing-ledger handoff</button></details>`).join('');
+    h += '<details><summary>Directed measurements and PCIe settings</summary><div class="network-scroll"><table class="small"><thead><tr><th>Observation</th><th>Direction</th><th>Transport / version / protocol</th><th>Streams</th><th>Gbit/s</th><th>Source</th></tr></thead><tbody>' + data.network.observations.map(x => `<tr><td>${esc(x.id)}</td><td>${esc(x.from)} → ${esc(x.to)}</td><td>${esc(x.transport + ' / ' + x.version + ' / ' + x.protocol)}</td><td>${x.streams}</td><td>${f2(v(x.gbps))}${chip(x.gbps)}</td><td>${esc(x.gbps.src)}</td></tr>`).join('') + '</tbody></table></div><pre>' + esc(JSON.stringify({ pcie: data.network.pcie, historical_ib: data.network.historical_ib, mode_observations: data.network.mode_observations, prior_art_scan: data.network.prior_art_scan, shape_inputs: data.network.shape_inputs, transfer_template: data.network.transfer_template }, null, 2)) + '</pre></details>';
+    h += `<details><summary>Edit sourced assumptions and comparison identity</summary><p>Each number needs {v, tag, src}. Keep unknowns null. The catalog includes shape_inputs and transfer_template: select an exact observation and host/gpu endpoint memory; GPU endpoints need exact card IDs and measured PCIe settings. Resource rows need baseline/extra/other host GiB, concurrent CPU threads, and either sourced host_only=true or per-card total gpu_gib. An optional sourced host_reserve_gib may declare a missing reserve, never weaken an existing one. Mode and evidence identity must be qualified on both sides; changing text does not establish a measurement. Changes stay in this page and never write the catalog or ledger.</p><label for="network-editor">Catalog and profile/frontier identity JSON</label><textarea id="network-editor" spellcheck="false">${esc(editor)}</textarea><div class="row"><button id="network-apply">Price these assumptions</button><button id="network-reset">Restore sourced catalog</button></div><p id="network-error" role="status">${esc(st.networkError || '')}</p></details>`;
+    h += `<details ${st.networkHandoff ? 'open' : ''}><summary>Profile → rank → build → measure → fold back</summary><ol><li>Profile the exact context, row groups, backend and hc-read mode. Select an existing directed measurement.</li><li>Complete resource checks, then inspect this shared modeled rank. Capacity and slot-seconds stay in their own units.</li><li>Build the chosen mechanism only after compatibility is established.</li><li>Measure against the same baseline, including useful accepted work, fidelity and all-box energy.</li><li>Capture this prediction identity with the existing record_run.py ledger, then reference that run from a window attempt. Both wins and losses return to this view.</li></ol><label for="network-handoff">Existing recipe / attempt handoff (read-only, no launch)</label><textarea id="network-handoff" readonly>${esc(st.networkHandoff || '')}</textarea></details>`;
+    return h;
+  }
+
   // ---------- main render ----------
   // the page in tabs: [id = its first section, tab name, the one-line summary first, every section on it]; a link to any section opens its tab
   const PAGES = [
     ['box', 'Plan', 'Pick a box, then a large marker on the chart. The layout card sums that layout up.', ['box', 'whatif', 'chart', 'layout']],
+    ['network', 'Kernel + network', 'Price kernels and cross-box recipes with the same window report. Missing mode, resources or transfer inputs stay unranked.', ['network']],
+    ['agents', 'Agents at once', 'How many agents one box can serve at the same time, and how fast each one goes. Every curve comes from measured runs.', ['agents']],
     ['bytes', 'Where it lives', 'The loaded layout, byte by byte: one bar per memory tier, then how many bits each expert gets by how often it is used.', ['bytes', 'bits']],
     ['trust', 'Trust', 'How far each number goes: its evidence class, the hard checks each recorded run met or failed, whether each screening round may give a verdict, and how close the model came to every measured run. Each card opens one level deeper.', ['trust', 'checks', 'screen', 'calibration']],
     ['types', 'Edit', 'Change the quant type numbers the model uses, and write down an idea to download with the current view.', ['types', 'idea']],
@@ -571,6 +666,8 @@
     h += `<p class="small muted" id="chart-keys">Each curve sweeps the speed target from slow to fast and keeps the best-quality layout. Large markers = best at 20 and at 25 tok/s; the ring marks the loaded layout. Diamonds are measured runs from the ledger, each with a line to what the model predicts for that run's own settings (dashed: part of the run is outside the model); the fastest per model is labelled with its gap. The curves use the page's default settings, so a run with other threads, page layout or draft can sit off its curve.${chartNotes()} Click a point to load it, or focus the chart: arrow keys move along a curve (up and down switch curves), Enter loads, Escape leaves.</p>`;
     h += `<details id="chart-table" ${st.table ? 'open' : ''}><summary>Chart as a table</summary>${frontierTable()}</details>`;
     h += '</section><section class="card" id="layout" aria-labelledby="layout-h">' + selectionHTML(sel) + '</section></div></div>';
+    h += page('network') + '<section class="card" id="network" aria-labelledby="network-h">' + networkHTML() + '</section></div>';
+    h += page('agents') + '<section class="card" id="agents" aria-labelledby="agents-h">' + curveHTML() + '</section></div>';
     // waterfall
     h += page('bytes') + '<section class="card" id="bytes" aria-labelledby="bytes-h"><h2 id="bytes-h">Where every byte sits</h2>' + (sel ? `<div class="sub">${esc(sel.label)}</div>` : '') + wfLegend(sel) + `<p class="small muted">One bar per memory tier, to scale within the tier. Hover a segment, or tab to a bar and use the arrow keys, for its full name and size.</p>` + waterfallHTML(sel) + '</section>';
     if (sel) {
@@ -728,15 +825,29 @@
       `<br>height: projected top-1 of its stored types (${esc(a.qhow)})` + (a.top1 ? `; measured top-1 ${f1(100 * a.top1)} % against its own reference` : '') +
       `<br><span class="muted">run ${esc(a.id)}${a.holdout ? ' (held out of the fit)' : ''}</span>`;
   }
+  function skewHTML(s) {
+    if (!s) return '<span class="muted">UNKNOWN</span>';
+    const known = s.status !== 'UNKNOWN' && Number.isFinite(s.top10_cover) && Number.isFinite(s.top25_cover);
+    const values = known ? `top 10%: ${(100 * s.top10_cover).toFixed(2)}% · top 25%: ${(100 * s.top25_cover).toFixed(2)}%` : 'UNKNOWN';
+    const sample = `${s.prompts} of ${s.planned_prompts} prompts captured`;
+    return `${s.preliminary ? '<b>PRELIMINARY</b> ' : ''}<details><summary>${values}${known ? tagChip(s.tag, s.src) : ''}</summary>` +
+      `<div class="small">${esc(sample)}; ${esc(s.phase || 'phase UNKNOWN')}; ${s.tokens === null ? 'tokens UNKNOWN' : esc(s.tokens) + ' tokens per layer (' + esc(s.tokens_tag) + ')'}. ` +
+      `${esc(s.checkpoint || '')}; ${esc(s.workload || '')}. ${esc(s.reason || '')}<br>Map ${esc(s.map_id)}; slice ${esc(s.slice)}; digest ${esc(s.map ? s.map.digest : 'UNKNOWN')}` +
+      `<br>Workload SHA256 ${esc(s.prompt_set_sha256 || 'UNKNOWN')}. ${esc(s.src || '')}</div></details><div class="small muted">${esc(s.warning)}</div>`;
+  }
   function frontierTable() {
-    let h = '<div class="scroll"><table><caption class="sr-only">Quality vs speed: every point on each curve, the best layouts at 20 and 25 tok/s, and the measured runs</caption><tr><th>curve</th><th class="n">tok/s</th><th class="n">top-1 %</th><th class="n">KLD</th><th>kind</th></tr>';
+    const skew = mk => `<td>${skewHTML(FM.routingSkew(data, mk))}</td>`;
+    let h = '<p class="small muted">Expert skew is the share of expert selections taken by the hottest 10% / 25% of experts in each layer, averaged over layers, on the fixed skew72 workload. It is not the selected plan/score heat, a speed measurement, or a fit prediction. UNKNOWN means no supported evidence; preliminary captures are not a paired model comparison.</p><div class="scroll"><table><caption class="sr-only">Quality vs speed and fixed-workload expert-selection skew: curve points, best layouts, measured runs and routing-only evidence</caption><tr><th>curve</th><th class="n">tok/s</th><th class="n">top-1 %</th><th class="n">KLD</th><th>kind</th><th>Expert skew (fixed workload)</th></tr>';
     R.curves.forEach(c => {
       const nm = esc(data.models[c.mk].short + ' ' + engShort(c.eng));
-      envelope(c.pts).forEach(p => { h += `<tr><td>${nm}</td><td class="n">${f2(p.tokps)}</td><td class="n">${f2(p.quality)}</td><td class="n">${p.kld.toFixed(4)}</td><td>sweep</td></tr>`; });
-      if (c.b20) h += `<tr><td>${nm}</td><td class="n">${f2(c.b20.ev.tokps)}</td><td class="n">${f2(c.b20.ev.quality)}</td><td class="n">${c.b20.ev.kld.toFixed(4)}</td><td>best at 20</td></tr>`;
-      if (c.b25) h += `<tr><td>${nm}</td><td class="n">${f2(c.b25.ev.tokps)}</td><td class="n">${f2(c.b25.ev.quality)}</td><td class="n">${c.b25.ev.kld.toFixed(4)}</td><td>best at 25</td></tr>`;
+      envelope(c.pts).forEach(p => { h += `<tr><td>${nm}</td><td class="n">${f2(p.tokps)}</td><td class="n">${f2(p.quality)}</td><td class="n">${p.kld.toFixed(4)}</td><td>sweep</td>${skew(c.mk)}</tr>`; });
+      if (c.b20) h += `<tr><td>${nm}</td><td class="n">${f2(c.b20.ev.tokps)}</td><td class="n">${f2(c.b20.ev.quality)}</td><td class="n">${c.b20.ev.kld.toFixed(4)}</td><td>best at 20</td>${skew(c.mk)}</tr>`;
+      if (c.b25) h += `<tr><td>${nm}</td><td class="n">${f2(c.b25.ev.tokps)}</td><td class="n">${f2(c.b25.ev.quality)}</td><td class="n">${c.b25.ev.kld.toFixed(4)}</td><td>best at 25</td>${skew(c.mk)}</tr>`;
     });
-    measuredHere().forEach(a => { h += `<tr><td>${esc(a.label)}</td><td class="n">${f2(a.meas)} measured / ${a.pred ? f2(a.pred) + ' model' : 'not modelled'}</td><td class="n">${f2(a.quality)}</td><td></td><td>run ${esc(a.id)}, ${armText(a)}${a.bad ? ', went bad (not on the chart)' : a.caveat ? ', confounded: its phases are no clean measure of the recipe (not on the chart)' : a.guess ? ', per-prompt or per-pass phases only, no single served decode (not on the chart)' : ''}${a.pred ? ', ' + (a.gap >= 0 ? '+' : '') + (100 * a.gap).toFixed(1) + ' %' : ': ' + esc(a.why || '')}${a.waiver ? '; partly outside the model' : ''}${a.conds.length ? '; ' + esc(condText(a)) : ''}</td></tr>`; });
+    measuredHere().forEach(a => { h += `<tr><td>${esc(a.label)}</td><td class="n">${f2(a.meas)} measured / ${a.pred ? f2(a.pred) + ' model' : 'not modelled'}</td><td class="n">${f2(a.quality)}</td><td></td><td>run ${esc(a.id)}, ${armText(a)}${a.bad ? ', went bad (not on the chart)' : a.caveat ? ', confounded: its phases are no clean measure of the recipe (not on the chart)' : a.guess ? ', per-prompt or per-pass phases only, no single served decode (not on the chart)' : ''}${a.pred ? ', ' + (a.gap >= 0 ? '+' : '') + (100 * a.gap).toFixed(1) + ' %' : ': ' + esc(a.why || '')}${a.waiver ? '; partly outside the model' : ''}${a.conds.length ? '; ' + esc(condText(a)) : ''}</td>${skew(a.model)}</tr>`; });
+    (data.routing_skew || []).forEach(s => {
+      h += `<tr><td>${esc(s.name)}</td><td>UNKNOWN</td><td>UNKNOWN</td><td>UNKNOWN</td><td>fixed workload routing only; no fit prediction</td><td>${skewHTML(s)}</td></tr>`;
+    });
     return h + '</table></div>';
   }
   function calHTML() {
@@ -805,6 +916,25 @@
   function schedule() { const b = document.getElementById('busy'); if (b) b.textContent = 'computing...'; clearTimeout(timer); timer = setTimeout(() => { compute(); render(); }, 30); }
   function bind(anc) {
     const on = (id, ev, fn) => { const x = document.getElementById(id); if (x) x.addEventListener(ev, fn); };
+    on('network-window', 'change', e => { st.networkWindow = e.target.value; st.networkAgents = null; st.networkEditor = null; render(); });
+    on('network-agents', 'change', e => { st.networkAgents = Number(e.target.value); render(); });
+    on('network-editor', 'input', e => { st.networkEditor = e.target.value; });
+    on('network-apply', 'click', () => {
+      try {
+        const x = JSON.parse(document.getElementById('network-editor').value), key = document.getElementById('network-window').value, W = data.window.configs[key];
+        const next = FM.networkAssumptions(data, key, x);
+        FM.winReport(next, key, { agents: st.networkAgents || v(W.settings.plan_agents) });
+        data.network = next.network; data.window = next.window; st.networkApplied = true; st.networkError = '';
+      } catch (e) { st.networkError = 'Assumptions not applied: ' + e.message; }
+      render();
+    });
+    on('network-reset', 'click', () => { data.network = networkOriginal.catalog; data.window = networkOriginal.window; st.networkEditor = null; st.networkApplied = false; st.networkError = ''; st.networkHandoff = ''; render(); });
+    app.querySelectorAll('[data-network-export]').forEach(b => b.addEventListener('click', () => {
+      const report = window.FIT_NETWORK_REPORT, x = report.network.find(y => y.id === b.dataset.networkExport), W = data.window.configs[report.key];
+      const recipe = { id: x.id, kind: 'network', box: W.box, model: W.model, engine: W.engine, network_window: report.key, network_recipe: x.id, network_prediction_identity: x.prediction_identity };
+      st.networkHandoff = JSON.stringify({ recipe, check: FM.checkRecipe(data, recipe), measured_required: { network_identity: x.prediction_identity, src: { network_identity: 'replace with exact retained capture source' } }, attempt: { id: '', network_recipe: x.id, label: x.lever, mechanism: 'network:' + x.shape, action: x.lever, classes: ['*'], outcome: 'pending', scope: 'bundle_only', ledger: { id: '', tps: [] }, result: '' } }, null, 2);
+      render();
+    }));
     on('c-box', 'change', e => { st.box = e.target.value; save('box', st.box); st.sel = null; schedule(); });
     app.querySelectorAll('[data-heat]').forEach(x => x.addEventListener('change', e => { const mk = x.dataset.heat; st.heat[mk] = st.heat[mk] || {}; st.heat[mk][x.dataset.w] = e.target.value; save('heat', st.heat); schedule(); }));
     app.querySelectorAll('[data-theme-b]').forEach(x => x.addEventListener('click', () => { st.theme = x.dataset.themeB; save('theme', st.theme); applyTheme(); render(); }));
@@ -813,6 +943,8 @@
     app.querySelectorAll('[data-knob-n]').forEach(x => x.addEventListener('change', () => { const n = parseFloat(x.value); st.knobs[x.dataset.knobN] = isFinite(n) && n > 0 ? n : null; save('knobs', st.knobs); schedule(); }));
     on('c-reset', 'click', () => { st.knobs = JSON.parse(JSON.stringify(defaults)); save('knobs', st.knobs); schedule(); });
     on('c-layout', 'change', e => { st.sel = parseSel(e.target.value); loadSelection(); render(); });
+    on('c-curve', 'change', e => { st.curve = e.target.value; save('curve', st.curve); render(); });
+    on('c-cmin', 'change', e => { const n = parseFloat(e.target.value); st.curveMin = isFinite(n) && n > 0 ? n : null; save('curveMin', st.curveMin); render(); });
     [['intro', o => save('intro', o)], ['heatd', o => save('heatd', o)], ['whatifd', o => save('whatifd', o)], ['chart-table', o => { st.table = o; }]].forEach(([id, fn]) => on(id, 'toggle', e => fn(e.target.open)));
     bindKeys();
     app.querySelectorAll('[data-kappa]').forEach(x => x.addEventListener('change', () => { const n = parseFloat(x.value); if (isFinite(n) && n > 0) data.overrides.kappa[x.dataset.kappa] = n; else delete data.overrides.kappa[x.dataset.kappa]; save('overrides', data.overrides); schedule(); }));
@@ -837,6 +969,7 @@
         else if (k === 'seg') { const rows = tierRows(R.selected), g = rows[+n.dataset.tier].segs[+n.dataset.seg]; showTip(e, `<b>${esc(g.label)}</b><br>${f2(g.gib)} GiB${g.tag ? ' ' + tagChip(g.tag, g.src || '') : ''}${g.src ? '<br><span class="muted">' + esc(g.src) + '</span>' : ''}`); }
         else if (k === 'time') { const p = timeSplitHTML(R.selected).parts[+n.dataset.p]; showTip(e, `<b>${esc(p[0])}</b><br>${f1(p[1])} ms per token`); }
         else if (k === 'bh') { const t = R.selected.ctx.tiers[+n.dataset.t]; showTip(e, `<b>${esc(t.name)}</b><br>heat bin ${+n.dataset.b + 1}: ${n.dataset.n} experts at ${(+n.dataset.bpw).toFixed(2)} bpw on average`); }
+        else if (k === 'cv') showTip(e, curveTip(+n.dataset.n));
         else if (k === 'thr') { showTip(e, n.dataset.u === '1' ? 'threads running the expert kernel' : 'idle threads: ' + esc(data.boxes[st.box].threads_note || '')); }
       });
       n.addEventListener('mouseleave', hideTip);

@@ -76,6 +76,15 @@ def validate(row):
     if not isinstance(src, dict):
         bad.append('measured.src: object naming the source of every measured number')
         src = {}
+    if row['recipe'].get('kind') == 'network':
+        identity = row['recipe'].get('network_prediction_identity')
+        if not isinstance(identity, dict) or not identity.get('recipe') or identity.get('recipe') != row['recipe'].get('network_recipe'):
+            bad.append('network recipe: exact priced network_prediction_identity required')
+        if m.get('network_identity') != identity or not src.get('network_identity'):
+            bad.append('measured.network_identity must equal the priced identity and cite its capture source')
+        prediction = row.get('prediction') or {}
+        if prediction.get('network', {}).get('prediction_identity') != identity:
+            bad.append('network prediction must retain the exact priced identity')
     d = m.get('decode_tps', {})
     if not isinstance(d, dict):
         bad.append('measured.decode_tps: {phase: tok/s}')

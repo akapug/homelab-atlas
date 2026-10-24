@@ -65,6 +65,28 @@
    "k": 6
   }
  },
+ "skew": [
+  {
+   "model": "glm",
+   "name": "GLM-5.3-Flash",
+   "map_id": "glm53-flash__skew72__llamacpp-cpu__2026-10-09",
+   "slice": "decode",
+   "prompts": 72,
+   "planned_prompts": 72,
+   "preliminary": false,
+   "warning": "Fixed skew72 workload, greedy, 48 decode tokens per prompt. Routing statistics only; all capture timings are invalid."
+  },
+  {
+   "model": null,
+   "name": "Kimi K3",
+   "map_id": "kimi-k3__skew72-prompts0-9__llamacpp-cpu__2026-10-09",
+   "slice": "decode",
+   "prompts": 10,
+   "planned_prompts": 72,
+   "preliminary": true,
+   "warning": "PRELIMINARY: only prompts 0-9 of skew72, not the complete paired workload. Small sample inflates coverage; do not rank models from it. No timing or fit prediction."
+  }
+ ],
  "sources": [
   {
    "out": "glm53-flash__skew72__llamacpp-cpu__2026-10-09.heatmap.json",

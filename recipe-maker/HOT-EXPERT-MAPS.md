@@ -119,6 +119,16 @@ the same run do not.
   a map digest that differs from the data's map. A recipe that cites nothing gets a note that names the map behind
   its sets.
 - **The prediction.** `predictRecipe` returns `heat_maps: {plan, score}`, the citations it planned and scored on.
+- **The expert-skew column.** The existing chart table shows fixed-workload top-10% / top-25% selection coverage,
+  averaged over layers, separately from the chosen plan/score heat. `tools/heat_sources.json` names the maps, slices,
+  prompt counts and completion warnings; `tools/heatmap.py` validates each map before projecting its stored summary
+  and full citation into `data.routing_skew`. The table also includes routing-only evidence, so Kimi K3 can be seen
+  without inventing a planner model or any speed/quality prediction. Its 10-of-72-prompt capture is PRELIMINARY:
+  small samples inflate coverage, and the paired workload is still incomplete. Capture timings are not used.
+  Missing maps, missing slices and empty selections are UNKNOWN, never zero. The public export intentionally omits
+  the compressed K3 map; that copy keeps its sample warning but shows UNKNOWN coverage and digest.
+- **The expert-map download.** `exportMap` carries both plan/score `heat_maps` citations and the separate fixed-workload
+  `routing_skew` evidence (or null when unsupported), including phase, sample size and preliminary status.
 
 ## How a recipe cites the map it used
 

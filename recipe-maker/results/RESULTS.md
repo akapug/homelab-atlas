@@ -117,6 +117,7 @@ Outcome `ok` = the run finished; a degraded note names its cause class and the p
 | droopy-v41-v41fs-ts1-0026 | DeepSeek V4.1 Flash 1017 | ik | ok; {confounded: one load, prompt-major with cached prompts: identical switches decoded different text paths (off4 10.91 vs off4b 12.46 tok/s), and prompt 1's accepted draft tokens (155 on one text path, 225-230 on the other) set the phase speeds, not the tier-split switches; superseded by droopy-v41-v41fs-ts2-0127} | 13.06 (s8) | 15.3 | 2026-10-21 |
 | droopy-v41-v41fs-ts2-0127 | DeepSeek V4.1 Flash 1017 | ik | ok | 12.69 (s8) | 67.9 | 2026-10-22 |
 | droopy-v41-v41fs-ts3-hc-269a61a4 | DeepSeek V4.1 Flash 1017 | ik | ok | 12.71 (s12) | 67.6 | 2026-10-22 |
+| droopy-v41-serve-seat-1022 | DeepSeek V4.1 Flash 1017 | ik | ok | 12.00 (n4_26k_depth) | 78.3 | 2026-10-22 |
 
 ### lassie
 
@@ -168,6 +169,10 @@ Outcome `ok` = the run finished; a degraded note names its cause class and the p
 | lassie-v41-q8-fs3hybc | DeepSeek V4.1 Flash 1017 | ik | ok | 8.37 (long-n4) | 52.0 | 2026-10-22 |
 | lassie-v41-q8-fs3dec | DeepSeek V4.1 Flash 1017 | ik | ok | 13.22 (long-n4) | 52.2 | 2026-10-22 |
 | lassie-v41-q8-fs3decp | DeepSeek V4.1 Flash 1017 | ik | ok | 12.78 (long-n4) | 52.4 | 2026-10-22 |
+| lassie-v41-q8-fs3hybcq | DeepSeek V4.1 Flash 1017 | ik | ok | 8.28 (long-n4) | 49.7 | 2026-10-22 |
+| lassie-v41-q8-fs3hybcr | DeepSeek V4.1 Flash 1017 | ik | ok | 8.37 (long-n4) | 52.2 | 2026-10-22 |
+| lassie-v41-q8-fs3decr | DeepSeek V4.1 Flash 1017 | ik | ok | 12.87 (long-n4) | 52.7 | 2026-10-22 |
+| lassie-v41-q8-fs3decgr | DeepSeek V4.1 Flash 1017 | ik | crash | - | - | 2026-10-22 |
 
 ### odie
 
@@ -219,6 +224,15 @@ Outcome `ok` = the run finished; a degraded note names its cause class and the p
 | odie-dllm-n1-ling-q4-ar-full | Ling-mini-2.0 | llama-dllm-gen | ok | 147.46 (all) | - | 2026-10-19 |
 | odie-dllm-n1-flash-q4-ncm18-lev-s-fuse | LLaDA2.2-flash | llama-dllm-gen | ok | 4.62 (all) | - | 2026-10-19 |
 | odie-fnx-qfn-xestrata-xe0145-iq3s-step1-2000 | Qwen3.8-Flash-Next (125B / 6B active) | strata | ok | 87.10 (c1) | - | 2026-10-19 |
+| odie-fnx-iq3xxs-2xb70-sweep-u24i-1023 | Qwen3.8-Flash-Next (125B / 6B active) | strata | ok; degraded; degraded | 12.32 (c24_per_stream_median) | - | 2026-10-23 |
+| odie-fnx-iq3xxs-2xb70-sweep-u32i-1023 | Qwen3.8-Flash-Next (125B / 6B active) | strata | ok; degraded; degraded | 9.96 (c32_per_stream_median) | - | 2026-10-23 |
+| odie-fnx-iq3xxs-2xb70-sweep-u32k-1023 | Qwen3.8-Flash-Next (125B / 6B active) | strata | ok; degraded; degraded | 10.32 (c32_per_stream_median) | - | 2026-10-23 |
+| odie-fnx-iq3xxs-2xb70-sweep-c2b-1024 | Qwen3.8-Flash-Next (125B / 6B active) | strata | ok; degraded; degraded | 10.86 (c32_per_stream_median) | - | 2026-10-24 |
+| odie-fnx-iq3xxs-2xb70-sweep-c2bn-1024 | Qwen3.8-Flash-Next (125B / 6B active) | strata | ok; degraded; degraded | 10.87 (c32_per_stream_median) | - | 2026-10-24 |
+| odie-fnx-iq3xxs-2xb70-sweep-c2bs-1024 | Qwen3.8-Flash-Next (125B / 6B active) | strata | ok; degraded; degraded | 10.92 (c32_per_stream_median) | - | 2026-10-24 |
+| odie-fnx-iq3xxs-2xb70-sweep-c2a-1024 | Qwen3.8-Flash-Next (125B / 6B active) | strata | ok; degraded; degraded | 10.53 (c32_per_stream_median) | - | 2026-10-24 |
+| odie-fnx-iq3xxs-2xb70-sweep-c2bh-1024 | Qwen3.8-Flash-Next (125B / 6B active) | strata | ok; degraded; degraded | 10.78 (c32_per_stream_median) | - | 2026-10-24 |
+| odie-fnx-iq3xxs-2xb70-sweep-m32b-1024 | Qwen3.8-Flash-Next (125B / 6B active) | strata | ok; degraded; degraded; degraded | 10.03 (c32_per_stream_median) | - | 2026-10-24 |
 
 ### snoopy
 
@@ -246,15 +260,16 @@ Outcome `ok` = the run finished; a degraded note names its cause class and the p
 | snoopy-glm-glm-coder-s1w-trim-a | GLM-5.3-Flash | glmlite | ok | 27.60 (c1) | - | 2026-10-20 |
 | snoopy-glm-glm-coder-s1w-trim-b | GLM-5.3-Flash | glmlite | ok | 25.65 (c1) | - | 2026-10-20 |
 | snoopy-glm-glm-coder-s1w-trim-c | GLM-5.3-Flash | glmlite | ok | 26.69 (c1) | - | 2026-10-20 |
+| snoopy-glm-seat-trim-c-64k | GLM-5.3-Flash | glmlite | ok | 25.92 (c1) | 761.4 | 2026-10-22 |
 
-Left out of this copy: fnx runs (Flash-Next quant runs stay out until its reliability study ends); fnxc runs (Flash-Next quant runs stay out until its reliability study ends). Run odie-fnx-qfn-xestrata-xe0145-iq3s-step1-2000 ships: the Flash-Next run the atlas README cites (87.1 tok/s on one B70, XeStrata xe0.1.45, IQ3_S, about half the experts computed on the CPU); an engine the planner does not model.
+Left out of this copy: fnx runs (Flash-Next quant runs stay out until its reliability study ends); fnxc runs (Flash-Next quant runs stay out until its reliability study ends). Run odie-fnx-iq3xxs-2xb70-sweep-c2a-1024 ships: the matched control of the many-agent headline the B70 page cites. Run odie-fnx-iq3xxs-2xb70-sweep-c2b-1024 ships: the many-agent headline the B70 page cites (347.5 tok/s, 32 agents x 131,072). Run odie-fnx-iq3xxs-2xb70-sweep-c2bh-1024 ships: a many-agent lever arm the B70 page cites. Run odie-fnx-iq3xxs-2xb70-sweep-c2bn-1024 ships: a many-agent lever arm the B70 page cites. Run odie-fnx-iq3xxs-2xb70-sweep-c2bs-1024 ships: a many-agent lever arm the B70 page cites. Run odie-fnx-iq3xxs-2xb70-sweep-m32b-1024 ships: the mixed-context point the B70 page cites (2 x 262,144 + 30 x 131,072). Run odie-fnx-iq3xxs-2xb70-sweep-u24i-1023 ships: the many-agent ladder the B70 page cites (24 agents x 131,072, int8 KV). Run odie-fnx-iq3xxs-2xb70-sweep-u32i-1023 ships: the many-agent ladder the B70 page cites (32 agents x 131,072, int8 KV). Run odie-fnx-iq3xxs-2xb70-sweep-u32k-1023 ships: the many-agent ladder the B70 page cites (32 agents x 131,072, k8v4 KV). Run odie-fnx-qfn-xestrata-xe0145-iq3s-step1-2000 ships: the Flash-Next run the atlas README cites (87.1 tok/s on one B70, XeStrata xe0.1.45, IQ3_S, about half the experts computed on the CPU); an engine the planner does not model.
 
 ## How close the planner is
 
 The output of `node report.js --accuracy` on this ledger: predicted against measured decode per box, model and engine, and how the pre-launch gate did on the runs that went bad.
 
 ```
-== Run ledger accuracy (185 runs from runs/runs.jsonl; planner data built 2026-10-22T07:19Z) ==
+== Run ledger accuracy (200 runs from runs/runs.jsonl; planner data built 2026-10-24T04:54Z) ==
 decode: the draft prediction pairs with the primary draft phase (n4), the no-draft prediction with n0. post-hoc = predicted today from the recorded recipe; in-sample = the run is a calibration anchor.
 
 -- per run --
@@ -443,51 +458,66 @@ lassie-v41-q8-fs3fa0c          decode_tps[std-n4] 7.39 vs 7.25 +1.9%, decode_tps
 lassie-v41-q8-fs3hybc          decode_tps[std-n4] 7.39 vs 8.28 -10.8%, decode_tps_nodraft[std-n0] 7.39 vs 7.96 -7.2%, prefill_tps - vs 52.00 (UNMODELLED) [post-hoc]
 lassie-v41-q8-fs3dec           decode_tps[std-n4] 7.39 vs 12.09 -38.9%, decode_tps_nodraft[std-n0] 7.39 vs 11.74 -37.1%, prefill_tps - vs 52.20 (UNMODELLED) [post-hoc]
 lassie-v41-q8-fs3decp          decode_tps[std-n4] 7.39 vs 11.31 -34.7%, decode_tps_nodraft[std-n0] 7.39 vs 11.24 -34.3%, prefill_tps - vs 52.40 (UNMODELLED) [post-hoc]
+lassie-v41-q8-fs3hybcq         decode_tps[std-n4] 7.39 vs 7.67 -3.7%, decode_tps_nodraft[std-n0] 7.39 vs 7.12 +3.8%, prefill_tps - vs 49.70 (UNMODELLED) [post-hoc]
+lassie-v41-q8-fs3hybcr         decode_tps[std-n4] 7.39 vs 7.64 -3.3%, decode_tps_nodraft[std-n0] 7.39 vs 7.99 -7.5%, prefill_tps - vs 52.20 (UNMODELLED) [post-hoc]
+lassie-v41-q8-fs3decr          decode_tps[std-n4] 7.39 vs 11.39 -35.1%, decode_tps_nodraft[std-n0] 7.39 vs 12.12 -39.0%, prefill_tps - vs 52.70 (UNMODELLED) [post-hoc]
+lassie-v41-q8-fs3decgr         nothing measured [post-hoc; went bad: crash]
+droopy-v41-serve-seat-1022     decode_tps[n4_26k_depth] 8.55 vs 12.00 -28.7%, prefill_tps - vs 78.30 (UNMODELLED), vram_post_gib 17.66 vs 19.18 -7.9% [post-hoc]
+snoopy-glm-seat-trim-c-64k     decode_tps[c1] 25.61 vs 25.92 -1.2%, prefill_tps - vs 761.40 (UNMODELLED) [post-hoc]
+odie-fnx-iq3xxs-2xb70-sweep-u24i-1023 UNMODELLED: strata has no planner model (it sizes and places its own caches) | measured c24_per_stream_median 12.32 [post-hoc; went bad: degraded, degraded]
+odie-fnx-iq3xxs-2xb70-sweep-u32i-1023 UNMODELLED: strata has no planner model (it sizes and places its own caches) | measured c32_per_stream_median 9.96 [post-hoc; went bad: degraded, degraded]
+odie-fnx-iq3xxs-2xb70-sweep-u32k-1023 UNMODELLED: strata has no planner model (it sizes and places its own caches) | measured c32_per_stream_median 10.32 [post-hoc; went bad: degraded, degraded]
+odie-fnx-iq3xxs-2xb70-sweep-c2b-1024 UNMODELLED: strata has no planner model (it sizes and places its own caches) | measured c32_per_stream_median 10.86 [post-hoc; went bad: degraded, degraded]
+odie-fnx-iq3xxs-2xb70-sweep-c2bn-1024 UNMODELLED: strata has no planner model (it sizes and places its own caches) | measured c32_per_stream_median 10.87 [post-hoc; went bad: degraded, degraded]
+odie-fnx-iq3xxs-2xb70-sweep-c2bs-1024 UNMODELLED: strata has no planner model (it sizes and places its own caches) | measured c32_per_stream_median 10.92 [post-hoc; went bad: degraded, degraded]
+odie-fnx-iq3xxs-2xb70-sweep-c2a-1024 UNMODELLED: strata has no planner model (it sizes and places its own caches) | measured c32_per_stream_median 10.53 [post-hoc; went bad: degraded, degraded]
+odie-fnx-iq3xxs-2xb70-sweep-c2bh-1024 UNMODELLED: strata has no planner model (it sizes and places its own caches) | measured c32_per_stream_median 10.78 [post-hoc; went bad: degraded, degraded]
+odie-fnx-iq3xxs-2xb70-sweep-m32b-1024 UNMODELLED: strata has no planner model (it sizes and places its own caches) | measured c32_per_stream_median 10.03 [post-hoc; went bad: degraded, degraded, degraded]
 
 -- decode error per box / model / engine (runs that went fine; error = (pred - meas) / meas) --
 decode_tps          droopy/glm/ik          n  4  median |err|  15.6 %  bias -10.6 %
 decode_tps          droopy/orn122/ik       n  1  median |err|   1.3 %  bias +1.3 %
-decode_tps          droopy/v41/ik          n 20  median |err|  23.4 %  bias -23.4 %
+decode_tps          droopy/v41/ik          n 21  median |err|  24.8 %  bias -24.8 %
 decode_tps          lassie/llada22flash/llama-dllm-gen n  2  median |err|  14.5 %  bias -14.5 %
 decode_tps          lassie/orn35/ik        n  4  median |err|  16.1 %  bias +16.1 %
-decode_tps          lassie/v41/ik          n 19  median |err|  19.4 %  bias +4.8 %
+decode_tps          lassie/v41/ik          n 22  median |err|  15.7 %  bias +3.7 %
 decode_tps          odie/lingmini2/llama-dllm-gen n  2  median |err|  43.8 %  bias +43.8 %
 decode_tps          odie/llada21mini/llama-dllm-gen n 15  median |err|   4.1 %  bias -1.5 %
 decode_tps          odie/llada21mini_q5km/llama-dllm-gen n  3  median |err|   1.6 %  bias +0.0 %
 decode_tps          odie/llada22flash/llama-dllm-gen n  4  median |err|   4.8 %  bias +4.8 %
-decode_tps          snoopy/glm/glmlite     n  8  median |err|   2.5 %  bias -0.8 %
+decode_tps          snoopy/glm/glmlite     n  9  median |err|   1.8 %  bias -1.2 %
 decode_tps_nodraft  droopy/glm/ik          n  8  median |err|  19.8 %  bias -19.8 %
 decode_tps_nodraft  droopy/orn122/ik       n  1  median |err|   0.4 %  bias -0.4 %
 decode_tps_nodraft  droopy/v41/ik          n 15  median |err|  26.3 %  bias -26.3 %
 decode_tps_nodraft  lassie/orn35/ik        n  4  median |err|   9.7 %  bias -9.7 %
-decode_tps_nodraft  lassie/v41/ik          n 18  median |err|  10.3 %  bias +8.2 %
+decode_tps_nodraft  lassie/v41/ik          n 21  median |err|   9.9 %  bias +6.0 %
 prefill_tps         droopy/glm/ik          n  1  median |err|   8.4 %  bias +8.4 %
 prefill_tps         droopy/v41/ik          n  4  median |err|   3.5 %  bias -3.5 %
 vram_post_gib       droopy/glm/ik          n  1  median |err|   0.4 %  bias +0.4 %
-vram_post_gib       droopy/v41/ik          n 17  median |err|   0.2 %  bias -0.2 %
+vram_post_gib       droopy/v41/ik          n 18  median |err|   0.2 %  bias -0.2 %
 
 -- the same with today's planner on every run (launch-time rows replayed post hoc) --
 decode_tps          droopy/glm/ik          n  4  median |err|  15.8 %  bias -10.5 %
 decode_tps          droopy/orn122/ik       n  1  median |err|   1.3 %  bias +1.3 %
-decode_tps          droopy/v41/ik          n 20  median |err|  23.8 %  bias -23.8 %
+decode_tps          droopy/v41/ik          n 21  median |err|  25.3 %  bias -25.3 %
 decode_tps          lassie/llada22flash/llama-dllm-gen n  2  median |err|  14.5 %  bias -14.5 %
 decode_tps          lassie/orn35/ik        n  3  median |err|   1.2 %  bias +1.2 %
-decode_tps          lassie/v41/ik          n 20  median |err|  20.0 %  bias +8.4 %
+decode_tps          lassie/v41/ik          n 23  median |err|  19.4 %  bias +3.8 %
 decode_tps          odie/lingmini2/llama-dllm-gen n  2  median |err|  43.8 %  bias +43.8 %
 decode_tps          odie/llada21mini/llama-dllm-gen n 15  median |err|   4.1 %  bias -1.5 %
 decode_tps          odie/llada21mini_q5km/llama-dllm-gen n  3  median |err|   1.6 %  bias +0.0 %
 decode_tps          odie/llada22flash/llama-dllm-gen n  4  median |err|   4.8 %  bias +4.8 %
-decode_tps          snoopy/glm/glmlite     n  8  median |err|   2.5 %  bias -0.8 %
+decode_tps          snoopy/glm/glmlite     n  9  median |err|   1.8 %  bias -1.2 %
 decode_tps_nodraft  droopy/glm/ik          n  8  median |err|  19.8 %  bias -19.8 %
 decode_tps_nodraft  droopy/orn122/ik       n  1  median |err|   0.4 %  bias -0.4 %
 decode_tps_nodraft  droopy/v41/ik          n 15  median |err|  26.3 %  bias -26.3 %
 decode_tps_nodraft  lassie/orn35/ik        n  4  median |err|   0.0 %  bias -0.0 %
-decode_tps_nodraft  lassie/v41/ik          n 19  median |err|   9.9 %  bias +7.1 %
+decode_tps_nodraft  lassie/v41/ik          n 22  median |err|   9.6 %  bias +6.3 %
 draft speed-up droopy/glm/ik          measured in-load x1.198 median of 4 (glm-glm-be1q3f-1314 1.29, glm-glm-be1q3a2f-1342 1.24, glm-glm-be1q3m-1720 1.16, glm-glm-be1q4d-1939 1.05) vs planner x1.203
 draft speed-up droopy/orn122/ik       measured in-load x1.132 median of 1 (orn122-orn122-r0g9-1557 1.13) vs planner x1.151
 draft speed-up droopy/v41/ik          measured in-load x1.216 median of 20 (v41-e1 1.22, v41-e2 1.19, v41-b0c-rtr 1.16, v41-b0c-nortr 1.23, v41-b1c 0.99, v41-b1d 1.16, v41-b1017-0042 1.45, v41-v41r1b-1354 1.21, v41-v41fs-fs1c-0213 1.22, v41-v41fs-lo-nohost-0309 1.22, v41-v41fs-lo-follow-0406 1.22, v41-v41fs-lo-ba-0503 1.21, v41-v41fs-lo-draftgpu-0559 1.24, v41-v41fs-alloff-0758 1.22, v41-v41fs-fs1p-0848 1.21, v41-v41fs-fs1p-f32-1651 1.22, v41-v41fs-fs1p-r-1741 1.22, v41-v41fs-rc-f32-1856 1.26, v41-v41fs-rc2-f32-2038 1.22, v41-v41fs-rc2-old-2334 1.26) vs planner x1.252
 draft speed-up lassie/orn35/ik        measured in-load x1.128 median of 3 (lassie-orn35-q4km-o1 0.27, lassie-orn35-q4km-o5 1.13, lassie-orn35-q4km-o6 1.33) vs planner x1.115
-draft speed-up lassie/v41/ik          measured in-load x1.106 median of 34 (lassie-v41-split-mm7 1.27, lassie-v41-split-rows8 1.49, lassie-v41-split-mm7ga 1.22, lassie-v41-q8-mm7 1.29, lassie-v41-q8-rows8 1.49, lassie-v41-q8-mm7-t32 1.31, lassie-v41-q8-mm7-t48 1.20, lassie-v41-q8-mm7-t64 1.30, lassie-v41-q8-mm7-t96 1.27, lassie-v41-q8-mm7-t128 1.35, lassie-v41-q8-rows8-pair-t64 1.59, lassie-v41-q8-rows8-pair-t32 1.38, lassie-v41-q8-rows8-dense-t64 1.36, lassie-v41-q8-rows8ga-dense-nohost 1.18, lassie-v41-q8-fs1 0.48, lassie-v41-q8-fs2 0.50, lassie-v41-q8-fs3 1.02, lassie-v41-q8-fs4 1.06, lassie-v41-q8-fs5 0.81, lassie-v41-q8-hs1 0.65, lassie-v41-q8-hs3b 0.57, lassie-v41-q8-hs4 1.11, lassie-v41-q8-hs4p 1.03, lassie-v41-q8-fs3p 0.91, lassie-v41-q8-hs5 1.10, lassie-v41-q8-fs3s16 1.01, lassie-v41-q8-fs3fa0 0.83, lassie-v41-q8-fs3fa1 1.50, lassie-v41-q8-fs3ne8 1.68, lassie-v41-q8-fs3hyb 1.05, lassie-v41-q8-fs3fa0c 0.90, lassie-v41-q8-fs3hybc 1.04, lassie-v41-q8-fs3dec 1.03, lassie-v41-q8-fs3decp 1.01) vs planner x1.000
+draft speed-up lassie/v41/ik          measured in-load x1.077 median of 37 (lassie-v41-split-mm7 1.27, lassie-v41-split-rows8 1.49, lassie-v41-split-mm7ga 1.22, lassie-v41-q8-mm7 1.29, lassie-v41-q8-rows8 1.49, lassie-v41-q8-mm7-t32 1.31, lassie-v41-q8-mm7-t48 1.20, lassie-v41-q8-mm7-t64 1.30, lassie-v41-q8-mm7-t96 1.27, lassie-v41-q8-mm7-t128 1.35, lassie-v41-q8-rows8-pair-t64 1.59, lassie-v41-q8-rows8-pair-t32 1.38, lassie-v41-q8-rows8-dense-t64 1.36, lassie-v41-q8-rows8ga-dense-nohost 1.18, lassie-v41-q8-fs1 0.48, lassie-v41-q8-fs2 0.50, lassie-v41-q8-fs3 1.02, lassie-v41-q8-fs4 1.06, lassie-v41-q8-fs5 0.81, lassie-v41-q8-hs1 0.65, lassie-v41-q8-hs3b 0.57, lassie-v41-q8-hs4 1.11, lassie-v41-q8-hs4p 1.03, lassie-v41-q8-fs3p 0.91, lassie-v41-q8-hs5 1.10, lassie-v41-q8-fs3s16 1.01, lassie-v41-q8-fs3fa0 0.83, lassie-v41-q8-fs3fa1 1.50, lassie-v41-q8-fs3ne8 1.68, lassie-v41-q8-fs3hyb 1.05, lassie-v41-q8-fs3fa0c 0.90, lassie-v41-q8-fs3hybc 1.04, lassie-v41-q8-fs3dec 1.03, lassie-v41-q8-fs3decp 1.01, lassie-v41-q8-fs3hybcq 1.08, lassie-v41-q8-fs3hybcr 0.96, lassie-v41-q8-fs3decr 0.94) vs planner x1.000
 excluded as disturbed (runs/labels.json, from the run notes): 5 (droopy-glm-glm-be1q3e-1215 m0, droopy-glm-glm-be1q4c-1831 m1/m0, droopy-glm-glm-be1q4l-2246 V0_A2/V1_B1, droopy-glm-glm-be1q4i-0121 V0_4/V0C_5/V0_6/V0C_7, droopy-glm-glm-be1q4j-0230 V0R_0/V0R_1/V0R_2/V0R_3)
 
 -- pre-launch checks vs outcome --
@@ -523,7 +553,7 @@ true positives (FAILed and went bad): 31
    droopy-glm-glm-be1q4l-2246: FAIL cpu_reserve, UNKNOWN placement | went bad: interference in V0_A2/V1_B1 (runs/labels.json) | cause interference (decided by cpu_reserve) [checks launch + placement/cpu_reserve replayed post hoc]
    droopy-glm-glm-be1q4i-0121: FAIL cpu_reserve, UNKNOWN placement | went bad: interference in V0_4/V0C_5/V0_6/V0C_7 (runs/labels.json) | cause interference (decided by cpu_reserve) [checks launch + placement/cpu_reserve replayed post hoc]
    droopy-glm-glm-be1q4j-0230: FAIL cpu_reserve, UNKNOWN placement | went bad: interference in V0R_0/V0R_1/V0R_2/V0R_3 (runs/labels.json) | cause interference (decided by cpu_reserve) [checks launch + placement/cpu_reserve replayed post hoc]
-misses (no FAIL but went bad: the next checks to add): 16
+misses (no FAIL but went bad: the next checks to add): 26
    droopy-v41-e1: no FAIL, UNKNOWN numa_free/system/conditions/cpu_reserve | went bad: placement short | cause placement_short [checks post-hoc]
    snoopy-glm-arma-0719: no FAIL, UNKNOWN conditions/cpu_reserve | went bad: vram other process | cause vram_other_process [checks post-hoc]
    snoopy-glm-p4-s15-2047: no FAIL, UNKNOWN conditions/cpu_reserve | went bad: degraded [checks post-hoc]
@@ -540,6 +570,16 @@ misses (no FAIL but went bad: the next checks to add): 16
    lassie-v41-q8-hs3: no FAIL, UNKNOWN placement | went bad: oom [checks post-hoc]
    droopy-orn122-r0g8-pt-agent-1021: no FAIL, UNKNOWN quality | went bad: crash [checks launch]
    droopy-v41-v41fs-rc-f32-1856: no FAIL | went bad: degraded [checks launch]
+   lassie-v41-q8-fs3decgr: no FAIL, UNKNOWN placement | went bad: crash [checks post-hoc]
+   odie-fnx-iq3xxs-2xb70-sweep-u24i-1023: no FAIL, UNKNOWN vram_peak/quality/cpu_reserve | went bad: degraded, degraded [checks post-hoc]
+   odie-fnx-iq3xxs-2xb70-sweep-u32i-1023: no FAIL, UNKNOWN vram_peak/quality/cpu_reserve | went bad: degraded, degraded [checks post-hoc]
+   odie-fnx-iq3xxs-2xb70-sweep-u32k-1023: no FAIL, UNKNOWN vram_peak/quality/cpu_reserve | went bad: degraded, degraded [checks post-hoc]
+   odie-fnx-iq3xxs-2xb70-sweep-c2b-1024: no FAIL, UNKNOWN vram_peak/quality/cpu_reserve | went bad: degraded, degraded [checks post-hoc]
+   odie-fnx-iq3xxs-2xb70-sweep-c2bn-1024: no FAIL, UNKNOWN vram_peak/quality/cpu_reserve | went bad: degraded, degraded [checks post-hoc]
+   odie-fnx-iq3xxs-2xb70-sweep-c2bs-1024: no FAIL, UNKNOWN vram_peak/quality/cpu_reserve | went bad: degraded, degraded [checks post-hoc]
+   odie-fnx-iq3xxs-2xb70-sweep-c2a-1024: no FAIL, UNKNOWN vram_peak/quality/cpu_reserve | went bad: degraded, degraded [checks post-hoc]
+   odie-fnx-iq3xxs-2xb70-sweep-c2bh-1024: no FAIL, UNKNOWN vram_peak/quality/cpu_reserve | went bad: degraded, degraded [checks post-hoc]
+   odie-fnx-iq3xxs-2xb70-sweep-m32b-1024: no FAIL, UNKNOWN vram_peak/quality/cpu_reserve | went bad: degraded, degraded, degraded [checks post-hoc]
 false alarms (FAILed but ran fine): 24
    droopy-v41-b0c-nortr: FAIL numa_free/system/cpu_reserve, UNKNOWN placement/conditions [checks post-hoc; set the numa_free/rtr bound (hindsight)]
    droopy-v41-b1d: FAIL cpu_reserve, UNKNOWN conditions [checks post-hoc]
@@ -580,19 +620,20 @@ cause taxonomy (runs/labels.json x data.causes; then = the run's own checks, now
    no pre-launch check (stay UNKNOWN causes): long_prompt_vram, tool_bug, unexplained_slowdown, vram_other_process
 replayed cpu_reserve/placement: misses that become true positives 14 (droopy-v41-b1017-0042 other cause, droopy-glm-glm-be1q3-0644 other cause, droopy-glm-glm-be1q3b-0822 other cause, droopy-glm-glm-be1q3a2b-0823 other cause, droopy-glm-glm-be1q3c-0917 other cause, droopy-glm-glm-be1q3d-1123 other cause, droopy-glm-glm-be1q3e-1215 cause-matched, droopy-glm-glm-be1q3a2e-1300 other cause, droopy-glm-glm-be1q3f-1314 other cause, droopy-glm-glm-be1q3a2f-1342 other cause, droopy-glm-glm-be1q4c-1831 other cause, droopy-glm-glm-be1q4l-2246 cause-matched, droopy-glm-glm-be1q4i-0121 cause-matched, droopy-glm-glm-be1q4j-0230 cause-matched); new false alarms 4 (droopy-v41-b1d, droopy-v41-b1017-kl-lassie, droopy-glm-glm-be1q4d-1939, droopy-glm-glm-be1q4k-2146)
 per check (FAIL & went bad / FAIL & ran fine / passed & went bad):
-   inputs    0 / 1 / 47  false alarms: odie-glm-trunc20-cpu-ik
-   storage   2 / 0 / 41
-   vram_peak 3 / 15 / 40  false alarms: lassie-v41-split-mm7, lassie-v41-split-rows8, lassie-v41-split-mm7ga, lassie-v41-q8-mm7, lassie-v41-q8-rows8, lassie-v41-q8-mm7-t32, lassie-v41-q8-mm7-t48, lassie-v41-q8-mm7-t64, lassie-v41-q8-mm7-t96, lassie-v41-q8-mm7-t128, lassie-v41-q8-rows8-pair-t64, lassie-v41-q8-rows8-pair-t32, lassie-v41-q8-rows8-dense-t64, lassie-v41-q8-rows8ga-dense-nohost, lassie-v41-q8-fs1
-   numa_free 6 / 1 / 37  false alarms: droopy-v41-b0c-nortr
-   placement 0 / 0 / 43
+   inputs    0 / 1 / 57  false alarms: odie-glm-trunc20-cpu-ik
+   storage   2 / 0 / 51
+   vram_peak 3 / 15 / 50  false alarms: lassie-v41-split-mm7, lassie-v41-split-rows8, lassie-v41-split-mm7ga, lassie-v41-q8-mm7, lassie-v41-q8-rows8, lassie-v41-q8-mm7-t32, lassie-v41-q8-mm7-t48, lassie-v41-q8-mm7-t64, lassie-v41-q8-mm7-t96, lassie-v41-q8-mm7-t128, lassie-v41-q8-rows8-pair-t64, lassie-v41-q8-rows8-pair-t32, lassie-v41-q8-rows8-dense-t64, lassie-v41-q8-rows8ga-dense-nohost, lassie-v41-q8-fs1
+   numa_free 6 / 1 / 47  false alarms: droopy-v41-b0c-nortr
+   placement 0 / 0 / 53
    system    4 / 1 / 26  false alarms: droopy-v41-b0c-nortr
-   rtr       2 / 0 / 41
-   quality   7 / 1 / 36  false alarms: droopy-v41-q3q2-kl-lassie
-   conditions 0 / 0 / 31
-   cpu_reserve 25 / 6 / 18  false alarms: droopy-v41-b0c-nortr, droopy-v41-b1d, droopy-v41-b1017-kl-lassie, droopy-glm-glm-be1q4d-1939, droopy-glm-glm-be1q4k-2146, lassie-v41-q8-mm7-t128
+   rtr       2 / 0 / 51
+   quality   7 / 1 / 46  false alarms: droopy-v41-q3q2-kl-lassie
+   conditions 0 / 0 / 41
+   cpu_reserve 25 / 6 / 28  false alarms: droopy-v41-b0c-nortr, droopy-v41-b1d, droopy-v41-b1017-kl-lassie, droopy-glm-glm-be1q4d-1939, droopy-glm-glm-be1q4k-2146, lassie-v41-q8-mm7-t128
    mem_cap   1 / 0 / 0
    vram_fit  0 / 2 / 4  false alarms: odie-dllm-n1-flash-q4-ncm18-lev-s-cache, odie-dllm-n1-flash-q4-ncm18-lev-s-fuse
-clean passes (no FAIL, ran fine): 114 (droopy-v41-d1g-q2d-p0 UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-v41-d1g-q2d-fb-p0 UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-v41-d1g-place12-p0 UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-glm-d2-glm-ctl UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-glm-d2-glm-mtp1 UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-glm-d2-glm-mtp3 UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-v41-e2 UNKNOWN vram_peak/numa_free/system/conditions/cpu_reserve, snoopy-glm-smt-0918 UNKNOWN conditions/cpu_reserve, snoopy-glm-ctl-0922 UNKNOWN conditions/cpu_reserve, snoopy-glm-ctl-0929 UNKNOWN conditions/cpu_reserve, snoopy-glm-pol-1104 UNKNOWN conditions/cpu_reserve, snoopy-glm-excl0-1137 UNKNOWN conditions/cpu_reserve, snoopy-glm-excl0-1143 UNKNOWN conditions/cpu_reserve, snoopy-glm-k2e-1450 UNKNOWN conditions/cpu_reserve, odie-glm-trunc20-cpu-ml-src UNKNOWN conditions/cpu_reserve, odie-glm-trunc20-cpu-ml-docker UNKNOWN conditions/cpu_reserve, droopy-glm-glm-be1q4t-0330 UNKNOWN placement, droopy-glm-glm-be1q4x-0706 UNKNOWN placement, odie-dllm-n1-flash2-q4-lev-s-cache, odie-dllm-n1-flash2-q4-lev-s-fuse, odie-dllm-n1-he-ling-q4-ar, odie-dllm-n1-he-mini-q4-q-fuse-dev-eos, odie-dllm-n1-he-mini-q4-s-fuse-dev-eos, odie-dllm-n1-he-spec-q4-spec-q-d2-eos, odie-dllm-n1-ling-q4-ar-full, odie-dllm-n1-mini-q4-fixed1-cache-dev, odie-dllm-n1-mini-q4-q-cache, odie-dllm-n1-mini-q4-q-cache-dev, odie-dllm-n1-mini-q4-q-full, odie-dllm-n1-mini-q4-q-fuse-dev, odie-dllm-n1-mini-q4-q-fuse-dev-b64, odie-dllm-n1-mini-q4-s-cache-dev, odie-dllm-n1-mini-q4-s-fuse-dev, odie-dllm-n1-mini-q5km-q-cache-dev, odie-dllm-n1-mini-q5km-q-fuse-dev, odie-dllm-n1-mini-q5km-s-fuse-dev, odie-dllm-n1-spec-q4-spec-q, odie-dllm-n1-spec-q4-spec-q-d1, odie-dllm-n1-spec-q4-spec-q-d2, odie-dllm-n1g4-mini-q4-q-cache-dev, odie-dllm-n1g4-mini-q4-q-fuse-dev, odie-dllm-n1g4-mini-q4-s-fuse-dev, odie-dllm-n1p-flash2-q4-lev-s-fuse, odie-dllm-n1p-he-flash2-q4-lev-s-fuse-eos, odie-dllm-n1p-mini-q4-q-cache-dev, odie-dllm-n1p-mini-q4-q-fuse-dev, odie-dllm-n1pp-mini-q4-q-fuse-dev, odie-dllm-n1pp-mini-q4-s-fuse-dev, lassie-dllm-flash-q4-s-cache, lassie-dllm-flash-q4-s-fuse, odie-dllm-n1-forkcli-mini-q4, odie-dllm-n1-dream-q4-s256, odie-dllm-n1-dream-q4-s64, droopy-glm-glm-be1q4y-0909 UNKNOWN placement, droopy-glm-glm-be1q4z-0956 UNKNOWN placement, droopy-glm-glm-be1r1-1140 UNKNOWN placement, droopy-v41-v41r1b-1354, droopy-glm-glm-be1r2-1354 UNKNOWN rtr, droopy-glm-glm-be1dv-1751, snoopy-glm-glm-coder-s1 UNKNOWN vram_peak/conditions/cpu_reserve, snoopy-glm-glm-coder-s1w UNKNOWN vram_peak, snoopy-glm-glm-coder-s2 UNKNOWN conditions/cpu_reserve, snoopy-glm-glm-coder-s3, snoopy-glm-glm-screen-k2ew, snoopy-glm-glm-coder-s1w-trim-a UNKNOWN inputs/vram_peak, snoopy-glm-glm-coder-s1w-trim-b UNKNOWN inputs/vram_peak, snoopy-glm-glm-coder-s1w-trim-c UNKNOWN vram_peak, droopy-glm-glm-be1kc-1025 UNKNOWN placement, droopy-v41-v41kc-1111, droopy-glm-glm-be1dvnc-1202, droopy-glm-glm-be1dvpm-1304, droopy-orn122-orn122-r0g9-1557 UNKNOWN quality, droopy-orn122-orn122-r0g9-1847-rb8k UNKNOWN quality, lassie-v41-q8-fs2 UNKNOWN placement, lassie-v41-q8-fs3 UNKNOWN placement, lassie-v41-q8-fs4 UNKNOWN placement, lassie-v41-q8-fs5 UNKNOWN placement, droopy-v41-v41fs-fs1c-0213, droopy-v41-v41fs-lo-nohost-0309, lassie-v41-q8-hs3b UNKNOWN placement, lassie-v41-q8-hs4 UNKNOWN placement, lassie-v41-q8-hs4p UNKNOWN placement, lassie-v41-q8-fs3p UNKNOWN placement, lassie-v41-q8-hs4z UNKNOWN placement, droopy-v41-v41fs-lo-follow-0406, droopy-v41-v41fs-lo-ba-0503, lassie-v41-q8-hs5 UNKNOWN placement, lassie-orn35-q4km-o1 UNKNOWN placement/quality, lassie-orn35-q4km-o2 UNKNOWN placement/quality, lassie-orn35-q4km-o3 UNKNOWN placement/quality, lassie-orn35-q4km-o4 UNKNOWN placement/quality, lassie-orn35-q4km-o5 UNKNOWN placement/quality, lassie-orn35-q4km-o6 UNKNOWN placement/quality, lassie-orn35-q4km-q6 UNKNOWN placement/quality, droopy-v41-v41fs-lo-draftgpu-0559 UNKNOWN vram_peak, droopy-v41-v41fs-alloff-0758, droopy-v41-v41fs-fs1p-0848, droopy-v41-v41fs-fs1p-f32-1651, droopy-v41-v41fs-fs1p-r-1741, droopy-v41-v41fs-rc2-f32-2038, droopy-v41-v41fs-rc2-old-2334, droopy-v41-v41fs-ts1-0026, droopy-v41-v41fs-ts2-0127, odie-fnx-qfn-xestrata-xe0145-iq3s-step1-2000 UNKNOWN vram_peak/quality/conditions/cpu_reserve, droopy-v41-v41fs-ts3-hc-269a61a4, lassie-v41-q8-fs3s16 UNKNOWN placement, lassie-v41-q8-fs3fa0 UNKNOWN placement, lassie-v41-q8-fs3fa1 UNKNOWN placement, lassie-v41-q8-fs3ne8 UNKNOWN placement, lassie-v41-q8-fs3hyb UNKNOWN placement, lassie-v41-q8-fs3fa0c UNKNOWN placement, lassie-v41-q8-fs3hybc UNKNOWN placement, lassie-v41-q8-fs3dec UNKNOWN placement, lassie-v41-q8-fs3decp UNKNOWN placement)
+   kv_host   0 / 0 / 9
+clean passes (no FAIL, ran fine): 119 (droopy-v41-d1g-q2d-p0 UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-v41-d1g-q2d-fb-p0 UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-v41-d1g-place12-p0 UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-glm-d2-glm-ctl UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-glm-d2-glm-mtp1 UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-glm-d2-glm-mtp3 UNKNOWN numa_free/system/conditions/cpu_reserve, droopy-v41-e2 UNKNOWN vram_peak/numa_free/system/conditions/cpu_reserve, snoopy-glm-smt-0918 UNKNOWN conditions/cpu_reserve, snoopy-glm-ctl-0922 UNKNOWN conditions/cpu_reserve, snoopy-glm-ctl-0929 UNKNOWN conditions/cpu_reserve, snoopy-glm-pol-1104 UNKNOWN conditions/cpu_reserve, snoopy-glm-excl0-1137 UNKNOWN conditions/cpu_reserve, snoopy-glm-excl0-1143 UNKNOWN conditions/cpu_reserve, snoopy-glm-k2e-1450 UNKNOWN conditions/cpu_reserve, odie-glm-trunc20-cpu-ml-src UNKNOWN conditions/cpu_reserve, odie-glm-trunc20-cpu-ml-docker UNKNOWN conditions/cpu_reserve, droopy-glm-glm-be1q4t-0330 UNKNOWN placement, droopy-glm-glm-be1q4x-0706 UNKNOWN placement, odie-dllm-n1-flash2-q4-lev-s-cache, odie-dllm-n1-flash2-q4-lev-s-fuse, odie-dllm-n1-he-ling-q4-ar, odie-dllm-n1-he-mini-q4-q-fuse-dev-eos, odie-dllm-n1-he-mini-q4-s-fuse-dev-eos, odie-dllm-n1-he-spec-q4-spec-q-d2-eos, odie-dllm-n1-ling-q4-ar-full, odie-dllm-n1-mini-q4-fixed1-cache-dev, odie-dllm-n1-mini-q4-q-cache, odie-dllm-n1-mini-q4-q-cache-dev, odie-dllm-n1-mini-q4-q-full, odie-dllm-n1-mini-q4-q-fuse-dev, odie-dllm-n1-mini-q4-q-fuse-dev-b64, odie-dllm-n1-mini-q4-s-cache-dev, odie-dllm-n1-mini-q4-s-fuse-dev, odie-dllm-n1-mini-q5km-q-cache-dev, odie-dllm-n1-mini-q5km-q-fuse-dev, odie-dllm-n1-mini-q5km-s-fuse-dev, odie-dllm-n1-spec-q4-spec-q, odie-dllm-n1-spec-q4-spec-q-d1, odie-dllm-n1-spec-q4-spec-q-d2, odie-dllm-n1g4-mini-q4-q-cache-dev, odie-dllm-n1g4-mini-q4-q-fuse-dev, odie-dllm-n1g4-mini-q4-s-fuse-dev, odie-dllm-n1p-flash2-q4-lev-s-fuse, odie-dllm-n1p-he-flash2-q4-lev-s-fuse-eos, odie-dllm-n1p-mini-q4-q-cache-dev, odie-dllm-n1p-mini-q4-q-fuse-dev, odie-dllm-n1pp-mini-q4-q-fuse-dev, odie-dllm-n1pp-mini-q4-s-fuse-dev, lassie-dllm-flash-q4-s-cache, lassie-dllm-flash-q4-s-fuse, odie-dllm-n1-forkcli-mini-q4, odie-dllm-n1-dream-q4-s256, odie-dllm-n1-dream-q4-s64, droopy-glm-glm-be1q4y-0909 UNKNOWN placement, droopy-glm-glm-be1q4z-0956 UNKNOWN placement, droopy-glm-glm-be1r1-1140 UNKNOWN placement, droopy-v41-v41r1b-1354, droopy-glm-glm-be1r2-1354 UNKNOWN rtr, droopy-glm-glm-be1dv-1751, snoopy-glm-glm-coder-s1 UNKNOWN vram_peak/conditions/cpu_reserve, snoopy-glm-glm-coder-s1w UNKNOWN vram_peak, snoopy-glm-glm-coder-s2 UNKNOWN conditions/cpu_reserve, snoopy-glm-glm-coder-s3, snoopy-glm-glm-screen-k2ew, snoopy-glm-glm-coder-s1w-trim-a UNKNOWN inputs/vram_peak, snoopy-glm-glm-coder-s1w-trim-b UNKNOWN inputs/vram_peak, snoopy-glm-glm-coder-s1w-trim-c UNKNOWN vram_peak, droopy-glm-glm-be1kc-1025 UNKNOWN placement, droopy-v41-v41kc-1111, droopy-glm-glm-be1dvnc-1202, droopy-glm-glm-be1dvpm-1304, droopy-orn122-orn122-r0g9-1557 UNKNOWN quality, droopy-orn122-orn122-r0g9-1847-rb8k UNKNOWN quality, lassie-v41-q8-fs2 UNKNOWN placement, lassie-v41-q8-fs3 UNKNOWN placement, lassie-v41-q8-fs4 UNKNOWN placement, lassie-v41-q8-fs5 UNKNOWN placement, droopy-v41-v41fs-fs1c-0213, droopy-v41-v41fs-lo-nohost-0309, lassie-v41-q8-hs3b UNKNOWN placement, lassie-v41-q8-hs4 UNKNOWN placement, lassie-v41-q8-hs4p UNKNOWN placement, lassie-v41-q8-fs3p UNKNOWN placement, lassie-v41-q8-hs4z UNKNOWN placement, droopy-v41-v41fs-lo-follow-0406, droopy-v41-v41fs-lo-ba-0503, lassie-v41-q8-hs5 UNKNOWN placement, lassie-orn35-q4km-o1 UNKNOWN placement/quality, lassie-orn35-q4km-o2 UNKNOWN placement/quality, lassie-orn35-q4km-o3 UNKNOWN placement/quality, lassie-orn35-q4km-o4 UNKNOWN placement/quality, lassie-orn35-q4km-o5 UNKNOWN placement/quality, lassie-orn35-q4km-o6 UNKNOWN placement/quality, lassie-orn35-q4km-q6 UNKNOWN placement/quality, droopy-v41-v41fs-lo-draftgpu-0559 UNKNOWN vram_peak, droopy-v41-v41fs-alloff-0758, droopy-v41-v41fs-fs1p-0848, droopy-v41-v41fs-fs1p-f32-1651, droopy-v41-v41fs-fs1p-r-1741, droopy-v41-v41fs-rc2-f32-2038, droopy-v41-v41fs-rc2-old-2334, droopy-v41-v41fs-ts1-0026, droopy-v41-v41fs-ts2-0127, odie-fnx-qfn-xestrata-xe0145-iq3s-step1-2000 UNKNOWN vram_peak/quality/conditions/cpu_reserve, droopy-v41-v41fs-ts3-hc-269a61a4, lassie-v41-q8-fs3s16 UNKNOWN placement, lassie-v41-q8-fs3fa0 UNKNOWN placement, lassie-v41-q8-fs3fa1 UNKNOWN placement, lassie-v41-q8-fs3ne8 UNKNOWN placement, lassie-v41-q8-fs3hyb UNKNOWN placement, lassie-v41-q8-fs3fa0c UNKNOWN placement, lassie-v41-q8-fs3hybc UNKNOWN placement, lassie-v41-q8-fs3dec UNKNOWN placement, lassie-v41-q8-fs3decp UNKNOWN placement, lassie-v41-q8-fs3hybcq UNKNOWN placement, lassie-v41-q8-fs3hybcr UNKNOWN placement, lassie-v41-q8-fs3decr UNKNOWN placement, droopy-v41-serve-seat-1022, snoopy-glm-seat-trim-c-64k)
 
 -- error trend per day (median |err| % (bias) of scored runs; gate counts; is the gap shrinking?) --
 bucket        runs launch | decode_tps               decode_tps_nodraft       prefill_tps              vram_post_gib            | gate TP/miss/FA/clean
@@ -601,13 +642,15 @@ bucket        runs launch | decode_tps               decode_tps_nodraft       pr
 2026-10-19      58     13 | n 32 7.9% (-0.1)         n 7 22.9% (-22.9)        n 1 5.8% (-5.8)          n 1 0.2% (-0.2)          | 2/5/2/49
 2026-10-20      29     18 | n 11 4.8% (-1.8)         n 6 8.5% (+6.5)          -                        -                        | 0/1/15/13
 2026-10-21      30     18 | n 21 25.9% (-19.4)       n 20 27.2% (-23.8)       n 1 21.0% (-21.0)        n 11 0.2% (-0.2)         | 0/5/0/25
-2026-10-22      11      2 | n 11 11.1% (-10.8)       n 9 8.2% (-7.1)          -                        n 2 0.4% (+0.4)          | 0/0/0/11
+2026-10-22      17      2 | n 16 10.9% (-7.5)        n 12 7.9% (-7.1)         -                        n 3 0.4% (+0.4)          | 0/1/0/16
+2026-10-23       3      0 | -                        -                        -                        -                        | 0/3/0/0
+2026-10-24       6      0 | -                        -                        -                        -                        | 0/6/0/0
 verdict, all rows:
-   decode_tps          NOT shrinking: 2026-10-17 8.1% n6 -> 2026-10-18 17.3% n1 -> 2026-10-19 7.9% n32 -> 2026-10-20 4.8% n11 -> 2026-10-21 25.9% n21 -> 2026-10-22 11.1% n11
-   decode_tps_nodraft  NOT shrinking: 2026-10-17 12.3% n3 -> 2026-10-18 2.1% n1 -> 2026-10-19 22.9% n7 -> 2026-10-20 8.5% n6 -> 2026-10-21 27.2% n20 -> 2026-10-22 8.2% n9
+   decode_tps          NOT shrinking: 2026-10-17 8.1% n6 -> 2026-10-18 17.3% n1 -> 2026-10-19 7.9% n32 -> 2026-10-20 4.8% n11 -> 2026-10-21 25.9% n21 -> 2026-10-22 10.9% n16
+   decode_tps_nodraft  NOT shrinking: 2026-10-17 12.3% n3 -> 2026-10-18 2.1% n1 -> 2026-10-19 22.9% n7 -> 2026-10-20 8.5% n6 -> 2026-10-21 27.2% n20 -> 2026-10-22 7.9% n12
    prefill_tps         NOT shrinking: 2026-10-17 0.6% n2 -> 2026-10-18 8.4% n1 -> 2026-10-19 5.8% n1 -> 2026-10-21 21.0% n1
-   vram_post_gib       NOT shrinking: 2026-10-17 0.0% n3 -> 2026-10-18 0.4% n1 -> 2026-10-19 0.2% n1 -> 2026-10-21 0.2% n11 -> 2026-10-22 0.4% n2
-   gate miss share     NOT shrinking: 2026-10-17 21.4% n14 -> 2026-10-18 10.0% n20 -> 2026-10-19 71.4% n7 -> 2026-10-20 100.0% n1 -> 2026-10-21 100.0% n5
+   vram_post_gib       NOT shrinking: 2026-10-17 0.0% n3 -> 2026-10-18 0.4% n1 -> 2026-10-19 0.2% n1 -> 2026-10-21 0.2% n11 -> 2026-10-22 0.4% n3
+   gate miss share     NOT shrinking: 2026-10-17 21.4% n14 -> 2026-10-18 10.0% n20 -> 2026-10-19 71.4% n7 -> 2026-10-20 100.0% n1 -> 2026-10-21 100.0% n5 -> 2026-10-22 100.0% n1 -> 2026-10-23 100.0% n3 -> 2026-10-24 100.0% n6
 verdict, launch-time predictions only (post-hoc rows are today's planner on old runs):
    decode_tps          NOT shrinking: 2026-10-18 17.3% n1 -> 2026-10-19 13.9% n3 -> 2026-10-20 4.4% n7 -> 2026-10-21 25.9% n13 -> 2026-10-22 28.6% n2
    decode_tps_nodraft  NOT shrinking: 2026-10-18 2.1% n1 -> 2026-10-19 19.8% n6 -> 2026-10-20 8.5% n4 -> 2026-10-21 27.2% n14
@@ -617,22 +660,22 @@ verdict, launch-time predictions only (post-hoc rows are today's planner on old 
 per box / model / engine (all rows):
    decode_tps          droopy/glm/ik          NOT shrinking: 2026-10-18 n1 17.3% (+17.3) -> 2026-10-19 n1 13.9% (-13.9) -> 2026-10-20 n2 19.2% (-19.2)
    decode_tps          droopy/orn122/ik       too few buckets (1): 2026-10-20 n1 1.3% (+1.3)
-   decode_tps          droopy/v41/ik          NOT shrinking: 2026-10-17 n5 8.6% (+6.1) -> 2026-10-19 n1 20.6% (-20.6) -> 2026-10-20 n1 14.9% (-14.9) -> 2026-10-21 n11 25.9% (-25.9) -> 2026-10-22 n2 28.6% (-28.6)
+   decode_tps          droopy/v41/ik          NOT shrinking: 2026-10-17 n5 8.6% (+6.1) -> 2026-10-19 n1 20.6% (-20.6) -> 2026-10-20 n1 14.9% (-14.9) -> 2026-10-21 n11 25.9% (-25.9) -> 2026-10-22 n3 28.7% (-28.7)
    decode_tps          lassie/llada22flash/llama-dllm-gen too few buckets (1): 2026-10-19 n2 14.5% (-14.5)
    decode_tps          lassie/orn35/ik        too few buckets (1): 2026-10-21 n4 16.1% (+16.1)
-   decode_tps          lassie/v41/ik          shrinking: 2026-10-20 n4 18.7% (+18.7) -> 2026-10-21 n6 24.5% (+24.5) -> 2026-10-22 n9 10.8% (-4.2)
+   decode_tps          lassie/v41/ik          shrinking: 2026-10-20 n4 18.7% (+18.7) -> 2026-10-21 n6 24.5% (+24.5) -> 2026-10-22 n12 7.5% (-3.9)
    decode_tps          odie/lingmini2/llama-dllm-gen too few buckets (1): 2026-10-19 n2 43.8% (+43.8)
    decode_tps          odie/llada21mini/llama-dllm-gen too few buckets (1): 2026-10-19 n15 4.1% (-1.5)
    decode_tps          odie/llada21mini_q5km/llama-dllm-gen too few buckets (1): 2026-10-19 n3 1.6% (+0.0)
    decode_tps          odie/llada22flash/llama-dllm-gen too few buckets (1): 2026-10-19 n4 4.8% (+4.8)
-   decode_tps          snoopy/glm/glmlite     NOT shrinking: 2026-10-17 n1 0.2% (+0.2) -> 2026-10-19 n4 2.5% (+0.9) -> 2026-10-20 n3 3.2% (-3.2)
+   decode_tps          snoopy/glm/glmlite     NOT shrinking: 2026-10-17 n1 0.2% (+0.2) -> 2026-10-19 n4 2.5% (+0.9) -> 2026-10-20 n3 3.2% (-3.2) -> 2026-10-22 n1 1.2% (-1.2)
    decode_tps_nodraft  droopy/glm/ik          NOT shrinking: 2026-10-18 n1 2.1% (+2.1) -> 2026-10-19 n6 19.8% (-19.8) -> 2026-10-20 n1 44.1% (-44.1)
    decode_tps_nodraft  droopy/orn122/ik       too few buckets (1): 2026-10-20 n1 0.4% (-0.4)
    decode_tps_nodraft  droopy/v41/ik          NOT shrinking: 2026-10-17 n3 12.3% (+12.3) -> 2026-10-19 n1 22.9% (-22.9) -> 2026-10-21 n11 27.4% (-27.4)
    decode_tps_nodraft  lassie/orn35/ik        too few buckets (1): 2026-10-21 n4 9.7% (-9.7)
-   decode_tps_nodraft  lassie/v41/ik          shrinking: 2026-10-20 n4 8.5% (+8.5) -> 2026-10-21 n5 31.7% (+31.7) -> 2026-10-22 n9 8.2% (-7.1)
+   decode_tps_nodraft  lassie/v41/ik          shrinking: 2026-10-20 n4 8.5% (+8.5) -> 2026-10-21 n5 31.7% (+31.7) -> 2026-10-22 n12 7.9% (-7.1)
    prefill_tps         droopy/glm/ik          too few buckets (1): 2026-10-18 n1 8.4% (+8.4)
    prefill_tps         droopy/v41/ik          NOT shrinking: 2026-10-17 n2 0.6% (-0.6) -> 2026-10-19 n1 5.8% (-5.8) -> 2026-10-21 n1 21.0% (-21.0)
    vram_post_gib       droopy/glm/ik          too few buckets (1): 2026-10-18 n1 0.4% (+0.4)
-   vram_post_gib       droopy/v41/ik          NOT shrinking: 2026-10-17 n3 0.0% (+0.0) -> 2026-10-19 n1 0.2% (-0.2) -> 2026-10-21 n11 0.2% (-0.2) -> 2026-10-22 n2 0.4% (+0.4)
+   vram_post_gib       droopy/v41/ik          NOT shrinking: 2026-10-17 n3 0.0% (+0.0) -> 2026-10-19 n1 0.2% (-0.2) -> 2026-10-21 n11 0.2% (-0.2) -> 2026-10-22 n3 0.4% (+0.4)
 ```

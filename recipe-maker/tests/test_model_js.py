@@ -10,6 +10,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class ModelJs(unittest.TestCase):
     @unittest.skipUnless(shutil.which('node'), 'node not installed')
+    def test_network_js(self):
+        p = subprocess.run(['node', os.path.join('tests', 'test_network.js')], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stdout[-6000:] + p.stderr[-6000:])
+        self.assertRegex(p.stdout, r'\d+ tests passed')
+
+    @unittest.skipUnless(shutil.which('node'), 'node not installed')
     def test_accuracy_js(self):
         p = subprocess.run(['node', os.path.join('tests', 'test_accuracy.js')], cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stdout[-3000:] + p.stderr[-3000:])

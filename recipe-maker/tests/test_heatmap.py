@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -164,7 +165,7 @@ class RepoMaps(unittest.TestCase):
     HEAT = os.path.join(ROOT, 'data', 'heat')
 
     def test_every_file_validates(self):
-        files = [f for f in os.listdir(self.HEAT) if f.endswith('.json')]
+        files = [f for f in os.listdir(self.HEAT) if f.endswith(('.json', '.json.gz'))]
         self.assertGreaterEqual(len(files), 9)
         self.assertEqual(HM.main(['validate'] + [os.path.join(self.HEAT, f) for f in files]), 0)
 
@@ -197,12 +198,124 @@ class RepoMaps(unittest.TestCase):
                 self.assertEqual(s['cites']['digest'], maps[s['cites']['map_id']]['digest'], f)
 
 
+class SkewEvidence(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.maps = HM.load_dir(os.path.join(ROOT, 'data', 'heat'))
+        cls.specs = HM.jload(os.path.join(ROOT, 'tools', 'heat_sources.json'))['skew']
+
+    def test_fixed_workload_summaries_and_identities(self):
+        for spec, expected in zip(self.specs, [(3456, 0.3782, 0.6266), (480, 0.5258, 0.7558)]):
+            if spec['map_id'] not in self.maps:  # public copy omits the compressed K3 map
+                continue
+            e = HM.skew_evidence(self.maps, spec)
+            m = self.maps[spec['map_id']]
+            self.assertEqual(e['map'], HM.cite(m, spec['slice']))
+            self.assertEqual(e['status'], 'MEASURED')
+            self.assertEqual(e['phase'], 'decode')
+            self.assertEqual((e['tokens'], e['top10_cover'], e['top25_cover']), expected)
+            self.assertEqual(e['prompt_set_sha256'], m['workload']['prompt_set_sha256'])
+            self.assertNotIn('counts', json.dumps(e))
+            self.assertNotIn('converted_from', e)
+        glm, k3 = self.specs
+        self.assertEqual((glm['prompts'], glm['planned_prompts'], glm['preliminary']), (72, 72, False))
+        self.assertEqual((k3['prompts'], k3['planned_prompts'], k3['preliminary']), (10, 72, True))
+        self.assertIn('Small sample inflates coverage', k3['warning'])
+        self.assertIn('all capture timings are invalid', glm['warning'])
+
+    def test_compressed_map_is_used_without_inventing_a_fit_model(self):
+        spec = self.specs[1]
+        path = os.path.join(ROOT, 'data', 'heat', spec['map_id'] + '.heatmap.json.gz')
+        if not os.path.exists(path):
+            self.skipTest('public copy omits compressed captures')
+        m = HM.load(path)
+        e = HM.skew_evidence(self.maps, spec)
+        self.assertEqual(e['map']['digest'], m['digest'])
+        self.assertEqual(e['top25_cover'], m['summary']['decode']['top25_cover'])
+        self.assertIsNone(e['model'], 'K3 is routing evidence, not a complete planner model')
+        self.assertTrue(e['preliminary'])
+
+    def test_missing_map_or_slice_is_unknown_not_zero(self):
+        for maps, spec in (({}, self.specs[1]), (self.maps, dict(self.specs[0], slice='absent'))):
+            e = HM.skew_evidence(maps, spec)
+            self.assertEqual(e['status'], 'UNKNOWN')
+            self.assertIsNone(e['top10_cover'])
+            self.assertIsNone(e['top25_cover'])
+            self.assertIsNone(e['map'])
+            self.assertIn('not available', e['reason'])
+        self.assertTrue(HM.skew_evidence({}, self.specs[1])['preliminary'])
+
+    def test_empty_slice_is_unknown_and_tampered_summary_refuses(self):
+        m = HM.build_map('from-imatrix-tsv', tmpfile(self, 'empty.tsv', 'blk.0.ffn_up_exps.weight\t0\t0\n'), META)
+        spec = dict(self.specs[0], map_id=m['id'], slice='prefill')
+        e = HM.skew_evidence({m['id']: m}, spec)
+        self.assertEqual(e['status'], 'UNKNOWN')
+        self.assertIsNone(e['top10_cover'])
+        self.assertIn('no expert selections', e['reason'])
+        m['summary']['prefill']['top10_cover'] = 1.0
+        with self.assertRaisesRegex(HM.MapError, 'summary does not match'):
+            HM.skew_evidence({m['id']: m}, spec)
+
+    @unittest.skipUnless(shutil.which('node'), 'node not installed')
+    def test_actual_table_renderer_unknowns_samples_and_download(self):
+        # Exercise the real table functions with small curve/run fixtures, not a second browser installation.
+        evidence = [HM.skew_evidence(self.maps, s) for s in self.specs]
+        js = r'''
+const assert = require('assert'), fs = require('fs');
+const FM = require('./src/model.js');
+const data = {routing_skew: JSON.parse(process.argv[1]), models: {glm: {short: 'GLM'}, other: {short: 'Other'}}};
+const src = fs.readFileSync('src/app.js', 'utf8');
+const start = src.indexOf('  function skewHTML('), end = src.indexOf('  function calHTML(', start);
+assert.ok(start >= 0 && end > start);
+const esc = x => String(x).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ev = {tokps: 21, quality: 98, kld: .01};
+const R = {curves: [{mk:'glm', eng:'ik', pts:[ev], b20:{ev}, b25:{ev}}, {mk:'other', eng:'ik', pts:[ev]}]};
+const render = new Function('data', 'FM', 'R', 'esc', 'tagChip', 'engShort', 'envelope', 'f2', 'measuredHere', 'armText', 'condText',
+  src.slice(start, end) + '; return {table: frontierTable(), cell: skewHTML};');
+const f = render(data, FM, R, esc, () => '', x => x, x => x, x => x.toFixed(2),
+  () => [{label:'run', model:'glm', id:'r', meas:20, pred:21, quality:98, gap:.05, conds:[]}], () => 'clean', () => '');
+assert.match(f.table, /Expert skew \(fixed workload\)/);
+assert.match(f.table, /37\.82%/); assert.match(f.table, /62\.66%/);
+assert.match(f.table, /72 of 72 prompts captured/); assert.match(f.table, /10 of 72 prompts captured/);
+assert.match(f.table, /PRELIMINARY/); assert.match(f.table, /Small sample inflates coverage/);
+assert.match(f.table, /fixed workload routing only; no fit prediction/);
+assert.match(f.table, /3456 tokens per layer/);
+assert.ok(f.table.includes(data.routing_skew[0].map.digest));
+for (const row of f.table.matchAll(/<tr>(.*?)<\/tr>/gs)) {
+  assert.strictEqual((row[1].match(/<t[dh](?:\s|>)/g) || []).length, 6, row[1]);
+}
+assert.match(f.cell(null), /UNKNOWN/);
+const missing = {...data.routing_skew[1], status:'UNKNOWN', top10_cover:null, top25_cover:null, map:null, tokens:null};
+assert.match(f.cell(missing), /UNKNOWN/); assert.ok(!f.cell(missing).includes('0.00%'));
+assert.match(f.cell({...missing, warning:'<unsafe>'}), /&lt;unsafe&gt;/);
+if (data.routing_skew[1].status === 'MEASURED') assert.match(f.table, /52\.58%.*75\.58%/s);
+assert.strictEqual(FM.routingSkew(data, 'other'), null);
+const m = {name:'toy', L:1, E:1, heat:{sets:{decode:{map:{map_id:'toy',digest:'sha256:toy',slice:'decode'}}}}};
+const ctx = {data, mk:'glm', m, bk:'box', eng:'ik', planName:'decode', scoreName:'decode', kn:{},
+  tiers:[{id:'dram',name:'DRAM',cap:FM.GiB}], types:['q8_0']};
+const out = FM.exportMap(ctx, {tier:[0],type:[0]}, ev);
+assert.deepStrictEqual(out.routing_skew, data.routing_skew[0]);
+assert.deepStrictEqual(out.heat_maps, {plan:[m.heat.sets.decode.map],score:[m.heat.sets.decode.map]});
+assert.strictEqual(FM.exportMap({...ctx,mk:'other'}, {tier:[0],type:[0]}, ev).routing_skew, null);
+'''
+        p = subprocess.run(['node', '-e', js, json.dumps(evidence)], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+
 class Planner(unittest.TestCase):
     """data.json (python3 build.py) carries the map citation on every measured heat set"""
     @unittest.skipUnless(os.path.exists(os.path.join(ROOT, 'data.json')), 'data.json not built')
     def test_heat_sets_cite_maps(self):
         data = HM.jload(os.path.join(ROOT, 'data.json'))
         maps = HM.load_dir(os.path.join(ROOT, 'data', 'heat'))
+        specs = HM.jload(os.path.join(ROOT, 'tools', 'heat_sources.json'))['skew']
+        expected = [HM.skew_evidence(maps, s) for s in specs]
+        self.assertEqual(len(data['routing_skew']), len(expected))
+        for got, want in zip(data['routing_skew'], expected):
+            self.assertEqual({k: got[k] for k in want}, want)
+            if want['status'] == 'MEASURED':
+                self.assertEqual(got['evidence'], 'seen', 'the build stamps its normal evidence class')
+        self.assertNotIn('kimi-k3', data['models'])
         for mk in ('v41', 'glm'):
             for name, s in data['models'][mk]['heat']['sets'].items():
                 if 'sum' in s:

@@ -1184,6 +1184,7 @@
         rows.map(x => x.name + ' ' + x.post_gib.toFixed(2) + ' of ' + x.total_gib.toFixed(2) + ' (banks ' + x.banks_gib + ')').join('; ') + '; judged on ' + worst.name };
   }
   function checkRecipe(data, r, resolve, opts) {
+    if (r && r.kind === 'network') return networkCheck(data, r);
     if (r && r.kind === 'dllm') return dllmCheck(data, r);
     const inp = [], notes = [];
     const box = data.boxes[r.box], m = data.models[r.model], E = data.engines[r.engine];
@@ -1209,6 +1210,9 @@
       if (r.threads > v(box.cpu.threads)) inp.push(['FAIL', 'threads ' + r.threads + ' > ' + v(box.cpu.threads) + ' CPUs on ' + r.box]);
       else if (r.threads > v(box.cpu.phys)) notes.push('threads ' + r.threads + ' > ' + v(box.cpu.phys) + ' physical cores: SMT siblings in use (' + box.threads_note + ')');
     }
+    const sv = servingOf(data, r);
+    if (sv) sv.bad.forEach(x => inp.push(['FAIL', x]));
+    else if (r.serving) inp.push(['UNKNOWN', 'recipe.serving given, but engine ' + r.engine + ' has no serving model (engines.' + r.engine + '.serving): not judged']);
     // heat: the sets the recipe plans on must exist; a cited hot-expert map digest must match the data's map, so a recipe
     // planned on other counts than the data now holds refuses instead of predicting from the wrong heat
     const hs = r.heat || {};
@@ -1277,6 +1281,10 @@
     const checks = [{ id: 'inputs', label: 'recipe inputs (box, engine, types, row limits, threads)', status: worst, detail: inp.length ? inp.map(x => x[0] + ': ' + x[1]).join('; ') : 'consistent' }].concat(runChecks(data, facts));
     checks.push(conditionsCheck(data, r, kn.draft));
     checks.push(cpuReserveCheck(data, r));
+    const kvh = kvHostCheck(data, r);
+    if (kvh) checks.push(kvh);
+    const hp = hostPinnedCheck(data, r);
+    if (hp) checks.push(hp);
     const prediction = opts && opts.predict === false ? null : predictFirst || predictRecipe(data, r);
     if (prediction && prediction.ram_overflow_gib) checks.push({ id: 'ram_fit', label: 'loaded (pinned) experts fit DRAM', status: 'FAIL', detail: prediction.why });
     // host memory: the SYCL pinned host buffer is driver memory (GPUActive); the container memcg does not hold it (MEASURED odie
@@ -1322,6 +1330,105 @@
     if (miss.length) return out('UNKNOWN', 'not declared (as a number) in recipe.conditions: ' + miss.join(', ') + ' (' + resWhy + ' of ' + cpus + ' CPUs' + (thr !== null ? '; recipe threads ' + thr : '') + ')');
     return out('PASS', 'threads ' + thr + ' + cpu_reserve ' + dec + ' of ' + cpus + ' CPUs (' + resWhy + ')');
   }
+  // the serving fields of a recipe (recipe.serving: max_context, batch, batch_groups, slot_context, big_slots, kv_resident, kv,
+  // batch_mtp, mtp_window), each the engine's own default (engines.<engine>.serving.defaults) when left out; max_context
+  // falls back to the recipe ctx. null when the engine has no serving model. bad = fields the engine would not take
+  function servingOf(data, r) {
+    const S = (data.engines[r.engine] || {}).serving;
+    if (!S) return null;
+    const s = r.serving || {}, D = S.defaults, bad = [];
+    const out = Object.fromEntries(Object.keys(D).map(k => [k, s[k] !== undefined && s[k] !== null ? s[k] : v(D[k])]));
+    if (s.max_context === undefined || s.max_context === null) out.max_context = r.ctx !== undefined ? firstInt(r.ctx) : v(D.max_context);
+    else if (r.ctx !== undefined && firstInt(r.ctx) !== s.max_context) bad.push('serving.max_context ' + s.max_context + ' != ctx ' + r.ctx);
+    ['max_context', 'batch', 'batch_groups', 'slot_context', 'big_slots', 'kv_resident', 'mtp_window'].forEach(k => { if (!Number.isInteger(out[k]) || out[k] < 0) bad.push('serving.' + k + ' ' + JSON.stringify(out[k]) + ' is not a whole number >= 0'); });
+    if (out.batch_mtp === null) out.batch_mtp = !!r.draft;
+    Object.keys(s).filter(k => !(k in D) && ['kv_host_reserve_gib', 'mem_available_gib', 'mem_available_src', 'host_reserve_gib', 'host_experts_gib'].indexOf(k) < 0).forEach(k => bad.push('serving.' + k + ' is not a serving field (' + Object.keys(D).join(', ') + ')'));
+    return { s: out, S, bad };
+  }
+  // KV streaming pins a host copy of each session's whole KV capacity (XeStrata --kv-resident), never reclaimed. Sessions: the
+  // main one (always --max-context: every prompt is read there), the first big_slots batch slots at --max-context, the rest
+  // at --slot-context; a drafter per session that drafts (the main one with a draft, every slot with batch_mtp) copies its
+  // own layer while its window is shorter than its context. Pinned ~= bytes_per_cell x (max_context x (1 + K) + slot_context
+  // x (batch - K)); the engine refuses to start when that would leave under STRATA_KV_HOST_RESERVE_GIB of MemAvailable
+  function kvHostPlan(data, r) {
+    const sv = servingOf(data, r), m = data.models[r.model], K = m && m.kv_host;
+    if (!sv || !K) return { sv, why: !sv ? null : 'models.' + r.model + '.kv_host not given (layers, bytes per cell)' };
+    const { s, S } = sv, page = v(S.page_cells), round = c => Math.ceil(c / page) * page;
+    const bpc = K.bytes_per_cell_layer[s.kv], dfmt = v(K.draft_format)[s.kv] || s.kv, dpc = K.bytes_per_cell_layer[dfmt];
+    if (!bpc || !dpc) return { sv, why: '--kv ' + s.kv + ' has no bytes per cell in models.' + r.model + '.kv_host (' + Object.keys(K.bytes_per_cell_layer).join(', ') + ')' };
+    const slot = b => s.slot_context > 0 && b >= s.big_slots ? Math.min(s.slot_context, s.max_context) : s.max_context;
+    // main sessions: one per row group when the engine keeps one a group (engines.<engine>.serving.main_session_per_group)
+    const mains = s.batch > 0 && S.main_session_per_group && v(S.main_session_per_group) ? Math.max(1, s.batch_groups) : 1;
+    const cells = Array(mains).fill(s.max_context).concat(Array.from({ length: s.batch }, (_, b) => slot(b))).map(round);
+    const over = S.copy_overhead_mib ? v(S.copy_overhead_mib) * 2 ** 20 : 0;
+    const ring = round(Math.max(s.kv_resident, v(S.kv_resident_min)));
+    const streamed = c => s.kv_resident > 0 && ring < c;
+    const drafts = cells.map((c, i) => (i === 0 ? !!r.draft : s.batch_mtp) && s.kv_resident > 0 && s.mtp_window > 0 && s.mtp_window < c);
+    // each streamed session pins one host copy per full-attention layer (its drafter one per draft layer), each copy its cells
+    // plus the engine's per-copy overhead
+    const main = cells.reduce((a, c) => a + (streamed(c) ? c * v(bpc) + over : 0), 0) * v(K.layers) / GiB;
+    const draft = cells.reduce((a, c, i) => a + (drafts[i] ? c * v(dpc) + over : 0), 0) * v(K.draft_layers) / GiB;
+    const ringGiB = cells.reduce((a, c) => a + Math.min(c, ring), 0) * v(K.layers) * v(bpc) / GiB;
+    const copies = cells.filter(streamed).length * v(K.layers) + drafts.filter(Boolean).length * v(K.draft_layers);
+    return { sv, cells, mains, ring, streamed: cells.filter(streamed).length, copies, overhead_mib: over / 2 ** 20, main_gib: main, draft_gib: draft, pinned_gib: main + draft, vram_ring_gib: ringGiB, bpc: v(bpc), layers: v(K.layers) };
+  }
+  function kvHostCheck(data, r) {
+    const C = data.checks.kv_host, p = kvHostPlan(data, r), box = data.boxes[r.box];
+    if (!p.sv) return null;
+    const out = (status, detail) => ({ id: 'kv_host', label: C.label, status, detail, pred: p.pinned_gib === undefined ? null : { pinned_gib: p.pinned_gib, main_gib: p.main_gib, draft_gib: p.draft_gib, vram_ring_gib: p.vram_ring_gib } });
+    const s = p.sv.s, sr = r.serving || {};
+    if (p.why) return out('UNKNOWN', p.why);
+    const shape = (s.batch ? 'main + ' + s.batch + ' slots' + (s.slot_context > 0 && s.batch > s.big_slots ? ' (' + Math.min(s.big_slots, s.batch) + ' at ' + s.max_context + ', ' + (s.batch - s.big_slots) + ' at ' + Math.min(s.slot_context, s.max_context) + ')' : ' at ' + s.max_context) : 'the main session at ' + s.max_context) + ' cells, --kv ' + s.kv;
+    if (!p.streamed) return out('PASS', 'no pinned host copy: ' + (s.kv_resident > 0 ? 'every session fits its VRAM ring of ' + p.ring + ' cells' : 'kv_resident 0 keeps every cell in VRAM') + ' (' + shape + ')');
+    const own = sr.kv_host_reserve_gib !== undefined, res = own ? sr.kv_host_reserve_gib : v(C.reserve_gib);
+    const dram = box && box.dram, decl = sr.mem_available_gib !== undefined;
+    const avail = decl ? sr.mem_available_gib : dram && dram.host_floor_gib ? v(dram.total_gib) - v(dram.host_floor_gib) : null;
+    const how = p.layers + ' layers x ' + p.bpc + ' B/cell = ' + (p.main_gib).toFixed(2) + ' GiB' + (p.draft_gib ? ' + drafter copies ' + p.draft_gib.toFixed(2) : '') + ' pinned for ' + shape + ', ' + p.streamed + ' sessions streamed; VRAM rings ' + p.vram_ring_gib.toFixed(2) + ' GiB (' + p.ring + ' cells each)';
+    const resWhy = 'reserve ' + res + ' GiB (' + (own ? 'serving.kv_host_reserve_gib' : 'checks.kv_host.reserve_gib, the engine default') + ')';
+    if (avail === null) return out('UNKNOWN', how + '; no MemAvailable figure: give serving.mem_available_gib (box ' + r.box + ' has no dram.host_floor_gib); ' + resWhy);
+    const left = avail - p.pinned_gib, availWhy = decl ? 'serving.mem_available_gib ' + avail + (sr.mem_available_src ? ' (' + sr.mem_available_src + ')' : '') : 'MemAvailable ' + avail.toFixed(1) + ' GiB ESTIMATE (' + v(C.available_basis) + ': ' + v(dram.total_gib) + ' - ' + v(dram.host_floor_gib) + ')';
+    return out(left < res ? 'FAIL' : 'PASS', how + '; ' + availWhy + ' leaves ' + left.toFixed(1) + ' GiB against the ' + resWhy + (left < res ? ': the engine refuses to start (' + v(C.event) + ')' : ''));
+  }
+  // every host-pinned buffer of a serving engine: the KV host copies (kvHostPlan) plus the per model/engine terms of
+  // checks.host_pinned (expert complement, the stage-lend duplicate of a layer split unless serving.stage_lend_drop, prefill
+  // staging, prompt hand-off, embeddings, the rest). The driver's GTT sits outside every cgroup and the OOM killer, so it must fit
+  // under DRAM total - household floor - pinned margin by itself
+  function hostPinnedPlan(data, r) {
+    const C = data.checks.host_pinned, kv = kvHostPlan(data, r), T = C && C.terms[r.model + '/' + r.engine];
+    // a recipe without a serving block (a ledger row of an older layout) is not judged: its host buffers are other terms
+    if (!kv.sv || !r.serving) return null;
+    if (kv.why || !T) return { kv, why: kv.why || 'checks.host_pinned.terms has no ' + r.model + '/' + r.engine + ' entry (the engine\'s host-pinned buffers besides the KV copies)' };
+    const s = kv.sv.s, sr = r.serving || {}, banks = ((r.gpu_split || {}).banks_gib || []).length;
+    const lend = banks > 1 && !s.stage_lend_drop ? v(T.stage_lend_gib) : 0;
+    const terms = [
+      { id: 'kv_copies', gib: kv.pinned_gib, why: kv.copies + ' KV host copies (' + kv.mains + ' main session' + (kv.mains > 1 ? 's' : '') + ' + slots, ' + kv.layers + ' layers each, drafters apart) + ' + kv.overhead_mib + ' MiB a copy' },
+      { id: 'experts_offgpu', gib: sr.host_experts_gib !== undefined ? sr.host_experts_gib : v(T.experts_offgpu_gib), why: sr.host_experts_gib !== undefined ? 'serving.host_experts_gib' : T.experts_offgpu_gib.tag },
+      { id: 'stage_lend', gib: lend, why: banks > 1 ? (s.stage_lend_drop ? 'dropped (serving.stage_lend_drop)' : T.stage_lend_gib.tag + '; serving.stage_lend_drop removes it') : 'no layer split' },
+    ].concat(['prefill_staging_gib', 'prompt_handoff_gib', 'embeddings_gib', 'misc_gib'].filter(k => T[k]).map(k => ({ id: k.replace(/_gib$/, ''), gib: v(T[k]), why: T[k].tag })));
+    return { kv, terms, pinned_gib: terms.reduce((a, x) => a + x.gib, 0) };
+  }
+  function hostPinnedBudget(data, r) {
+    const dram = (data.boxes[r.box] || {}).dram, sr = r.serving || {}, C = data.checks.host_pinned;
+    const own = sr.host_reserve_gib !== undefined, floor = dram && dram.host_floor_gib ? v(dram.host_floor_gib) : null;
+    const margin = dram && dram.pinned_margin_gib ? v(dram.pinned_margin_gib) : C ? v(C.default_margin_gib) : null;
+    const reserve = own ? sr.host_reserve_gib : floor !== null && margin !== null ? floor + margin : null;
+    return { own, floor, margin, reserve_gib: reserve, ceiling_gib: dram && reserve !== null ? v(dram.total_gib) - reserve : null };
+  }
+  function hostPinnedCheck(data, r) {
+    const C = data.checks.host_pinned, p = C ? hostPinnedPlan(data, r) : null, box = data.boxes[r.box];
+    if (!p) return null;
+    const out = (status, detail) => ({ id: 'host_pinned', label: C.label, status, detail, pred: p.pinned_gib === undefined ? null : { pinned_gib: p.pinned_gib, terms: Object.fromEntries(p.terms.map(x => [x.id, x.gib])) } });
+    if (p.why) return out('UNKNOWN', p.why);
+    const sr = r.serving || {}, dram = box && box.dram, list = p.terms.filter(x => x.gib > 0).map(x => x.id + ' ' + x.gib.toFixed(2) + ' (' + x.why + ')').join(' + ');
+    const budget = hostPinnedBudget(data, r), { own, floor, margin } = budget;
+    if (!own && floor === null) return out('UNKNOWN', 'pinned ' + p.pinned_gib.toFixed(2) + ' GiB = ' + list + '; box ' + r.box + ' has no dram.host_floor_gib: give serving.host_reserve_gib');
+    const res = budget.reserve_gib, top = budget.ceiling_gib;
+    const resWhy = own ? 'serving.host_reserve_gib ' + res : '(household floor ' + floor + ' + pinned margin ' + margin + (dram.pinned_margin_gib ? '' : ', checks.host_pinned.default_margin_gib') + ')';
+    const seen = sr.mem_available_gib !== undefined ? '; declared MemAvailable ' + sr.mem_available_gib + ' GiB' + (sr.mem_available_src ? ' (' + sr.mem_available_src + ')' : '') + ' means ' + (v(dram.total_gib) - p.pinned_gib - sr.mem_available_gib).toFixed(1) + ' GiB of other host use beside the pinned set' : '';
+    const fail = p.pinned_gib > top;
+    return out(fail ? 'FAIL' : 'PASS', 'pinned ' + p.pinned_gib.toFixed(2) + ' GiB = ' + list + '; ceiling ' + top.toFixed(1) + ' GiB (' + v(dram.total_gib) + ' total - ' + resWhy + ')' + seen +
+      (fail ? ': over by ' + (p.pinned_gib - top).toFixed(1) + ' GiB (' + v(C.event) + '); levers: serving.slot_context near the VRAM ring with serving.big_slots, serving.stage_lend_drop' : ''));
+  }
   function checksFor(ctx, lay, ev) { return runChecks(ctx.data, layoutFacts(ctx, lay, ev || evaluate(ctx, lay))); }
   // rows of data.recipes: a run-ledger row ({recipe, observed}) is checked through checkRecipe, then the run's own observations
   // (node MemFree, measured KL) overlay the prediction; legacy fact rows go straight to runChecks
@@ -1329,7 +1436,7 @@
     return (data.recipes || []).map(r => {
       if (!r.recipe) return Object.assign({}, r, { checks: runChecks(data, r) });
       const res = checkRecipe(data, r.recipe, null, { predict: false });
-      if (res.bad_input || r.recipe.kind === 'dllm') return Object.assign({}, r, { checks: res.checks });
+      if (res.bad_input || ['dllm', 'network'].includes(r.recipe.kind)) return Object.assign({}, r, { checks: res.checks });
       const o = r.observed || {};
       const f = Object.assign({}, res.facts, { numa: Object.assign({}, res.facts.numa || {}, o.numa || {}) });
       if (o.decode_kl !== undefined && o.decode_kl !== null) f.decode_kl = o.decode_kl;
@@ -1736,6 +1843,735 @@
     return { checks, facts: { box: r.box, model: r.model, kind: 'dllm' }, notes: [], bad_input: false, prediction: predictDllm(data, r) };
   }
 
+  // ---------- batched decode: N concurrent streams of one model (data.batch, build.py) ----------
+  // One step serves N rows. Its bytes: non-expert weights once, the distinct experts the step's positions touch (read once),
+  // and per row the DeltaNet state (read + written) and the attention reads at the row's depth. Cache misses and KV streamed
+  // from pinned RAM cross the miss link. kernel = fixed ms + ms per position (generic). step = max(bandwidth, kernel) with the
+  // misses inside the bandwidth term (overlap) or added after it (serial). batchFit() fits the free constants from data.batch.rows
+  const batchDistinct = (E, k, P) => E * (1 - Math.pow(1 - k / E, P));
+  // the bytes of one expert and of the non-expert weights for a config (the measured store, or the config's own bpw)
+  function batchWeights(B, c) {
+    if (!c.expert_bpw) return { ex: v(B.experts_gib) * GiB / (B.L * B.E), ne: v(B.nonexpert_gib) * GiB, all: (v(B.experts_gib) + v(B.nonexpert_gib)) * GiB };
+    const ex = B.P * v(c.expert_bpw) / 8, ne = v(B.nonexpert_bf16_gib) * GiB * v(c.nonexpert_bpw) / v(B.bf16_bpw);
+    return { ex, ne, all: ex * B.L * B.E + ne };
+  }
+  // VRAM per row (GiB) when its KV is allocated for `ctx` tokens, `stream` keeping only the newest `window` in VRAM
+  const batchRowGiB = (B, ctx, stream, window) => (v(B.state_mib_per_row) * 2 ** 20 + (stream ? Math.min(ctx, window) : ctx) * v(B.kv_bytes_per_token)) / GiB;
+  // VRAM the rows may take without touching the weights: null for the cache layout (rows take it from the expert cache)
+  function batchFreeGiB(B, c) {
+    if (c.layout === 'split') return v(B.vram_free_split_gib);
+    if (c.layout === 'tp') return c.cards * (v(B.card_vram_gib) - v(c.overhead_gib)) - batchWeights(B, c).all / GiB;
+    return null;
+  }
+  // one step. s = {c: config, N, depth, ctx, window, K: {fixed, row}, F: {miss1, churn, mpg, tau}, mode, m: miss-share override}
+  function batchStep(data, s) {
+    const B = data.batch, c = s.c, N = s.N, L = B.L, W = batchWeights(B, c);
+    const mtp = c.mtp && N <= v(B.mtp_rows_max), P = mtp ? v(B.mtp_verify_positions) : N;
+    // auto: KV stays in VRAM while N rows fit the free VRAM; past that each row keeps the newest tokens the free VRAM holds
+    // (VRAM first, the rest in pinned RAM), never fewer than none
+    const free = batchFreeGiB(B, c), fullGiB = batchRowGiB(B, s.ctx, false, null);
+    const fill = free === null ? null : Math.max(0, Math.floor((free * GiB / N - v(B.state_mib_per_row) * 2 ** 20) / v(B.kv_bytes_per_token)));
+    const window = c.kv === 'auto' ? fill : s.window === undefined ? v(B.kv_resident_tokens) : s.window;
+    const stream = window !== null && (c.kv === 'stream' || (c.kv === 'auto' && N * fullGiB > free));
+    const rowGiB = batchRowGiB(B, s.ctx, stream, window);
+    const m = c.layout !== 'cache' ? 0 : s.m !== undefined ? s.m : Math.min(1, s.F.miss1 + s.F.churn * (N - 1) + s.F.mpg * (N - 1) * rowGiB);
+    const att = Math.min(s.depth, v(B.attn_budget_tokens)) * v(B.kv_bytes_per_token) + s.depth * v(B.index_bytes_per_token);
+    const far = stream && s.depth > window ? (s.depth - window) / s.depth : 0, state = v(B.state_mib_per_row) * 2 ** 20;
+    const touched = L * batchDistinct(B.E, B.k, P);
+    const vram = W.ne + touched * W.ex * (1 - m) + N * (2 * state + att * (1 - far));
+    const link = touched * W.ex * m + N * att * far;
+    const lanes = c.layout === 'tp' ? c.cards : 1;
+    const bw_ms = vram / (lanes * v(B.card_bw_gbs) * 1e9) * 1000, link_ms = link / (lanes * v(B.miss_gbs) * 1e9) * 1000;
+    const sync = c.layout === 'split' ? v(B.split_hop_ms) : c.layout === 'tp' ? L * v(c.sync_ms_per_layer) : 0;
+    const kernel_ms = s.K.fixed + s.K.row * P + sync;
+    const serial = s.mode === 'serial', side = serial ? bw_ms : bw_ms + link_ms;
+    const ms = Math.max(kernel_ms, side) + (serial ? link_ms : 0);
+    const binding = kernel_ms >= side ? 'kernel' + (serial && link_ms > 0 ? ' + misses' : '') : (!serial && link_ms > bw_ms ? 'PCIe (misses / streamed KV)' : 'VRAM bandwidth' + (serial && link_ms > 0 ? ' + misses' : ''));
+    const tokens = mtp ? s.F.tau : N, total = tokens * 1000 / ms;
+    const ram = (c.layout === 'cache' ? v(B.experts_gib) - v(B.cache_gib_one) : 0) + (stream ? N * Math.max(0, s.ctx - window) * v(B.kv_bytes_per_token) / GiB : 0);
+    return { N, positions: P, ms, bw_ms, link_ms, kernel_ms, binding, miss: m, total, per_stream: total / N, stream, row_gib: rowGiB, rows_gib: N * rowGiB,
+      free_gib: free, fits: free === null ? N * rowGiB < v(B.cache_gib_one) : N * rowGiB <= free, ram_gib: ram, weights_gib: W.all / GiB };
+  }
+  const batchCfgOf = (data, r) => Object.assign({}, data.batch.configs.one, { kv: r.kv_resident ? 'stream' : 'resident' });
+  // fit the free constants on data.batch.rows for one miss mode (and an optional four-stream hit rate)
+  function batchFit(data, mode, hit4) {
+    const B = data.batch, h1 = v(B.hit_one), h4 = hit4 === undefined ? v(B.hit_four) : hit4, n4 = v(B.hit_four_streams);
+    const F = { miss1: 1 - h1, churn: ((1 - h4) - (1 - h1)) / (n4 - 1), mpg: 0, tau: 1 }, K = { fixed: 0, row: 0 };
+    const at = (r, N, extra) => Object.assign({ c: batchCfgOf(data, r), N, depth: v(B.fit_depth_tokens), ctx: r.ctx, window: r.kv_resident, K, F, mode }, extra || {});
+    const pts = (use, pick) => [].concat(...B.rows.filter(r => r.use === use).map(r => Object.keys(r.tps).map(Number).filter(pick).map(N => ({ r, N, ms: N * 1000 / r.tps[N] }))));
+    const kp = pts('kernel', N => N > v(B.mtp_rows_max)), vp = pts('vram', N => N > 1), tp = pts('kernel', N => N <= v(B.mtp_rows_max));
+    for (let round = 0; round < B.fit_rounds.v; round++) {
+      // kernel: the step time the kernel must explain (all of it with overlap; what the misses leave with serial), least squares
+      // with both constants >= 0
+      const y = kp.map(p => p.ms - (mode === 'serial' ? batchStep(data, at(p.r, p.N, { K: { fixed: 0, row: 0 } })).link_ms : 0)), x = kp.map(p => p.N);
+      const mx = x.reduce((a, b) => a + b, 0) / x.length, my = y.reduce((a, b) => a + b, 0) / y.length;
+      const slope = x.reduce((a, xi, i) => a + (xi - mx) * (y[i] - my), 0) / x.reduce((a, xi) => a + (xi - mx) ** 2, 0);
+      Object.assign(K, slope < 0 ? { fixed: my, row: 0 } : my - slope * mx >= 0 ? { fixed: my - slope * mx, row: slope } : { fixed: 0, row: x.reduce((a, xi, i) => a + xi * y[i], 0) / x.reduce((a, xi) => a + xi * xi, 0) });
+      // miss share per GiB the rows take: each VRAM row's miss share by bisection, then the share left after the churn term
+      const g = vp.map(p => {
+        let lo = 0, hi = 1;
+        for (let i = 0; i < B.fit_bisect_steps.v; i++) { const mid = (lo + hi) / 2; if (batchStep(data, at(p.r, p.N, { m: mid })).ms < p.ms) lo = mid; else hi = mid; }
+        const sl = batchStep(data, at(p.r, p.N)).row_gib;
+        return Math.max(0, (lo - F.miss1 - F.churn * (p.N - 1)) / ((p.N - 1) * sl));
+      });
+      F.mpg = g.length ? med(g) : 0;
+      // MTP tokens per one-stream step: the measured rate x the modelled step
+      F.tau = tp.length ? med(tp.map(p => p.r.tps[p.N] * batchStep(data, at(p.r, p.N)).ms / 1000)) : 1;
+    }
+    const pred = (r, N) => batchStep(data, at(r, N)).total;
+    const residuals = [].concat(...B.rows.map(r => Object.keys(r.tps).map(Number).map(N => ({ id: r.id, use: r.use, N, meas: r.tps[N], pred: pred(r, N), err: pred(r, N) / r.tps[N] - 1, binding: batchStep(data, at(r, N)).binding }))));
+    // a check is predicted on its own config (x.cfg; the fit rows are all one-card rows)
+    (B.checks || []).forEach(x => {
+      const r = { ctx: x.ctx, kv_resident: x.kv_resident }, c = x.cfg && B.configs[x.cfg] ? B.configs[x.cfg] : batchCfgOf(data, r), st = batchStep(data, at(r, x.N, { c }));
+      residuals.push({ id: x.id, use: 'check', cfg: x.cfg || 'one', N: x.N, meas: v(x.tps), pred: st.total, err: st.total / v(x.tps) - 1, binding: st.binding });
+    });
+    const tw = B.twin, tws = c => batchStep(data, { c: B.configs[c], N: 1, depth: v(B.twin_depth_tokens), ctx: v(B.twin_depth_tokens), K, F, mode }).ms;
+    const twin = { meas: tw.tps.split / tw.tps.one, pred: tws('one') / tws('split') };
+    const fitted = residuals.filter(x => x.use !== 'check');
+    return { mode, hit4: h4, K, F, residuals, twin, median_abs_pct: 100 * med(fitted.map(x => Math.abs(x.err))), max_abs_pct: 100 * Math.max(...fitted.map(x => Math.abs(x.err))) };
+  }
+  // the planning table: every config x its kernel variants x context x stream count, on one fit (default: the first miss mode).
+  // A variant's ms per row is what the per-row overhead drops to: never above the fitted one
+  function batchTable(data, fit) {
+    const B = data.batch, f = fit || batchFit(data, B.miss_modes.v[0]), out = [];
+    Object.keys(B.configs).forEach(ck => {
+      const c = B.configs[ck];
+      c.variants.forEach(vk => {
+        const V = B.variants[vk], K = { fixed: V.no_fixed ? 0 : f.K.fixed, row: V.row_ms ? Math.min(f.K.row, v(V.row_ms)) : f.K.row };
+        B.contexts.v.forEach(ctx => {
+          const steps = B.streams.v.map(N => batchStep(data, { c, N, depth: ctx, ctx, K, F: f.F, mode: f.mode }));
+          const hit = steps.find(x => x.total >= B.target_tps.v);
+          out.push({ config: ck, label: c.label, variant: vk, variant_label: V.label, ctx, steps, first_n_at_target: hit ? hit.N : null });
+        });
+      });
+    });
+    return out;
+  }
+
+  // ---------- batch window: a bottom-up cost model of one batched-decode window per pipeline stage (data.window, build.py) ----------
+  // Where batchFit() fits a step to measured tok/s, this builds it from kernels, so it can price a kernel before it is written.
+  // A window serves `rows` rows of one row group on one stage (a contiguous layer range on one card). Its time is the sum of the
+  // card's microbenchmarked kernel classes (each runs in the layers of its kind, at the per-layer average of the measured layers)
+  // plus the unmeasured extras of the first and last stage. A class's in-graph ms = gamma x max(0, isolated ms - its launches x
+  // omega) x (the card's bandwidth / a what-if card's), omega being the per-launch overhead of an isolated measurement (flush,
+  // sync). omega and the extras are FIT on measured stage times; eta (FIT) scales the pipeline law. G row groups take turns
+  // through S stages: tok/s = eta x rows x 1000 x min(G / sum of stage ms, 1 / slowest stage ms). No class or kind is named here:
+  // they all come from the config's spec and ubench log.
+  const winCfg = (data, key) => data.window.configs[key || data.window.default];
+  function winInterp(grid, ys, r) {
+    if (r <= grid[0]) return ys[0];
+    const j = grid.findIndex(g => g >= r), i = j < 0 ? grid.length - 1 : j;
+    return ys[i - 1] + (ys[i] - ys[i - 1]) * (r - grid[i - 1]) / (grid[i] - grid[i - 1]);
+  }
+  // the calibration before any fit: the priors, nothing taken off, no extras
+  const winPrior = W => ({ omega_us: 0, gamma: v(W.settings.gamma), phi: v(W.ubench.routing_phi), extras: Object.fromEntries(W.extras.map(e => [e.id, 0])), eta: 1 });
+  // a class's in-graph ms over all its measured layers at `rows`; o.scale = {class name: factor} (a lever), o.bw = a card's GB/s
+  function winClassMs(W, c, rows, K, o) {
+    const U = W.ubench, R = U.routing, x = o || {};
+    const iso = winInterp(U.grid, c.ms, rows) + (R && c.name === R.class ? K.phi * winInterp(U.grid, R.alt_delta_ms, rows) : 0);
+    const bw = x.bw ? v(W.card_bw_gbs) / x.bw : 1, f = x.scale && x.scale[c.name] !== undefined ? x.scale[c.name] : 1;
+    const lo = c.layers * c.launches * v(W.settings.graph_launch_us) / 1000;
+    return Math.max(lo, K.gamma * Math.max(lo, iso - c.layers * c.launches * K.omega_us / 1000) * bw * f);
+  }
+  // a class's bandwidth floor over its measured layers (ms): its time at the floor's rows over its x floor (the ubench's own
+  // full-precision ratio), else its bytes over the floor bandwidth
+  const winFloorMs = (W, c) => {
+    const U = W.ubench, t = c.ms[U.grid.indexOf(U.floor_rows)];
+    return c.xfloor > 0 && t > 0 ? t / c.xfloor : c.mb_floor_lyr * c.layers / v(U.floor_gbs);
+  };
+  const winKinds = W => Array.from(new Set(W.layers.map(x => x.kind).concat(Object.keys(W.ubench.kinds))));
+  // ms per layer of each kind at `rows`: a class's in-graph time spread evenly over its measured layers. A kind the ubench did
+  // not measure gets only the classes that run in every layer (winReport lists it as unmeasured)
+  function winLayerMs(W, rows, K, o) {
+    const ks = winKinds(W);
+    return Object.fromEntries(ks.map(k => [k, W.ubench.classes.filter(c => c.kind === null || c.kind === k).reduce((a, c) => a + winClassMs(W, c, rows, K, o) / c.layers, 0)]));
+  }
+  const winSplit = (W, o) => (o && o.split) || W.stages.map(s => s.layers);
+  // a point (or the profile) measured on another layout carries its own split, which overrides the config's stages for it
+  const winPointSplit = (W, p) => (p && p.split) || winSplit(W);
+  const winExtraOn = (e, i, nS) => (e.stage === 'first' && i === 0) || (e.stage === 'last' && i === nS - 1);
+  const winExtraMs = (W, K, i, nS, rows) => W.extras.reduce((a, e) => a + (winExtraOn(e, i, nS) ? K.extras[e.id] * (e.per === 'row' ? rows : 1) : 0), 0);
+  // an anchor's offsets (K.offset: measured - modelled stage ms a row at a measured point; the gm round moved stage times in
+  // proportion to the rows: V4 - G2 is -0.2/-0.4 ms at one row, -4.6/-7.0 at 16) ride with the first and the last stage
+  const winOffsetMs = (K, i, nS, rows) => rows * (!K.offset ? 0 : nS === 1 ? K.offset.reduce((a, x) => a + x, 0) : i === 0 ? K.offset[0] : i === nS - 1 ? K.offset[K.offset.length - 1] : 0);
+  // the cost of each layer and of each stage position's own terms at `rows`: from the profile when K carries one, else the ubench
+  // classes plus the fitted extras and an anchor's offsets
+  function winCosts(W, rows, K, o) {
+    if (K.prof) return K.prof.costs(rows, o || {});
+    const per = winLayerMs(W, rows, K, o);
+    return { layer: W.layers.map(x => per[x.kind]), stage: (i, nS) => winExtraMs(W, K, i, nS, rows) + winOffsetMs(K, i, nS, rows) };
+  }
+  function winStageMs(W, split, rows, K, o) {
+    const c = winCosts(W, rows, K, o);
+    return split.map(([a, b], i) => c.layer.slice(a, b + 1).reduce((s, x) => s + x, 0) + c.stage(i, split.length));
+  }
+  // anchor a fit on a measured point (a later config whose kernels the ubench did not measure): the plan and the levers then
+  // start from that point's measured stage times, each lever moving them by what it saves in the model
+  function winAnchor(data, key, fit, id) {
+    const W = winCfg(data, key), p = W.points.find(x => x.id === id);
+    if (!p) return null;
+    const split = winPointSplit(W, p);
+    const G = winGroups(W, p.agents, split.length), rows = p.agents / G, model = winStageMs(W, split, rows, Object.assign({}, fit.K, { offset: null }));
+    return Object.assign({}, fit, { anchor: p.id, K: Object.assign({}, fit.K, { offset: v(p.stage_ms).map((m, i) => (m - model[i]) / rows) }) });
+  }
+  function winLaw(stage, rows, groups, eta) {
+    const tot = stage.reduce((a, b) => a + b, 0), mx = Math.max(...stage);
+    return eta * rows * 1000 * Math.min(groups / tot, 1 / mx);
+  }
+  // row groups: the option, else the config's ratio of groups to stages times the stages, and enough groups that no window
+  // passes the engine's row cap; never more than the agents
+  const winGroups = (W, N, nS, o) => Math.min(N, (o && o.groups) || Math.max(1, Math.round(nS * v(W.groups) / W.stages.length), Math.ceil(N / v(W.max_window_rows))));
+  function winStep(W, N, K, o) {
+    const split = winSplit(W, o), G = winGroups(W, N, split.length, o), rows = N / G, U = W.ubench;
+    const stage = winStageMs(W, split, rows, K, o), total = winLaw(stage, rows, G, K.eta);
+    return { N, groups: G, rows, split, stage_ms: stage, bottleneck: stage.indexOf(Math.max(...stage)), total, per_agent: total / N,
+      beyond_grid: rows > U.grid[U.grid.length - 1], beyond_engine: rows > v(W.max_window_rows) || N > v(W.max_agents) };
+  }
+  // the best contiguous split of the layers over nS stages at the step's rows (least slowest stage), then the step on it
+  function winRebalance(W, N, K, o, nS) {
+    const S = nS || winSplit(W, o).length, G = winGroups(W, N, S, o), rows = N / G, C = winCosts(W, rows, K, o);
+    const c = C.layer, L = c.length, P = c.reduce((a, x) => a.concat(a[a.length - 1] + x), [0]);
+    const cost = (i, a, b) => P[b] - P[a] + C.stage(i, S);
+    // best[i][j]: the least slowest stage putting layers [0, j) on stages 0..i; cut[i][j]: where stage i starts
+    const best = [], cut = [];
+    Array.from({ length: S }, (_, i) => i).forEach(i => {
+      best[i] = []; cut[i] = [];
+      Array.from({ length: L + 1 }, (_, j) => j).forEach(j => {
+        const opts = i === 0 ? [{ k: 0, m: j > 0 ? cost(0, 0, j) : Infinity }] : Array.from({ length: Math.max(0, j - i) }, (_, t) => t + i).map(k => ({ k, m: Math.max(best[i - 1][k], cost(i, k, j)) }));
+        const pick = opts.reduce((a, x) => (x.m < a.m ? x : a), { k: -1, m: Infinity });
+        best[i][j] = pick.m; cut[i][j] = pick.k;
+      });
+    });
+    const split = [];
+    Array.from({ length: S }, (_, t) => S - 1 - t).reduce((end, i) => { split.unshift([cut[i][end], end - 1]); return cut[i][end]; }, L);
+    return winStep(W, N, K, Object.assign({}, o, { split, groups: G }));
+  }
+  // least squares with x >= 0 (drop the most negative term, re-solve) on rows {a, y, w}
+  function winNnls(eqs, n) {
+    const solve = free => {
+      const A = free.map(i => free.map(j => eqs.reduce((s, e) => s + e.w * e.w * e.a[i] * e.a[j], 0) + (i === j ? 1e-12 : 0)));
+      const b = free.map(i => eqs.reduce((s, e) => s + e.w * e.w * e.a[i] * e.y, 0));
+      const M = A.map((r, i) => r.concat(b[i]));
+      M.forEach((_, p) => {
+        const piv = M.slice(p).reduce((best, r, q) => (Math.abs(r[p]) > Math.abs(M[best][p]) ? q + p : best), p);
+        [M[p], M[piv]] = [M[piv], M[p]];
+        M.forEach((r, q) => { if (q !== p && M[p][p] !== 0) { const f = r[p] / M[p][p]; r.forEach((_, k) => { r[k] -= f * M[p][k]; }); } });
+      });
+      return M.map((r, i) => (r[i] !== 0 ? r[r.length - 1] / r[i] : 0));
+    };
+    const go = free => {
+      const s = solve(free), neg = s.reduce((a, x, i) => (x < (a < 0 ? s[a] : 0) ? i : a), -1);
+      if (neg < 0) return Array.from({ length: n }, (_, i) => (free.includes(i) ? s[free.indexOf(i)] : 0));
+      return go(free.filter((_, i) => i !== neg));
+    };
+    return go(Array.from({ length: n }, (_, i) => i));
+  }
+  // calibrate: omega by a grid + golden-section search, the extras by non-negative least squares on the 'fit' points' stage
+  // times (relative error), eta = the median of measured tok/s over the law on the measured stage times of every point
+  // fo: {phi: a routing share, gamma_free: fit gamma too, dropping the extras marked kernel_scale_alt (the variant where the
+  // in-graph per-row cost the isolated kernels miss lives in the kernels, so a lever saves more)}
+  function winFit(data, key, fo) {
+    const W = winCfg(data, key), S = W.settings, prior = winPrior(W), sp0 = p => winPointSplit(W, p), x0 = fo || {};
+    if (x0.phi !== undefined) prior.phi = x0.phi;
+    const ex = W.extras.filter(e => !(x0.gamma_free && e.kernel_scale_alt));
+    const fit = W.points.filter(p => p.use === 'fit'), G = p => winGroups(W, p.agents, sp0(p).length), rowsOf = p => p.agents / G(p);
+    const at = (omega, gamma) => {
+      const K0 = Object.assign({}, prior, { omega_us: omega, gamma });
+      const eqs = [].concat(...fit.map(p => { const r = rowsOf(p), m = winStageMs(W, sp0(p), r, K0); return v(p.stage_ms).map((y, i) => ({ y: y - m[i], w: 1 / y, a: ex.map(e => (winExtraOn(e, i, sp0(p).length) ? (e.per === 'row' ? r : 1) : 0)) })); }));
+      const x = winNnls(eqs, ex.length), sse = eqs.reduce((s, e) => s + (e.w * (e.a.reduce((t, a, j) => t + a * x[j], 0) - e.y)) ** 2, 0);
+      return { omega, gamma, x, sse };
+    };
+    const phiR = (Math.sqrt(5) - 1) / 2, lo0 = (a, b) => (b.sse < a.sse ? b : a);
+    const golden = (f, lo, hi) => { const [a, b] = Array.from({ length: 60 }).reduce(([l, h]) => { const c = h - phiR * (h - l), d = l + phiR * (h - l); return f(c).sse < f(d).sse ? [l, d] : [c, h]; }, [lo, hi]); return f((a + b) / 2); };
+    // omega: a grid, then golden-section around the best grid point
+    const omegaAt = gamma => {
+      const step = v(S.omega_step_us), g0 = Array.from({ length: Math.floor(v(S.omega_max_us) / step) + 1 }, (_, i) => at(i * step, gamma)).reduce(lo0);
+      return lo0(g0, golden(o => at(o, gamma), Math.max(0, g0.omega - step), g0.omega + step));
+    };
+    const gr = S.gamma_range ? v(S.gamma_range) : [v(S.gamma), v(S.gamma)];
+    const best = x0.gamma_free ? golden(omegaAt, gr[0], gr[1]) : omegaAt(prior.gamma);
+    const K = Object.assign({}, prior, { omega_us: best.omega, gamma: best.gamma, extras: Object.fromEntries(W.extras.map(e => [e.id, ex.includes(e) ? best.x[ex.indexOf(e)] : 0])) });
+    const law = W.points.filter(p => p.tps).map(p => v(p.tps) / winLaw(v(p.stage_ms), rowsOf(p), G(p), 1));
+    K.eta = law.length ? med(law) : 1;
+    const residuals = W.points.map(p => {
+      const r = rowsOf(p), sp = winStageMs(W, sp0(p), r, K), meas = v(p.stage_ms), t = p.tps ? v(p.tps) : null;
+      const chain = winLaw(sp, r, G(p), K.eta), lawp = winLaw(meas, r, G(p), K.eta);
+      return { id: p.id, use: p.use, change: p.change || null, agents: p.agents, rows: r, split: sp0(p), stage_meas: meas, stage_pred: sp, stage_err: sp.map((x, i) => x / meas[i] - 1),
+        tps_meas: t, tps_pred: p.use === 'law' ? null : chain, tps_err: t && p.use !== 'law' ? chain / t - 1 : null, law_pred: lawp, law_err: t ? lawp / t - 1 : null };
+    });
+    const pick = (use, f) => [].concat(...residuals.filter(x => use.includes(x.use)).map(f)).filter(x => x !== null).map(Math.abs);
+    const mx = xs => (xs.length ? 100 * Math.max(...xs) : null);
+    return { key: W.key, K, gamma_free: !!x0.gamma_free, residuals, free: ex.length + 1 + (x0.gamma_free ? 1 : 0), equations: fit.reduce((a, p) => a + sp0(p).length, 0),
+      stage_fit_max_abs_pct: mx(pick(['fit'], x => x.stage_err)), stage_check_max_abs_pct: mx(pick(['check'], x => x.stage_err)),
+      tps_fit_max_abs_pct: mx(pick(['fit'], x => [x.tps_err])), tps_check_max_abs_pct: mx(pick(['check'], x => [x.tps_err])), law_max_abs_pct: mx(pick(['fit', 'check', 'law'], x => [x.law_err])) };
+  }
+  // the lever table: each class taken to k x its bandwidth floor (at the floor's rows; never below graph_launch_us a launch), the
+  // same factor at every row count; predicted at the plan's agents on the config's split and on the rebalanced split. The
+  // layer-split rebalance is a lever of its own. o: {agents, xfloor, bw, fit}
+  function winLevers(data, key, opts) {
+    const W = winCfg(data, key), o = opts || {}, f = o.fit || winFit(data, key), K = f.K, U = W.ubench;
+    const N = o.agents || v(W.settings.plan_agents), k = o.xfloor || v(W.settings.lever_xfloor), base = { bw: o.bw };
+    const now = winStep(W, N, K, base), reb = winRebalance(W, N, K, base);
+    const one = (c, kk) => {
+      const cur = winClassMs(W, c, U.floor_rows, K), floor = winFloorMs(W, c), lo = v(W.settings.graph_launch_us) * c.layers * c.launches / 1000;
+      const scale = cur > 0 ? Math.min(1, Math.max(kk * floor, lo) / cur) : 1, oo = Object.assign({}, base, { scale: { [c.name]: scale } });
+      const st = winStep(W, N, K, oo), rb = winRebalance(W, N, K, oo);
+      return { scale, xfloor_graph: floor > 0 ? cur / floor : null, floor_ms: floor, total: st.total, stage_ms: st.stage_ms, total_rebalanced: rb.total, split_rebalanced: rb.split };
+    };
+    const levers = U.classes.map(c => {
+      const x = one(c, k), split = winSplit(W), per = winClassMs(W, c, now.rows, K, base) / c.layers;
+      const inStage = split.map(([a, b]) => W.layers.slice(a, b + 1).filter(l => c.kind === null || l.kind === c.kind).length * per);
+      return Object.assign({ lever: c.name, kind: c.kind, classes: [c.name], layers_measured: c.layers, xfloor_iso: c.xfloor, ms_in_stage: inStage, gain: x.total - now.total, gain_rebalanced: x.total_rebalanced - reb.total,
+        grid: v(W.settings.lever_xfloor_grid).map(g => ({ xfloor: g, total: one(c, g).total, total_rebalanced: one(c, g).total_rebalanced })) }, x);
+    });
+    // the unmeasured extras have no floor: each row says what a share of it (extra_lever_share) would pay, so it gets measured
+    const share = v(W.settings.extra_lever_share), onStage = e => winSplit(W).map((_, i) => winExtraOn(e, i, winSplit(W).length));
+    const extras = W.extras.filter(e => K.extras[e.id] > 0).map(e => {
+      const oo = Object.assign({}, base), K2 = Object.assign({}, K, { extras: Object.assign({}, K.extras, { [e.id]: K.extras[e.id] * (1 - share) }) });
+      const st = winStep(W, N, K2, oo), rb = winRebalance(W, N, K2, oo);
+      return { lever: 'unmeasured: ' + e.label, kind: 'extra', unmeasured: true, ms_in_stage: onStage(e).map(on => (on ? K.extras[e.id] * (e.per === 'row' ? now.rows : 1) : 0)), cut_share: share,
+        total: st.total, total_rebalanced: rb.total, stage_ms: st.stage_ms, split_rebalanced: rb.split, gain: st.total - now.total, gain_rebalanced: rb.total - reb.total };
+    });
+    // a measured kernel variant (config `variants`): its class at the new time over the old
+    const variants = (W.variants || []).map(x => {
+      const oo = Object.assign({}, base, { scale: { [x.class]: v(x.new_us) / v(x.old_us) } }), st = winStep(W, N, K, oo), rb = winRebalance(W, N, K, oo);
+      return { lever: x.label + ' (' + v(x.new_us) + ' vs ' + v(x.old_us) + ' us)', kind: 'variant', measured: true, class: x.class, classes: [x.class], total: st.total, stage_ms: st.stage_ms, saved_ms: now.stage_ms.map((m, i) => m - st.stage_ms[i]), total_rebalanced: rb.total, split_rebalanced: rb.split, gain: st.total - now.total, gain_rebalanced: rb.total - reb.total };
+    });
+    const split = { lever: 'layer split rebalance', kind: 'layout', total: reb.total, total_rebalanced: reb.total, stage_ms: reb.stage_ms, split_rebalanced: reb.split, gain: reb.total - now.total, gain_rebalanced: 0 };
+    return { source: 'ubench', agents: N, xfloor: k, now, rebalanced: reb, levers: levers.concat(variants, split).sort((a, b) => b.total - a.total || b.total_rebalanced - a.total_rebalanced), unmeasured: extras };
+  }
+  // ---------- the profile source: a measured per-term attribution of one point's window per stage (config `profile`) ----------
+  // Each term is ms a window on each stage, of a layer kind (spread evenly over that stage's layers of the kind) or of a stage
+  // position (the last stage's head). The ubench stays the fallback, and gives each term its row curve (its mapped classes'
+  // its bandwidth floor and a what-if card's scaling, and gives each term its row curve: rows_basis 'stage' = the calibrated
+  // ubench model's stage time at r rows over that at the profile's rows (Ks: the fit, anchored when the report anchors; the
+  // curve the n=2 checks score), 'classes' = its mapped classes' in-graph time ratio (noisy below 4 rows: isolated small
+  // kernels), 'row' = r / the profile's rows, 'fixed' = 1. What the point's measured stage run holds beyond the terms is the
+  // gap, a term of its own spread over the stage's layers.
+  // costs(r, o): o.scale = {term id: factor}, o.cut = {class name: ms a layer saved at the profile's rows}, o.gap = a factor on
+  // the gap, o.bw = a card's GB/s
+  function winProfCompile(W, Ku, Ks) {
+    const P = W.profile, pt = W.points.find(p => p.id === P.point), split = P.split || winPointSplit(W, pt), nP = split.length;
+    const R0 = pt.agents / winGroups(W, pt.agents, nP), terms = P.terms, sum = xs => xs.reduce((a, b) => a + b, 0);
+    const stageOf = W.layers.map(x => split.findIndex(([a, b]) => x.layer >= a && x.layer <= b));
+    const count = (k, i) => W.layers.filter((x, l) => (k === null || x.kind === k) && stageOf[l] === i).length;
+    const cls = n => W.ubench.classes.find(c => c.name === n);
+    const curve = (t, r) => sum(t.classes.map(([n, f]) => f * winClassMs(W, cls(n), r, Ku)));
+    const base = Object.fromEntries(terms.map(t => [t.id, v(t.rows_basis) === 'classes' ? curve(t, R0) : 1])), st0 = winStageMs(W, split, R0, Ks || Ku);
+    const basis = { classes: (t, r) => (base[t.id] > 0 ? curve(t, r) / base[t.id] : 1), row: (t, r) => r / R0, fixed: () => 1 };
+    const rowf = (t, r, sr) => (v(t.rows_basis) === 'stage' ? sr[t.stage ? (t.stage === 'first' ? 0 : nP - 1) : 0] : basis[v(t.rows_basis)](t, r));
+    const termSum = Array.from({ length: nP }, (_, i) => sum(terms.map(t => v(t.ms)[i])));
+    const gap = v(pt.stage_ms).map((m, i) => Math.max(0, m - termSum[i])), gapLayer = gap.map((g, i) => g / count(null, i));
+    const gapf = (r, sr, i) => (v(P.gap.rows_basis) === 'stage' ? sr[i] : basis[v(P.gap.rows_basis)]({}, r));
+    const at = (t, nS, i) => (t.stage === 'first' ? i === 0 : i === nS - 1);
+    const pos = t => (t.stage === 'first' ? 0 : nP - 1);
+    const kindTerms = Object.fromEntries(Array.from(new Set(W.layers.map(x => x.kind))).map(k => [k, terms.filter(t => t.kind === k)]));
+    const stageTerms = terms.filter(t => t.stage);
+    // a term's floor over the profile's stages: its classes' bandwidth floor a layer (at the ubench's floor rows) times its layers
+    const floor = t => {
+      const L = t.kind ? sum(Array.from({ length: nP }, (_, i) => count(t.kind, i))) : 0;
+      const f = sum(t.classes.map(([n, x]) => x * winFloorMs(W, cls(n)) / cls(n).layers)), lo = sum(t.classes.map(([n, x]) => x * cls(n).launches)) * v(W.settings.graph_launch_us) / 1000;
+      return { cur: sum(v(t.ms)), floor: f * L, lo: lo * L };
+    };
+    const costs = (r, o) => {
+      const sr = winStageMs(W, split, r, Ks || Ku).map((x, i) => x / st0[i]), rf = Object.fromEntries(terms.map(t => [t.id, rowf(t, r, sr)]));
+      const rk = (t, i) => (t.kind && v(t.rows_basis) === 'stage' ? sr[i] : rf[t.id]);
+      const cutf = Object.fromEntries(Object.entries(o.cut || {}).map(([n, ms]) => [n, ms * winClassMs(W, cls(n), r, Ku) / winClassMs(W, cls(n), R0, Ku)]));
+      const val = (t, per, i) => Math.max(0, per * rk(t, i) * (o.bw && t.bw ? v(W.card_bw_gbs) / o.bw : 1) * (o.scale && o.scale[t.id] !== undefined ? o.scale[t.id] : 1)
+        - sum(t.classes.map(([n, f]) => f * (cutf[n] || 0))));
+      const g = (o.gap !== undefined ? o.gap : 1);
+      const parts = W.layers.map((x, l) => kindTerms[x.kind].map(t => [t.id, val(t, v(t.ms)[stageOf[l]] / count(x.kind, stageOf[l]), stageOf[l])]).concat([['gap', gapLayer[stageOf[l]] * gapf(r, sr, stageOf[l]) * g]]));
+      const sparts = (i, nS) => stageTerms.filter(t => at(t, nS, i)).map(t => [t.id, val(t, v(t.ms)[pos(t)], pos(t))]);
+      return { layer: parts.map(ps => sum(ps.map(p => p[1]))), stage: (i, nS) => sum(sparts(i, nS).map(p => p[1])),
+        parts: (a, b, i, nS) => parts.slice(a, b + 1).concat([sparts(i, nS)]).reduce((m, ps) => { ps.forEach(([id, ms]) => { m[id] = (m[id] || 0) + ms; }); return m; }, {}) };
+    };
+    return { R0, split, terms, gap, term_sum: termSum, floor, costs, ms_in_stage: ts => Array.from({ length: nP }, (_, i) => sum(ts.map(t => v(t.ms)[i]))) };
+  }
+  // the profile fit: the ubench fit's eta, the profile in place of its classes, extras and anchor; scored on the profile's own
+  // point (exact by construction) and its checks (other agent counts move each term along its classes' row curve)
+  function winProfFit(data, key, fitU, fitS) {
+    const W = winCfg(data, key);
+    if (!W.profile) return null;
+    const C = winProfCompile(W, fitU.K, (fitS || fitU).K), K = Object.assign({}, fitU.K, { offset: null, prof: C });
+    const ids = [W.profile.point].concat(W.profile.checks || []);
+    const checks = W.points.filter(p => ids.includes(p.id)).map(p => {
+      const split = winPointSplit(W, p), G = winGroups(W, p.agents, split.length), r = p.agents / G, sp = winStageMs(W, split, r, K), meas = v(p.stage_ms), t = p.tps ? v(p.tps) : null, tp = winLaw(sp, r, G, K.eta);
+      return { id: p.id, use: p.id === W.profile.point ? 'profile' : 'check', agents: p.agents, rows: r, split, change: p.change || null, stage_meas: meas, stage_pred: sp, stage_err: sp.map((x, i) => x / meas[i] - 1),
+        tps_meas: t, tps_pred: tp, tps_err: t ? tp / t - 1 : null };
+    });
+    return { key: W.key, source: 'profile', K, rows: C.R0, point: W.profile.point, split: C.split, gap_ms: C.gap, term_sum_ms: C.term_sum, totals_ms: v(W.profile.totals_ms), checks };
+  }
+  // the lever table on the profile: each term group (config `lever`) at k x its classes' floor, the no-floor groups and the gap at
+  // extra_lever_share off, each measured kernel variant (config `variants`: a class's new time over its old), the split rebalance
+  function winProfLevers(data, key, opts) {
+    const W = winCfg(data, key), o = opts || {}, K = o.fit.K, C = K.prof, S = W.settings, share = v(S.extra_lever_share);
+    const N = o.agents || v(S.plan_agents), k = o.xfloor || v(S.lever_xfloor), base = { bw: o.bw };
+    const now = winStep(W, N, K, base), reb = winRebalance(W, N, K, base);
+    const run = oo => { const x = Object.assign({}, base, oo); return { st: winStep(W, N, K, x), rb: winRebalance(W, N, K, x) }; };
+    const row = (lever, kind, oo, extra) => {
+      const { st, rb } = run(oo);
+      return Object.assign({ lever, kind, total: st.total, stage_ms: st.stage_ms, total_rebalanced: rb.total, split_rebalanced: rb.split, gain: st.total - now.total, gain_rebalanced: rb.total - reb.total }, extra);
+    };
+    const groups = Array.from(new Set(C.terms.map(t => t.lever))).map(g => {
+      const ts = C.terms.filter(t => t.lever === g), fl = ts.map(C.floor), kind = Array.from(new Set(ts.map(t => t.kind || t.stage + ' stage'))).join('+');
+      return { g, ts, fl, kind, ms: C.ms_in_stage(ts), floored: fl.every(f => f.floor > 0), classes: Array.from(new Set([].concat(...ts.map(t => t.classes.map(c => c[0]))))) };
+    });
+    const scaleAt = (x, kk) => Object.fromEntries(x.ts.map((t, j) => [t.id, x.fl[j].cur > 0 ? Math.min(1, Math.max(kk * x.fl[j].floor, x.fl[j].lo) / x.fl[j].cur) : 1]));
+    const sum = xs => xs.reduce((a, b) => a + b, 0);
+    const floored = groups.filter(x => x.floored).map(x => row(x.g, x.kind, { scale: scaleAt(x, k) }, {
+      classes: x.classes, ms_in_stage: x.ms, floor_ms: sum(x.fl.map(f => f.floor)), xfloor_now: sum(x.fl.map(f => f.cur)) / sum(x.fl.map(f => f.floor)),
+      grid: v(S.lever_xfloor_grid).map(gg => { const r = run({ scale: scaleAt(x, gg) }); return { xfloor: gg, total: r.st.total, total_rebalanced: r.rb.total }; }) }));
+    const variants = (W.variants || []).map(x => {
+      const save = (v(x.old_us) - v(x.new_us)) / 1000 * v(x.launches);
+      const r = row(x.label + ' (' + v(x.new_us) + ' vs ' + v(x.old_us) + ' us)', 'variant', { cut: { [x.class]: save } }, { measured: true, class: x.class, classes: [x.class], save_ms_a_layer: save });
+      return Object.assign(r, { saved_ms: now.stage_ms.map((m, i) => m - r.stage_ms[i]) });
+    });
+    const split = { lever: 'layer split rebalance', kind: 'layout', total: reb.total, total_rebalanced: reb.total, stage_ms: reb.stage_ms, split_rebalanced: reb.split, gain: reb.total - now.total, gain_rebalanced: 0 };
+    const nofloor = groups.filter(x => !x.floored).map(x => row(x.g, x.kind, { scale: Object.fromEntries(x.ts.map(t => [t.id, 1 - share])) }, { classes: x.classes, ms_in_stage: x.ms, cut_share: share, unmeasured: true }))
+      .concat([row('gap: ' + W.profile.gap.label, 'gap', { gap: 1 - share }, { ms_in_stage: C.gap, cut_share: share, unmeasured: true })]);
+    return { source: 'profile', agents: N, xfloor: k, now, rebalanced: reb, levers: floored.concat(variants, split).sort((a, b) => b.total - a.total || b.total_rebalanced - a.total_rebalanced),
+      unmeasured: nofloor.sort((a, b) => b.total - a.total) };
+  }
+  // Network recipes are window-model extensions. A link observation is an immutable directed protocol identity, not a
+  // best-of rate. Transfers below serialize device->host, wire and host->device; overlap needs its own measured recipe.
+  const networkKnown = (data, x) => !!(x && typeof x.tag === 'string' && typeof x.src === 'string' && x.src.trim() && data.meta && data.meta.evidence && data.meta.evidence.by_tag && Object.prototype.hasOwnProperty.call(data.meta.evidence.by_tag, x.tag) && data.meta.evidence.by_tag[x.tag] !== 'unknown');
+  function networkTransfer(data, t) {
+    const C = data.network, checks = [], inputs = [];
+    const fail = (id, status, detail) => checks.push({ id, status, detail });
+    const take = (id, x, min) => {
+      inputs.push({ id, value: x });
+      const z = v(x);
+      if (!networkKnown(data, x) || z === null || z === undefined) { fail(id, 'UNKNOWN', 'sourced ' + id + ' required'); return null; }
+      if (!Number.isFinite(z) || z < min) { fail(id, 'FAIL', id + ' must be finite and >= ' + min); return null; }
+      return z;
+    };
+    const matches = C ? C.observations.filter(x => x.id === t.observation) : [];
+    if (matches.length > 1) return { seconds: null, checks: [{ id: 'observation', status: 'FAIL', detail: 'duplicate observation identity' }], inputs };
+    const obs = matches[0];
+    if (!obs) return { seconds: null, checks: [{ id: 'observation', status: 'UNKNOWN', detail: 'select an exact directed observation' }], inputs };
+    if (!obs.from || !obs.to || obs.from === obs.to || t.from !== obs.from || t.to !== obs.to) fail('direction', 'FAIL', 'observation ' + obs.id + ' is ' + obs.from + ' -> ' + obs.to + ', never its reverse');
+    if (!['transport', 'version', 'protocol'].every(k => typeof obs[k] === 'string' && obs[k].trim()) || !Number.isInteger(obs.streams) || obs.streams < 1) fail('observation_protocol', 'UNKNOWN', 'directed transport/version/protocol and positive stream count required');
+    if (['transport', 'version', 'streams', 'protocol'].some(k => t[k] !== undefined && t[k] !== obs[k])) fail('protocol', 'FAIL', 'transport/version/stream count differs from observation ' + obs.id);
+    const bytes = take('bytes', t.bytes, 0), gbps = take('wire_gbps', obs.gbps, Number.MIN_VALUE);
+    const rtt = take('rtt_ms', t.rtt_ms || obs.rtt_ms, 0), trips = take('round_trips', t.round_trips, 1);
+    if (trips !== null && !Number.isInteger(trips)) fail('round_trips', 'FAIL', 'round trips must be a positive whole number');
+    const device = (end, field) => {
+      if (t[end + '_memory'] === 'host') return 0;
+      if (t[end + '_memory'] !== 'gpu') { fail(end + '_memory', 'UNKNOWN', 'declare host or gpu; missing PCIe is not a zero-copy path'); return null; }
+      const p = C.pcie.find(x => x.box === t[end] && x.card === t[end + '_card']);
+      if (!p) { fail(end + '_card', 'FAIL', 'unknown per-card PCIe identity'); return null; }
+      const rate = take(end + '_' + field, p[field], Number.MIN_VALUE);
+      return rate === null || bytes === null ? null : bytes / (rate * 1e9);
+    };
+    const out = device('from', 'd2h_gbs'), into = device('to', 'h2d_gbs');
+    const seconds = checks.length || [bytes, gbps, rtt, trips, out, into].some(x => x === null) ? null : out + bytes * 8 / (gbps * 1e9) + into + rtt * trips / 1000;
+    return { seconds, wire_seconds: bytes !== null && gbps !== null ? bytes * 8 / (gbps * 1e9) : null, observation: obs, inputs, checks };
+  }
+  // Identity is checked on both sides of the profile/frontier bridge. Two profiles of the same code may have different
+  // hc-read modes; a missing label is not permission to borrow the faster mode or call streamed chunks accepted tokens.
+  function winComparison(W, r, data, agents) {
+    const p = W.profile || {}, f = W.frontier || {}, why = [];
+    const marker = (f.ledger || {}).tps, captured = typeof marker === 'string' && /^c[1-9]\d*$/.test(marker) ? Number(marker.slice(1)) : null;
+    const requested = agents === undefined ? r ? v(r.agents) : v(W.settings.plan_agents) : agents;
+    if (!Number.isInteger(requested) || requested < 1 || captured === null) why.push('agents UNKNOWN on requested/frontier identity');
+    else if (requested !== captured) why.push('agents differs between requested recipe and frontier capture');
+    for (const k of ['mode', 'evidence_config', 'metric']) {
+      const a = v(p[k]), b = v(f[k]), c = v(r ? r[k] : p[k]);
+      if (!a || !b || !c || [p[k], f[k], r ? r[k] : p[k]].some(x => !x || !x.tag || !x.src || x.tag === 'UNKNOWN' || !networkKnown(data || {}, x))) why.push(k + ' UNKNOWN');
+      else if (a !== b || a !== c) why.push(k + ' differs between profile, frontier and candidate');
+    }
+    return { eligible: !why.length, why, mode: v(p.mode) || null, evidence_config: v(p.evidence_config) || null, metric: v(p.metric) || null };
+  }
+  const networkCanonical = x => Array.isArray(x) ? x.map(networkCanonical) : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().map(k => [k, networkCanonical(x[k])])) : x;
+  // The browser may edit assumptions, never the measured baseline or the profile's captured costs.
+  function networkAssumptions(data, key, x) {
+    const W = data.window && data.window.configs[key], fields = ['mode', 'evidence_config', 'metric'];
+    if (!W) throw new Error('select an existing window');
+    if (!x || !x.catalog || !Array.isArray(x.catalog.recipes) || !Array.isArray(x.catalog.observations) || !Array.isArray(x.catalog.pcie) || !x.catalog.settings) throw new Error('catalog recipes, observations, pcie and settings required');
+    if ([x.profile_identity, x.frontier_identity].some(y => !y || typeof y !== 'object' || Array.isArray(y) || Object.keys(y).length !== fields.length || Object.keys(y).some(k => !fields.includes(k)))) throw new Error('comparison identity accepts only mode, evidence_config and metric; measured baseline/cost fields cannot be edited');
+    return { ...data, network: x.catalog, window: { ...data.window, configs: { ...data.window.configs, [key]: { ...W, profile: { ...W.profile, ...x.profile_identity }, frontier: { ...W.frontier, ...x.frontier_identity } } } } };
+  }
+  function networkCheck(data, r) {
+    const W = data.window && data.window.configs[r.network_window];
+    if (!W) return { checks: [{ id: 'network_window', status: 'FAIL', detail: 'unknown window config' }], facts: null, notes: [], bad_input: true, prediction: null };
+    const basis = r.network_prediction_identity;
+    if (!basis || !Number.isInteger(basis.agents) || basis.agents < 1 || !['profile', 'ubench'].includes(basis.profile_source)) return { checks: [{ id: 'network_basis', status: 'FAIL', detail: 'priced positive integer agents and profile/ubench source required' }], facts: null, notes: [], bad_input: true, prediction: null };
+    const candidate = winNetwork(data, r.network_window, { agents: basis.agents, source: basis.profile_source }).find(x => x.id === r.network_recipe);
+    if (!candidate || r.box !== W.box || r.model !== W.model || r.engine !== W.engine) return { checks: [{ id: 'network_recipe', status: 'FAIL', detail: 'network recipe/window box, model and engine must match' }], facts: null, notes: [], bad_input: true, prediction: null };
+    const equal = r.network_prediction_identity && JSON.stringify(networkCanonical(r.network_prediction_identity)) === JSON.stringify(networkCanonical(candidate.prediction_identity));
+    const checks = candidate.checks.concat([{ id: 'network_identity', status: equal ? 'PASS' : 'FAIL', detail: equal ? 'exact priced identity retained' : 'reprice after any input, source, mode or transfer change' }]);
+    checks.push({ id: 'network_comparison', status: candidate.comparison.eligible ? 'PASS' : 'UNKNOWN', detail: candidate.comparison.why.join('; ') || 'same mode, metric and evidence configuration' });
+    return { checks, facts: { box: r.box, model: r.model, engine: r.engine, kind: 'network' }, notes: ['Modeled network recipe; this gate does not run or qualify any remote engine.'], bad_input: false,
+      prediction: { status: candidate.status === 'MODELED' && equal ? 'PREDICTED' : 'UNMODELLED', network: candidate, decode_tps: equal && candidate.eligible ? candidate.metrics.decode_tps : null } };
+  }
+  function networkPower(rows, boxes, data) {
+    const checks = [], terms = [];
+    const ids = rows.map(x => x.box);
+    if (ids.length !== boxes.length || new Set(ids).size !== ids.length || boxes.some(b => !ids.includes(b))) checks.push('one power budget for every participating box is required');
+    rows.forEach(x => ['idle_w', 'cpu_incremental_w', 'gpu_incremental_w'].forEach(k => {
+      const z = x[k];
+      terms.push({ box: x.box, component: k, value: z });
+      if (!networkKnown(data, z) || !Number.isFinite(v(z)) || v(z) < 0) checks.push(x.box + '.' + k + ' UNKNOWN or invalid');
+    }));
+    const watts = checks.length ? null : terms.reduce((s, x) => s + v(x.value), 0);
+    return { watts: watts > 0 ? watts : null, checks, terms, boundary: 'all-box idle system + incremental CPU + incremental GPU; not a wall-plug measurement' };
+  }
+  // Resource admission precedes pricing. Existing pinned/KV planners own baseline allocations. Explicit additional host,
+  // per-card total GPU allocations and concurrent CPU budgets prevent a remote capacity estimate from inventing free RAM.
+  function networkResources(data, r) {
+    const checks = [], plans = [], ids = (r.resources || []).map(x => x.box);
+    const add = (id, status, detail) => checks.push({ id, status, detail });
+    if (ids.length !== r.boxes.length || new Set(ids).size !== ids.length || r.boxes.some(b => !ids.includes(b))) add('resources', 'UNKNOWN', 'one resource budget per participating box required');
+    const number = (id, x) => {
+      if (!networkKnown(data, x) || v(x) === null) { add(id, 'UNKNOWN', 'sourced nonnegative allocation required'); return null; }
+      if (!Number.isFinite(v(x)) || v(x) < 0) { add(id, 'FAIL', 'allocation must be a finite nonnegative number'); return null; }
+      return v(x);
+    };
+    (r.resources || []).forEach(x => {
+      const box = data.boxes[x.box];
+      if (!box) { add('box', 'FAIL', 'unknown box ' + x.box); return; }
+      const row = (data.recipes || []).find(y => y.id === x.recipe_id), recipe = row && row.recipe;
+      if (x.recipe_id && (!recipe || recipe.box !== x.box)) add(x.box + '.recipe', 'FAIL', 'baseline run must name a recipe on this box');
+      const pinned = recipe ? hostPinnedPlan(data, recipe) : null;
+      const base = pinned && pinned.pinned_gib !== undefined ? pinned.pinned_gib : number(x.box + '.baseline_host_gib', x.baseline_host_gib);
+      if (recipe) {
+        const check = hostPinnedCheck(data, recipe);
+        if (check && check.status !== 'PASS') checks.push(check);
+      }
+      const extra = number(x.box + '.extra_host_gib', x.extra_host_gib), other = number(x.box + '.other_host_gib', x.other_host_gib);
+      const originalReserve = hostPinnedBudget(data, recipe || { box: x.box });
+      const declaredReserve = x.host_reserve_gib === undefined ? null : number(x.box + '.host_reserve_gib', x.host_reserve_gib);
+      if (declaredReserve !== null && originalReserve.reserve_gib !== null && declaredReserve < originalReserve.reserve_gib) add(x.box + '.reserve', 'FAIL', 'declared reserve is below the existing household/pinned reserve');
+      const reserve = declaredReserve !== null ? hostPinnedBudget(data, { box: x.box, serving: { host_reserve_gib: declaredReserve } }) : originalReserve;
+      const allocated = [base, extra, other].some(z => z === null) ? null : base + extra + other;
+      if (allocated !== null && reserve.ceiling_gib !== null && allocated > reserve.ceiling_gib) add(x.box + '.host', 'FAIL', 'host allocation ' + allocated + ' exceeds existing pinned/household ceiling ' + reserve.ceiling_gib + ' GiB');
+      if (reserve.ceiling_gib === null) add(x.box + '.host', 'UNKNOWN', 'host ceiling UNKNOWN');
+      const threads = number(x.box + '.cpu_threads', x.cpu_threads);
+      const cpuReserve = v(box.cpu.reserve || data.checks.cpu_reserve.default_reserve);
+      if (threads !== null && threads > v(box.cpu.threads) - cpuReserve) add(x.box + '.cpu', 'FAIL', 'concurrent threads invade existing CPU reserve');
+      if (!x.gpu_gib || !Object.keys(x.gpu_gib).length) add(x.box + '.gpu', 'UNKNOWN', 'declare total GiB for each participating GPU, or host_only=true');
+      if (v(x.host_only) === true && networkKnown(data, x.host_only)) {
+        const ix = checks.findIndex(c => c.id === x.box + '.gpu');
+        if (ix >= 0) checks.splice(ix, 1);
+      }
+      Object.entries(x.gpu_gib || {}).forEach(([id, z]) => {
+        const g = box.gpus.find(y => y.id === id), need = number(x.box + '.' + id, z);
+        if (!g) { add(x.box + '.gpu', 'FAIL', 'unknown GPU ' + id); return; }
+        const busy = (g.other || []).reduce((s, y) => s + v(y.gib), 0), free = v(g.vram_gib) - busy;
+        if (need !== null && need > free) add(x.box + '.' + id, 'FAIL', 'total allocation exceeds VRAM after existing household/desktop use');
+      });
+      plans.push({ box: x.box, baseline_recipe: x.recipe_id || null, pinned, allocated_host_gib: allocated, ceiling_gib: reserve.ceiling_gib });
+    });
+    return { checks, plans };
+  }
+  function winNetwork(data, key, opts) {
+    const C = data.network, W = winCfg(data, key), o = opts || {}, N = o.agents || v(W.settings.plan_agents), base = W.frontier && v(W.frontier.tps);
+    if (!C) return [];
+    return C.recipes.filter(r => r.window === W.key || r.window === key).map(r => {
+      const checks = [], inputs = [], P = r.params || {}, resources = networkResources(data, r), compare = winComparison(o.source === 'ubench' ? { ...W, profile: W.ubench } : W, r, data, N);
+      checks.push(...resources.checks);
+      const add = (id, status, detail) => checks.push({ id, status, detail });
+      const get = (k, min, max, whole) => {
+        const x = P[k], z = v(x); inputs.push({ id: k, value: x || null });
+        if (!networkKnown(data, x) || z === null || z === undefined) { add(k, 'UNKNOWN', 'set a sourced ' + k + ' at N=' + N); return null; }
+        if (!Number.isFinite(z) || z < min || z > (max === undefined ? Infinity : max) || (whole && !Number.isInteger(z))) { add(k, 'FAIL', 'invalid ' + k); return null; }
+        return z;
+      };
+      const bool = (k, measured) => {
+        const x = r[k]; inputs.push({ id: k, value: x || null });
+        if (!networkKnown(data, x) || typeof v(x) !== 'boolean' || (measured && x.tag !== 'MEASURED')) { add(k, 'UNKNOWN', (measured ? 'measured ' : 'explicit ') + k + ' required'); return; }
+        if (!v(x)) add(k, 'FAIL', k + ' failed');
+      };
+      bool('backend_supported', false);
+      if (new Set(r.boxes).size !== r.boxes.length || r.boxes.length < 2 || !r.boxes.includes(W.box)) add('participants', 'FAIL', 'unique participants including the baseline box required');
+      (r.transfers || []).forEach(t => {
+        if (!r.boxes.includes(t.from) || !r.boxes.includes(t.to)) add('transfer_participants', 'FAIL', 'transfer uses a box outside the admitted power/resource budget');
+        for (const end of ['from', 'to']) if (t[end + '_memory'] === 'gpu') {
+          const resource = (r.resources || []).find(x => x.box === t[end]);
+          if (!resource || !resource.gpu_gib || !resource.gpu_gib[t[end + '_card']] || v(resource.host_only) === true) add('transfer_gpu', 'UNKNOWN', 'GPU endpoint needs an admitted allocation for the exact box/card');
+        }
+      });
+      if (!networkKnown(data, r.agents)) add('agents_evidence', 'UNKNOWN', 'sourced recipe agent count required');
+      if (v(r.agents) !== N) add('agents', 'FAIL', 'recipe rates/verification are at N=' + v(r.agents) + ', requested N=' + N);
+      const transfers = (r.transfers || []).map(t => networkTransfer(data, t));
+      transfers.forEach((t, i) => t.checks.forEach(c => add('transfer' + i + '.' + c.id, c.status, c.detail)));
+      if (!transfers.length) add('transfers', 'UNKNOWN', 'explicit byte/direction/transport/RTT/PCIe transfer recipe required');
+      const shipping = transfers.length && transfers.every(t => t.seconds !== null) ? transfers.reduce((s, t) => s + t.seconds, 0) : null;
+      const metrics = {}, known = xs => xs.every(x => x !== null && x !== undefined);
+      if (r.shape === 'pipeline') {
+        const stage = v(P.stage_ms), rows = get('rows', Number.MIN_VALUE), groups = get('groups', 1, undefined, true), eta = get('eta', Number.MIN_VALUE, 1);
+        if (!networkKnown(data, P.stage_ms) || !Array.isArray(stage) || stage.length < 2 || stage.some(x => !Number.isFinite(x) || x <= 0)) add('stage_ms', 'UNKNOWN', 'sourced full remote/local stage milliseconds per window required');
+        else if (known([rows, groups, eta, shipping])) {
+          if (rows * groups !== N || transfers.length !== stage.length - 1 || !r.stage_boxes || r.stage_boxes.length !== stage.length) add('pipeline_shape', 'FAIL', 'N=rows*groups and one directed hop per stage boundary required');
+          else if (r.stage_boxes.some(b => !r.boxes.includes(b)) || (r.transfers || []).some((t, i) => t.from !== r.stage_boxes[i] || t.to !== r.stage_boxes[i + 1])) add('pipeline_direction', 'FAIL', 'hop endpoints differ from stage owners');
+          else { metrics.stage_ms = stage.map((ms, i) => ms + (transfers[i] ? transfers[i].seconds * 1000 : 0)); metrics.decode_tps = winLaw(metrics.stage_ms, rows, groups, eta); }
+        }
+      } else if (r.shape === 'prefill') {
+        const prompt = get('prompt_tokens', 1, undefined, true), local = get('local_prefill_tps', Number.MIN_VALUE), remote = get('remote_prefill_tps', Number.MIN_VALUE);
+        const lp = get('local_decode_pause_s', 0), rp = get('remote_decode_pause_s', 0);
+        const source = (r.resources || []).map(x => (data.recipes || []).find(y => y.id === x.recipe_id)).find(x => x && x.box === W.box);
+        if (source && source.recipe) {
+          metrics.kv_plan = kvHostPlan(data, source.recipe);
+          if (networkKnown(data, P.upload_gib) && networkKnown(data, P.pmem_gib)) metrics.prefill_basis = prefillModel(data, source.recipe, v(P.upload_gib), null, v(P.pmem_gib)).at;
+        }
+        const kv = metrics.kv_plan, payload = kv && kv.bpc && kv.layers && prompt !== null ? prompt * kv.bpc * kv.layers : get('kv_bytes_per_slot', Number.MIN_VALUE);
+        metrics.kv_shipping_bytes = payload;
+        if (payload !== null && (r.transfers.length !== 1 || r.transfers[0].from !== r.remote_box || r.transfers[0].to !== W.box || v(r.transfers[0].bytes) < payload)) add('prefill_kv', 'FAIL', 'ship the full prompt KV from the remote prefill box to the decode box');
+        if (known([prompt, local, remote, lp, rp, shipping, payload])) {
+          metrics.local_ttft_s = prompt / local; metrics.remote_ttft_s = prompt / remote + shipping;
+          metrics.pause_saved_s = lp - rp; metrics.decode_tokens_saved_per_request = base * (lp - rp);
+          if (v(P.requests_per_s) !== null && v(P.requests_per_s) !== undefined || v(P.baseline_includes_prefill) === true) {
+            const rate = get('requests_per_s', 0);
+            if (v(P.baseline_includes_prefill) !== true || !networkKnown(data, P.baseline_includes_prefill)) add('baseline_includes_prefill', 'UNKNOWN', 'frontier must include the same request cadence and local pause');
+            else if (rate !== null && rate * lp < 1 && rate * rp < 1) metrics.decode_tps = base * (1 - rate * rp) / (1 - rate * lp);
+            else add('request_cadence', 'FAIL', 'prefill pauses saturate the decode timeline');
+          }
+        }
+      } else if (r.shape === 'draft') {
+        const dt = get('draft_tps', Number.MIN_VALUE), k = get('draft_tokens', 1, undefined, true), a = get('acceptance', 0, 1), vb = get('verify_base_ms_at_n', Number.MIN_VALUE), ve = get('verify_extra_ms_per_token_at_n', 0);
+        if (known([dt, k, a, vb, ve, shipping])) {
+          // Conditional per-position survival a, not an average accepted/drafted fraction. Stable geometric sum at a=1.
+          const accepted = a === 1 ? k : a * (1 - Math.pow(a, k)) / (1 - a);
+          metrics.accepted_per_agent_cycle = 1 + accepted;
+          metrics.cycle_s = N * k / dt + (vb + k * ve) / 1000 + shipping;
+          metrics.decode_tps = N * metrics.accepted_per_agent_cycle / metrics.cycle_s;
+        }
+      } else if (r.shape === 'parked_kv') {
+        const bytes = get('kv_bytes_per_slot', Number.MIN_VALUE), slots = get('parked_slots', 1, undefined, true);
+        if (known([bytes, slots, shipping])) {
+          metrics.extra_slots = slots; metrics.parked_gib = bytes * slots / GiB; metrics.park_and_resume_s = shipping;
+          metrics.park_s = transfers[0] ? transfers[0].seconds : null; metrics.resume_s = transfers[1] ? transfers[1].seconds : null;
+          const budget = (r.resources || []).find(x => x.box === r.remote_box);
+          if (!budget || r.remote_box === W.box || !Number.isFinite(v(budget.extra_host_gib))) add('parked_capacity', 'UNKNOWN', 'select a remote host allocation for the parked slots');
+          else if (v(budget.extra_host_gib) < metrics.parked_gib) add('parked_capacity', 'FAIL', 'parked slots exceed the admitted incremental remote host allocation');
+          if (r.transfers.length !== 2 || r.transfers[0].from !== W.box || r.transfers[0].to !== r.remote_box || r.transfers[1].from !== r.remote_box || r.transfers[1].to !== W.box || r.transfers.some(t => v(t.bytes) < bytes)) add('parked_transfer', 'FAIL', 'park and resume need one full-slot transfer in each exact direction');
+        }
+        // Capacity is not active decode throughput. There is intentionally no capacity->tok/s conversion here.
+      } else if (r.shape === 'compaction') {
+        const prompt = get('prompt_tokens', 1, undefined, true), summary = get('summary_tokens', 1, undefined, true), remote = get('remote_prefill_tps', Number.MIN_VALUE), sum = get('summary_tps', Number.MIN_VALUE), reread = get('reread_tps', Number.MIN_VALUE), local = get('local_prefill_tps', Number.MIN_VALUE), bytes = get('text_bytes_per_token', Number.MIN_VALUE);
+        bool('fidelity', true);
+        if (known([prompt, summary, remote, sum, reread, local, bytes, shipping]) && base > 0) {
+          metrics.text_bytes = (prompt + summary) * bytes;
+          if (r.transfers.length !== 2 || r.transfers[0].from !== W.box || r.transfers[0].to !== r.remote_box || r.transfers[1].from !== r.remote_box || r.transfers[1].to !== W.box || v(r.transfers[0].bytes) < prompt * bytes || v(r.transfers[1].bytes) < summary * bytes) add('compaction_text', 'FAIL', 'ship the prompt and summary text in their exact directions; small is not zero network latency');
+          if (summary >= prompt) add('compaction_size', 'FAIL', 'summary does not compact the prompt');
+          metrics.remote_elapsed_s = prompt / remote + summary / sum + shipping;
+          metrics.saved_generation_slot_s = summary / (base / N);
+          metrics.baseline_odie_slot_s = prompt / local + metrics.saved_generation_slot_s;
+          metrics.reread_slot_s = summary / reread;
+          metrics.odie_slot_s_saved = metrics.baseline_odie_slot_s - metrics.reread_slot_s;
+          // Native-unit credit is admitted below, after every resource, payload and comparison check.
+        }
+      } else add('shape', 'FAIL', 'unknown network recipe law ' + r.shape);
+      const power = networkPower(r.power || [], r.boxes, data), failed = checks.some(c => c.status === 'FAIL'), incomplete = checks.some(c => c.status === 'UNKNOWN');
+      const status = failed ? 'FAIL' : incomplete ? 'UNKNOWN' : 'MODELED';
+      if (r.shape === 'compaction') metrics.credited_slot_s_saved = status === 'MODELED' && compare.eligible && v(r.fidelity) === true && r.fidelity.tag === 'MEASURED' ? metrics.odie_slot_s_saved ?? null : null;
+      const eligible = status === 'MODELED' && compare.eligible && base > 0 && Number.isFinite(metrics.decode_tps) && metrics.decode_tps > 0;
+      const identity = { recipe: r.id, shape: r.shape, window: W.key, agents: N, mode: r.mode, evidence_config: r.evidence_config, metric: r.metric, catalog_schema: C.schema,
+        profile_source: o.source || 'profile', profile_point: (o.source === 'ubench' ? W.ubench || {} : W.profile || {}).point,
+        profile_identity: Object.fromEntries(['mode', 'evidence_config', 'metric'].map(k => [k, (o.source === 'ubench' ? W.ubench || {} : W.profile || {})[k] || null])),
+        frontier_identity: Object.fromEntries(['mode', 'evidence_config', 'metric'].map(k => [k, (W.frontier || {})[k] || null])), frontier: (W.frontier || {}).ledger, baseline_tps: base,
+        backend_supported: r.backend_supported, fidelity: r.fidelity, boxes: r.boxes, stage_boxes: r.stage_boxes || null, remote_box: r.remote_box || null,
+        transfers: (r.transfers || []).map((t, i) => ({ recipe: t, observation: transfers[i].observation || null, inputs: transfers[i].inputs })), inputs: r.params, resources: r.resources, resource_plans: resources.plans, power: r.power };
+      const canonical = x => JSON.stringify(networkCanonical(x));
+      const attempts = (W.attempts || []).filter(a => a.network_recipe === r.id).map(a => {
+        const receipt = a.network_receipt, matches = !!(receipt && receipt.recipe === r.id && canonical(receipt.identity) === canonical(identity) && canonical(receipt.measured_identity) === canonical(identity));
+        return Object.assign({}, a, { matches_priced_identity: matches, measurement_status: matches ? 'same priced identity' : 'historical or unqualified identity; no current recipe credit' });
+      });
+      return { id: r.id, lever: r.label, kind: 'network', shape: r.shape, boxes: r.boxes, status, checks, resources, inputs, transfers, metrics, power, comparison: compare, eligible,
+        at_frontier: eligible ? metrics.decode_tps : null, gain_pct: eligible && base > 0 ? 100 * (metrics.decode_tps / base - 1) : null,
+        modeled_per_watt: eligible && power.watts ? metrics.decode_tps / power.watts : null,
+        useful_work_per_joule: eligible && power.watts && v(r.fidelity) === true && r.fidelity.tag === 'MEASURED' && v(r.metric) === 'accepted_tokens_s' ? metrics.decode_tps / power.watts : null,
+        evidence: attempts.map(a => a.id), attempts, test: r.test, falsifier: r.falsifier, src: r.src, prediction_identity: networkCanonical(identity) };
+    });
+  }
+
+  // ---------- evidence, proposals and the frontier (config attempts, proposals, frontier, gate; RSI-top harvest H1, H4/H5, H8) ----------
+  // An attempt touches a lever when it acts on one of the lever's classes ('*' = every kernel), or on the layout for the split
+  // rebalance. Each touching attempt comes with the attempt it repairs and the one that repaired it, so a loss is never read
+  // without its repair (the evidence subgraph), and an engine-wide attempt shows on every kernel lever.
+  function winEvidence(W, lever) {
+    const A = W.attempts || [], fixedBy = id => A.filter(a => a.repairs === id).map(a => a.id);
+    const hit = a => (!a.network_recipe && (lever.kind === 'layout' ? !!a.layout : !a.layout && (lever.classes || []).some(c => a.classes.includes('*') || a.classes.includes(c))));
+    return A.filter(a => a.outcome !== 'control' && hit(a)).map(a => ({ id: a.id, label: a.label, mechanism: a.mechanism, action: a.action, outcome: a.outcome, scope: a.scope,
+      parent: a.parent || null, repairs: a.repairs || null, repaired_by: fixedBy(a.id), engine_wide: a.classes.includes('*'), tps: a.tps ? Object.fromEntries(Object.entries(a.tps).map(([k, x]) => [k, v(x)])) : null,
+      sanity: a.sanity ? v(a.sanity) : null, result: a.result || null }));
+  }
+  const winTried = ev => (ev.length ? ev.reduce((m, a) => Object.assign(m, { [a.outcome]: (m[a.outcome] || 0) + 1 }), {}) : null);
+  // whole-engine value against the measured frontier: the frontier is a tuned split, so a lever's modelled gain on its own
+  // rebalanced split (its total_rebalanced over today's rebalanced total) applies to the frontier's measured tok/s; a gain
+  // under the frontier's run-to-run noise is flagged, and nothing is accepted before the gate
+  function winFrontier(W, L, network, data) {
+    const F = W.frontier;
+    if (!F || !F.tps) return null;
+    const f = v(F.tps), noise = v(F.noise_pct), base = L.rebalanced.total;
+    const rank = L.levers.concat(L.unmeasured.map(x => Object.assign({ no_floor: true }, x))).filter(x => x.kind !== 'layout').map(x => {
+      const at = f * x.total_rebalanced / base, ev = winEvidence(W, x);
+      return { lever: x.lever, kind: x.kind, no_floor: !!x.no_floor, at_frontier: at, gain: at - f, gain_pct: 100 * (at / f - 1), inside_noise: 100 * (at / f - 1) < noise, tried: winTried(ev), evidence: ev.map(a => a.id) };
+    }).sort((a, b) => b.at_frontier - a.at_frontier);
+    const comparison = winComparison(L.source === 'ubench' ? { ...W, profile: W.ubench } : W, null, data, L.agents), kernels = rank.map(x => Object.assign({}, x, { id: x.lever, origin: 'kernel', status: comparison.eligible ? 'MODELED' : 'UNKNOWN', eligible: comparison.eligible, comparison }));
+    const candidates = kernels.concat((network || []).map(x => Object.assign({ origin: 'network' }, x))).sort((a, b) => Number(b.eligible) - Number(a.eligible) || (b.at_frontier || 0) - (a.at_frontier || 0));
+    return { label: F.label, tps: f, noise_pct: noise, split: F.split, src: F.src, model_rebalanced: base, rank, comparison,
+      candidates, shared_rank: candidates.filter(x => x.eligible), network: network || [], gate: W.gate || null };
+  }
+  // proposals: a lane's lever before it is built. Dedup is conservative: the same mechanism key and the same action (tokens in
+  // any order) as an attempt or an earlier proposal is a duplicate; the same key with another action is related, never merged.
+  // The expected effect comes from the model: a measured variant's lever, else the best lever over the proposal's classes
+  const winActionKey = a => a.split(/\s+/).filter(Boolean).map(x => x.toUpperCase()).sort().join(' ');
+  function winProposals(W, L) {
+    const A = W.attempts || [], seen = [];
+    return (W.proposals || []).map(p => {
+      const same = x => x.mechanism === p.mechanism.key || (x.mechanism && x.mechanism.key === p.mechanism.key);
+      const act = x => winActionKey(x.action) === winActionKey(p.action);
+      const prior = A.filter(same).map(a => ({ id: a.id, outcome: a.outcome, duplicate: act(a) })).concat(seen.filter(same).map(q => ({ id: q.id, outcome: 'proposed', duplicate: act(q) })));
+      seen.push(p);
+      const vl = p.variant && (W.variants || []).find(x => x.id === p.variant), cand = L.levers.concat(L.unmeasured).filter(x => (vl ? x.kind === 'variant' && x.class === vl.class : x.kind !== 'variant' && (x.classes || []).some(c => p.classes.includes(c))));
+      const best = cand.sort((a, b) => b.total - a.total)[0] || null, ev = [].concat(...cand.map(x => winEvidence(W, x))).filter((a, i, xs) => xs.findIndex(b => b.id === a.id) === i);
+      return Object.assign({}, p, { dedup: prior.some(x => x.duplicate) ? 'duplicate' : prior.length ? 'related' : 'new', prior, expected: best ? { lever: best.lever, total: best.total, gain: best.gain, total_rebalanced: best.total_rebalanced } : null,
+        evidence_on_targets: ev.map(a => ({ id: a.id, outcome: a.outcome })) });
+    });
+  }
+  // a blank proposal for a lever, the model's fields filled in: what a lane copies into the config's proposals
+  function winProposalTemplate(W, L, name) {
+    const x = L.levers.concat(L.unmeasured).find(l => l.lever === name);
+    if (!x) return null;
+    const ev = winEvidence(W, x);
+    return { id: '', lane: '', mechanism: { key: '', text: '' }, action: '', classes: x.classes || [], evidence: ev.length ? 'reuse' : 'exploration',
+      reuse: ev.map(a => a.id + ' (' + a.outcome + ')'), exploration: '', test: '', falsifier: '',
+      model: { lever: x.lever, kind: x.kind, ms_in_stage: x.ms_in_stage || null, xfloor_now: x.xfloor_now !== undefined ? x.xfloor_now : null, total: x.total, gain: x.gain, total_rebalanced: x.total_rebalanced },
+      gate: W.gate ? W.gate.steps : [] };
+  }
+  // everything report.js --window prints: the fit (and its refits at the ends of the routing range), the agents grid, the bottleneck
+  // stage's largest classes, the levers, and the what-ifs (each card's bandwidth with the config's stages; 1..n stages)
+  function winReport(data, key, opts) {
+    const W = winCfg(data, key), o = opts || {}, fit0 = winFit(data, key), N = o.agents || v(W.settings.plan_agents);
+    // the plan, levers and what-ifs start from the anchor point when one is named (o.anchor, else settings.plan_anchor)
+    const aid = o.anchor !== undefined ? o.anchor : W.settings.plan_anchor ? W.settings.plan_anchor.v : null, fit = (aid && winAnchor(data, key, fit0, aid)) || fit0;
+    // a measured profile (config `profile`) is the source when present, the ubench classes the fallback (o.source = 'ubench')
+    const ca = W.profile && W.profile.curve_anchor ? v(W.profile.curve_anchor) : null;
+    const prof = winProfFit(data, key, fit0, (ca && winAnchor(data, key, fit0, ca)) || fit), source = prof && o.source !== 'ubench' ? 'profile' : 'ubench', K = source === 'profile' ? prof.K : fit.K;
+    const levOf = x => (source === 'profile' ? winProfLevers(data, key, Object.assign({ fit: prof }, x)) : winLevers(data, key, Object.assign({ fit }, x)));
+    const agents = v(W.settings.agents_grid).filter(n => n >= v(W.min_batched_agents)).map(n => winStep(W, n, K));
+    const plan = winStep(W, N, K), b = plan.bottleneck, [a0, b0] = plan.split[b];
+    const label = id => (id === 'gap' ? 'gap: ' + W.profile.gap.label : id);
+    const top = (source === 'profile' ? Object.entries(K.prof.costs(plan.rows, {}).parts(a0, b0, b, plan.split.length)).map(([id, ms]) => ({ class: label(id), ms }))
+      : W.ubench.classes.map(c => ({ class: c.name, ms: winClassMs(W, c, plan.rows, K) / c.layers * W.layers.slice(a0, b0 + 1).filter(l => c.kind === null || l.kind === c.kind).length }))
+        .concat(W.extras.filter(e => winExtraOn(e, b, plan.split.length)).map(e => ({ class: 'extra: ' + e.label, ms: K.extras[e.id] * (e.per === 'row' ? plan.rows : 1) })))).sort((x, y) => y.ms - x.ms);
+    const unmeasured = winKinds(W).filter(k => !(k in W.ubench.kinds));
+    const phis = W.ubench.routing_phi_range.v.map(p => { const f = winFit(data, key, { phi: p }); return { phi: p, K: f.K, plan: winStep(W, N, f.K), stage_fit_max_abs_pct: f.stage_fit_max_abs_pct, tps_check_max_abs_pct: f.tps_check_max_abs_pct }; });
+    const cards = W.whatif_cards.concat(o.bw ? [{ box: null, id: 'what-if', name: 'a card at ' + o.bw + ' GB/s', bw: { v: o.bw } }] : []).map(c => ({ box: c.box, id: c.id, name: c.name, bw: v(c.bw), step: winStep(W, N, K, { bw: v(c.bw) }), rebalanced: winRebalance(W, N, K, { bw: v(c.bw) }), levers: levOf({ agents: N, bw: v(c.bw) }).levers.slice(0, 3).map(x => x.lever) }));
+    const stages = Array.from(new Set(v(W.settings.whatif_stages).concat(o.stages ? [o.stages] : []))).sort((x, y) => x - y).map(s => winRebalance(W, N, K, {}, s));
+    // the other reading of the unexplained per-row cost: in the kernels (gamma fitted), so every kernel lever pays more
+    const gfit0 = winFit(data, key, { gamma_free: true }), gfit = (aid && winAnchor(data, key, gfit0, aid)) || gfit0, glev = winLevers(data, key, { fit: gfit, agents: N, xfloor: o.xfloor });
+    const gamma_variant = { fit: gfit0, levers: glev.levers.map(x => ({ lever: x.lever, total: x.total, total_rebalanced: x.total_rebalanced })) };
+    // with the profile as the source, the ubench reading of the same levers stays beside it (the fallback, and what changed)
+    const ubench_levers = source === 'profile' ? winLevers(data, key, { fit, agents: N, xfloor: o.xfloor }).levers.map(x => ({ lever: x.lever, total: x.total, total_rebalanced: x.total_rebalanced })) : null;
+    const profile = prof ? Object.assign({}, prof, { K: undefined }) : null, L = levOf({ agents: N, xfloor: o.xfloor }), network = winNetwork(data, key, { agents: N, source });
+    return { key: W.key, label: W.label, source, fit: fit0, anchor: fit.anchor ? { id: fit.anchor, offset_ms: fit.K.offset } : null, profile, phis, gamma_variant, plan, top, agents, unmeasured_kinds: unmeasured,
+      levers: L, evidence: Object.fromEntries(L.levers.concat(L.unmeasured).map(x => [x.lever, winEvidence(W, x)])), frontier: winFrontier(W, L, network, data), network, proposals: winProposals(W, L),
+      template: o.propose ? winProposalTemplate(W, L, o.propose) : null, ubench_levers, whatif: { cards, stages } };
+  }
+
+
   // Explicit tier-read fractions price the existing kernels, not storage or quality. The within-tier type mix still comes
   // from the heat map: aggregate routing counts do not identify a new per-expert layout or KL distribution.
   function recipeReadHeat(ctx, tier, reads) {
@@ -1806,6 +2642,7 @@
   // Returns decode tok/s (with and without the draft), VRAM post-warm-up and peak range, predicted node MemFree, and every
   // assumption made. status 'UNMODELLED' (numbers null, why given) when the planner has no model for the recipe: never a guess.
   function predictRecipe(data, r) {
+    if (r && r.kind === 'network') return networkCheck(data, r).prediction;
     if (r && r.kind === 'dllm') return predictDllm(data, r);
     const A = [];
     const out = { status: 'UNMODELLED', why: null, decode_tps: null, decode_tps_nodraft: null, prefill_tps: null,
@@ -2452,7 +3289,7 @@
     const cal = data.cal, by = {};
     (data.recipes || []).forEach(row => {
       const m = row.measured, r = row.recipe || {}, res = cal.boxes[row.box];
-      if (!m || m.bad || (m.caveat || []).length || m.holdout || !(m.off > 0) || r.gate_waiver || r.kind === 'dllm' || r.decode_profile !== undefined || !res || !data.models[row.model]) return;
+      if (!m || m.bad || (m.caveat || []).length || m.holdout || !(m.off > 0) || r.gate_waiver || ['dllm', 'network'].includes(r.kind) || r.decode_profile !== undefined || !res || !data.models[row.model]) return;
       const h = res.host[row.model], fx = data.boxes[row.box].host_fixed;
       if ((h && h.tag !== 'ESTIMATE') || (fx && fx[data.models[row.model].host_group || row.model] !== undefined)) return;
       const p = predictRecipe(data, r);
@@ -2475,7 +3312,7 @@
     const by = {};
     (data.recipes || []).forEach(row => {
       const m = row.measured, r = row.recipe || {}, res = data.cal.boxes[row.box];
-      if (!m || m.bad || (m.caveat || []).length || m.holdout || !(m.off > 0) || r.kind === 'dllm' || r.decode_profile !== undefined || !res || !data.models[row.model]) return;
+      if (!m || m.bad || (m.caveat || []).length || m.holdout || !(m.off > 0) || ['dllm', 'network'].includes(r.kind) || r.decode_profile !== undefined || !res || !data.models[row.model]) return;
       const p = predictRecipe(data, r), ids = Object.keys((p && p.cross_layers) || {});
       if (p.status !== 'PREDICTED' || ids.length !== 1) return;
       const k = row.box + '|' + ids[0], x = p.cross_layers[ids[0]];
@@ -2580,6 +3417,11 @@
     return { tier, type };
   }
 
+  // Fixed-workload routing evidence, not the selected plan/score heat or a speed/quality term.
+  function routingSkew(data, mk) {
+    return (data.routing_skew || []).find(s => s.model === mk) || null;
+  }
+
   // ---------- export ----------
   function exportMap(ctx, lay, ev, extra) {
     const { m, tiers, types } = ctx;
@@ -2596,10 +3438,71 @@
       note: 'tier/type per routed expert, index = expert id within the layer. gate/up/down of one expert share the type unless the type is a split recipe (q2kq3k = gate+up q2_K, down q3_K).',
       tiers: tiers.map(t => ({ id: t.id, name: t.name, cap_gib: +(t.cap / GiB).toFixed(2) })),
       projected: { tok_s: +ev.tokps.toFixed(2), quality_pct: +ev.quality.toFixed(2), kld: +ev.kld.toFixed(5), plan_heat: ctx.planName, score_heat: ctx.scoreName },
+      heat_maps: { plan: heatCite(m, ctx.planName), score: heatCite(m, ctx.scoreName) },
+      routing_skew: routingSkew(ctx.data, ctx.mk),
       knobs: ctx.kn, layers
     }, extra || {});
   }
 
-  const api = { verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, exportMap, LAMS };
+  // ---------- agents vs speed: one curve per config (data.curves, build.py) ----------
+  // With G = min(n, groups) groups in use, S pipeline stages and a stage window t(r) = a + b x r ms for r = n / G agents a
+  // group, one cycle on the slowest stage takes max(G, S) windows and yields n tokens: total = eff x 1000 x n / (max(G, S) x
+  // t(n / G)). From the measured (n, total) pairs alone: n / total = A x max(G, S) + B x max(G, S) x n / G, A = a / (1000 eff),
+  // B = b / (1000 eff), fitted by least squares (two constants, no intercept). Uneven groups give the same sum (the window is
+  // linear in r), so n need not divide by G.
+  const curveK = (c, n) => { const G = Math.min(n, v(c.groups)); return { G, k: Math.max(G, v(c.stages)) }; };
+  function curveFit(data, c) {
+    const S = data.curves.settings, pts = c.points.filter(p => p.used), ns = [...new Set(pts.map(p => p.n))];
+    if (ns.length < v(S.min_points)) return { ok: false, why: ns.length + ' distinct agent count' + (ns.length === 1 ? '' : 's') + ' measured (' + v(S.min_points) + ' needed for the two constants)', pts };
+    const m = [0, 0, 0, 0, 0];
+    pts.forEach(p => { const { G, k } = curveK(c, p.n), x1 = k, x2 = k * p.n / G, y = p.n / v(p.tps); m[0] += x1 * x1; m[1] += x1 * x2; m[2] += x2 * x2; m[3] += x1 * y; m[4] += x2 * y; });
+    const det = m[0] * m[2] - m[1] * m[1], A = (m[3] * m[2] - m[4] * m[1]) / det, B = (m[4] * m[0] - m[3] * m[1]) / det;
+    if (!(A > 0 && B > 0)) return { ok: false, why: 'the points do not follow the window law (fitted A ' + A.toPrecision(3) + ', B ' + B.toPrecision(3) + '; both must be > 0: total falls as agents rise)', pts };
+    const at = n => { const { G, k } = curveK(c, n); return n / (A * k + B * k * n / G); };
+    const errs = pts.map(p => ({ n: p.n, run: p.run, meas: v(p.tps), pred: at(p.n), err: at(p.n) / v(p.tps) - 1 }));
+    // the stage window itself where the run printed it: eff per point = measured total / (1000 n / (max(G, S) x t)), and the
+    // line t = a + b x r through the windows when two or more agent-per-group counts carry one
+    const wp = pts.filter(p => p.win_ms).map(p => { const { G, k } = curveK(c, p.n); return { n: p.n, r: p.n / G, t: v(p.win_ms), eff: v(p.tps) / (1000 * p.n / (k * v(p.win_ms))) }; });
+    const rs = [...new Set(wp.map(x => x.r))];
+    const line = rs.length >= 2 ? lsq(wp.map(x => [1, x.r]), wp.map(x => x.t)) : null;
+    const win = wp.length ? { pts: wp, eff: wp.reduce((s, x) => s + x.eff, 0) / wp.length, a: line ? line[0] : null, b: line ? line[1] : null } : null;
+    return { ok: true, A, B, at, errs, err_max: Math.max(...errs.map(e => Math.abs(e.err))), win, pts, n_max: Math.max(...ns) };
+  }
+  // the host-pin check for n slots: the config's serving fields (READ from its flags) with --batch n, one GPU bank a stage;
+  // a config with --batch N or one server per agent count (slots_each_point) has a serving shape
+  function curveHost(data, c, n) {
+    if (!c.slots && !c.slots_each_point) return { status: 'UNKNOWN', detail: 'the run flags carry no --batch: no serving shape to check' };
+    const r = { id: c.id + '@' + n, box: c.box, model: c.model, engine: c.engine, ctx: c.ctx, draft: c.draft, serving: Object.assign({}, c.serving, { batch: n }),
+      gpu_split: v(c.stages) > 1 ? { banks_gib: Array(v(c.stages)).fill(0) } : undefined };
+    return hostPinnedCheck(data, r) || { status: 'UNKNOWN', detail: 'engine ' + c.engine + ' has no serving model' };
+  }
+  // watts at n: a measured point there (mean), else straight-line between the nearest measured counts around it (ESTIMATE)
+  function curveWatts(c, n) {
+    const w = c.points.filter(p => p.watts), at = w.filter(p => p.n === n);
+    if (at.length) return { w: at.reduce((s, p) => s + v(p.watts), 0) / at.length, tag: 'MEASURED' };
+    const lo = w.filter(p => p.n < n).sort((x, y) => y.n - x.n)[0], hi = w.filter(p => p.n > n).sort((x, y) => x.n - y.n)[0];
+    return lo && hi ? { w: v(lo.watts) + (v(hi.watts) - v(lo.watts)) * (n - lo.n) / (hi.n - lo.n), tag: 'ESTIMATE' } : null;
+  }
+  // the curve from 1 to agents_max with the readouts: the largest n with each agent >= min_each_tps (headline) and >=
+  // second_each_tps, the total there, the asymptotic total, the host-memory ceiling (largest slot count the host-pin check
+  // passes) and tok/s per watt where watts are logged. opts: { min, second, max } override the settings
+  function curveReport(data, c, opts) {
+    const S = data.curves.settings, o = opts || {}, f = curveFit(data, c);
+    const max = o.max || v(S.agents_max), min = o.min !== undefined ? o.min : v(S.min_each_tps), second = o.second !== undefined ? o.second : v(S.second_each_tps);
+    const power = c.points.filter(p => p.watts).map(p => ({ n: p.n, run: p.run, watts: v(p.watts), tps: v(p.tps), tps_per_w: v(p.tps) / v(p.watts) }));
+    // the largest slot count whose host-pinned set fits (null when the check cannot judge); a layer split that keeps the
+    // stage-lend duplicate also shows the ceiling with serving.stage_lend_drop
+    const ceiling = cc => { let ceil = 0, over = null; for (let n = 1; n <= max; n++) { const h = curveHost(data, cc, n); if (h.status !== 'PASS') { over = Object.assign({ n }, h); break; } ceil = n; } return { ceiling: over && over.status === 'UNKNOWN' ? null : ceil, all_fit: !over, first_over: over }; };
+    const host = ceiling(c), lend = v(c.stages) > 1 && c.slots && !c.serving.stage_lend_drop ? ceiling(Object.assign({}, c, { serving: Object.assign({}, c.serving, { stage_lend_drop: true }) })) : null;
+    if (lend && lend.ceiling !== null && lend.ceiling !== host.ceiling) host.with_lend_drop = lend.ceiling;
+    if (!f.ok) return { cfg: c, ok: false, why: f.why, fit: f, host, power, min, second, max };
+    const rows = Array.from({ length: max }, (_, i) => { const n = i + 1, t = f.at(n); return { n, total: t, each: t / n, measured: c.points.filter(p => p.n === n).map(p => ({ tps: v(p.tps), used: p.used, run: p.run })), fits_host: host.ceiling === null ? null : n <= host.ceiling, beyond_slots: c.slots ? n > v(c.slots) : null, extrapolated: n > f.n_max }; });
+    const pick = (X, cap) => { const r = rows.filter(x => x.each >= X && (!cap || x.fits_host !== false)).pop(); if (!r) return { each_min: X, n: 0, total: 0 }; const w = curveWatts(c, r.n); return { each_min: X, n: r.n, total: r.total, each: r.each, at_max: r.n === max, past_host: host.ceiling !== null && r.n > host.ceiling, extrapolated: r.extrapolated, watts: w, tps_per_w: w ? r.total / w.w : null }; };
+    const G = v(c.groups), K = Math.max(G, v(c.stages));
+    return { cfg: c, ok: true, fit: f, fit_warn: 100 * f.err_max > v(S.fit_warn_pct), rows, headline: pick(min), headline_in_memory: host.ceiling !== null && pick(min).past_host ? pick(min, true) : null, second: pick(second), asymptote: G / (K * f.B), host, power, min, second_min: second, max };
+  }
+  function curveReports(data, opts) { return data.curves.configs.map(c => curveReport(data, c, opts)); }
+
+  const api = { networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

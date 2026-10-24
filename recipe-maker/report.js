@@ -4,6 +4,8 @@
 // Pre-launch check: node report.js --check recipe.json [--json] [--strict]. Run ledger accuracy: node report.js --accuracy [runs.jsonl] [--json] [--bucket day|week]
 // External validation (community rows, runs/external.jsonl): node report.js --external [--json]
 // Screening rounds against the card conditions (runs/screen.jsonl, data/cards): node report.js --screen [--json]
+// Batched decode (N concurrent streams, data.batch): node report.js --batch [--json]
+// Batch window (bottom-up kernel cost per pipeline stage, data.window; lever table): node report.js --window [CONFIG] [--agents N] [--xfloor K] [--bw GBS] [--stages S] [--anchor ID | --no-anchor] [--source ubench] [--propose LEVER] [--json]
 // Layer map + trim proposals + upgrade advisor only (src/advisor.js; also part of the full and --quick reports): node report.js --advice [--json]
 'use strict';
 const fs = require('fs'), path = require('path');
@@ -86,6 +88,176 @@ if (args.includes('--screen')) {
   });
   const cs = Object.keys(data.cards).filter(k => !S.some(x => x.row.card === k));
   if (cs.length) console.log('cards with no screening run: ' + cs.map(k => k + ' (' + data.cards[k].name + ')').join(', '));
+  process.exit(0);
+}
+
+// ---------- batch window: node report.js --window [CONFIG] [--agents N] [--xfloor K] [--bw GBS] [--stages S] [--anchor ID | --no-anchor] [--source ubench] [--propose LEVER] [--json] ----------
+// The bottom-up cost of one batched-decode window per pipeline stage (data.window, src/model.js win*): the calibration and its
+// errors, tok/s per agent count, the bottleneck stage's largest terms, the lever table (each kernel class at k x its bandwidth
+// floor, ranked by tok/s at the plan's agents; the layer-split rebalance; the unmeasured extras) and the what-ifs. A measured
+// profile in the config is the source of the plan and the levers; the ubench classes are the fallback (--source ubench)
+const wi = args.indexOf('--window');
+if (wi >= 0) {
+  const W0 = data.window || { configs: {} }, num = f => { const i = args.indexOf(f); return i >= 0 ? Number(args[i + 1]) : undefined; };
+  const key = args[wi + 1] && !args[wi + 1].startsWith('--') ? args[wi + 1] : W0.default;
+  if (!key || !W0.configs[key]) { console.log('batch window: no config ' + (key || '') + ' in this build (data/window/*.json; configs: ' + (Object.keys(W0.configs).join(', ') || 'none') + ')'); process.exit(key ? 2 : 0); }
+  const R = FM.winReport(data, key, { agents: num('--agents'), xfloor: num('--xfloor'), bw: num('--bw'), stages: num('--stages'), anchor: args.includes('--no-anchor') ? null : (args.indexOf('--anchor') >= 0 ? args[args.indexOf('--anchor') + 1] : undefined), source: args.indexOf('--source') >= 0 ? args[args.indexOf('--source') + 1] : undefined, propose: args.indexOf('--propose') >= 0 ? args[args.indexOf('--propose') + 1] : undefined }), W = W0.configs[key];
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(R, null, 1) + '\n'); process.exit(0); }
+  if (args.includes('--propose')) {
+    if (!R.template) { console.log('no lever named ' + args[args.indexOf('--propose') + 1] + '; levers: ' + R.levers.levers.concat(R.levers.unmeasured).map(x => x.lever).join(', ')); process.exit(2); }
+    console.log('// a proposal for ' + R.template.model.lever + ': fill the blanks and add it to the config\'s proposals (the model and gate fields are for reading)');
+    fs.writeSync(1, JSON.stringify(R.template, null, 1) + '\n'); process.exit(0);
+  }
+  const f = R.fit, K = f.K, ms = xs => xs.map(x => x.toFixed(2)).join('/'), pct = x => (x === null ? '-' : (x >= 0 ? '+' : '') + (100 * x).toFixed(1) + ' %');
+  const tps = x => x.toFixed(1), sp = s => s.map(([a, b]) => a + '-' + b).join(' | ');
+  console.log(`batch window: ${R.label}`);
+  console.log(`  ubench: ${W.ubench.src}; ${W.ubench.classes.length} kernel classes over ${W.ubench.measured_layers} layers (${Object.entries(W.ubench.kinds).map(([k, c]) => c + ' ' + k).join(', ')}); floor at ${W.ubench.floor_rows} rows / ${FM.v(W.ubench.floor_gbs)} GB/s`);
+  console.log(`  spec: ${W.spec.src}; ${W.layers.length} layers (${W.layers.filter(x => x.from === 'model').length} kinds from the model's layer list)` + (R.unmeasured_kinds.length ? `; kinds the ubench did not measure: ${R.unmeasured_kinds.join(', ')}` : ''));
+  console.log(`calibration (FIT on ${f.equations} stage times, ${f.free} free constants${f.equations <= f.free ? ': exact in sample by construction' : ''}): ${K.omega_us.toFixed(1)} us taken off each isolated launch; gamma ${K.gamma.toFixed(2)} (${W.settings.gamma.tag}); routing share ${K.phi}; ` +
+    W.extras.map(e => `${e.id} ${K.extras[e.id].toFixed(3)} ms${e.per === 'row' ? ' a row' : ''}`).join(', ') + `; pipeline eta ${K.eta.toFixed(4)}`);
+  f.residuals.forEach(r => console.log(`  ${r.use.padEnd(5)} ${r.id} (${r.agents} agents, ${r.rows} rows a window${r.change ? '; ' + r.change : ''}): stage ms measured ${ms(r.stage_meas)}` +
+    (r.use === 'law' ? '' : `, predicted ${ms(r.stage_pred)} (${r.stage_err.map(pct).join(', ')})`) + (r.tps_meas === null ? '' : `; tok/s measured ${tps(r.tps_meas)}` + (r.tps_pred === null ? '' : `, predicted ${tps(r.tps_pred)} (${pct(r.tps_err)})`) + `, law on the measured stages ${tps(r.law_pred)} (${pct(r.law_err)})`)));
+  const p1 = x => (x === null ? '-' : x.toFixed(2) + ' %');
+  console.log(`  error: stage ms max |err| fit ${p1(f.stage_fit_max_abs_pct)}, check ${p1(f.stage_check_max_abs_pct)}; tok/s fit ${p1(f.tps_fit_max_abs_pct)}, check ${p1(f.tps_check_max_abs_pct)}; pipeline law ${p1(f.law_max_abs_pct)}`);
+  R.phis.forEach(x => console.log(`  routing share ${x.phi}: refit ${x.K.omega_us.toFixed(1)} us, ${W.extras.map(e => e.id + ' ' + x.K.extras[e.id].toFixed(3)).join(', ')}; plan ${tps(x.plan.total)} tok/s`));
+  const g = R.gamma_variant;
+  console.log(`  kernel-scale reading (gamma fitted ${g.fit.K.gamma.toFixed(2)}, ${g.fit.K.omega_us.toFixed(1)} us, extras ${W.extras.map(e => e.id + ' ' + g.fit.K.extras[e.id].toFixed(3)).join(', ')}; check tok/s ${p1(g.fit.tps_check_max_abs_pct)}): top levers ` + g.levers.slice(0, 4).map(x => `${x.lever} ${tps(x.total)}`).join('; '));
+  const PF = R.profile;
+  if (PF) {
+    console.log(`profile: ${W.profile.src}; ${PF.rows} rows a window at point ${PF.point}; term sums ${ms(PF.term_sum_ms)} ms (the profile's totals ${ms(PF.totals_ms)}), gap (${W.profile.gap.label}) ${ms(PF.gap_ms)} ms; terms follow ${FM.v(W.profile.rows_basis)} row curves (${W.profile.rows_basis.tag})`);
+    PF.checks.forEach(r => console.log(`  ${r.use.padEnd(7)} ${r.id} (${r.agents} agents, ${r.rows} rows a window): stage ms measured ${ms(r.stage_meas)}, predicted ${ms(r.stage_pred)} (${r.stage_err.map(pct).join(', ')})` +
+      (r.tps_meas === null ? '' : `; tok/s measured ${tps(r.tps_meas)}, predicted ${tps(r.tps_pred)} (${pct(r.tps_err)})`)));
+  }
+  console.log(`source of the plan and levers: ${R.source === 'profile' ? 'the measured profile (--source ubench for the ubench classes)' : 'the ubench classes' + (PF ? ' (--source ubench)' : '')}`);
+  if (R.anchor && R.source === 'ubench') console.log(`anchored on ${R.anchor.id} (its measured stage times; offsets ${ms(R.anchor.offset_ms)} ms a row on the first/last stage hold what changed since the ubench): plan, levers and what-ifs start there (--no-anchor for the bare model, --anchor ID for another point)`);
+  const P = R.plan;
+  console.log(`plan: ${P.N} agents in ${P.groups} row groups, ${P.rows} rows a window, split ${sp(P.split)}: stage ms ${ms(P.stage_ms)}, bottleneck stage ${P.bottleneck + 1}; ${tps(P.total)} tok/s in total, ${P.per_agent.toFixed(2)} per agent`);
+  console.log('  bottleneck stage, largest terms (ms a window): ' + R.top.slice(0, 6).map(x => `${x.class} ${x.ms.toFixed(2)}`).join('; '));
+  console.log('  agents: ' + R.agents.map(a => `${a.N}: ${tps(a.total)} (${a.per_agent.toFixed(1)} each; stages ${ms(a.stage_ms)})${a.beyond_grid ? ' [rows past the ubench grid]' : ''}`).join('; '));
+  const L = R.levers;
+  console.log(`levers at ${L.xfloor}x floor (${L.source === 'profile' ? 'each term group at k x its mapped classes\' floor' : 'in the graph'}; never below ${FM.v(W.settings.graph_launch_us)} us a launch), tok/s at ${L.agents} agents (now ${tps(L.now.total)}; with the split rebalanced ${tps(L.rebalanced.total)} at ${sp(L.rebalanced.split)}):`);
+  const tag = a => a.id + ' ' + a.outcome + (a.repaired_by.length ? '>' + a.repaired_by.join('+') : '');
+  const tried = name => (R.evidence[name] || []).filter(a => !a.engine_wide).map(tag).join(', ') || '-';
+  const wide = (W.attempts || []).filter(a => !a.network_recipe && a.classes.includes('*'));
+  if (wide.length) console.log('  tried on every kernel lever (engine-wide, not repeated in the column): ' + wide.map(a => tag(Object.assign({ repaired_by: W.attempts.filter(b => b.repairs === a.id).map(b => b.id) }, a))).join(', '));
+  console.log(`  rank  lever                                 kind     ${L.source === 'profile' ? 'x floor now      ' : 'x floor iso/graph'}  ms in stages     tok/s  (gain)    rebalanced  ` + FM.v(W.settings.lever_xfloor_grid).map(x => x + 'x').join('/').padEnd(17) + 'tried (attempt outcome>repaired by)');
+  const xf = x => (x.xfloor_iso !== undefined ? x.xfloor_iso + '/' + (x.xfloor_graph === null ? '-' : x.xfloor_graph.toFixed(1)) : x.xfloor_now !== undefined ? x.xfloor_now.toFixed(2) : '');
+  L.levers.forEach((x, i) => console.log(`  ${String(i + 1).padStart(4)}  ${x.lever.padEnd(37)} ${String(x.kind === null ? 'all' : x.kind).padEnd(9)}` +
+    `${xf(x).padEnd(19)}` +
+    `${(x.saved_ms ? x.saved_ms.map(y => '-' + y.toFixed(2)).join('/') : x.ms_in_stage ? ms(x.ms_in_stage) : ms(x.stage_ms)).padEnd(16)} ${tps(x.total).padStart(6)} (${(x.gain >= 0 ? '+' : '') + x.gain.toFixed(1)})`.padEnd(10) +
+    `  ${tps(x.total_rebalanced).padStart(8)}    ${(x.grid ? x.grid.map(y => y.total.toFixed(0)).join('/') : '').padEnd(17)}${tried(x.lever)}`));
+  console.log(`  ${L.source === 'profile' ? 'no floor' : 'unmeasured'} (priced at ${100 * FM.v(W.settings.extra_lever_share)} % off): ` + L.unmeasured.map(x => `${x.lever} ${ms(x.ms_in_stage)} ms -> ${tps(x.total)} (rebalanced ${tps(x.total_rebalanced)})`).join('; '));
+  const A = W.attempts || [];
+  if (A.length) {
+    console.log(`attempts (what was already tried; the evidence graph behind the tried column; engine rows read from the ledger):`);
+    A.forEach(a => console.log(`  ${a.id.padEnd(4)} ${a.outcome.padEnd(8)} ${a.scope.padEnd(12)}${a.label}: ${a.action}` + (a.parent ? `; parent ${a.parent}` : '') + (a.repairs ? `; repairs ${a.repairs}` : '') +
+      (A.some(b => b.repairs === a.id) ? `; repaired by ${A.filter(b => b.repairs === a.id).map(b => b.id).join(', ')}` : '') +
+      (a.tps ? `; ${Object.entries(a.tps).map(([k, x]) => k + ' ' + FM.v(x)).join(', ')} tok/s; sanity ${a.sanity === null ? 'unknown' : FM.v(a.sanity) === true ? 'passed' : FM.v(a.sanity) === false ? 'none' : 'unknown'}` : '') + (a.result ? `; ${a.result}` : '')));
+  }
+  if (R.ubench_levers) console.log('  the ubench reading of the levers (the fallback; anchored): ' + R.ubench_levers.slice(0, 6).map(x => `${x.lever} ${tps(x.total)}`).join('; '));
+  const FR = R.frontier;
+  if (FR) {
+    console.log(`against the frontier ${FR.label} (${tps(FR.tps)} tok/s measured, split ${sp(FR.split)}; noise ${FR.noise_pct} %): each lever's modelled gain on its rebalanced split applied to the frontier; no-floor rows at the share off:`);
+    FR.rank.slice(0, 10).forEach((x, i) => console.log(`  ${String(i + 1).padStart(4)}  ${x.lever.padEnd(37)} ${tps(x.at_frontier).padStart(6)} (${(x.gain_pct >= 0 ? '+' : '') + x.gain_pct.toFixed(1)} %)${x.inside_noise ? ' inside noise' : ''}${x.no_floor ? ' [no floor]' : ''}; tried ${x.tried ? Object.entries(x.tried).map(([k, n]) => n + ' ' + k).join(', ') : 'never'}`));
+    if (FR.gate) console.log(`  correctness gate (nothing is accepted before it; ${FR.gate.src}):\n` + FR.gate.steps.map((g, i) => `    ${i + 1}. ${g}`).join('\n'));
+  }
+  if (R.network.length) {
+    console.log('shared kernel/network frontier: ' + (FR ? FR.shared_rank.length : 0) + ' comparable rows; one-box headline unchanged');
+    (FR ? FR.candidates : R.network).forEach(x => console.log('  ' + (x.eligible ? tps(x.at_frontier) : 'UNRANKED') + ' ' + x.lever + ' [' + x.status + '] ' + (x.comparison ? x.comparison.why.join('; ') : '') + (x.checks ? '; ' + x.checks.map(c => c.id + ' ' + c.status).join(', ') : '')));
+  }
+  if (R.proposals.length) {
+    console.log('proposals (node report.js --window --propose LEVER prints a blank one; dedup: same mechanism key + same action = duplicate, same key = related):');
+    R.proposals.forEach(p => console.log(`  ${p.id} [${p.dedup}${p.prior.length ? ': ' + p.prior.map(x => x.id + ' ' + x.outcome).join(', ') : ''}] ${p.lane}: ${p.mechanism.key}: ${p.action} (${p.evidence})` +
+      (p.expected ? `; expected ${tps(p.expected.total)} tok/s (${(p.expected.gain >= 0 ? '+' : '') + p.expected.gain.toFixed(1)}; rebalanced ${tps(p.expected.total_rebalanced)}) via ${p.expected.lever}` : '; no lever matches its classes') +
+      `\n      reuses: ${(p.reuse || []).join('; ') || '-'}; explores: ${p.exploration || '-'}; prior attempts on its targets: ${p.evidence_on_targets.map(a => a.id + ' ' + a.outcome).join(', ') || 'none'}` +
+      `\n      cheapest test: ${p.test}; falsifier: ${p.falsifier}`));
+  }
+  console.log(`what-if, cards (the config's stages, each card's bandwidth; kernel efficiency carried over, extras, waits and the gap unchanged: ESTIMATE): ` + R.whatif.cards.map(c => `${c.name} ${c.bw} GB/s: ${tps(c.step.total)} (rebalanced ${tps(c.rebalanced.total)}); top levers ${c.levers.join(', ')}`).join('; '));
+  console.log(`what-if, stages (one card each, as many row groups as the config's ratio, split rebalanced; extra hand-offs unpriced, VRAM not checked): ` + R.whatif.stages.map(s => `${s.split.length}: ${tps(s.total)} tok/s (${s.rows.toFixed(1)} rows, ${sp(s.split)}, stage ms ${ms(s.stage_ms)})`).join('; '));
+  process.exit(0);
+}
+
+// ---------- agents vs speed: node report.js --curve [RUN_ID | all] [--min X] [--second X] [--max N] [--json] ----------
+// Per config (ledger rows with aggregate tok/s at two or more agent counts, pooled by box/model/engine/build/flags/ctx; data.curves,
+// src/model.js curve*): the fitted window law, total and per-agent tok/s from 1 to --max agents, the largest agent count with
+// each agent at >= --min tok/s (headline) and >= --second, the asymptotic total, the host-memory ceiling and tok/s per watt.
+// No RUN_ID: the default config (the window frontier's run). all: one line per config. A RUN_ID picks the config holding that run
+const cvi = args.indexOf('--curve');
+if (cvi >= 0) {
+  const C = data.curves, num = f => { const i = args.indexOf(f); return i >= 0 ? Number(args[i + 1]) : undefined; };
+  const opts = { min: num('--min'), second: num('--second'), max: num('--max') };
+  const want = args[cvi + 1] && !args[cvi + 1].startsWith('--') ? args[cvi + 1] : null;
+  const t1 = x => x.toFixed(1), pct = x => (x >= 0 ? '+' : '') + (100 * x).toFixed(1) + ' %';
+  if (want === 'all') {
+    const all = FM.curveReports(data, opts);
+    if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(all.map(r => Object.assign({}, r, { cfg: r.cfg.id, fit: r.ok ? { A: r.fit.A, B: r.fit.B, err_max: r.fit.err_max, win: r.fit.win } : { why: r.why } })), null, 1) + '\n'); process.exit(0); }
+    // measured-range readouts first (an extrapolated headline sits past every agent count the runs measured), each by its total
+    const ok = all.filter(r => r.ok).sort((a, b) => a.headline.extrapolated - b.headline.extrapolated || b.headline.total - a.headline.total), S = C.settings;
+    console.log(`agents vs speed: ${all.length} configs from the ledger, ${ok.length} with a curve; most agents at >= ${v(S.min_each_tps)} tok/s each (total there; x = past the largest measured count, m = past the host-memory ceiling), at >= ${v(S.second_each_tps)}, the asymptotic total, the host-memory ceiling (slots), the fit's max error, tok/s per W at the headline (measured.${v(S.power_field)})`);
+    const mk = h => (h.extrapolated ? 'x' : ' ') + (h.past_host ? 'm' : ' ');
+    const pw = x => x ? ` ${x.toFixed(3)} tok/s per W` : '';
+    ok.forEach(r => console.log(`  ${String(r.headline.n).padStart(3)} @ ${t1(r.headline.total).padStart(6)}${mk(r.headline)} ${String(r.second.n).padStart(3)} @ ${t1(r.second.total).padStart(6)}${mk(r.second)} asym ${t1(r.asymptote).padStart(6)}  host ${r.host.ceiling === null ? '  ?' : String(r.host.ceiling).padStart(3)}  fit ${(100 * r.fit.err_max).toFixed(1).padStart(4)} %${r.fit_warn ? '!' : ' '} measured n ${[...new Set(r.fit.pts.map(p => p.n))].join('/')}${pw(r.headline.tps_per_w)}  ${r.cfg.id}`));
+    all.filter(r => !r.ok).forEach(r => console.log(`  no curve: ${r.cfg.id}: ${r.why}; host ${r.host.ceiling === null ? '?' : r.host.ceiling}${r.power.map(p => `; n=${p.n} ${t1(p.tps)} @ ${t1(p.watts)} W${pw(p.tps_per_w)}`).join('')}`));
+    process.exit(0);
+  }
+  const c = want ? C.configs.find(x => x.runs.indexOf(want) >= 0 || x.id === want) : C.configs.find(x => x.key === C.default);
+  if (!c) { console.log('agents vs speed: ' + (want ? 'no config holds run ' + want : 'no default config') + ' (node report.js --curve all lists them)'); process.exit(want ? 2 : 0); }
+  const R = FM.curveReport(data, c, opts);
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(Object.assign({}, R, { fit: R.ok ? Object.assign({}, R.fit, { at: undefined }) : R.fit }), null, 1) + '\n'); process.exit(0); }
+  console.log(`agents vs speed: ${c.label}`);
+  console.log(`  ${c.box} ${c.model} ${c.engine}; ${v(c.groups)} batch group${v(c.groups) > 1 ? 's' : ''} (${c.groups.src}), ${v(c.stages)} stage${v(c.stages) > 1 ? 's' : ''} (${c.stages.src}), ${c.slots ? v(c.slots) + ' slots' : c.slots_each_point ? 'one server per agent count (--batch n)' : 'slots not given'}; runs ${c.runs.join(', ')}`);
+  console.log('  measured: ' + c.points.map(p => `n=${p.n} ${t1(v(p.tps))}${p.used ? '' : ' (not fitted: ' + p.why + ')'}${p.watts ? ' at ' + t1(v(p.watts)) + ' W' : ''}`).join('; '));
+  if (!R.ok) { console.log('  no curve: ' + R.why); process.exit(0); }
+  const f = R.fit;
+  console.log(`  fit (FIT): n / total = ${f.A.toPrecision(4)} x max(G, S) + ${f.B.toPrecision(4)} x max(G, S) x n / G; max |err| ${(100 * f.err_max).toFixed(1)} % ` + f.errs.map(e => `(n=${e.n} ${t1(e.meas)} vs ${t1(e.pred)}, ${pct(e.err)})`).join(' '));
+  if (R.fit_warn) console.log(`  WARNING: the fit misses a measured point by more than ${v(C.settings.fit_warn_pct)} %: the points do not follow the window law well (a step in the kernels, or mixed conditions)`);
+  if (f.win) console.log(`  stage window (READ from the run notes, slowest stage): ` + f.win.pts.map(x => `n=${x.n} r=${x.r} ${x.t.toFixed(2)} ms, eff ${x.eff.toFixed(3)}`).join('; ') + (f.win.a !== null ? `; t(r) = ${f.win.a.toFixed(2)} + ${f.win.b.toFixed(3)} x r ms` : '') + `; mean eff ${f.win.eff.toFixed(3)}`);
+  const H = R.headline, I = R.headline_in_memory, S2 = R.second, hc = R.host;
+  const w = x => x.watts ? `; ${t1(x.watts.w)} W (${x.watts.tag}), ${x.tps_per_w.toFixed(2)} tok/s per W` : '';
+  console.log(`  HEADLINE: ${H.n}${H.at_max ? '+' : ''} agents at >= ${R.min} tok/s each, ${t1(H.total)} tok/s total (${t1(H.each)} each)${H.extrapolated ? ', extrapolated past the measured counts' : ''}${H.past_host ? `, PAST the host-memory ceiling` : ''}${w(H)}`);
+  if (I) console.log(`  within host memory: ${I.n} agents, ${t1(I.total)} tok/s total (${t1(I.each)} each)${w(I)}`);
+  console.log(`  at >= ${R.second_min} tok/s each: ${S2.n} agents, ${t1(S2.total)} tok/s total${w(S2)}`);
+  console.log(`  asymptotic total (agents without limit): ${t1(R.asymptote)} tok/s`);
+  console.log(`  host-memory ceiling: ` + (hc.ceiling === null ? `unknown (${hc.first_over ? hc.first_over.detail : 'no check'})` : hc.all_fit ? `all ${R.max} slots fit` : `${hc.ceiling} slots (at ${hc.first_over.n}: ${hc.first_over.status}: ${hc.first_over.detail.slice(0, 260)}...)`) + (hc.with_lend_drop !== undefined ? `; ${hc.with_lend_drop} with STRATA_STAGE_LEND_DROP=1 (serving.stage_lend_drop)` : ''));
+  if (R.power.length) console.log('  power: ' + R.power.map(p => `n=${p.n} ${t1(p.watts)} W, ${p.tps_per_w.toFixed(2)} tok/s per W`).join('; '));
+  else console.log(`  power: no watts recorded for these runs (measured.${v(C.settings.power_field)})`);
+  const pick = new Set(v(C.settings.table_n).concat([H.n, S2.n, I ? I.n : 0, hc.ceiling || 0]).filter(n => n >= 1 && n <= R.max));
+  console.log('      n   total  each  ' + ['', 'measured'].join(''));
+  R.rows.filter(r => pick.has(r.n)).forEach(r => console.log(`  ${String(r.n).padStart(5)} ${t1(r.total).padStart(7)} ${t1(r.each).padStart(5)}  ${[r.measured.map(m => t1(m.tps) + (m.used ? '' : '*')).join('/'), r.extrapolated ? 'extrapolated' : '', r.beyond_slots ? 'needs --batch ' + r.n : '', r.fits_host === false ? 'over host memory' : '', r.n === H.n ? '<- headline' : '', r.n === S2.n ? '<- >= ' + R.second_min + ' each' : ''].filter(Boolean).join(', ')}`));
+  process.exit(0);
+}
+
+// ---------- batched decode: node report.js --batch [--json] ----------
+// N concurrent streams of one model (data.batch): the fit of the free constants per miss mode, its residuals on the ledger rows,
+// the hit-rate sensitivity, the one-card vs split twin, and the planning table (config x kernel variant x context x streams)
+if (args.includes('--batch')) {
+  if (!data.batch) { console.log('batched decode: no data.batch in this build (its ledger rows are not here)'); process.exit(0); }
+  const B = data.batch, fits = B.miss_modes.v.map(m => FM.batchFit(data, m));
+  const sens = [].concat(...B.miss_modes.v.map(m => B.hit_four_range.v.map(h => FM.batchFit(data, m, h))));
+  const tables = fits.map(x => ({ mode: x.mode, table: FM.batchTable(data, x) }));
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify({ fits, sensitivity: sens.map(s => ({ mode: s.mode, hit4: s.hit4, K: s.K, F: s.F, median_abs_pct: s.median_abs_pct })), tables }, null, 1) + '\n'); process.exit(0); }
+  const pct = x => (x >= 0 ? '+' : '') + (100 * x).toFixed(1) + ' %';
+  const fk = x => `fixed ${x.K.fixed.toFixed(2)} ms + ${x.K.row.toFixed(2)} ms per row; MTP ${x.F.tau.toFixed(2)} tokens per one-stream step; misses ${(100 * x.F.miss1).toFixed(1)} % + ${(100 * x.F.churn).toFixed(2)} % per extra row + ${(100 * x.F.mpg).toFixed(2)} % per GiB the other rows take`;
+  console.log(`batched decode: ${data.models[B.model].name} ${B.store} on ${B.box} (${B.engine}); ${B.rows.length} ledger rows, constants in data.batch`);
+  fits.forEach(x => {
+    console.log(`fit, misses ${x.mode}: ${fk(x)} (FIT); median |err| ${x.median_abs_pct.toFixed(1)} %, max ${x.max_abs_pct.toFixed(1)} %`);
+    x.residuals.forEach(e => console.log(`  ${e.use.padEnd(6)} ${e.id} N ${e.N}: measured ${e.meas.toFixed(1)}, predicted ${e.pred.toFixed(1)} (${pct(e.err)}; ${e.binding})`));
+    console.log(`  twin  split / one card at one stream: measured ${x.twin.meas.toFixed(3)}, predicted ${x.twin.pred.toFixed(3)}`);
+  });
+  const key = B.sensitivity_row;
+  sens.forEach(s => {
+    const t = FM.batchTable(data, s).find(x => x.config === key.config && x.variant === key.variant && x.ctx === key.ctx);
+    console.log(`sensitivity, misses ${s.mode}, four-stream hit ${s.hit4}: ${fk(s)}; median |err| ${s.median_abs_pct.toFixed(1)} %, twin ${s.twin.pred.toFixed(3)}; ${key.config}/${key.variant}/ctx ${key.ctx}: ` + t.steps.map(x => x.N + ': ' + x.total.toFixed(0)).join(', '));
+  });
+  tables.forEach(({ mode, table }) => {
+    console.log(`table, misses ${mode}: total tok/s (per stream) [binding] per stream count ${B.streams.v.join('/')}; target ${B.target_tps.v} tok/s`);
+    table.forEach(t => {
+      const s0 = t.steps[0], last = t.steps[t.steps.length - 1];
+      console.log(`== ${t.config} / ${t.variant} (${t.variant_label}) / ctx ${t.ctx}: first N at ${B.target_tps.v}: ${t.first_n_at_target || 'none'}; row ${s0.row_gib.toFixed(2)} GiB in VRAM` +
+        (s0.free_gib === null ? ' (taken from the expert cache)' : `, free ${s0.free_gib.toFixed(1)} GiB`) + `; weights ${s0.weights_gib.toFixed(1)} GiB; RAM at N ${last.N}: ${last.ram_gib.toFixed(1)} GiB`);
+      console.log('  ' + t.steps.map(s => `${s.N}: ${s.total.toFixed(0)} (${s.per_stream.toFixed(1)}) [${s.binding}${s.stream ? ', KV streamed' : ''}${s.fits ? '' : ', DOES NOT FIT'}]`).join('; '));
+    });
+  });
   process.exit(0);
 }
 

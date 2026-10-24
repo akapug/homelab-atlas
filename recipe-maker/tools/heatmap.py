@@ -247,6 +247,30 @@ def cite(m, slice_name=None):
     return {'map_id': m['id'], 'digest': m['digest'], 'slice': slice_name or m['default_slice']}
 
 
+def skew_evidence(maps, spec):
+    """Small fixed-workload projection of a validated map; absent/empty evidence is UNKNOWN, never zero.
+
+    Sample/completion metadata lives in the source catalog, not a heuristic over titles or token counts.
+    Counts and timings do not cross this boundary. A partial capture cannot stand for the paired workload.
+    """
+    out = dict(spec, status='UNKNOWN', map=None, phase=None, tokens=None, tokens_tag=None,
+               top10_cover=None, top25_cover=None)
+    m = maps.get(spec['map_id'])
+    if m is None:
+        return dict(out, reason='map not available in this copy')
+    validate(m)
+    sl = spec['slice']
+    if sl not in m['slices']:
+        return dict(out, reason='slice not available in this map')
+    s, summary = m['slices'][sl], m['summary'][sl]
+    out.update(map=cite(m, sl), phase=s['phase'], tokens=summary['tokens'], tokens_tag=summary['tokens_tag'],
+               checkpoint=m['model']['checkpoint'], workload=m['workload']['name'],
+               prompt_set_sha256=m['workload']['prompt_set_sha256'], tag=m['provenance']['tag'], src=m['provenance']['src'])
+    if summary['picks'] <= 0:
+        return dict(out, reason='slice has no expert selections')
+    return dict(out, status=m['provenance']['tag'], top10_cover=summary['top10_cover'], top25_cover=summary['top25_cover'])
+
+
 # ---------------- converters (source file -> slices + layers) ----------------
 def _layer_no(key):
     m = re.search(r'(?:blk\.|layers\.)(\d+)', key)

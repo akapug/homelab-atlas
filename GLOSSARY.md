@@ -65,6 +65,9 @@ The words and shorthand this repo uses, in plain terms. Alphabetical within each
 - **Tier split**: our change that gives CPU threads reading PMem-resident experts less work than those reading DRAM,
   so no thread waits on the slowest one.
 - **KV cache**: the memory that holds the conversation so far. **fp8 / int8 KV**: kept in 8 bits to fit more.
+  **k8v4**: keys in 8 bits, values in 4.
+- **Agent slot**: the context one agent may grow to on a batched server; a 131,072-token slot does not mean the
+  prompt is that long.
 
 ## Quality checks
 
@@ -88,6 +91,8 @@ The words and shorthand this repo uses, in plain terms. Alphabetical within each
   **SYCL**: the programming layer of llama.cpp's Intel backend. **Xe2**: the B70's GPU generation.
 - **Strata / XeStrata**: an engine that serves Qwen3.8 Flash-Next with its experts in RAM and a VRAM expert cache;
   XeStrata is its port to Intel GPUs.
+- **RDMA** / **RoCE**: one machine writing into another's memory through the network card, without the CPU copying
+  each packet; RoCE is RDMA over Ethernet. **IPoIB**: ordinary IP traffic carried over InfiniBand.
 - **Tool call**: the model asking its client to run something. **Agent client**: a program such as Claude Code
   that works through tool calls. **Proxy**: translates Anthropic's API to OpenAI's so Claude Code can talk to a
   local server.

@@ -6,6 +6,26 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+## [2026.10.24]
+
+Two Arc Pro B70s serve 32 agents at once, and three $10 network cards link three boxes at 56 Gb/s.
+
+### Added
+- `b70/many-agents.md`: Qwen3.8 Flash-Next (IQ3_XXS) across both B70s on our batched XeStrata branches (not published
+  yet) serves 32 agents at 349.6 tok/s in total, 10.92 each, every agent a 131,072-token slot, at 0.653 tok/s per watt
+  of card plus CPU package power (one 60 s window, synthetic coding-agent prompts). The page has the ladder from 24
+  agents, k8v4 against int8 KV, a matched control for the new switches (+3.7 %), every switch we tried with its
+  verdict, why the losers lost, a mixed 2 x 262,144 + 30 x 131,072 run, and what is still running. Headline: the B70
+  row in the README table now leads with it; `atlas.json` has the result (`unpublished-code`).
+- `network/`: three used ConnectX-3 cards at $10.19 each, cross-flashed from QCBT to FCBT firmware, as a switchless
+  triangle: 52.6 Gb/s RDMA per link in InfiniBand mode, 52.3-52.6 RoCE and about 50 Gb/s parallel TCP in 56GbE
+  Ethernet mode; flashing over the cable when a box cannot flash its own card.
+- Recipe Maker export at fit-viz e123342: the **Agents at once** view and `node report.js --curve` (total and
+  per-agent tok/s by agent count, the host-memory ceiling, tok/s per watt), the batch-window kernel planner
+  (`--window`), the KV host-memory check for streamed KV, and the many-agent runs above in the ledger (200 rows).
+  The accuracy table and gate counts in its README are recomputed on the new ledger.
+- GLOSSARY: k8v4, agent slot, RDMA / RoCE / IPoIB.
+
 ## [2026.10.22.1]
 
 The 12.69 tok/s V4.1 run becomes rebuildable from public code and weights, and the 1080 Ti gets a decode-attention

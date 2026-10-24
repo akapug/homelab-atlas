@@ -395,6 +395,20 @@ class Curate(unittest.TestCase):
         self.assertEqual([r['id'] for r in self.C.curate_rows(rows, dict(self.man, runs=cfg), {}, [])], ['cited', 'plain'])
         self.assertEqual(self.C.left_out(rows, cfg), {'zz9': {'why': 'held back', 'runs': {'b1': 1}}}, 'the kept run is not counted as left out')
 
+    def test_private_network_receipts_cannot_escape_through_the_ledger(self):
+        row = {'id': 'network-fixture', 'box': 'b1', 'model': 'ok1',
+               'recipe': {'kind': 'network', 'network_prediction_identity': {'src': 'private fixture capture'}},
+               'prediction': {'network': {'prediction_identity': {'src': 'private fixture capture'}}},
+               'measured': {'outcome': 'ok', 'network_identity': {'src': 'private fixture capture'}}}
+        with open(os.path.join(ROOT, 'publish', 'manifest.json')) as f:
+            man = json.load(f)
+        with self.assertRaisesRegex(ValueError, 'network.*catalog'):
+            self.C.curate_rows([row], man, {}, [])
+        public = dict(man, never={k: v for k, v in man['never'].items() if k != 'data/interconnects.json'})
+        self.assertEqual(self.C.curate_rows([row], public, {}, [])[0]['id'], row['id'])
+        held = dict(row, model=next(iter(man['runs']['skip_models'])))
+        self.assertEqual(self.C.curate_rows([held], man, {}, []), [])
+
     def test_ledger_is_curated(self):
         rows = L.rows(os.path.join(self.out, 'runs', 'runs.jsonl'))
         self.assertEqual([r['id'] for r in rows], ['r0', 'docs-42-run', 'r3'], 'the skipped model is out; ids are never rewritten')

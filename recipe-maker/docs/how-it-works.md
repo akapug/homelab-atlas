@@ -152,6 +152,8 @@ The recipe passes through these checks in order:
 | `rtr` | CPU repack (`-rtr`) is off when the model is split across tiers |
 | `quality` | the share of routed reads at 2 bits stays under the KL and top-1 bars, on a line fitted to measured points |
 | `conditions` | the serving conditions are declared (below) |
+| `kv_host` | an engine with a serving model (XeStrata): with KV streaming (`serving.kv_resident`) every session pins a host-RAM copy of its whole KV capacity, about bytes per cell x (`max_context` x (1 + `big_slots`) + `slot_context` x (`batch` - `big_slots`)) plus the drafters' own layer; FAIL when that leaves less than the engine's reserve (`checks.kv_host.reserve_gib`, STRATA_KV_HOST_RESERVE_GIB, default 16) of MemAvailable (`serving.mem_available_gib`, else the box DRAM less its `host_floor_gib`). Bytes per cell come from `models.<model>.kv_host` by `--kv` format; each copy adds the engine's `copy_overhead_mib` |
+| `host_pinned` | a recipe with a `serving` block on an engine with a serving model: every host-pinned buffer (driver GTT, which no cgroup or OOM kill sees) = the KV host copies + the terms of `checks.host_pinned.terms[model/engine]` (the expert complement, the stage-lend duplicate of a layer split unless `serving.stage_lend_drop`, prefill staging, prompt hand-off, embeddings, the rest); FAIL when it passes DRAM total - household floor - pinned margin (`serving.host_reserve_gib` replaces floor + margin). The detail names the levers (`slot_context` near the VRAM ring with `big_slots`, `stage_lend_drop`) |
 | `cpu_reserve` | a CPU-decode recipe leaves the box's reserved CPUs free of decode threads (`cpu.reserve`, default `checks.cpu_reserve.default_reserve`); UNKNOWN until `recipe.conditions` declares `threads` and `cpu_reserve` as numbers |
 
 `--json` prints the checks, the notes, the prediction and the resolved facts. It also carries back the recipe fields the
@@ -222,6 +224,12 @@ A recipe is a JSON file in `recipes/`. The fields are:
 - `id`, `label`, `box`, `model`, `engine`, and `engine_build` where the engine has calibrated builds
 - `store`: the quant types and the share of routed reads per type
 - `threads`, `rtr`, `draft`, and `knobs` (box changes such as freeing a GPU)
+- `serving` (engines with a serving model, XeStrata): the engine's batch and KV flags by name: `max_context` (default:
+  the recipe `ctx`), `batch`, `batch_groups`, `slot_context`, `big_slots`, `kv_resident`, `kv`, `batch_mtp`, `mtp_window`;
+  each left out takes the engine's own default from `engines.<engine>.serving.defaults`. `kv_host_reserve_gib` sets the
+  engine's STRATA_KV_HOST_RESERVE_GIB and `mem_available_gib` (with `mem_available_src`) the MemAvailable the engine
+  starts with; the `kv_host` check reads them. `stage_lend_drop` (STRATA_STAGE_LEND_DROP), `host_experts_gib` (the
+  experts this placement keeps off the cards) and `host_reserve_gib` feed the `host_pinned` check
 - `files`: each with a `path`, what it `holds`, and how it is accessed (`mmap`, `loaded`, `on_file`)
 - per-node expert placement for NUMA boxes, and `banks_gib` and `banks_experts` for VRAM expert caches
 - `conditions`: the serving conditions the numbers depend on: `ctx`, `kv_type`, `draft_n` (with a draft), `sampling`,
@@ -285,6 +293,136 @@ lane, its low-end gain is >= `suggest_min_gain` and the run passes quality. A bi
 reported as UNPRICED. `node report.js --advice [--json]` prints the advice. The full and `--quick` reports carry it too,
 in `layer_map`, `trim_proposals` and `upgrades`. build.py stores the same in data.json
 (`layer_maps.calibration`, `layer_maps.trim_proposals`, `upgrade.advice`).
+
+## Batch window: what a kernel is worth before you write it
+
+`node report.js --batch` fits a batched-decode step to measured tok/s. The batch window term builds the step from its
+kernels instead, so it can answer "if this kernel went from 7x to 1.2x its bandwidth floor, what would 32 agents get?".
+One config per `data/window/*.json`. Its inputs:
+
+| Input | What | Where it comes from |
+| --- | --- | --- |
+| spec | the model's dims and each layer's tensor types; a layer's kind (e.g. GDN or QSA) by the config's `kind_rule` | XeStrata `tools/batch_window_spec.py SHARD1.gguf [--layers A-B]`; layers the spec does not cover take their kind from the model's layer list in `data/models/` |
+| ubench | per kernel class: ms summed over the measured layers at each row count, bytes and floor at the floor's rows, x floor; the TOTAL lines (random routing, rows that share experts); the method floor; the copy-kernel GB/s | the card's batch-window microbenchmark log (its `STAGE ROLL-UP`), parsed by `probe/window_inputs.py` |
+| layout | stages (contiguous layer ranges, one card each), row groups, the engine's caps | the engine flags of the measured runs |
+| points | measured stage ms (and tok/s, from the ledger row when one exists) at known agent counts | the engine's stage timer |
+| profile (optional) | one point's window, ms per term per stage (a term = a few kernels of one layer kind, or a stage's own work such as the head) | the engine's own per-stage profile (XeStrata `STRATA_VERIFY_PROFILE=1`) |
+| variants (optional) | a rewritten kernel's measured time against the current one | the kernel lane's bench |
+
+The config's fields: `spec` (`file`, `kind_rule`: the tensor whose presence marks a layer's kind), `layers_beyond_spec`
+(the model-list field for layers the spec does not cover), `ubench` (`file`, `card`: the box and GPU id it ran on,
+`routing_phi` and its range), `stages` (`layers: [first, last]` each), `groups`, `max_agents`, `max_window_rows`,
+`min_batched_agents`, `extras` (`id`, `stage`: first or last, `per`: row or fixed; `kernel_scale_alt` marks the one the
+gamma-free refit drops), `settings` (`gamma`, `gamma_range`, `omega_max_us`, `omega_step_us`, `graph_launch_us`,
+`lever_xfloor`, `lever_xfloor_grid`, `extra_lever_share`, `plan_agents`, `agents_grid`, `whatif_stages`) and `points`
+(`id`, `use`: fit, check or law, `agents`, `stage_ms`, `split` when it ran on another layout than `stages`, and `tps`
+or a `ledger` row id and its `aggregate_tps` key). The build checks every split covers the layers in order. The
+optional `profile` has `point` (the point it was taken at), `split` (its layout, when not the stages'), `curve_anchor`
+(the point whose kernels it measured, for its row curve), `totals_ms`, `rows_basis`, `gap` (`label`, `rows_basis`),
+`checks` (point ids) and `terms`. Each term has `kind` or `stage` (first/last), `name`, `ms` (one per stage), `classes`
+(`[ubench class, share]` pairs; a share below 1 where a class splits over two terms), `lever` (the terms one lever moves
+together) and optionally `rows_basis` and `bw` (false for a wait). `variants` have `class`, `old_us`, `new_us` and
+`launches` (per layer). The build checks every class name, kind and stage count. Every number is `{v, tag, src}`.
+
+The model, all in `src/model.js` (`win*`):
+
+- A class runs in every layer of its kind (a class whose layer count is the measured total runs in every layer), at the
+  measured per-layer average. Its in-graph time = gamma x max(launch floor, isolated ms - layers x launches x omega).
+- A stage = the sum over its layers + the unmeasured extras of the first and last stage (fixed or per row; the config
+  lists them).
+- G row groups take turns through S stages: tok/s = eta x rows x 1000 x min(G / sum of stage ms, 1 / slowest stage ms),
+  rows = agents / G.
+- `winFit` fits omega (grid + golden section), the extras (non-negative least squares on the `fit` points' stage ms,
+  relative error) and eta (median measured / law). `check` points are scored, never fitted; `law` points (kernels the
+  ubench did not measure) score only the pipeline law. The report also refits at both ends of the routing range and with
+  gamma free (the reading where the per-row cost the kernels miss lives in them, so every kernel lever pays more).
+- A lever takes one class to k x its floor (the ubench's own ratio; never under `graph_launch_us` a launch) and scales
+  its whole row curve by the same factor. The table ranks by tok/s at the plan's agents on today's split, and also prints
+  each lever with the split rebalanced (the least slowest stage over contiguous splits). The rebalance is a lever of its
+  own; each unmeasured extra is priced at `extra_lever_share` off, so it gets measured.
+- With a `profile`, the profile is the source (`--source ubench` turns it off). A layer's cost is the sum of its kind's
+  terms on the stage it was profiled on, split evenly over that stage's layers of the kind. Stage terms go on their
+  stage position. The gap (the point's measured stage run minus the term sum: launch gaps, syncs, work the profile does
+  not time) is a term of its own, spread over the stage's layers. At other row counts each term follows its
+  `rows_basis`: `stage` (the calibrated ubench model's stage curve, anchored when the report anchors), `classes` (its
+  mapped classes' in-graph curve, noisy below 4 rows), `row` or `fixed`. The profile's `checks` score this at other
+  agent counts and on the run without profiling. A lever takes each term of a group to k x its mapped classes' floor (the
+  `x floor now` column is the profiled time over that floor; at or under 1, the lever pays nothing). Groups without a
+  floor, and the gap, are priced at `extra_lever_share` off. A variant subtracts (old - new) x launches per layer from
+  the terms that map its class, scaled along the class's row curve.
+- The ubench levers stay in the table as variants too (the class at new/old), and the report prints the ubench reading
+  of the levers next to the profile's.
+- Evidence, frontier and proposals (optional config fields `attempts`, `frontier`, `gate`, `proposals`). An attempt
+  has a mechanism key, an action, the ubench classes it acts on (`*` = every kernel, `layout: true` = the split), a
+  parent, the attempt it `repairs`, an outcome (win, loss, neutral, mixed, pending, control) and a scope (isolated or
+  bundle_only). Engine attempts read their tok/s (MEASURED) and their sanity line (READ) from their ledger row. Kernel-lane
+  attempts carry their result in words. A lever lists every attempt on its classes, each loss with the attempt that
+  repaired it (`tried` column, `attempts` block). The frontier ranking applies each lever's modelled gain on its
+  rebalanced split to the frontier's measured tok/s, and flags a gain under the frontier's noise. Nothing is accepted
+  before the `gate` steps pass. A proposal (mechanism key and text, action, classes, reuse or exploration, the cheapest
+  test, a falsifier) gets its expected effect from the model. It is a duplicate when its mechanism key and action
+  (tokens in any order) match an attempt or an earlier proposal, and related when only the key matches. Related
+  proposals are never merged. `--propose LEVER` prints a blank one for a lever. The design follows the RSI-top review's
+  harvest list (H1 evidence subgraph, H4/H5 proposal and dedup, H8 frontier value with a correctness gate).
+- What-ifs: every GPU in `data/boxes` (kernel time x reference GB/s / that card's GB/s, efficiency carried over, extras
+  unchanged), and 1..n stages (rebalanced, as many row groups as the config's ratio, hand-offs between extra stages and
+  VRAM not counted).
+
+Limits: the ubench measures one card and the layers the spec covers; the other layers take the per-layer average of
+their kind (their tensor types may differ). The extras are fitted, so with as many fit stage times as free constants the
+fit is exact in sample and only `check` points say how good it is. Attention classes are taken as measured at every
+depth (the ubench's context is printed on its device line). A profile prices today's kernels as they run, but each
+term's floor still comes from the ubench's bytes. A kernel rewritten since the ubench (a new form with other bytes)
+can show at or under 1x its floor, and then the floor understates what it could still save. The pipeline law takes the
+slowest stage's mean as the cycle. With the stages level (split 25: within about 1 ms), each window waits for the slower
+of two jittering stages, so the law overpredicts by 2 % (V4 at split 25) to 6 % (the all-on image). Moving a layer to
+another card also moves the expert cache each card holds, which the profile does not price. Its checks at split 25 are
+off by up to 4 % on stage 0 at two agents, and the rebalance lever reads high for both reasons (split 25 measured
++0.3 % where the model said +3.6 %). The term-to-class mapping
+is the config's reading of the engine's term names.
+
+## Agents vs speed: `--curve`
+
+A batched engine splits its agents into G groups (`--batch-groups`) that take turns through S pipeline stages (one per
+card, from the layer split). One stage window for r agents in a group takes t(r) = a + b x r ms: a fixed part (launches,
+the dense weights read once) plus a part per agent. With G = min(n, groups) groups in use, a cycle on the slowest stage
+takes max(G, S) windows and yields one token per agent, so
+
+    total(n) = eff x 1000 x n / (max(G, S) x t(n / G))
+
+Groups of uneven size give the same sum, because t is linear in r. The fit uses only the measured (n, total) pairs:
+n / total = A x max(G, S) + B x max(G, S) x n / G, with A = a / (1000 eff) and B = b / (1000 eff), fitted by least
+squares. Two agent counts fix both constants. More counts give a residual, flagged when it passes `fit_warn_pct`. When a run
+note prints its stage times (`stage run n=32 45.87/45.03 ms`, slowest stage = the window), the report also gives eff for
+each point and the line a + b x r through the windows.
+
+`build.py` pools ledger rows by box, model, engine, build, engine flags and context. It reads the groups, stages, slots
+and serving fields (`--kv-resident`, `--kv`, `--slot-context`, `MAX_CONTEXT`, `STRATA_STAGE_LEND_DROP`) from the flags,
+and from the run's isolation and KV notes when the flags omit them. Some points stay out of the fit and are marked:
+
+- n = 1 with a drafter and batch MTP off, which runs the single-stream path
+- counts above `--batch`, where agents queue
+- caveated rows
+
+The readouts:
+
+- the most agents with each at `min_each_tps` or more, and the total there (the headline)
+- the same at `second_each_tps`
+- the total the setup approaches with unlimited agents: G / (max(G, S) x B)
+- the host-memory ceiling: the largest slot count whose host-pinned set (the `--check` host_pinned check, with
+  `--batch` set to that count) still fits. A layer split that keeps its stage-lend duplicate also shows the ceiling
+  with it dropped.
+- tok/s per watt at each count whose run logged `measured.power_w`, either one number or `{cN: W}`, with a straight
+  line between logged counts
+
+A headline past the ceiling also gives the best count within it.
+
+Limits:
+
+- The window is linear in r only while the kernels scale smoothly. The profiled run (2026-10-23) shows a step between 4
+  and 8 agents per group, so a two-point fit through n = 2 and n = 32 smooths over it.
+- Counts past the largest measured one are projections and are drawn dashed.
+- Context length, prompt mix and thinking level are whatever the runs used, and they move the window.
 
 ## Honest limits
 
@@ -388,5 +526,9 @@ python3 -W error::ResourceWarning -m unittest discover -s tests
 node tests/test_accuracy.js
 node tests/test_advisor.js
 node tests/test_decode_fit.js
+node tests/test_batch.js
+node tests/test_window.js
+node tests/test_curve.js
+node tests/test_kv_host.js
 node tests/test_screen.js          # needs the private quality-round ledger; not in the public copy
 ```

@@ -1,4 +1,13 @@
 /* fit-viz page styles; index.html links this file */
+/* Networking comparisons keep unlike units in a table, using the existing theme and type system. */
+.network-scroll { overflow-x: auto; max-width: 100%; }
+.network-detail, #network { min-width: 0; }
+#network pre { max-width: 100%; overflow-x: auto; }
+#network td { overflow-wrap: anywhere; vertical-align: top; font-variant-numeric: tabular-nums; }
+#network textarea { width: 100%; min-height: 12rem; box-sizing: border-box; }
+#network dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .3rem 1rem; }
+#network dt, #network dd { margin: 0; overflow-wrap: anywhere; }
+
 .viz-root {
   color-scheme: light;
   --surface-0: #f4f3f0; --surface-1: #fcfcfb; --surface-2: #efeee9; --border: #dcdad3;

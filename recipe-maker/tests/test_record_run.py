@@ -35,6 +35,20 @@ class Validate(unittest.TestCase):
     def test_good(self):
         self.assertEqual(R.validate(good_row()), [])
 
+    def test_network_fold_back_retains_the_exact_priced_identity(self):
+        r = good_row()
+        identity = {'recipe': 'fixture-network', 'window': 'fixture-window', 'agents': 4, 'mode': 'fixture-fast'}
+        r['recipe'].update(kind='network', network_recipe=identity['recipe'], network_prediction_identity=copy.deepcopy(identity))
+        r['prediction'] = {'network': {'prediction_identity': copy.deepcopy(identity)}}
+        r['measured']['network_identity'] = copy.deepcopy(identity)
+        r['measured']['src']['network_identity'] = 'synthetic exact launch capture'
+        self.assertEqual(R.validate(r), [])
+        r['measured']['network_identity']['mode'] = 'fixture-slow'
+        self.assertTrue(any('network_identity' in b for b in R.validate(r)))
+        r['measured']['network_identity'] = copy.deepcopy(identity)
+        r['prediction']['network']['prediction_identity']['agents'] = 8
+        self.assertTrue(any('prediction must retain' in b for b in R.validate(r)))
+
     def test_number_without_source(self):
         r = good_row()
         r['measured']['vram_post_gib'] = 21.06

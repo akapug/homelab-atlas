@@ -1,0 +1,59 @@
+{
+ "id": "odie-fnx-xestrata-live-b32-131k",
+ "label": "odie Flash-Next IQ3_XXS 2x B70 layer split, XeStrata gm, the live qfn2 service of 2026-10-23: --batch 32 in 2 groups, every session at 131,072 cells (no --slot-context), int8 KV streamed past --kv-resident 4096, no batch MTP",
+ "box": "odie",
+ "model": "fnx",
+ "engine": "strata",
+ "engine_build": "gm image local/xestrata-qwen38:gm (strata 305c819), the V4 config",
+ "store": {
+  "split": true,
+  "types": [
+   "gsq_iq3xxs"
+  ]
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": "auto",
+ "threads": 24,
+ "draft": true,
+ "banks_gib": 39.96,
+ "files": [
+  {
+   "path": "/models/qfn-gsq/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded"
+  }
+ ],
+ "ctx": 131072,
+ "conditions": {
+  "ctx": 131072,
+  "kv_type": "int8 (--kv int8), --kv-resident 4096 (older KV streamed to pinned RAM)",
+  "draft_n": "MTP --spec 4 (one stream only)",
+  "sampling": {
+   "set_by": "per request (agent clients)"
+  },
+  "reasoning_effort": "per request (agent clients)",
+  "workload": {
+   "agent": "many concurrent coding agents, one batch slot each"
+  },
+  "engine_flags": "--batch 32 --no-batch-mtp --batch-groups 2 --kv-resident 4096; layer split 24; env MAX_CONTEXT=131072 (runs odie-fnx-iq3xxs-2xb70-split-batch32-groups2-gm-v4-mmvqrows2-wgrows2-confirm-quick-1023)"
+ },
+ "src": "coordinator brief 2026-10-23: the live qfn2 config pinned 84.6 GiB of host GTT and hung odie twice; MemAvailable from the gm-round memprobe (runs odie-fnx-iq3xxs-2xb70-split-batch32-groups2-gm-v2-tilecols16-rerun-quick-1023)",
+ "gpu_split": {
+  "banks_gib": [
+   17.72,
+   22.24
+  ]
+ },
+ "layout_note": "the live many-agent service: the host_pinned check flags it (84.6 GiB pinned over the 78.4 GiB ceiling); levers serving.slot_context 20480 (+ big_slots) and serving.stage_lend_drop",
+ "serving": {
+  "max_context": 131072,
+  "batch": 32,
+  "batch_groups": 2,
+  "kv_resident": 4096,
+  "kv": "int8",
+  "batch_mtp": false,
+  "mem_available_gib": 24.9,
+  "mem_available_src": "MEASURED at load (112.0 before, 18-19.6 at 32 agents; runs odie-fnx-iq3xxs-2xb70-split-batch32-groups2-gm-v2-tilecols16-rerun-quick-1023 layout_note)"
+ }
+}

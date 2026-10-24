@@ -1,0 +1,26 @@
+{
+ "about": "Agents vs speed (build.py data.curves, src/model.js curve*, node report.js --curve, the page's Agents tab). Every ledger row that measured aggregate tok/s at two or more agent counts is a fit point set; rows with the same box, model, engine, build and engine flags pool into one config. Per config the batched decode law n / total = A x max(G, S) + B x max(G, S) x n / G (G = batch groups in use, S = pipeline stages) is fitted to the measured (n, total) pairs; A and B are the stage window's intercept and slope per agent, divided by 1000 x the pipeline efficiency. Every number here is {v, tag, src}.",
+ "settings": {
+  "min_each_tps": {"v": 10, "tag": "READ", "src": "a setting (report.js --min, or the box on the page): the headline readout is the largest agent count with each agent at or above this many tok/s, and the total there"},
+  "second_each_tps": {"v": 20, "tag": "READ", "src": "a setting (report.js --second): the secondary readout, agents at or above this many tok/s each"},
+  "agents_max": {"v": 64, "tag": "READ", "src": "a setting (report.js --max): the curve runs from 1 agent to this many"},
+  "min_points": {"v": 2, "tag": "READ", "src": "two free constants (A, B) need two distinct agent counts; a config with fewer shows its points and no curve"},
+  "table_n": {"v": [1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64], "tag": "READ", "src": "the agent counts report.js --curve prints (the JSON carries every n); the readout counts are added"},
+  "single_path_flags": {"v": ["--no-batch-mtp"], "tag": "READ", "src": "XeStrata: with a drafter and batch MTP off, one agent runs the MTP single-stream path, not the batch window; its n = 1 point is kept out of the fit (shown, marked)"},
+  "stage_window_re": {"v": "n=(\\d+) (\\d+(?:\\.\\d+)?)/(\\d+(?:\\.\\d+)?) ms", "tag": "READ", "src": "the bench driver's layout_note form 'stage run n=32 45.87/45.03 ms': one ms per stage; the slowest stage is the window"},
+  "power_field": {"v": "power_w", "tag": "READ", "src": "measured.power_w in a ledger row: wall watts, either one number for the run or {cN: W} per agent count like aggregate_tps"},
+  "fit_warn_pct": {"v": 5, "tag": "READ", "src": "a config whose fit misses a measured point by more than this many percent is flagged: the points do not follow the window law"}
+ },
+ "flags": {
+  "slots": {"v": "--batch (\\d+)", "tag": "READ", "src": "XeStrata --batch N: N agent slots; a point above N queued agents and is kept out of the fit"},
+  "slots_each_point": {"v": "--batch=agents", "tag": "READ", "src": "the bench driver's sweep form '--batch=agents (one fresh server per agent count)': each point ran its own server with --batch n, so the host-pin check at n uses n slots"},
+  "groups": {"v": "--batch-groups (\\d+)", "tag": "READ", "src": "XeStrata --batch-groups G (default 1): the agents split into G groups that take turns through the pipeline stages"},
+  "split": {"v": "layer split ([\\d,]+)", "tag": "READ", "src": "the bench driver's engine_flags (older rows: conditions.isolation) 'layer split 25' (or '24,48'): one more stage than split points; none = one stage"},
+  "kv_resident": {"v": "--kv-resident (\\d+)", "tag": "READ", "src": "XeStrata --kv-resident cells (serving.kv_resident)"},
+  "kv": {"v": "--kv (\\w+)", "tag": "READ", "src": "XeStrata --kv type (serving.kv); the flags, else conditions.kv_type"},
+  "slot_context": {"v": "--slot-context (\\d+)", "tag": "READ", "src": "XeStrata --slot-context (serving.slot_context)"},
+  "big_slots": {"v": "--big-slots (\\d+)", "tag": "READ", "src": "XeStrata --big-slots (serving.big_slots)"},
+  "max_context": {"v": "(?:--max-context |MAX_CONTEXT=)(\\d+)", "tag": "READ", "src": "XeStrata --max-context or env MAX_CONTEXT (serving.max_context); else the recipe ctx"},
+  "stage_lend_drop": {"v": "STRATA_STAGE_LEND_DROP=1", "tag": "READ", "src": "XeStrata env STRATA_STAGE_LEND_DROP=1 (serving.stage_lend_drop)"}
+ }
+}

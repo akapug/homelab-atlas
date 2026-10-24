@@ -1,0 +1,58 @@
+{
+ "id": "odie-fnx-xestrata-slotctx-b32",
+ "label": "odie Flash-Next IQ3_XXS 2x B70 layer split, XeStrata slotctx serving many agents: --batch 32 in 2 groups, the main session + 1 big slot at 262,144 cells and 31 slots at 131,072 (--slot-context), int8 KV streamed past --kv-resident 4096",
+ "box": "odie",
+ "model": "fnx",
+ "engine": "strata",
+ "engine_build": "slotctx (XeStrata lab notes fork odie-fix 13c3f2a: --slot-context / --big-slots, KV host reserve)",
+ "store": {
+  "split": false,
+  "types": [
+   "gsq_iq3xxs"
+  ]
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": "auto",
+ "threads": 24,
+ "draft": true,
+ "banks_gib": 39.96,
+ "files": [
+  {
+   "path": "/models/qfn-gsq/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded"
+  }
+ ],
+ "ctx": 262144,
+ "conditions": {
+  "ctx": 262144,
+  "kv_type": "int8 (--kv int8), --kv-resident 4096 (older KV streamed to pinned RAM)",
+  "draft_n": "MTP --spec 4 (engine default --batch-mtp: a drafter per slot with --mtp)",
+  "sampling": {
+   "set_by": "per request (agent clients)"
+  },
+  "reasoning_effort": "per request (agent clients)",
+  "workload": {
+   "agent": "many concurrent coding agents, one batch slot each; the conversation that needs the full window takes a big slot"
+  },
+  "engine_flags": "--batch 32 --batch-groups 2 --max-context 262144 --slot-context 131072 --big-slots 1 --kv int8 --kv-resident 4096"
+ },
+ "src": "an agent lab notes many-agent serving plan 2026-10-23 (owner: Recipe Maker accounts for --slot-context, every knob tweakable); engine flags from lab notes odie-fix bf0d97c..13c3f2a",
+ "gpu_split": {
+  "banks_gib": [
+   17.72,
+   22.24
+  ]
+ },
+ "layout_note": "mixed slot contexts: the planned many-agent service; the kv_host check prints the pinned KV copy",
+ "serving": {
+  "max_context": 262144,
+  "batch": 32,
+  "batch_groups": 2,
+  "slot_context": 131072,
+  "big_slots": 1,
+  "kv_resident": 4096,
+  "kv": "int8"
+ }
+}
