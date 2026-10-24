@@ -2,11 +2,11 @@
 
 How many coding agents can one box serve at once, each fast enough to work with? On the Threadripper box (a 2019
 Threadripper 3960X, 128 GB DDR4, two Arc Pro B70 32 GB cards), the answer so far is **32 agents at about 10.3 tok/s
-each, 329.6 tok/s in total**, in the shape a coding team uses: 2 top-level agents with 262,144-token context slots and
-30 subagents with 131,072-token slots, with one 248k-token conversation and two 114k-token ones in flight. That is
+each, 329.6 tok/s in total**, in the shape our coding agents use: 2 top-level agents with 262,144-token context slots
+and 30 subagents with 131,072-token slots, with one 248k-token prompt and two 114k-token ones among them. That is
 **0.623 tok/s per watt** of card plus CPU package power. With every agent in a 131,072-token slot and short prompts,
-the same box peaks at **349.6 tok/s, 10.92 each**. The model is Qwen3.8 Flash-Next (125B MoE, 6B active) at IQ3_XXS, and the engine is XeStrata with our
-batching changes.
+the same box peaks at **349.6 tok/s, 10.92 each**. The model is Qwen3.8 Flash-Next (125B MoE, 6B active) at IQ3_XXS,
+and the engine is XeStrata with our batching changes.
 
 Measured 2026-10-23 and 2026-10-24 (UTC). The engine changes behind these numbers are on our XeStrata branches and are
 **not published yet**. The work is still running: the last section

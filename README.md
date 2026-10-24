@@ -99,7 +99,7 @@ The ones we are proudest of, each with its conditions and quality check one clic
   6.97 before), it went 7.96 to 11.74 tok/s without a draft, 12.09 with one, same binary, same prompts. A card from 2017, one kernel, +47 %.
   [1080 Ti](1080-ti/#one-kernel-47-)
 - **32 coding agents on one box.** Two Arc Pro B70s in a 2019 Threadripper box serve Qwen3.8 Flash-Next to 2 top-level
-  agents with 262k-token slots and 30 subagents with 131k-token slots at once, a 248k-token conversation among them:
+  agents with 262k-token slots and 30 subagents with 131k-token slots at once, a 248k-token prompt among them:
   329.6 tok/s in total, every agent at 10.27 to 10.32 tok/s, 0.623 tok/s per watt of card plus CPU package power. With
   short prompts in 131k slots it peaks at 349.6.
   Going from 24 agents to 32 cost no extra power, so the agent count is the knob. The page keeps the switches that
