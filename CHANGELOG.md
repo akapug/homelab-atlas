@@ -20,10 +20,12 @@ Two Arc Pro B70s serve 32 agents at once, and three $10 network cards link three
 - `network/`: three used ConnectX-3 cards at $10.19 each, cross-flashed from QCBT to FCBT firmware, as a switchless
   triangle: 52.6 Gb/s RDMA per link in InfiniBand mode, 52.3-52.6 RoCE and about 50 Gb/s parallel TCP in 56GbE
   Ethernet mode; flashing over the cable when a box cannot flash its own card.
-- Recipe Maker export at fit-viz e123342: the **Agents at once** view and `node report.js --curve` (total and
+- Recipe Maker export at fit-viz 44980fd: the **Agents at once** view and `node report.js --curve` (total and
   per-agent tok/s by agent count, the host-memory ceiling, tok/s per watt), the batch-window kernel planner
   (`--window`), the KV host-memory check for streamed KV, and the many-agent runs above in the ledger (200 rows).
   The accuracy table and gate counts in its README are recomputed on the new ledger.
+  Its tok/s per watt uses the watts each run measured, within the boundary the run row states; it no longer calls them
+  wall watts.
 - GLOSSARY: k8v4, agent slot, RDMA / RoCE / IPoIB.
 
 ## [2026.10.22.1]

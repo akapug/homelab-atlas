@@ -413,7 +413,8 @@ The readouts:
   `--batch` set to that count) still fits. A layer split that keeps its stage-lend duplicate also shows the ceiling
   with it dropped.
 - tok/s per watt at each count whose run logged `measured.power_w`, either one number or `{cN: W}`, with a straight
-  line between logged counts
+  line between logged counts. The watts are whatever that run measured (its row states the boundary, for example the
+  cards plus the CPU package without the rest of the box); they are not wall power unless the row says so
 
 A headline past the ceiling also gives the best count within it.
 

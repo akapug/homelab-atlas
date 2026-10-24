@@ -116,8 +116,10 @@ of 131,072 (C2bs's build and switches; k8v4). One agent had a 248k-token prompt 
 
 Not yet: the batched engine is on our branches and not published, and the benchmark client is ours. What you can check
 today:
-- Every row on this page is in Recipe Maker's run ledger with its full engine flags and environment
-  (`recipe-maker/runs/`, run ids `odie-fnx-iq3xxs-2xb70-sweep-*`); `node report.js --curve all` reads them.
+- Every server-rate row on this page (the ladder, the switch arms at the server, the mixed-context run) is in Recipe
+  Maker's run ledger with its full engine flags and environment (`recipe-maker/runs/`, run ids
+  `odie-fnx-iq3xxs-2xb70-sweep-*`); `node report.js --curve all` reads them. The microbenchmark, profiler, parity and
+  earlier-build figures are our lab results and are not in the public ledger.
 - The single-card Flash-Next setup that this builds on is on the [B70 page](README.md) and in
   [MoE offload point 22](../moe-offload/#what-we-learned-measured).
 

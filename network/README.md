@@ -16,8 +16,10 @@ last section.
 | **droopy** (2019 workstation, box B) | PCIe 3.0 x16 | 10 GbE |
 | **odie** (Threadripper, box C) | x8, beside the two B70s | 10 GbE |
 
-A PCIe 3.0 x8 slot carries about 50 Gb/s of data, so a 56G link nearly fills the narrowest slot here. A 100G card
-would cost more and run no faster in these slots. The fourth box (snoopy) stays on 10 GbE.
+A PCIe 3.0 x8 slot moves about 63 Gb/s after line encoding, and less once the bus's own protocol overhead is paid, so
+the narrowest slot here leaves a faster card little headroom over the 52-53 Gb/s these cards measured (our estimate;
+we have not tried a faster card in these slots). That is why we bought the $10 card. The fourth box (snoopy) stays on
+10 GbE.
 
 ```
 odie p1 ===== link C ===== droopy p2

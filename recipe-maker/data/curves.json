@@ -8,7 +8,7 @@
   "table_n": {"v": [1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64], "tag": "READ", "src": "the agent counts report.js --curve prints (the JSON carries every n); the readout counts are added"},
   "single_path_flags": {"v": ["--no-batch-mtp"], "tag": "READ", "src": "XeStrata: with a drafter and batch MTP off, one agent runs the MTP single-stream path, not the batch window; its n = 1 point is kept out of the fit (shown, marked)"},
   "stage_window_re": {"v": "n=(\\d+) (\\d+(?:\\.\\d+)?)/(\\d+(?:\\.\\d+)?) ms", "tag": "READ", "src": "the bench driver's layout_note form 'stage run n=32 45.87/45.03 ms': one ms per stage; the slowest stage is the window"},
-  "power_field": {"v": "power_w", "tag": "READ", "src": "measured.power_w in a ledger row: wall watts, either one number for the run or {cN: W} per agent count like aggregate_tps"},
+  "power_field": {"v": "power_w", "tag": "READ", "src": "measured.power_w in a ledger row: the watts that run measured, either one number for the run or {cN: W} per agent count like aggregate_tps; what it counts is the row's own measurement boundary, stated in the row (for example the cards' energy counters plus the CPU package, without the rest of the box), and is never assumed to be wall power"},
   "fit_warn_pct": {"v": 5, "tag": "READ", "src": "a config whose fit misses a measured point by more than this many percent is flagged: the points do not follow the window law"}
  },
  "flags": {
