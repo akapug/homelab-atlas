@@ -321,7 +321,7 @@ Left out of this copy: fnx runs (Flash-Next quant runs stay out until its reliab
 The output of `node report.js --accuracy` on this ledger: predicted against measured decode per box, model and engine, and how the pre-launch gate did on the runs that went bad.
 
 ```
-== Run ledger accuracy (251 runs from runs/runs.jsonl; planner data built 2026-10-26T20:10Z) ==
+== Run ledger accuracy (251 runs from runs/runs.jsonl; planner data built 2026-10-26T20:29Z) ==
 decode: the draft prediction pairs with the primary draft phase (n4), the no-draft prediction with n0. post-hoc = predicted today from the recorded recipe; in-sample = the run is a calibration anchor.
 held-out decisions: UNKNOWN: no explicit prospective matched-alternative cohort capture; historicals are not decision trials
 

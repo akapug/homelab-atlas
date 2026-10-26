@@ -6,6 +6,11 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+## [2026.10.26.1]
+
+### Changed
+- Every page signs off with one link, to the fleet repository (akapug/fleet), in place of the arc and fab links.
+
 ## [2026.10.26]
 
 The research pauses here. Real coding-agent traffic replaces the synthetic many-agent load as the headline, and every
@@ -289,4 +294,4 @@ The atlas gets a shape: one page per card, a map up front, and a way to grow.
 
 ---
 
--- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [fleet](https://github.com/akapug/fleet) for [@akapug](https://github.com/akapug)
