@@ -6,15 +6,48 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+## [2026.10.26]
+
+The research pauses here. Real coding-agent traffic replaces the synthetic many-agent load as the headline, and every
+claim now says which kind of number it is.
+
+### Changed
+- README: **Where it stands** replaces What's new. **Best result per model** now gives each model's prompt reading,
+  its quality evidence (or none), and what agents doing real work got where we measured it; the many-agent and tok/s
+  per W columns are gone (both were synthetic decode). Pick-a-path rows say when a recipe suits chat or batch work
+  rather than an interactive coding agent.
+- `b70/many-agents.md` leads with real coding-agent traffic: recorded agent sessions replayed with their own prompts,
+  outputs and tool time get 80-86 tok/s in total over 16 agents (mean 83.4) and 32.6 for one agent, against 377.9 decode over 32
+  agents on the synthetic load. The synthetic ladder stays below as the decode ceiling. Headline: the B70 rows of the
+  README now lead with the real-agent figures.
+- Withdrawn: "16 agents at 13.1 to 14.8 tok/s each" from serving our own agents. It divided each request's output by
+  that request's own time, leaving out the time agents spent waiting between requests; the replays measure what
+  agents got.
+- Ornith-1.5-35B-A3B's 198 tok/s is labelled as MTP 3, which we turned off after it garbled 3 of 106 replies under
+  mixed load (about 118 without it).
+- DeepSeek V4.1 Flash on the RTX 6000: the 12.69 names its 4,096-token window, and the long-context figures (7.18
+  decode, 57.7 prompt reading at 189k) sit beside it.
+- The 25 tok/s bar is named as a one-request decode bar, necessary but not sufficient for agent work.
+- Stale next steps and present-tense serving lines are dated or marked not run.
+- One-agent comparisons put Flash-Next and GLM-5.3-Flash on the same basis (before tool time), and pages say what about
+  5 tok/s per agent means: minutes a turn, batch work rather than interactive.
+- The sign-off line links the fab repository by its real name.
+- `atlas.json`: every result has a `workload` (bench, agent-served, synthetic-many-agents, agent-replay); two
+  agent-replay results added with `agent_useful_tps`, which `tools/check_atlas.py` now checks too.
+
 ### Added
-- README: **What's new** and **Best result per model**, one table with the best measured one-request decode, the
-  many-agent total and tok/s per watt where measured, and the quality check for each model.
-- `3090-ti/`: DeepSeek V4.1 Flash at 27.39 tok/s on one RTX 3090 Ti plus DDR5 (2-bit experts, Strata built for sm_86 by
-  us), median over 217 real agent requests, 13 of 15 agent tasks; no KL check yet. Headline: the AM5 row of the README
-  table adds it.
-- `b70/many-agents.md`: a build that combines the winning switches, 377.9 tok/s over 32 agents (11.81 each, 0.729 tok/s
-  per W), and whole-request numbers from serving it to our own coding agents (16 agents at 13.1 to 14.8 each).
-  Headline: the B70 row of the README table now leads with 377.9.
+- The batched XeStrata engine as an experimental public fork (three branches on akapug/XeStrata), with the switches
+  the server runs and the measured effect of each one tested on real agent traffic:
+  `b70/many-agents.md#engine-code-experimental`.
+- Recipe Maker: a prompt-reading model from the box and the recipe, with predictions written before the runs that
+  test them and scored after (`recipe-maker/data/predictions-prefill-chunk-1026.json`): all three inside the stated
+  band, but 7.5 to 12.2 % high, and the gain it predicted from bigger chunks did not appear. Its docs now say the
+  agent curve is decode capacity on a synthetic load. The real-agent replay rows are in its ledger.
+- `3090-ti/`: DeepSeek V4.1 Flash at 27.39 tok/s decode on one RTX 3090 Ti plus DDR5 (2-bit experts, Strata built
+  for sm_86 by us, not published), the median over 217 requests while serving a coding agent, prompt reading 240.5,
+  13 of 15 agent tasks; no KL check yet.
+- `b70/many-agents.md`: a build that combines the winning switches, 377.9 tok/s decode over 32 agents (11.81 each,
+  0.729 tok/s per W) on the synthetic load.
 - `rtx-6000/`: Ornith-1.5-35B-A3B at 59.6 tok/s, and how 3.7 GB of its CPU experts landed on Optane by accident (a
   96 s chat request; 0.59 s after one restart).
 
@@ -256,4 +289,4 @@ The atlas gets a shape: one page per card, a map up front, and a way to grow.
 
 ---
 
--- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

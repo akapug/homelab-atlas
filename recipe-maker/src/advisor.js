@@ -195,6 +195,7 @@
     const data = JSON.parse(fs.readFileSync(path.join(ROOT, 'data.json'), 'utf8'));
     FM.applyCal(data);
     const out = all(data, ledger(path.join(ROOT, 'runs', 'runs.jsonl')));
+    out.calibration_split = require('./accuracy.js').calibrationSplit(data);
     fs.writeSync(1, JSON.stringify(out, null, process.argv.includes('--json') ? 0 : 1) + '\n');
   }
 })();

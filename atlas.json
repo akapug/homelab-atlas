@@ -1,7 +1,7 @@
 {
  "schema": "homelab-atlas/1",
- "updated": "2026-10-24",
- "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). quality_on_this_build: false marks a result whose quality check ran on another build, card or configuration than the speed figure (its conditions and quality text say which); absent means the check ran on the configuration the result names. A result that needs several cards lists them all in cards; card is the one whose page it cites.",
+ "updated": "2026-10-26",
+ "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). quality_on_this_build: false marks a result whose quality check ran on another build, card or configuration than the speed figure (its conditions and quality text say which); absent means the check ran on the configuration the result names. A result that needs several cards lists them all in cards; card is the one whose page it cites. workload: bench (fixed prompts, one request at a time), agent-served (per-request decode measured while serving a coding agent; the agent's wall time also holds prompt reading and tool time), synthetic-many-agents (every agent reads one prompt once, then writes: decode capacity, not what agents doing real work get), agent-replay (recorded coding-agent sessions replayed with their own prompts, outputs and tool time; agent_useful_tps is output tokens over the measured window, summed over agents). agent_useful_tps: what agents got, prompt reading and tool time included.",
  "boxes": [
   {
    "id": "snoopy",
@@ -134,7 +134,8 @@
    "quality_on_this_build": false,
    "date": "2026-10-07",
    "status": "measured",
-   "source": "3090-ti/#qwen38-27b-on-vllm-cuda-about-104-toks"
+   "source": "3090-ti/#qwen38-27b-on-vllm-cuda-about-104-toks",
+   "workload": "bench"
   },
   {
    "card": "rtx-3090-ti",
@@ -147,7 +148,8 @@
    "quality": "KL 0.0154, top-1 0.975: pass",
    "date": "2026-10-20",
    "status": "unpublished-code",
-   "source": "3090-ti/#glm-53-flash-a-route-trim-clears-25-toks"
+   "source": "3090-ti/#glm-53-flash-a-route-trim-clears-25-toks",
+   "workload": "bench"
   },
   {
    "card": "rtx-3090-ti",
@@ -161,7 +163,8 @@
    "quality_on_this_build": false,
    "date": "2026-10-18",
    "status": "measured",
-   "source": "3090-ti/#qwen38-flash-next-agent-work-from-ram"
+   "source": "3090-ti/#qwen38-flash-next-agent-work-from-ram",
+   "workload": "bench"
   },
   {
    "card": "rtx-3090-ti",
@@ -176,7 +179,8 @@
    "date": "2026-10-24",
    "status": "unpublished-code",
    "source": "3090-ti/#deepseek-v41-flash-27-toks-on-a-gaming-card",
-   "ledger_id": "snoopy-v41-gsq-iq2xs-strata-ramcopy-eval"
+   "ledger_id": "snoopy-v41-gsq-iq2xs-strata-ramcopy-eval",
+   "workload": "agent-served"
   },
   {
    "card": "quadro-rtx-6000",
@@ -195,7 +199,8 @@
    "public_fork_decode_tps": 11.88,
    "public_fork_note": "public_fork_decode_tps is the same recipe on branch mixed-cuda-vulkan-expert-banks, without pre-binding, the tier split and #2712; every input of the 12.69 run: rtx-6000/v41-recipe/",
    "source": "rtx-6000/#deepseek-v41-flash-the-best-run",
-   "ledger_id": "droopy-v41-v41fs-ts2-0127"
+   "ledger_id": "droopy-v41-v41fs-ts2-0127",
+   "workload": "bench"
   },
   {
    "card": "quadro-rtx-6000",
@@ -209,7 +214,8 @@
    "quality": "recall 16/16",
    "date": "2026-10-21",
    "status": "measured",
-   "source": "rtx-6000/#v41-at-189k-tokens-every-fact-recalled"
+   "source": "rtx-6000/#v41-at-189k-tokens-every-fact-recalled",
+   "workload": "bench"
   },
   {
    "card": "quadro-rtx-6000",
@@ -223,7 +229,8 @@
    "quality": "code-review screen 2/2 with 8k thinking; agent 0/3 in a limiting config",
    "date": "2026-10-20",
    "status": "measured",
-   "source": "rtx-6000/#at-a-glance"
+   "source": "rtx-6000/#at-a-glance",
+   "workload": "bench"
   },
   {
    "card": "quadro-rtx-6000",
@@ -236,7 +243,8 @@
    "quality": "KL 0.030, top-1 0.960 vs a 3-bit reference: miss",
    "date": "2026-10-20",
    "status": "measured",
-   "source": "rtx-6000/#at-a-glance"
+   "source": "rtx-6000/#at-a-glance",
+   "workload": "bench"
   },
   {
    "card": "quadro-rtx-6000",
@@ -249,7 +257,8 @@
    "quality": "none on this box (not measured)",
    "date": "2026-10-24",
    "status": "measured",
-   "source": "rtx-6000/#no-silent-fallback-experts-on-optane-by-accident"
+   "source": "rtx-6000/#no-silent-fallback-experts-on-optane-by-accident",
+   "workload": "bench"
   },
   {
    "card": "arc-pro-b70-1",
@@ -263,7 +272,8 @@
    "quality_on_this_build": false,
    "date": "2026-10-19",
    "status": "measured",
-   "source": "b70/#at-a-glance"
+   "source": "b70/#at-a-glance",
+   "workload": "bench"
   },
   {
    "card": "arc-pro-b70-1",
@@ -276,7 +286,8 @@
    "quality": "output unchanged by design (drafts checked against the full vocabulary), same tokens accepted a step; 41/41 exact in production with the list",
    "date": "2026-09",
    "status": "measured",
-   "source": "b70/vllm-xpu/#3-a-smaller-vocabulary-for-the-mtp-drafter-draft-vocabpy"
+   "source": "b70/vllm-xpu/#3-a-smaller-vocabulary-for-the-mtp-drafter-draft-vocabpy",
+   "workload": "bench"
   },
   {
    "card": "arc-pro-b70-1",
@@ -292,7 +303,8 @@
    "quality": "41/41 exact; agent 22/24",
    "date": "2026-09",
    "status": "measured",
-   "source": "b70/#results"
+   "source": "b70/#results",
+   "workload": "bench"
   },
   {
    "card": "arc-pro-b70-2",
@@ -301,11 +313,12 @@
    "engine": "vLLM llm-scaler 0.26.0-b2",
    "decode_tps": 198,
    "streams": 1,
-   "conditions": "MTP 3 + draft vocabulary, 6 host cores, 1,500-token replies; 290 summed at 2; measured in snoopy",
+   "conditions": "MTP 3 + draft vocabulary, 6 host cores, 1,500-token replies; 290 summed at 2; measured in snoopy; MTP 3 later garbled 3 of 106 replies under mixed load and is off as served (about 118 at one stream without it, measured on the same architecture)",
    "quality": "agent 17/24; household 31/40",
    "date": "2026-10-04",
    "status": "measured",
-   "source": "b70/ornith-35b-a3b.md#speed"
+   "source": "b70/ornith-35b-a3b.md#speed",
+   "workload": "bench"
   },
   {
    "card": "arc-pro-b70-1",
@@ -315,7 +328,7 @@
    ],
    "model": "Qwen3.8 Flash-Next",
    "weights": "GSQ-RCO IQ3_XXS",
-   "engine": "XeStrata + our batched-decode branches (unpublished)",
+   "engine": "XeStrata + our batched-decode branches (experimental public fork akapug/XeStrata, branch homelab-batched; this row ran an earlier build of it)",
    "decode_tps": 329.6,
    "streams": 32,
    "conditions": "32 agents at once in a mixed shape: 2 slots of 262,144 tokens + 30 of 131,072, with one 248k-token and two 114k-token prompts in flight, the rest ~14k; every agent 10.27-10.32 tok/s; layer split 25 across both B70s, 2 batch groups, k8v4 KV with the newest 4,096 tokens per agent in VRAM and older KV in pinned host RAM (52.0 GiB), no speculation in the batch, thinking on; tokens counted over a 60 s window once all agents decode; 529.2 W = 400.1 W for the two cards + 129.1 W CPU package, not wall power: 0.623 tok/s per W; one run (M32c), a later build than the 349.6 with the server's slot fix",
@@ -323,7 +336,8 @@
    "date": "2026-10-24",
    "status": "unpublished-code",
    "source": "b70/many-agents.md#at-a-glance",
-   "quality_on_this_build": false
+   "quality_on_this_build": false,
+   "workload": "synthetic-many-agents"
   },
   {
    "card": "arc-pro-b70-1",
@@ -333,14 +347,15 @@
    ],
    "model": "Qwen3.8 Flash-Next",
    "weights": "GSQ-RCO IQ3_XXS",
-   "engine": "XeStrata + our batched-decode branches (unpublished)",
+   "engine": "XeStrata + our batched-decode branches (experimental public fork akapug/XeStrata, branch homelab-batched; this row ran an earlier build of it)",
    "decode_tps": 349.6,
    "streams": 32,
    "conditions": "32 agents at once, 10.92 tok/s each (slowest 10.92), every agent a 131,072-token slot; layer split 25 across both B70s, 2 batch groups, k8v4 KV with the newest 4,096 tokens per agent in VRAM and older KV in pinned host RAM (47.7 GiB), no speculation in the batch, thinking on; synthetic load: 8 coding-agent prompts of ~14k tokens, tokens counted over a 60 s window once all agents decode; 535.5 W = 404.4 W for the two cards + 131.1 W CPU package, not wall power: 0.653 tok/s per W; one run (C2bs); the same build with its four new switches off gave 337.1",
    "quality": "engine card parity suites: 0 failures on this build; no agent or KL check on the batched build (not measured)",
    "date": "2026-10-24",
    "status": "unpublished-code",
-   "source": "b70/many-agents.md#at-a-glance"
+   "source": "b70/many-agents.md#at-a-glance",
+   "workload": "synthetic-many-agents"
   },
   {
    "card": "arc-pro-b70-1",
@@ -350,16 +365,17 @@
    ],
    "model": "Qwen3.8 Flash-Next",
    "weights": "GSQ-RCO IQ3_XXS",
-   "engine": "XeStrata + our batched-decode branches (unpublished)",
+   "engine": "XeStrata + our batched-decode branches (experimental public fork akapug/XeStrata, branch homelab-batched; this row ran an earlier build of it)",
    "decode_tps": 377.9,
    "streams": 32,
-   "conditions": "32 agents, every slot 131,072, prompts of about 14k; the combined build of the winning switches; 11.81 tok/s per agent (slowest 11.80); 404.3 W cards + 114.3 W CPU package = 518.6 W, not wall power: 0.729 tok/s per W; one 60 s window (run served-c8-base). Served to real coding agents and timed over whole requests, 16 agents got 13.1-14.8 each (lab result, not in the ledger)",
+   "conditions": "32 agents, every slot 131,072, prompts of about 14k; the combined build of the winning switches; 11.81 tok/s per agent (slowest 11.80); 404.3 W cards + 114.3 W CPU package = 518.6 W, not wall power: 0.729 tok/s per W; one 60 s window (run served-c8-base). Synthetic load: decode capacity, not what agents doing real work get; for real agent traffic see the agent-replay entries (16 agents 79.6-86.0 tok/s in total)",
    "quality": "no parity, agent or KL check on this build (not measured)",
    "quality_on_this_build": false,
    "date": "2026-10-24",
    "status": "unpublished-code",
    "source": "b70/many-agents.md#newer-build-3779-toks-at-32-agents",
-   "ledger_id": "odie-fnx-iq3xxs-2xb70-sweep-served-c8-base-1024"
+   "ledger_id": "odie-fnx-iq3xxs-2xb70-sweep-served-c8-base-1024",
+   "workload": "synthetic-many-agents"
   },
   {
    "card": "mi25",
@@ -378,7 +394,8 @@
    "cards": [
     "mi25",
     "gtx-1080-ti"
-   ]
+   ],
+   "workload": "bench"
   },
   {
    "card": "gtx-1080-ti",
@@ -394,7 +411,8 @@
    "date": "2026-10-20",
    "status": "measured",
    "source": "1080-ti/#at-a-glance",
-   "ledger_id": "lassie-v41-q8-fs3"
+   "ledger_id": "lassie-v41-q8-fs3",
+   "workload": "bench"
   },
   {
    "card": "gtx-1080-ti",
@@ -410,7 +428,8 @@
    "date": "2026-10-22",
    "status": "measured",
    "source": "1080-ti/#one-kernel-47-",
-   "ledger_id": "lassie-v41-q8-fs3dec"
+   "ledger_id": "lassie-v41-q8-fs3dec",
+   "workload": "bench"
   },
   {
    "card": "cpu-only",
@@ -426,7 +445,49 @@
    "date": "2026-10-20",
    "status": "measured",
    "source": "epyc-cpu/#at-a-glance",
-   "ledger_id": "lassie-v41-q8-rows8-dense-t64"
+   "ledger_id": "lassie-v41-q8-rows8-dense-t64",
+   "workload": "bench"
+  },
+  {
+   "card": "arc-pro-b70-1",
+   "model": "Qwen3.8 Flash-Next",
+   "weights": "GSQ-RCO IQ3_XXS",
+   "engine": "XeStrata + our batched-decode branches (experimental public fork akapug/XeStrata, branch homelab-batched)",
+   "cards": [
+    "arc-pro-b70-1",
+    "arc-pro-b70-2"
+   ],
+   "workload": "agent-replay",
+   "decode_tps": null,
+   "streams": 16,
+   "agent_useful_tps": [
+    79.6,
+    86.0
+   ],
+   "conditions": "16 recorded coding-agent sessions (923 turns) replayed with their own prompts, outputs and tool time; 600 s warm-up, then a 600 s window; 3.9-4.9 new prompt tokens read per token written; prompt reading about 0.87k tok/s; three runs 86.0, 84.6, 79.6 (mean 83.4); 0 errors",
+   "quality": "none on this build",
+   "date": "2026-10-26",
+   "status": "measured",
+   "source": "b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with"
+  },
+  {
+   "card": "arc-pro-b70-1",
+   "model": "Qwen3.8 Flash-Next",
+   "weights": "GSQ-RCO IQ3_XXS",
+   "engine": "XeStrata + our batched-decode branches (experimental public fork akapug/XeStrata, branch homelab-batched)",
+   "cards": [
+    "arc-pro-b70-1",
+    "arc-pro-b70-2"
+   ],
+   "workload": "agent-replay",
+   "decode_tps": null,
+   "streams": 1,
+   "agent_useful_tps": 32.6,
+   "conditions": "one agent replaying recorded sessions from the same 16-session trace with their prompts, outputs and tool time; 600 s window after a 600 s warm-up; decode 68.8 tok/s for 47 % of the time, prompt reading 31 %, tool time about 22 %",
+   "quality": "none on this build",
+   "date": "2026-10-26",
+   "status": "measured",
+   "source": "b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with"
   }
  ]
 }

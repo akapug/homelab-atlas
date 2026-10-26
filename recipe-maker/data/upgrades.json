@@ -2,7 +2,7 @@
  "about": "Upgrade advisor (src/advisor.js; owner 2026-10-19: when a recipe gets more out of speeding up a lane, suggest buying it). Per box: the best quality-passing measured recipe per model, its predicted tok/s with each lane made probe_scale x faster or bigger, the binding lane (the probe with the largest gain), and every part row below re-predicted on that recipe. A part is suggested only when its low-end gain >= suggest_min_gain, one of its lanes is the binding lane, and the recipe passes quality. build.py copies this file to data.upgrade; report.js prints and returns the advice (data.json upgrade.advice, report --json upgrades).",
  "settings": {
   "suggest_min_gain": 0.20,
-  "suggest_min_gain_src": "lead brief 2026-10-19 (owner ask: suggest an upgrade when a recipe would get real use out of a faster lane): 20 % predicted decode gain at the low end of the part's bracket",
+  "suggest_min_gain_src": "lab notes 2026-10-19 (owner ask: suggest an upgrade when a recipe would get real use out of a faster lane): 20 % predicted decode gain at the low end of the part's bracket",
   "probe_scale": 2.0,
   "probe_scale_src": "each lane probe makes one lane 2x faster (bandwidth, CPU kernel rate) or 2x bigger (capacity) and nothing else; the probe with the largest gain names the binding lane",
   "co_binding_min_extra": 0.05,

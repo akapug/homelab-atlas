@@ -119,10 +119,10 @@ and gave each link its own small subnet with MTU 9000. Run RoCE tests with perft
 ## Not measured yet
 
 - The point of the cards: a model split across two boxes at 56G against 10G, and a shared KV cache in one box's RAM
-  for the others. These are next, with the link as a measured variable beside each result.
+  for the others. Neither ran before the research paused (2026-10-26); the links are measured and ready for it.
 - Whether every setting comes back by itself after each box's next reboot.
 - Wall-plug power of the cards.
 
 ---
 
--- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

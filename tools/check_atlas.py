@@ -2,7 +2,7 @@
 """Check atlas.json against the pages it cites, and every relative Markdown link in the repo.
 
 For each result: its source page exists, its #anchor is a heading there, and every number in decode_tps,
-decode_tps_no_draft and prefill_tps appears as a whole number in the section the anchor names (the heading down to
+decode_tps_no_draft, prefill_tps and agent_useful_tps appears as a whole number in the section the anchor names (the heading down to
 the next heading of its level or higher; the whole page when the source has no anchor). It catches a number missing
 from its section, not one that drifted to another number the same section also prints. Every card in atlas.json has at least one result
 (by card, or in a result's cards list). With --accuracy, also the planner accuracy table in recipe-maker/README.md
@@ -66,7 +66,7 @@ for r in atlas['results']:
     if frag and frag not in anchors(md):
         misses.append(f"{r['card']} {r['model']}: no heading #{frag} in {path}")
     text = section(md, frag) if frag else open(md).read()
-    for key in ('decode_tps', 'decode_tps_no_draft', 'prefill_tps'):
+    for key in ('decode_tps', 'decode_tps_no_draft', 'prefill_tps', 'agent_useful_tps'):
         for n in numbers(r.get(key)) if r.get(key) is not None else []:
             # a whole number: 12.69 is not inside 112.69 or 12.695; 69.0 may print as 69 or 69.0
             if not re.search(r'(?<![\d.,])%s%s(?![\d]|\.\d|,\d)' % (re.escape(shown(n)), '' if '.' in shown(n) else r'(?:\.0+)?'), text):

@@ -31,6 +31,85 @@ trust   decode 11.34 tok/s: 5 seen, 6 inferred, 0 unknown terms; rests on INFERR
 A line ends "every term SEEN" only when nothing in it is inferred or unknown. A decode line also carries the external gap
 for the box's hardware class (below).
 
+## Accidental fallback checks
+
+The existing recipe gate also accepts `fallback_plan`, and the existing run writer accepts
+`--from-log placement:<local-retained-log>`. There is no second solver or run ledger. A plan's sourced `classes`
+name intended paths for dense/attention, hot/cold experts, KV, drafter and host pins, plus dense/shared/HC kernels,
+batched execution, drafter state and batch-MTP. Memory follows each box's engine-supported tiers; compute follows
+operation-specific sourced `capabilities`, not the presence of an XMX-capable GPU. `unknown` is an explicit unproved
+path. An intentionally lower tier has a sourced `decision.reason`; that does not excuse a later downgrade below it.
+
+A lower-than-capacity failure requires a sourced `unit_gib` and `headroom[tier]` certificate: `live_verified: true`,
+`idle_gib` tagged READ/MEASURED with canonical seen provenance (vendor/documentation READ is inferred), a source, and
+non-UNKNOWN `accounting` sources for KV, staging, services, safety, CMA, GTT and
+planned fills. This is allocatable residual idle AFTER all those fills, not total RAM or raw MemAvailable. The
+certificate's `fills` must exactly match all memory classes as `{class: {tier, gib}}` (unknown GiB is null), so a
+changed placement invalidates old headroom. DRAM idle must also respect `hostPinnedBudget` containment. No certificate
+means UNKNOWN, never a recommendation to fill RAM. A physically absent PMem tier is never invented. Engine-default
+hazards are sourced catalog controls with model/build applicability, not flags copied between engines.
+
+The parser stores line-cited events in `measured.fallback_ledger`. The normal writer binds their box/model/engine/build
+identity only when recording a captured launch; a post-hoc parse remains unbound unless independent retained identity
+is supplied. Repeated placement logs concatenate, never silently replace prior events. Recipe checks, the existing
+hard-check table and `--accuracy` consume these receipts; historical rows and launch verdicts are not rewritten.
+`--accuracy` exposes `launch_fallback` separately from `post_run_fallback`, and prints a separate post-run receipt
+section: an UNKNOWN at launch must not hide a later observed FAIL. Today's table projects maintained annotations only
+onto matching box/model/engine/recipe identities, skips a conflicting known build, and never replaces a captured plan.
+The projection is labelled post-hoc in the row and details; a missing historical build stays missing and build-sensitive
+checks stay UNKNOWN. The existing expert-RAM and fallback columns expose those results rather than dropping them.
+
+Each path has its own result. Explicit lower placement, cache slot loss, RAM KV reads beyond a declared limit, read-loaned
+expert slots or excess GTT pins FAIL against the plan. Missing paths remain UNKNOWN even if another path passes. Dense
+XMX setup reports only its row threshold; it is not proof that the workload executed that path, and says nothing about
+SHEXP/HC. An offered draft proves the drafter ran; zero offers or absence of a warning does not prove off. Cache-hit
+counters exclude PCIe/remote offload and cannot prove all experts resident. KV counters are cumulative and cannot be
+joined greedily to individual requests. No throughput result enables a quality-pending optimization.
+
+Prior art and decision: `context` owns tiers/fills, `checkRecipe` owns verdicts, `record_run.py` owns the append-only
+run and parser, `runs_tables.observed` owns table projection. Extend those seams rather than add a renderer/system.
+One measurement hop, no daemon or recurring work: parsing is linear in receipt lines; gate work is bounded by declared
+classes and those events. At rest there are zero processes or probes; ten times the lines costs ten times parsing work,
+not ten times process starts. Reboots/upgrades invalidate live headroom and unmatched build receipts until re-qualified.
+
+## Expert residency and measured lever limits
+
+A recipe may declare `expert_residency`. The normal `--check` consumer then checks host experts against
+`min(hostPinnedBudget.ceiling_gib, pre-load MemAvailable - explicit additional reserve_gib) - host KV - staging/other`.
+The two reserve domains are independent. The absolute total containment ceiling keeps the existing
+`hostPinnedBudget` law: total RAM minus household floor and pinned margin, or total RAM minus an explicit
+`serving.host_reserve_gib` replacing that combined reserve. Its semantics do not change.
+
+`available_gib` means free plus reclaimable memory after services, before loading this model. The explicitly sourced
+`expert_residency.reserve_gib` is additional headroom against that measurement, including any allocatability discount
+it did not already exclude. It is not a replacement for the absolute total reserve. A household floor may combine
+current allocations with unavailable CMA and future protection; neither subtract that whole floor again from
+MemAvailable nor guess that only the pinned margin remains. Without explicit additional headroom the result is UNKNOWN.
+
+`other_gib` includes future host shadows, staging and non-expert allocations not already charged by the pre-load
+measurement; do not charge existing services again. Values are nonnegative GiB with sources. Host KV reuses
+`kvHostPlan` unless `kv_gib` is explicit. A negative remaining budget stays negative, so zero host experts cannot hide
+an existing KV, staging or reserve deficit. Missing or historical inputs remain UNKNOWN. Dated inventory capacity and
+a mapped or locked file are not current residency proof; source-only annotations keep `live_verified` false.
+Even a declared live budget is an input, not a host probe.
+
+Only a fully declared fit can flag avoidable SSD/USB expert streaming. Engine controls are catalog entries, scoped to
+matching model/build when required: dsv41 RAM-copy flags do not apply to XeStrata. Non-expert on-file lookup tables remain
+separate. A `ram_tier_gib` capacity is not an expert-byte measurement. GLM, Flash-Next and V4.1 source annotations leave
+current live RAM/residency unverified until a passive audit supplies them.
+
+A whole-request rate from another engine is not an identified CPU expert-kernel rate. Recipes can retain
+`cpu_expert_evidence` in their prediction output as reference-only, with its model/quant/host/build/workload scope.
+The V4.1 RAM-copy observations do not alter the CPU factor, other models, or the old ik prediction.
+
+The existing window attempt graph retains controls, losses and quality-pending bundles. XMX dense/shared and HC paths
+need concurrent-row quality coverage; serial PPL/LP cannot clear batch-only arithmetic. The batch-MTP crossover is
+inferred sensitivity, not a measured threshold. Nothing in an attempt enables a serving flag.
+
+`data/curves.json` contention annotations keep client TTFT, native processing and per-arrival wait correlation separate.
+The curve report prints these even without a fit. CHG2's invalid polled queue/read times and unmatched native phases never
+train the window law; a requeued request needs a stable identity join, not a nearest-time or prompt-length match.
+
 ## External validation: `runs/external.jsonl`
 
 Each row is a published measurement on hardware we do not own, such as a llama.cpp scoreboard, a GitHub issue, an
@@ -154,6 +233,8 @@ The recipe passes through these checks in order:
 | `conditions` | the serving conditions are declared (below) |
 | `kv_host` | an engine with a serving model (XeStrata): with KV streaming (`serving.kv_resident`) every session pins a host-RAM copy of its whole KV capacity, about bytes per cell x (`max_context` x (1 + `big_slots`) + `slot_context` x (`batch` - `big_slots`)) plus the drafters' own layer; FAIL when that leaves less than the engine's reserve (`checks.kv_host.reserve_gib`, STRATA_KV_HOST_RESERVE_GIB, default 16) of MemAvailable (`serving.mem_available_gib`, else the box DRAM less its `host_floor_gib`). Bytes per cell come from `models.<model>.kv_host` by `--kv` format; each copy adds the engine's `copy_overhead_mib` |
 | `host_pinned` | a recipe with a `serving` block on an engine with a serving model: every host-pinned buffer (driver GTT, which no cgroup or OOM kill sees) = the KV host copies + the terms of `checks.host_pinned.terms[model/engine]` (the expert complement, the stage-lend duplicate of a layer split unless `serving.stage_lend_drop`, prefill staging, prompt hand-off, embeddings, the rest); FAIL when it passes DRAM total - household floor - pinned margin (`serving.host_reserve_gib` replaces floor + margin). The detail names the levers (`slot_context` near the VRAM ring with `big_slots`, `stage_lend_drop`) |
+| `cpu_pool_rows` | where a stage computes experts on the CPU (a layer split on XeStrata, whose second stage has no PCIe share of the experts it misses, or `serving.cpu_experts`), every row of a batch window goes through the CPU expert pool, so ceil(`batch` / `batch_groups`) must not pass the pool's row cap (`serving.cpu_pool_max_rows`, default 16; `engines.strata.serving.cpu_pool_rows_by_build` gives a build's own cap). FAIL past it: 64 agents in 2 groups (32-row windows) did not load on a 16-row build. UNKNOWN when `serving.max_t` lets window-row prefill fill a window past the cap |
+| `agent_workload` | a recipe for many agents (`recipe.conditions.workload.agents`, else `serving.batch`, at or above `many_agents_min`) needs a real-agent ledger row of the same engine build. Without one it is flagged (UNKNOWN, so `--strict` holds it): its numbers are decode capacity from a synthetic short-prompt load; it still carries the binding term with a predicted prefill rate (MODEL, below) where the box and store have a prefill pass model. With one it PASSes and names the binding term (below, "Agent workload") |
 | `cpu_reserve` | a CPU-decode recipe leaves the box's reserved CPUs free of decode threads (`cpu.reserve`, default `checks.cpu_reserve.default_reserve`); UNKNOWN until `recipe.conditions` declares `threads` and `cpu_reserve` as numbers |
 
 `--json` prints the checks, the notes, the prediction and the resolved facts. It also carries back the recipe fields the
@@ -324,6 +405,26 @@ optional `profile` has `point` (the point it was taken at), `split` (its layout,
 together) and optionally `rows_basis` and `bw` (false for a wait). `variants` have `class`, `old_us`, `new_us` and
 `launches` (per layer). The build checks every class name, kind and stage count. Every number is `{v, tag, src}`.
 
+The build freezes effective built data, actual training/check membership and evaluator source hashes in
+`data.meta.calibration`. This is experiment identity, not proof that two measurements match. Prospective recipes
+predeclare exact alternatives, workload, isolation, objective and quality/memory constraints through `validation`;
+`--check` verifies the loaded effective-data digest before `applyCal` mutates it, and hashes the actual local files
+named in that manifest before capturing immutable candidate predictions. One cached verification per CLI invocation
+passes the original stored JSON to the build's hash-only Python mode (`python3 -I build.py --calibration-data-sha256`),
+which shares the build's exact exclusions and canonicalization without importing local inputs or writing outputs.
+JS-reserialized numeric spellings are not assumed equivalent to Python's. Stale effective data or stale/missing
+evaluator bytes fail capture with a rebuild instruction: run `python3 build.py`, then redeclare the cohort against the
+rebuilt identity. Ordinary nonvalidation checks retain their existing behavior. The recorder
+preserves the launch capture, and `--accuracy` scores only complete qualified cohorts; historical, incomplete,
+confounded or failed observations remain UNKNOWN for decision rank/regret.
+
+Single-seat decision validation uses per-stream decode (named default target 25 tok/s), plus declared quality and
+memory constraints. Batch-fleet uses total accepted tok/s per measured all-participant CPU+GPU watt and a measured
+per-agent floor (named default 10 tok/s). Current real predictors lack qualified `accepted_tps`, `gpu_cpu_watts` and
+`min_agent_tps`, so real batch decision scoring remains UNKNOWN even with complete measured receipts. Synthetic
+scoring fixtures test the contract, not real batch predictor coverage. Missing power is not zero, and aggregate
+throughput divided by agent count is not a prediction of the slowest agent. TTFT is diagnostic unless declared.
+
 The model, all in `src/model.js` (`win*`):
 
 - A class runs in every layer of its kind (a class whose layer count is the measured total runs in every layer), at the
@@ -332,10 +433,13 @@ The model, all in `src/model.js` (`win*`):
   lists them).
 - G row groups take turns through S stages: tok/s = eta x rows x 1000 x min(G / sum of stage ms, 1 / slowest stage ms),
   rows = agents / G.
-- `winFit` fits omega (grid + golden section), the extras (non-negative least squares on the `fit` points' stage ms,
-  relative error) and eta (median measured / law). `check` points are scored, never fitted; `law` points (kernels the
-  ubench did not measure) score only the pipeline law. The report also refits at both ends of the routing range and with
-  gamma free (the reading where the per-row cost the kernels miss lives in them, so every kernel lever pays more).
+- `winFit` fits omega (grid + golden section) and the extras (non-negative least squares on the `fit` points' stage ms,
+  relative error). Eta is the median measured throughput / pipeline law over only `fit` points with finite, positive
+  throughput and stage times, retaining only finite, positive ratios. Its contributing ids are frozen as `eta_train`.
+  With no such training operand eta, predicted throughput and throughput ranking are UNKNOWN, not efficiency one.
+  `check` points never fit eta or stage terms; `law` points (kernels the ubench did not measure) score only the pipeline
+  law. The report also refits at both ends of the routing range and with gamma free (the reading where the per-row cost
+  the kernels miss lives in them, so every kernel lever pays more).
 - A lever takes one class to k x its floor (the ubench's own ratio; never under `graph_launch_us` a launch) and scales
   its whole row curve by the same factor. The table ranks by tok/s at the plan's agents on today's split, and also prints
   each lever with the split rebalanced (the least slowest stage over contiguous splits). The rebalance is a lever of its
@@ -346,7 +450,9 @@ The model, all in `src/model.js` (`win*`):
   not time) is a term of its own, spread over the stage's layers. At other row counts each term follows its
   `rows_basis`: `stage` (the calibrated ubench model's stage curve, anchored when the report anchors), `classes` (its
   mapped classes' in-graph curve, noisy below 4 rows), `row` or `fixed`. The profile's `checks` score this at other
-  agent counts and on the run without profiling. A lever takes each term of a group to k x its mapped classes' floor (the
+  agent counts and on the run without profiling. The profile point and curve/plan anchors condition this reading and
+  are listed separately in the frozen split; they are not untouched end-to-end checks, even when a conditioning point
+  has `use: check`. A lever takes each term of a group to k x its mapped classes' floor (the
   `x floor now` column is the profiled time over that floor; at or under 1, the lever pays nothing). Groups without a
   floor, and the gap, are priced at `extra_lever_share` off. A variant subtracts (old - new) x launches per layer from
   the terms that map its class, scaled along the class's row curve.
@@ -382,6 +488,12 @@ off by up to 4 % on stage 0 at two agents, and the rebalance lever reads high fo
 is the config's reading of the engine's term names.
 
 ## Agents vs speed: `--curve`
+
+These curves come from a synthetic load: each agent reads one short prompt once, then only its writing is timed. They
+measure decode capacity, the most an engine can write, not what working coding agents get. Real coding agents read 4
+to 5 new prompt tokens for each token they write, so prompt reading sets their speed: on odie's two B70s, 16 replayed
+real agents got 79.6-86.0 tok/s in total (the build served on 2026-10-26, mean 83.4 over three runs) and one agent
+alone 32.6. [`--workload`](#agent-workload---workload) models that.
 
 A batched engine splits its agents into G groups (`--batch-groups`) that take turns through S pipeline stages (one per
 card, from the layer split). One stage window for r agents in a group takes t(r) = a + b x r ms: a fixed part (launches,
@@ -424,6 +536,149 @@ Limits:
   and 8 agents per group, so a two-point fit through n = 2 and n = 32 smooths over it.
 - Counts past the largest measured one are projections and are drawn dashed.
 - Context length, prompt mix and thinking level are whatever the runs used, and they move the window.
+- The totals are decode capacity, not agent throughput: `--workload` adds prompt reading (below).
+
+## Agent workload: `--workload`
+
+```
+node report.js --workload [RUN_ID | all] [--profile NAME] [--fresh F] [--prefill P] [--n 16,32,64] [--json]
+```
+
+The agents-vs-speed curves come from runs that give each agent one short prompt and then time only the writing. That
+measures **decode capacity** D: how many tokens per second the agents can write together. Real coding agents do more.
+Every turn they send the whole conversation back, and the engine has to read the new part: tool results, file contents,
+and any part it dropped from its prompt cache. Call F the fresh prompt tokens read for each token written, and P the
+rate the engine reads prompts at (prefill). Then useful output is at most
+
+    min(D, P / F)
+
+An engine that stops every decoding agent while it reads a long prompt runs the two one after the other, and gets
+
+    1 / (F / P + 1 / D)
+
+The smaller of D and P / F is the **binding term**. A setup is prefill-bound when P / F is smaller: adding agents
+raises D but not the output, and only a faster prefill (or a smaller F) helps.
+
+`data/workload.json` holds the inputs:
+
+- `profiles`: workload profiles. Each gives F and the shape of a turn: the new prompt tokens per turn, the first
+  (cold) prompt, the whole prompt, the output and the tool gap. `coding-agent` is measured from 16 recorded
+  coding-agent sessions (923 turns) replayed with their own prompts, outputs and tool gaps: F = 4.88, the server's count
+  over the 600 s windows of three replays at 16 agents on the build odie served on 2026-10-26, each after a 600 s
+  warm-up (`odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026`, `-r2`, `-r3`: 4.78, 4.87, 4.98). The replay client,
+  counting only its turns inside the window, reads 3.9-4.9 across all 17 such steady-state replays, and the recorded
+  sessions need 4.33 with a perfect cache. The profile also gives a median of 963 new prompt tokens per turn (p90
+  3,294), cold first prompts of 20.7k-32.8k tokens and whole prompts of 82k (median) to 120k (token counts of the
+  recorded sessions). Replays timed from a cold start read 17.8-67.7: every agent's cold first prompt and the re-reads
+  after cache evictions fell inside their window, so the warm-up is part of the measurement. `synthetic-short` (F = 0)
+  is the bench load behind the curves. `settings.default_profile` picks one; `--profile` and `--fresh` override it.
+- `engines.<engine>.reads_stall_decode`: whether a read stops decoding (XeStrata: reads past
+  `STRATA_BATCH_PREFILL_MAX_TOKENS` do).
+- `engines.<engine>.prefill_levers`: estimated (INFERRED) gains on P from engine changes; a prefill-bound ceiling
+  rises by the same factor.
+- `settings`: `many_agents_min` (when the `agent_workload` check applies), `build_key_re` (what makes two rows the same
+  engine build), `real_kind`, `table_n`, `real_err_warn_pct`.
+
+`build.py` collects every ledger row whose `measured.workload_kind` is `real-agent` (a replay of recorded agent
+traffic) into `data.workload.measured`, keyed by agent count like the curve rows: `agent_tps`, `prefill_tps`,
+`fresh_per_output`, `prefill_busy_pct`. These rows never feed the decode curves.
+
+For each curve config, the report takes D from its fitted curve, P from the real-agent row of the same build with the
+highest output (rows of other builds are listed but never borrowed), and F from the profile. Per agent count it prints
+D, P / F, the ceiling, the expected output, the binding term, the predicted prefill busy share and the `cpu_pool_rows`
+window check. Every real-agent row at that count is judged again with its own P and F, so a miss is the model's
+error, not a workload difference. A miss over `real_err_warn_pct` is marked.
+
+When the build has no real-agent row yet, P is **predicted** from the box and the recipe (`prefillPass`, tag MODEL)
+instead of left unknown, so a many-agent recipe names its binding term before its first real-agent run. The
+`agent_workload` check still flags the recipe (no real-agent row), but its prediction carries the MODEL P, and
+`prediction_first` passes on it when the build has a decode curve. The prefill model (`data/workload.json`
+`prefill_pass`):
+
+    t(T) = ceil(T / C) x t_pass + T x m        per read of T fresh tokens, chunk C
+    t_pass = sum over stages of  nonresident expert bytes x (1 - cpu_share) / link  +  resident expert bytes / VRAM bandwidth
+    m = sum over stages of  layer share x 2 x active params / (eta x card int8 ops)
+
+Each chunk makes one pass over the experts: with C x k much larger than E, nearly every expert of every MoE layer is
+routed to, so the experts a card does not hold cross its PCIe link once per chunk (the CPU computes `cpu_share` of
+them instead) and the ones it holds are read once from VRAM. The chunk comes from `--prefill N` in the engine flags
+(else the engine's `chunk_default`), the split from `layer split N`, the CPU share from
+`STRATA_PREFILL_STREAM_CPU_SHARE`, the link from the box probe's PCIe generation and width x `link_eff`. P over an
+agent workload is the mean read over (chunks per read x t_pass + mean read x m), with chunks per read taken over the
+measured read-size mix (`read_mix`: agent reads are short, median ~780 tokens). `shared_tps` = 1 / (t_pass / C + m) is
+what an engine that batched several agents' reads into one pass would approach. eta is the one fitted factor per
+engine: for strata it comes from the server prompt time of the three 16-agent replays of the build served on 2026-10-26
+(ledger rows `odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026`, `-r2`, `-r3`; `engines.strata.fit`), which
+the model reproduces exactly by construction (866 tok/s; eta 0.043 of the B70's inferred int8 peak, m 0.757 ms a
+token, t_pass 0.39 s a 2048-token chunk). Held out (`checks`), the CUDA build on droopy's one RTX 6000 (PCIe 3) is
+predicted at 424-674 tok/s for an 11,565-token prompt over its CPU-share range 0.5-0.84, measured 630-640. On that build the
+per-token term is 2.6x the pass term at 2048 tokens, so a bigger chunk buys little (predictions written before the
+chunk arms ran: `data/predictions-prefill-chunk-1026.json`). Left out: attention and DeltaNet costs that grow with depth.
+
+Example, Flash-Next on odie's two B70 cards (layer split, 2 groups), the build served on 2026-10-25:
+
+| agents | D (decode capacity) | P / F | expected (reads stall decode) | binding | window rows |
+|---|---|---|---|---|---|
+| 16 | 271.0 (measured) | 156.9 | 99.4 | prefill | 8, fits the 16-row CPU pool |
+| 32 | 356.1 (measured) | 156.9 | 108.9 | prefill | 16, fits |
+| 64 | 422.4 (projected) | 156.9 | 114.4 | prefill | 32: FAIL on this build |
+
+P = 765.9 prompt tok/s, from this build's steady-state 16-agent replay with the highest output
+(`odie-fnx-iq3xxs-2xb70-real-sp-ss16-n16-1026`, 78.6 tok/s, run with the shared-prefix setting on), and F = 4.88 from
+the profile. The three steady-state 16-agent replays of this build made 70.9-78.6 tok/s. With each run's own P and F
+the model expects 93.4-97.9 (24.5-36.3 % high), and its ceiling P / F is 1.9-2.1 times what they made. The model puts
+prefill busy at 64-66 %; the runs measured 47-51 %. The gap includes time when no agent was waiting on the server: the
+recorded tool time between turns (median 1.0 s, p90 11.9 s in these sessions), which the formula does not carry.
+So a synthetic total of 356 tok/s at 32 agents stands against 71-79 tok/s that real agents got at 16 on the same build:
+more agents raise decode capacity, not the output, and faster prompt reading is what helps.
+
+Limits:
+
+- D comes from the synthetic runs' context depth. Real agents decode at their whole prompt's depth (82k median in the
+  profile's sessions), which is not measured separately.
+- P is measured at one agent count. It moves with the read sizes, the cache and the engine settings: on the build
+  served on 2026-10-26, two settings read prompts 25-35 % faster (1,085 and 1,170 tok/s against 866) but wrote no
+  faster (72.5 and 69.3 tok/s against 83.4 at 16 agents), because they read more per token written (F 6.5 and 8.0).
+- No tool-time term. The formula assumes every agent is always waiting on the server, reading or decoding. Real agents
+  spend time in their tools between turns, and a lone agent leaves the server idle then. On a one-agent replay
+  (`odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026`, 32.6 tok/s) the formula read 33 % high; with the replay's
+  recorded tool time added by hand, 4.5 % high. At 16 agents other agents' work fills part of that time, and the formula
+  reads 24.5-36.3 % high on the example build above.
+
+## Blind spots we hit and the checks that now catch them
+
+The planner predicts well only what it models. Each time a run surprised us, the missing factor became a standing
+check, so the next run gets it right the first time.
+
+- **Synthetic decode-only tests.** Our many-agent curves gave each agent one short prompt and timed only the writing.
+  That measures decode capacity, not what real agents get: 356 tok/s at 32 agents on the synthetic load stood against
+  71-79 tok/s for 16 replayed real agents on the same build. Check `agent_workload` flags a many-agent recipe with no
+  real-agent row of its own build.
+- **Prefill-bound agents.** Real agents read far more prompt than they write, so reading prompts, not writing, set
+  the limit, and adding agents added nothing. Check `prediction_first`: before launch, a many-agent recipe must show
+  its predicted useful tok/s, which term binds (decode or prefill) and the fresh-tokens-per-output F it assumed.
+  `--check` prints it on an `agents` line and `--check --json` carries it as `agent_prediction`. A recipe the model
+  cannot bind (no fitted decode curve or no prefill rate for its build) is flagged unless it declares
+  `conditions.workload.prediction {useful_tps, binding, fresh, src}`.
+- **Replay-inflated F.** Our first replays read 17.8-67.7 fresh prompt tokens per output token. The recorded sessions
+  need only 4.33-4.5 with a perfect cache (cold first prompts plus prompt growth, over the recorded outputs). The extra
+  came from the replay and the engine, not from the agents: the timed window held every agent's cold first prompt and
+  the re-reads after cache evictions. With a 600 s warm-up before the window, F fell to 4.5-8.0 by the server's count
+  (3.9-4.9 by the replay client's). Check `replay_artifact` flags a real-agent row whose F is
+  more than K times its reference (K = `settings.replay_artifact_k`, default 2). The reference is the trace-ideal
+  ratio when the row names its trace (`profiles.<name>.trace_ideal_fresh_per_output`), else the profile's
+  `fresh_reference_prior`. The report prints the excess, the fresh tokens above the reference and the suspected
+  causes: cold restarts, evictions, template drift. Check `steady_state` asks each real-agent row for its warm-up
+  (`warmup_s`, or `none`) and, when the replay gives one, its fresh breakdown (cold / growth / re-read). A row without
+  a warm-up timed its window from a cold start, so its F is an upper bound. `tools/record_run.py --from-log replay:`
+  takes both fields when the result has them.
+- **Ungrounded expectations.** We set targets before reading what published serving work already knew.
+  `data/priors-serving.json` now holds those expectations, each with a value, a unit, a tag (MEASURED-ELSEWHERE with a
+  URL, MEASURED-HERE with our file and commit, or INFERRED) and `applies_when`, the recipe facts it needs. `--check`
+  lists the priors that apply as `prior` lines; `node report.js --priors [recipe.json]` lists all of them or a recipe's;
+  the Agents tab shows them under the workload callout.
+
+`node report.js --workload` ends with both replay checks over every real-agent row in the ledger.
 
 ## Honest limits
 
@@ -517,7 +772,8 @@ then scans every file name and line, gzip files decompressed, for:
 - any archive (gzip, zip, xz, zstd, bzip2, 7z, tar, SQLite)
 
 Any hit refuses the export with exit 1 and marks the copy `status=REFUSED` in `.fitviz-export`. A new kind of note
-pointer needs a rewrite rule in the manifest. Run `tools/export_atlas.sh --scan-only DIR` again before you publish.
+pointer needs a rewrite rule in the manifest. A public URL that a shipped file must cite and that trips a rule gets an
+`admit` line in the manifest; the copy carries it as `.scan-admit`. Run `tools/export_atlas.sh --scan-only DIR` again before you publish.
 
 ## Tests
 
@@ -530,6 +786,7 @@ node tests/test_decode_fit.js
 node tests/test_batch.js
 node tests/test_window.js
 node tests/test_curve.js
+node tests/test_workload.js
 node tests/test_kv_host.js
 node tests/test_screen.js          # needs the private quality-round ledger; not in the public copy
 ```

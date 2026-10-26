@@ -1,6 +1,7 @@
 """What keeps the repo publishable: the run ledger in sealed gzip segments + an open file (src/ledger.py, src/ledger.js),
 heat maps over 1 MiB written gzipped (tools/heatmap.py), no tracked file over 1 MiB, the page's data split out of index.html
 (build.py page/*.js), the curated public copy (tools/curate.py by publish/manifest.json) and its scan (tools/export_atlas.sh)."""
+import ast
 import datetime
 import gzip
 import json
@@ -443,6 +444,12 @@ class Curate(unittest.TestCase):
         self.assertEqual(self.C.rewrite('package (ik ' + 'hl' + '332-stack 0123abcd)', R), 'package (ik stack 0123abcd)')
         self.assertEqual(self.C.rewrite('stopped (' + agent + ' GO 10-20 23:12Z); x', R), 'stopped (approved); x')
         self.assertEqual(self.C.rewrite('asked by gpu-box-' + 'cla' + 'ude', R), 'asked by an agent')
+        private = 'desktop logg' + 'ed out via desktop-' + 'sleep want; battery 12 + 3 real ' + 'he' + 'lm lanes'
+        self.assertEqual(self.C.rewrite(private, R), 'dedicated GPU allocation; battery 12 + 3 real coding tasks')
+        with open(os.path.join(ROOT, 'publish', 'manifest.json')) as f:
+            man = json.load(f)
+        fixtures = ['tests/test_expert_residency.js', 'tests/test_research_memory.js']
+        self.assertEqual(self.C.shipped(fixtures, man), [], 'private recipe integration fixtures must not ship')
 
     def test_every_home_path_becomes_tilde(self):
         R = self.C.rules({'rewrite': []}, '/home/' + 'someone')
@@ -496,6 +503,24 @@ class Curate(unittest.TestCase):
         line = lambda rid: next(x for x in md.splitlines() if x.startswith('| %s |' % rid))
         self.assertIn('box: half the DIMMs', line('docs-42-run'))
         self.assertNotIn('box:', line('r3'))
+
+    def test_agent_replay_and_rate_probe_rows_headline_their_totals(self):
+        # a replay's decode_tps is a per-request median (writing only): the headline is useful tok/s over all agents
+        base = next(r for r in self.rows if r['id'] == 'r3')
+        rep = dict(base, id='rep', measured={'outcome': 'ok', 'primary_phase': 'agent', 'agent_tps': {'c1': 32.62},
+                                             'decode_tps': {'c1_per_request_median': 68.78}})
+        probe = dict(base, id='probe', measured={'outcome': 'ok', 'primary_phase': 'aggregate', 'aggregate_tps': {'c32': 347.5},
+                                                 'decode_tps': {'c32_per_stream_median': 10.86}})
+        rows = self.rows + [rep, probe]
+        self.assertEqual(self.C.headline(rep['measured'])[1], 'agent')
+        self.assertFalse(self.C.clean(rep))
+        self.assertFalse(self.C.clean(probe))
+        self.assertEqual(self.C.best_runs(rows)[('b1', 'ok1')]['id'], 'r3')
+        md = self.C.results_md(rows, {'boxes': {'b1': {'cpu': {'desc': '1x test CPU'}}}, 'models': {'ok1': {'name': 'Model One'}}}, 'acc', self.man)
+        line = lambda rid: next(x for x in md.splitlines() if x.startswith('| %s |' % rid))
+        self.assertIn('**32.62** (useful tok/s over 1 agent, real agent replay; decode median 68.78 (c1_per_request_median))', line('rep'))
+        self.assertIn('**347.50** (total decode tok/s over 32 agents, synthetic load', line('probe'))
+        self.assertIn('**11.00** (n4)', next(x for x in md.splitlines() if x.startswith('| b1 | Model One |')))
 
 
 @unittest.skipUnless(os.path.exists(EXPORT), 'the publishing tool is not in this copy')
@@ -553,6 +578,31 @@ class Scan(unittest.TestCase):
 
 class Page(unittest.TestCase):
     """build.py writes index.html (no data inside) + page/*.js, each under the page file limit; the scripts rebuild data.json"""
+    def test_oversized_containers_split_without_losing_values_or_order(self):
+        # Read the pure builder functions without running build.py's input loading and build side effects.
+        tree = ast.parse(Path(ROOT, 'build.py').read_text())
+        nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'page_assignment_parts']
+        scope = {'json': json, 'PAGE_FILE_LIMIT': L.GIT_FILE_LIMIT}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), 'build.py', 'exec'), scope)
+        split = scope['page_assignment_parts']
+        row = {'unicode': 'Ω' * (L.GIT_FILE_LIMIT // 24)}
+        value = {'rows': [row for _ in range(8)], 'nested': {'quoted"key': row}, 'empty': [], 'false': False, 'null': None}
+        before = json.dumps(value)
+        parts = split('data', 'window.FIT_DATA', value)
+        self.assertEqual(parts, split('data', 'window.FIT_DATA', value), 'deterministic scripts and filenames')
+        self.assertEqual(parts[0][0], 'data.js')
+        self.assertGreater(len(parts), 1)
+        self.assertEqual(len(set(n for n, _ in parts)), len(parts))
+        self.assertTrue(all(len(s.encode()) <= L.GIT_FILE_LIMIT for _, s in parts))
+        js = "const vm=require('vm'),fs=require('fs'),ctx={window:{}};JSON.parse(fs.readFileSync(0,'utf8')).forEach(s=>vm.runInNewContext(s,ctx));process.stdout.write(JSON.stringify(ctx.window.FIT_DATA));"
+        p = subprocess.run(['node', '-e', js], input=json.dumps([s for _, s in parts]), capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(p.stdout), value)
+        self.assertEqual(json.dumps(value), before, 'builder must not mutate source values')
+        scalar = 'x' * L.GIT_FILE_LIMIT
+        self.assertGreater(len(split('data', 'window.FIT_DATA', scalar)[0][1].encode()), L.GIT_FILE_LIMIT,
+                           'an indivisible scalar remains visible to the existing build refusal, never silently truncated')
+
     def test_page_parts_rebuild_the_data(self):
         page = os.path.join(ROOT, 'page')
         if not os.path.exists(os.path.join(ROOT, 'data.json')) or not os.path.isdir(page):

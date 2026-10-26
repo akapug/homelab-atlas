@@ -6,6 +6,7 @@ levers_from_runs: the measured-lever table; each cell names ledger runs and the 
 """
 import datetime
 import json
+import math
 import os
 import re
 
@@ -88,12 +89,18 @@ def cost_text(run):
 def observed(run):
     """what the run itself showed, overlaid on the pre-launch prediction in the hard-check table"""
     m, o = run['measured'], {}
+    if 'fallback_ledger' in m:
+        o['fallback_ledger'] = m['fallback_ledger']
     if m.get('node_memfree_min_gib') is not None:
         o['numa'] = {'observed_memfree_gib': m['node_memfree_min_gib']}
     elif m.get('numa_clean'):
         o['numa'] = {'observed_clean': m['numa_clean']}
     if m.get('kl') is not None:
         o['decode_kl'] = m['kl']
+    # the host-pinned set (driver GTT, GPUActive) the run measured: at its end, or where a guard stopped it (a lower bound)
+    for k in ('pinned_gib', 'pinned_at_stop_gib'):
+        if m.get(k) is not None:
+            o[k] = m[k]
     return o
 
 
@@ -122,6 +129,12 @@ def _groups(d, rx=MTP_TOKEN):
     return list((means or out).values())
 
 
+def decode_rates(run):
+    """Finite measured phases only: null means unobserved, never zero; retain real zero stalls for display."""
+    d = run['measured'].get('decode_tps')
+    return {k: v for k, v in d.items() if type(v) in (int, float) and math.isfinite(v) and v >= 0} if isinstance(d, dict) else {}
+
+
 def draft_twins(runs, exclude=()):
     """{box|model: [twin]} per ledger run that decoded the served draft width and no draft in one load (a confounded run gives
     none: ledger.caveated). A twin is left out when a
@@ -131,8 +144,8 @@ def draft_twins(runs, exclude=()):
     for run in runs:
         if run['id'] in exclude or ledger.caveated(run):
             continue
-        d = run['measured'].get('decode_tps')
-        if not isinstance(d, dict):
+        d = {k: v for k, v in decode_rates(run).items() if v > 0}
+        if not d:
             continue
         notes = ' '.join(run['measured'].get('degraded', []))
         found = False
@@ -160,8 +173,8 @@ def served(run):
     c1 / all / a *_c1 phase, else its first phase with guess=True: the page lists it but compares nothing). None = no decode
     measured"""
     m = run['measured']
-    d = m.get('decode_tps')
-    if not isinstance(d, dict) or not d:
+    d = decode_rates(run)
+    if not d:
         return None
     mean = lambda ks: round(sum(d[k] for k in ks) / len(ks), 3) if ks else None
     out = {}

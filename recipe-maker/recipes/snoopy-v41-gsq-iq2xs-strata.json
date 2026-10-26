@@ -1,0 +1,141 @@
+{
+ "id": "snoopy-v41-gsq-iq2xs-strata",
+ "box": "snoopy",
+ "model": "v41",
+ "engine": "strata",
+ "label": "snoopy V4.1 1017 ISTA GSQ-RCO IQ2_XS on Strata 8183c6b6 strata-dsv41 (our sm_86 build, native znver5 experts): dense + hot experts in the 3090 Ti, the rest computed on the CPU from RAM/file, Engram IQ4_NL on internal NVMe, Unsloth DSpark Q8_0 drafter (--dspark auto, conf 0.65), dedicated GPU allocation",
+ "store": {
+  "split": false,
+  "types": [
+   "gsq41_iq2xs"
+  ]
+ },
+ "rtr": false,
+ "ub": 4096,
+ "draft": true,
+ "banks_gib": 7.0,
+ "threads": 16,
+ "knobs": {
+  "freeDesktop": true
+ },
+ "files": [
+  {
+   "path": "/mnt/models-cache/v41-gsq/DeepSeek-V4.1-Flash-1017-GSQ-RCO-IQ2_XS-00001-of-00004.gguf",
+   "holds": "experts + non-experts shard 1",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/models-cache/v41-gsq/DeepSeek-V4.1-Flash-1017-GSQ-RCO-IQ2_XS-00002-of-00004.gguf",
+   "holds": "experts + non-experts shard 2",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/models-cache/v41-gsq/DeepSeek-V4.1-Flash-1017-GSQ-RCO-IQ2_XS-00003-of-00004.gguf",
+   "holds": "experts + non-experts shard 3",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/models-cache/v41-gsq/DeepSeek-V4.1-Flash-1017-GSQ-RCO-IQ2_XS-00004-of-00004.gguf",
+   "holds": "experts + non-experts shard 4",
+   "access": "loaded"
+  },
+  {
+   "path": "/scratch/v41-gsq/DeepSeek-V4.1-Flash-Engram-IQ4_NL.gguf",
+   "holds": "engram",
+   "access": "on_file"
+  },
+  {
+   "path": "/mnt/models-cache/v41-gsq-shared/dspark-DeepSeek-V4.1-Flash-1017-Q8_0.gguf",
+   "holds": "DSpark Q8_0 drafter (Unsloth, 1017)",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/models-cache/v41-gsq-shared/UD-Q8_K_XL/DeepSeek-V4.1-Flash-1017-UD-Q8_K_XL-00001-of-00009.gguf",
+   "holds": "Engram hash metadata (pack only)",
+   "access": "on_file"
+  }
+ ],
+ "src": "lab notes run 2026-10-24 (an agent): kit lab notes, Strata 8183c6b6, ISTA @cb02422c",
+ "conditions": {
+  "ctx": "8192 (--max-context 8192, Strata's checked context) for the briefs; 65536 for the agent eval",
+  "kv_type": "Strata dsv41 default",
+  "draft_n": "DSpark Q8_0 drafter, --dspark auto --dspark-conf 0.65 (block size from the pack), as Strata setup writes",
+  "sampling": {
+   "temperature": 1.0,
+   "top_p": 1.0,
+   "set_by": "brief-client.py (Strata's DS4.1 card defaults)"
+  },
+  "reasoning_effort": "low (50): Strata's measured condition; template default is high (75)",
+  "workload": {
+   "prompt_kind": "~/prompts/coding-agent.json first 3 briefs as one user chat message",
+   "gen_tokens": 300,
+   "ignore_eos": false,
+   "cache_prompt": false,
+   "phases": [
+    "dspark-auto"
+   ]
+  },
+  "threads": "Strata default (--cpu-threads unset)",
+  "cpu_reserve": "none set: Strata sizes its own threads"
+ },
+ "engine_build": "8183c6b6",
+ "cpu_expert_evidence": {
+  "status": "UNIDENTIFIED",
+  "run": "snoopy-v41-gsq-iq2xs-strata-ramcopy",
+  "scope": "snoopy 9950X3D +3090Ti, V4.1 Flash1017 ISTA@cb02422c IQ2_XS, Strata8183c6b6 sm86/znver5, RAM copy, effort50, ctx8192 briefs or65536 eval, no drafter actually loaded",
+  "cpu_rate_gbs": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: whole-request decode does not identify CPU expert kernel bandwidth; ik13.1 and Strata27.39 are different engines/placement/draft states"
+  },
+  "end_to_end_decode_tps": {
+   "v": 27.14,
+   "tag": "MEASURED",
+   "src": "runs/runs.jsonl snoopy-v41-gsq-iq2xs-strata-ramcopy measured.decode_tps.n0"
+  },
+  "applies_to_mode": "resident",
+  "calibration_policy": "No global multiplier and no CPU coefficient from aggregate speed. Paired same-engine routed CPU timings, quant/shape and read scope are required before calibrating this model-specific tier."
+ },
+ "fallback_plan": {
+  "src": "lab notes retained 8183c6b6 launch intent, not current placement proof",
+  "classes": {
+   "dense": {"tier": "gpu", "src": "recipe label: dense on 3090 Ti"},
+   "hot_experts": {"tier": "gpu", "src": "recipe banks_gib: 7 GiB"},
+   "cold_experts": {"tier": "dram", "src": "lab notes intended RAM CPU lane; default USB streaming is accidental"},
+   "kv": {"tier": "unknown", "src": "UNKNOWN: current KV placement unverified"},
+   "drafter": {"tier": "unknown", "src": "UNKNOWN: requested DSpark allocation is not a loaded-drafter receipt"},
+   "drafter_state": {"tier": "on", "src": "recipe draft=true, --dspark auto; retained actual off must flag"},
+   "batch_mtp": {"tier": "unknown", "src": "UNKNOWN: no per-slot MTP placement receipt"},
+   "dense_op": {"tier": "unknown", "src": "UNKNOWN: operation dispatch not recorded"},
+   "shexp_op": {"tier": "unknown", "src": "UNKNOWN: no positive dispatch receipt"},
+   "hc_op": {"tier": "unknown", "src": "UNKNOWN: no positive dispatch receipt"},
+   "execution": {"tier": "unknown", "src": "UNKNOWN: no batch dispatch receipt"},
+   "host_pins": {"tier": "unknown", "src": "UNKNOWN: driver pinned allocation not audited"}
+  }
+ },
+ "expert_residency": {
+  "host_experts_gib": {
+   "v": 124.98348951339722,
+   "tag": "READ",
+   "src": "lab notes retained RAM-copy arm: 134.2 decimal GB CPU experts; host total 182.15 GiB inventory, not usable capacity"
+  },
+  "available_gib": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: current pre-load MemAvailable not probed for this recipe"
+  },
+  "other_gib": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: staging, dense-host/shadow and service allocations not live-audited"
+  },
+  "mode": "auto",
+  "live_verified": false,
+  "src": "lab notes retained RAM-copy arm: 134.2 decimal GB CPU experts; host total 182.15 GiB inventory, not usable capacity; current live residency/RAM unverified pending passive audit",
+  "kv_gib": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: current context KV allocation not audited; do not assume zero"
+  }
+ }
+}

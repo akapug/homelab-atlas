@@ -1,0 +1,53 @@
+{
+ "id": "odie-fnx-iq3xxs-2xb70-split",
+ "label": "odie Flash-Next IQ3_XXS 2x B70, XeStrata layer split 0-23 / 24-47, all 24576 experts in VRAM",
+ "box": "odie",
+ "model": "fnx",
+ "engine": "strata",
+ "engine_build": "xe0.1.45-1-wrapup-reasoning-305c819a416e, ENGINE_ARGS --prefill auto",
+ "store": {
+  "split": false,
+  "types": [
+   "gsq_iq3xxs"
+  ]
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": "auto",
+ "threads": 24,
+ "draft": true,
+ "banks_gib": 39.96,
+ "files": [
+  {
+   "path": "/models/qfn-gsq/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded"
+  }
+ ],
+ "ctx": 262144,
+ "conditions": {
+  "ctx": 262144,
+  "kv_type": "int8 (--kv int8)",
+  "draft_n": "MTP --spec 4, spec_min_p 0.70, suffix drafts 3",
+  "sampling": {
+   "temperature": 0.7,
+   "top_p": 0.8,
+   "top_k": 20,
+   "min_p": 0.0,
+   "presence_penalty": 0.0,
+   "set_by": "request (bench.py body, the card's thinking-off row); screen: 1.0/0.95/20 thinking row"
+  },
+  "reasoning_effort": "none for speed prompts (enable_thinking false); high for the r1 screen question",
+  "workload": {
+   "bench": "qfn2-bench.py: 3 prompts x 800 max tokens (code/reason/prose), cold 16k and 64k prompts + CODE_TASK 384 out, r1 planted-defect screen (11.8k prompt, max 32000); one request at a time"
+  }
+ },
+ "src": "an agent subagent 2026-10-22 odie window; lab notes (run-2gpu.sh, entry-2gpu.sh)",
+ "gpu_split": {
+  "banks_gib": [
+   17.72,
+   22.24
+  ]
+ },
+ "layout_note": "layer_split 24; VRAM free after load 9.8 / 3.3 GiB; pinned RAM 5.9 GiB"
+}

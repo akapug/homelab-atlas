@@ -11,6 +11,21 @@
   "power_field": {"v": "power_w", "tag": "READ", "src": "measured.power_w in a ledger row: the watts that run measured, either one number for the run or {cN: W} per agent count like aggregate_tps; what it counts is the row's own measurement boundary, stated in the row (for example the cards' energy counters plus the CPU package, without the rest of the box), and is never assumed to be wall power"},
   "fit_warn_pct": {"v": 5, "tag": "READ", "src": "a config whose fit misses a measured point by more than this many percent is flagged: the points do not follow the window law"}
  },
+ "contention": {
+  "odie-fnx-iq3xxs-2xb70-churn-chg2-1024": {
+   "label": "CHG2 REFILL: processing is not client TTFT",
+   "decode_while_reading_tps": {"v": 6.95, "tag": "MEASURED", "src": "runs/runs.jsonl CHG2 measured.decode_tps.c30_reading_median; 30 streams + fresh ~100k prompt every120s, comb6 REFILL, 262k/131k split slots, k8v4"},
+   "client_ttft_s": {"v": [1317.41, 884.3, 1247.32, 763.02, 407.0], "tag": "MEASURED", "src": "runs/runs.jsonl CHG2 measured.notes client-side TTFT; median884.3s; includes queueing/requeue, not native phase cost"},
+   "native_processing_sum_s": {"v": 97.049, "tag": "READ", "src": "AUTHOR_GROUNDED: the run's retained engine log (our lab notes, not published), native phase triples 615/625/646, 658/668/687, 699/709/728, 754/764/785, 811/821/840; median of five independent native phase sums, not whole-log replay here or an arrival/client TTFT join. Separate wrapper section starts at line 847", "reported_candidate_s": 97, "statistic": "median of native processing phase sums", "qualification": "AUTHOR_GROUNDED; per-arrival correlation remains UNPROVED"},
+   "native_processing_sums_s": {"v": [98.778, 95.989, 97.696, 94.761, 97.049], "tag": "READ", "src": "AUTHOR_GROUNDED: the retained engine log native triples named above (our lab notes, not published); processing only, no polled queue/read timestamps or greedy arrival joins"},
+   "per_arrival_wait_correlation": {"v": null, "tag": "UNKNOWN", "src": "UNKNOWN: exact request/arrival identity join needed across requeues; never greedily join by nearest time or prompt length"},
+   "invalid_training_fields": ["polled queue_s", "polled read_s", "client_ttft minus unmatched native phase sum"],
+   "fit_eligible": false,
+   "baseline": "odie-fnx-iq3xxs-2xb70-churn-cha-1024",
+   "baseline_limit": "CHA reading median0.64tok/s is a different engine/build/schedule; descriptive comparison only, not isolated REFILL speedup or one universal service curve",
+   "native_receipt": "the run's engine trace on the box (our lab notes, not published; not read for these figures)"
+  }
+ },
  "flags": {
   "slots": {"v": "--batch (\\d+)", "tag": "READ", "src": "XeStrata --batch N: N agent slots; a point above N queued agents and is kept out of the fit"},
   "slots_each_point": {"v": "--batch=agents", "tag": "READ", "src": "the bench driver's sweep form '--batch=agents (one fresh server per agent count)': each point ran its own server with --batch n, so the host-pin check at n uses n slots"},
@@ -21,6 +36,7 @@
   "slot_context": {"v": "--slot-context (\\d+)", "tag": "READ", "src": "XeStrata --slot-context (serving.slot_context)"},
   "big_slots": {"v": "--big-slots (\\d+)", "tag": "READ", "src": "XeStrata --big-slots (serving.big_slots)"},
   "max_context": {"v": "(?:--max-context |MAX_CONTEXT=)(\\d+)", "tag": "READ", "src": "XeStrata --max-context or env MAX_CONTEXT (serving.max_context); else the recipe ctx"},
+  "max_t": {"v": "STRATA_BATCH_MAX_T=(\\d+)", "tag": "READ", "src": "XeStrata env STRATA_BATCH_MAX_T (serving.max_t): the most rows a batch window takes"},
   "stage_lend_drop": {"v": "STRATA_STAGE_LEND_DROP=1", "tag": "READ", "src": "XeStrata env STRATA_STAGE_LEND_DROP=1 (serving.stage_lend_drop)"}
  }
 }

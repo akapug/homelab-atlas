@@ -6,7 +6,10 @@ servers on it stop when the desktop needs the card. The two B70s of [the B70 ent
 2026-10-07; this card took their place.
 
 The 3090 Ti has the most memory bandwidth of our cards (1,008 GB/s nameplate). On this box it is where a dense
-27B model runs fastest, and where GLM-5.3-Flash (321B, MoE) cleared our 25 tok/s bar with its quality check passing.
+27B model runs fastest, and where GLM-5.3-Flash (321B, MoE) cleared our 25 tok/s one-request decode bar with its quality check passing.
+Decode is not agent speed: agents also wait for prompt reading and tool time (see the
+[many-agents page](../b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with)), so each result here
+gives its prompt reading too.
 
 ## At a glance
 
@@ -143,7 +146,10 @@ weights, the KV cache and a cache of hot experts.
 Measured 2026-10-24. DeepSeek V4.1 Flash is a 748B mixture-of-experts model. Here it runs on one RTX 3090 Ti plus 192 GB
 of DDR5, served to a coding agent for real tasks: **27.39 tok/s decode**, the median over 217 requests that each
 generated at least 50 tokens (p10 25.57). Prefill was 240.5 tok/s, the median over 85 prompt reads of at least
-1,000 tokens. That is more than twice our best V4.1 result on the [RTX 6000 + Optane box](../rtx-6000/) (12.69).
+1,000 tokens. Both are per-request rates while the server was working on that request; the agent's wall time also
+holds its tool time. The decode is more than twice our best V4.1 result on the [RTX 6000 + Optane box](../rtx-6000/)
+(12.69), with 2-bit experts here against release-precision hot experts there. The Strata build for this card is not
+published, so this result cannot be rerun from public code yet.
 
 - **Weights.** GSQ-RCO IQ2_XS experts: 2-bit, so much smaller than the release precision. That size is what lets the
   CPU part fit in RAM. We have not checked these weights against the release weights with KL and top-1 (not measured),
@@ -157,7 +163,7 @@ generated at least 50 tokens (p10 25.57). Prefill was 240.5 tok/s, the median ov
   median of 97.6 % of each prompt reused from the cache.
 - **Quality.** **13 of 15** agent tasks passed: 11 of 12 on our task battery and 2 of 3 on real-repository tasks.
   One failed its hidden check. In the other, the context was compacted twice on a 17,000-line file at the 65,536 window
-  and the agent made no edit. A bigger window is the obvious next arm. That is the same score as Flash-Next
+  and the agent made no edit. A bigger window was not tried before the research paused. That is the same score as Flash-Next
   (Q8_0 + MTP, 131,072 window) on the same harness.
 
 ## Code-review rounds: four models on one card
@@ -222,4 +228,4 @@ Banked with their conditions, because a loser on this box can be the right answe
 
 ---
 
--- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

@@ -6,7 +6,9 @@ a CPU-less NUMA node), the card on PCIe 3 x16. The [MoE offload entry](../moe-of
 
 This is our box for the biggest models: weights that do not fit in VRAM or DRAM spill to Optane, which is slower
 than DRAM but far faster than a disk. The question it answers: how close does a 2019 workstation with a 2018 card get
-to a frontier-class MoE at usable speed and full context?
+to a frontier-class MoE, at what speed and at what context? Its best decode (12.69) is in a 4,096-token window; at
+189k tokens it decodes 7.18 and reads prompts at 57.7 tok/s. That suits chat and batch work, not an interactive
+coding agent.
 
 ## At a glance
 
@@ -198,4 +200,4 @@ as a test for the planner.
 
 ---
 
--- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

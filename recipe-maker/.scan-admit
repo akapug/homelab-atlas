@@ -1,0 +1,2 @@
+# scan admissions (publish/manifest.json admit): rule | path glob | literal | reason
+internal id | data/priors-serving.json | https://code.claude.com/docs/en/ | a public vendor docs page a serving prior cites (the coding-agent CLI's timeouts and context window)

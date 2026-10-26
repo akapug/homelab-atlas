@@ -18,7 +18,7 @@ GitHub Pages site built from `docs/`. No build step for the Markdown.
 | `3090-ti/vllm-cuda/Dockerfile` | vLLM 0.31.0 CUDA image + `draft-vocab.py` + `length-finish.py` | building the 3090 Ti server |
 | `rtx-6000/README.md` | Quadro RTX 6000 + Optane (box B): V4.1 best run with full command, tier split, 189k recall, GLM, Ornith-122B | reproducing the best V4.1 run |
 | `b70/` | Arc Pro B70 x2 (box C): `README.md` at a glance, `vllm-xpu/` patches, `llama.cpp-sycl/` patches, `bench/`, `agent-eval/`, model pages | Intel serving |
-| `b70/many-agents.md` | both B70s serving 32 agents at once (Flash-Next, batched XeStrata): ladder, switches, losers, mixed context | many agents from one box |
+| `b70/many-agents.md` | both B70s serving many agents (Flash-Next, batched XeStrata): real-agent replays first, then the synthetic decode ladder, switches, losers, the experimental engine fork | many agents from one box |
 | `network/README.md` | three ConnectX-3 cards as a 56 Gb/s triangle: flash, setup, per-link numbers | linking boxes |
 | `1080-ti/README.md` | GTX 1080 Ti (box D): V4.1 attention fix, Ornith-35B banks with the MI25 | Pascal + big MoE |
 | `mi25/README.md` | Radeon Instinct MI25 (box D): Vulkan, cold-boot fix, expert banks, heat, the hop-latency negative | old AMD cards |
@@ -40,12 +40,16 @@ GitHub Pages site built from `docs/`. No build step for the Markdown.
 | odie | C | odie | - | `b70/` |
 | lassie | D | lassie | A | `1080-ti/`, `mi25/`, `epyc-cpu/` |
 
-The fork's letters are its own (its A is our D). B70 "#1"/"#2" or "card 1/2" = odie's two cards; card 2 serves
-Ornith-1.5-35B-A3B, card 1 Qwen3.8 Flash-Next (2026-10-22).
+The fork's letters are its own (its A is our D). B70 "#1"/"#2" or "card 1/2" = odie's two cards; until 2026-10-24 card 2
+served Ornith-1.5-35B-A3B and card 1 Qwen3.8 Flash-Next; since then both cards serve the batched Flash-Next build.
 
 ## Conventions
 
 - Speeds are tok/s, one request unless "summed over N streams". Decode vs prefill always named.
+- Decode tok/s is not agent throughput. What an agent gets depends on prompt reading (prefill), how many new prompt
+  tokens it reads per token it writes (4 to 5 for our coding agents), and its tool time. Many-agent totals from a load
+  that reads each prompt once are decode capacity; real-agent figures come from replays of recorded agent sessions
+  (`workload` in `atlas.json`).
 - `n4` = 4 drafted tokens/step (draft model or MTP), `n0` = no draft, `c1` = one client, `MTP 3` = model's own head,
   3 drafted. `keepK Lx-y` = route trim keeping K picks on layers x-y.
 - Quality bar for speed changes: KL <= 0.03 and top-1 >= 0.97 vs a reference of the same model.
@@ -107,4 +111,4 @@ Ornith-1.5-35B-A3B, card 1 Qwen3.8 Flash-Next (2026-10-22).
 
 ---
 
--- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

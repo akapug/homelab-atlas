@@ -120,4 +120,34 @@ test('the reserve is a setting: the box floor and margin, or the recipe\'s own; 
   assert.strictEqual(FM.hostPinnedCheck(d3, LIVE).status, 'UNKNOWN');
 });
 
+// ---------- the overnight comb8 fit matrix (2026-10-25, k8v4, split 25): measured host pins against the model ----------
+const MATRIX = FM.checkRecipes(data).filter(x => /-matrix-comb8-/.test(x.run_id));
+(MATRIX.length ? test : (n => console.log('skip ' + n + ': the comb8 matrix rows are not in this ledger')))('the comb8 fit matrix: the per-agent KV term agrees with the measured slope at 262k; n16 fits, 64 x 262k does not', () => {
+  const at = (n, c) => MATRIX.find(x => x.recipe.serving.batch === n && x.recipe.serving.max_context === c && /-s25-/.test(x.run_id));
+  const pin = x => x.observed.pinned_gib, model = x => FM.hostPinnedPlan(data, x.recipe);
+  const slope = (a, b) => (pin(at(b, 262144)) - pin(at(a, 262144))) / (b - a);
+  const per = model(at(16, 262144)).kv.pinned_gib - FM.kvHostPlan(data, withServing(at(16, 262144).recipe, { batch: 15 })).pinned_gib;
+  // MEASURED GPUActive: n2 -> n8 2.413 GiB an agent (the model's READ bytes per cell: 2.414), n2 -> n16 2.524 (+4.6 %)
+  assert(Math.abs(slope(2, 8) / per - 1) < 0.01, slope(2, 8) + ' vs ' + per);
+  assert(Math.abs(slope(2, 16) / per - 1) < 0.06, slope(2, 16) + ' vs ' + per);
+  // the non-KV host set is not fixed: measured minus the model's KV copies is 1.87 GiB with nothing streamed (n16/8k), 4.4-4.7 at
+  // light load, 6.2 at n16/262k, 8.6 at n32/131k split 25 and 9.6 at split 24. The model's fixed qfn2 terms (8.61 GiB with the lend
+  // drop) sit inside that range: over at light load, 2.1 % under the n32/131k split-24 total. Hold the model within 3 % of every fit
+  MATRIX.filter(x => pin(x) !== undefined).forEach(x => {
+    const c = x.checks.find(k => k.id === 'host_pinned');
+    assert.strictEqual(c.status, 'PASS', x.run_id + ': ' + c.detail);
+    assert.strictEqual(c.measured.pinned_gib, pin(x));
+    assert(/MEASURED pinned/.test(c.detail), c.detail);
+    assert(c.pred.pinned_gib >= 0.97 * pin(x), x.run_id + ' model ' + c.pred.pinned_gib + ' < measured ' + pin(x));
+  });
+  // the guard stop at n24 (a lower bound) stays under the model's prediction for that shape
+  const g = MATRIX.find(x => x.observed.pinned_at_stop_gib !== undefined);
+  assert(g && model(g).pinned_gib > g.observed.pinned_at_stop_gib, 'n24/262k');
+  // the host ceiling: n16 x 262k fits under it, 64 x 262k pins more than the box has (doc INFERRED: ~170 GB)
+  const r16 = at(16, 262144).recipe, top = FM.hostPinnedBudget(data, r16).ceiling_gib;
+  assert.strictEqual(FM.hostPinnedCheck(data, r16).status, 'PASS');
+  assert(model(at(16, 262144)).pinned_gib < top);
+  assert(FM.hostPinnedPlan(data, withServing(r16, { batch: 64 })).pinned_gib > v(data.boxes.odie.dram.total_gib));
+});
+
 console.log(passed + ' kv_host tests passed');

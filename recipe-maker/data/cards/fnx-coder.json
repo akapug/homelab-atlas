@@ -1,0 +1,128 @@
+{
+ "key": "fnx-coder",
+ "name": "Qwen3.8-Flash-Next GSQ-RCO Coder (IQ1_M, 256 of 512 experts)",
+ "repo": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF",
+ "revision": "bba88856f8c3c0c9e40e45f82d05e228b814ac43",
+ "read": "2026-10-24",
+ "base": "fnx",
+ "sampling": {
+  "temperature": {
+   "v": 1.0,
+   "tag": "READ",
+   "src": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/de4b8e4d43b917e7706784d8bb445c9af86a3540/README.md#L342 (the Coder card states no sampling; the base model's thinking-mode values)"
+  },
+  "top_p": {
+   "v": 0.95,
+   "tag": "READ",
+   "src": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/de4b8e4d43b917e7706784d8bb445c9af86a3540/README.md#L342 (the Coder card states no sampling; the base model's thinking-mode values)"
+  },
+  "top_k": {
+   "v": 20,
+   "tag": "READ",
+   "src": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/de4b8e4d43b917e7706784d8bb445c9af86a3540/README.md#L342 (the Coder card states no sampling; the base model's thinking-mode values)"
+  },
+  "min_p": {
+   "v": 0.0,
+   "tag": "READ",
+   "src": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/de4b8e4d43b917e7706784d8bb445c9af86a3540/README.md#L342 (the Coder card states no sampling; the base model's thinking-mode values)"
+  },
+  "presence_penalty": {
+   "v": 0.0,
+   "tag": "READ",
+   "src": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/de4b8e4d43b917e7706784d8bb445c9af86a3540/README.md#L342 (the Coder card states no sampling; the base model's thinking-mode values)"
+  }
+ },
+ "thinking": {
+  "mode": {
+   "v": "on",
+   "tag": "READ",
+   "src": "https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/blob/bba88856f8c3c0c9e40e45f82d05e228b814ac43/README.md#L62 (all numbers measured at xhigh reasoning effort, so thinking on)"
+  },
+  "effort": {
+   "v": "xhigh",
+   "tag": "READ",
+   "src": "https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/blob/bba88856f8c3c0c9e40e45f82d05e228b814ac43/README.md#L62 (All numbers in this card were measured at xhigh reasoning effort)"
+  },
+  "control": {
+   "v": "chat_template_kwargs.enable_thinking (per request); reasoning_effort xhigh / medium / low",
+   "tag": "READ",
+   "src": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/de4b8e4d43b917e7706784d8bb445c9af86a3540/README.md#L350"
+  }
+ },
+ "template": {
+  "chat_template": {
+   "v": "sha256:12827f24b742ea4e80cdc12dbcf9622227056b9f797252a3149263d4f9aaadce",
+   "tag": "READ",
+   "src": "https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/blob/bba88856f8c3c0c9e40e45f82d05e228b814ac43/IQ1_M/Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00001-of-00002.gguf (tokenizer.chat_template in the GGUF header, sha256 of the stripped text; the same bytes as the GSQ-RCO IQ3_XXS GGUF's, 9,993 chars)"
+  },
+  "reasoning_parser": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: the card names no reasoning parser"
+  }
+ },
+ "limits": {
+  "context": {
+   "v": 262144,
+   "tag": "READ",
+   "src": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/de4b8e4d43b917e7706784d8bb445c9af86a3540/README.md#L71 (262,144 natively; the Coder card states no context of its own)"
+  },
+  "max_output": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: the Coder card states no output length; the base card's 262,144 reasoning + 131,072 final tokens are for its 1M-context setup (base README L591-594)"
+  }
+ },
+ "license": {
+  "v": null,
+  "tag": "UNKNOWN",
+  "src": "UNKNOWN (unresolved): the Coder's metadata says apache-2.0 (https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/blob/bba88856f8c3c0c9e40e45f82d05e228b814ac43/README.md#L6) but its own text says the weights inherit the base model's license (https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/blob/bba88856f8c3c0c9e40e45f82d05e228b814ac43/README.md#L166), and the base is qwen-community-1.0 (https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/de4b8e4d43b917e7706784d8bb445c9af86a3540/README.md#L4)"
+ },
+ "maker_reported": {
+  "_note": {
+   "v": "ISTA-DASLab's own numbers at xhigh reasoning effort, build of 2026-10-17 (shard 1 replaced 2026-10-19); not reproduced by us",
+   "tag": "MAKER-REPORTED",
+   "src": "https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/blob/bba88856f8c3c0c9e40e45f82d05e228b814ac43/README.md#L40"
+  },
+  "swe_bench_verified": {
+   "v": 79.2,
+   "tag": "MAKER-REPORTED",
+   "src": "https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/blob/bba88856f8c3c0c9e40e45f82d05e228b814ac43/README.md#L59 (the 2026-09-26 build: 75.60, L40)"
+  },
+  "swe_bench_verified_bf16_base": {
+   "v": 82.8,
+   "tag": "MAKER-REPORTED",
+   "src": "https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/blob/bba88856f8c3c0c9e40e45f82d05e228b814ac43/README.md#L58"
+  },
+  "livecodebench_v6": {
+   "v": 87.43,
+   "tag": "MAKER-REPORTED",
+   "src": "https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/blob/bba88856f8c3c0c9e40e45f82d05e228b814ac43/README.md#L59 (the 2026-09-26 build: 86.28, L40)"
+  },
+  "livecodebench_v6_bf16_base": {
+   "v": 87.43,
+   "tag": "MAKER-REPORTED",
+   "src": "https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/blob/bba88856f8c3c0c9e40e45f82d05e228b814ac43/README.md#L58"
+  },
+  "livecodebench_v6_iq3_xxs_unpruned": {
+   "v": 86.29,
+   "tag": "MAKER-REPORTED",
+   "src": "https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/blob/ed59f92082b1e93c0e96d60a8b11aab089b52f09/README.md#L126 (the unpruned GSQ-RCO IQ3_XXS we serve; that card names no reasoning effort, so the two LCB rows may not share a protocol)"
+  },
+  "experts_kept": {
+   "v": "256 of 512 per layer, 10 active",
+   "tag": "MAKER-REPORTED",
+   "src": "https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/blob/bba88856f8c3c0c9e40e45f82d05e228b814ac43/README.md#L110"
+  },
+  "shard1_bytes": {
+   "v": 29608446496,
+   "tag": "MAKER-REPORTED",
+   "src": "https://huggingface.co/api/models/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/tree/bba88856f8c3c0c9e40e45f82d05e228b814ac43/IQ1_M (lfs sha256 bfa3644d...c211; our download matched 2026-10-24)"
+  },
+  "shard2_bytes": {
+   "v": 28800138432,
+   "tag": "MAKER-REPORTED",
+   "src": "https://huggingface.co/api/models/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF/tree/bba88856f8c3c0c9e40e45f82d05e228b814ac43/IQ1_M (lfs sha256 316b46f3...e113, the same file as every GSQ-RCO release's shard 2; ours hashed equal 2026-10-24)"
+  }
+ }
+}

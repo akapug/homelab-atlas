@@ -1,0 +1,105 @@
+{
+ "about": "Agent workload (build.py data.workload, src/model.js agent*, node report.js --workload, the page's Agents tab). A coding agent's turn first reads its fresh prompt tokens (the new part past the cached prefix, plus any part read again after a cache eviction), then decodes its answer. With F fresh prompt tokens per output token, a prefill rate P (prompt tok/s) and a decode capacity D (total tok/s of the agents decoding together), useful output is at most min(D, P / F). An engine whose long reads stop every decoding slot runs the two in turn, so it gets 1 / (F / P + 1 / D). The binding term is the smaller of D and P / F. A ledger row measured on a synthetic short-prompt load (one short prompt per agent, then decode only) measures D, decode capacity, never agent throughput. Every number here is {v, tag, src}.",
+ "settings": {
+  "default_profile": {"v": "coding-agent", "tag": "READ", "src": "a setting (report.js --profile NAME): the workload profile used when a recipe or report names none"},
+  "many_agents_min": {"v": 8, "tag": "READ", "src": "a setting: a recipe serving at least this many agents (recipe.conditions.workload.agents, else serving.batch) is a many-agent recipe; its throughput must rest on a real-agent ledger row of the same build, not only on synthetic short-prompt decode (check agent_workload)"},
+  "table_n": {"v": [16, 32, 64], "tag": "READ", "src": "a setting (report.js --workload --n 16,32,64): the agent counts the workload table prints"},
+  "build_key_re": {"v": "image ([0-9a-f]{8})", "tag": "READ", "src": "a setting: the part of recipe.engine_build that names one engine build (a container image digest prefix); rows with the same key are the same build. A build string without it is its own key"},
+  "real_kind": {"v": "real-agent", "tag": "READ", "src": "measured.workload_kind of a ledger row that replayed recorded agent conversations (prefixes byte for byte, recorded output lengths and tool gaps); its measured.agent_tps, prefill_tps, fresh_per_output and prefill_busy_pct are keyed cN like aggregate_tps"},
+  "real_err_warn_pct": {"v": 20, "tag": "READ", "src": "a setting: a prediction that misses a real-agent row of the same build by more than this many percent is flagged in the report"},
+  "replay_artifact_k": {"v": 2, "tag": "READ", "src": "a setting: a real-agent row whose measured fresh prompt tokens per output exceed this many times its reference (the trace-ideal ratio of the trace it names, else the profile's reference prior in data/priors-serving.json) is flagged a suspect replay artifact (check replay_artifact)"},
+  "replay_artifact_causes": {"v": ["cold restarts: every agent's first prompt read cold inside the timed window (no warm-up)", "evictions: a slot lent to another agent drops its cache, and the next turn reads the whole prompt again", "template drift: the request renders an earlier turn differently, so the cached prefix stops matching early"], "tag": "READ", "src": "a setting: the suspected causes the replay_artifact check prints, in the order a replay's fresh breakdown separates them (cold / re-read / growth)"},
+  "trace_re": {"v": "\\btrace ([A-Za-z0-9][\\w.-]*[A-Za-z0-9])", "tag": "READ", "src": "a setting: the recorded trace a real-agent row replayed, read from recipe.conditions.workload.trace, else trace_stats_src, else measured.workload.trace (agent replay writes \"trace NAME\")"},
+  "warmup_none": {"v": "none", "tag": "READ", "src": "a setting: the warmup_s value that states a replay timed its window from the cold start (check steady_state)"},
+  "replay_noise_pct": {"v": 11, "tag": "MEASURED", "src": "MEASURED: run-to-run noise of the 16-agent real-agent replay, two identical control runs of one build and env (ledger rows odie-fnx-iq3xxs-2xb70-real-ctl-n16-1026 and odie-fnx-iq3xxs-2xb70-real-ctl-r2-n16-1026): agent tok/s 33.4 vs 37.25 (|diff| / mean 10.9 %), turns per agent-minute 0.769 vs 0.845 (9.4 %), fresh prompt tokens per output 23.95 vs 19.84. A difference between two single replays smaller than this is inside noise; the report marks a MEASURED lever whose smallest measured gain is inside it"}
+ },
+ "profiles": {
+  "coding-agent": {
+   "label": "real coding-agent traffic: recorded coding-agent conversations replayed with their own prompts, outputs and tool gaps",
+   "fresh_per_output": {"v": 4.88, "tag": "MEASURED", "src": "MEASURED: steady-state replays of real coding-agent traffic (trace agent-long-16) at 16 agents on odie (2x B70, Flash-Next, the served build image 0de528f7), 600 s warm-up, then a 600 s window with 0 cache evictions: fresh prompt tokens / output tokens by the server's count 4.78, 4.87, 4.98 (ledger rows odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026, odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2, odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3), mean 4.88. The replay client's count over its in-window turns (fresh_split.F of each row's replay result file, our lab notes, not published) reads 3.94-4.93 across the 17 steady-state 16-agent replays of 2026-10-26 (ledger rows tagged steady-state: odie-fnx-iq3xxs-2xb70-real-*-ss16-n16-1026* and odie-fnx-iq3xxs-2xb70-real-sp-m16-n16-1026); the trace needs 4.33 with a perfect cache (trace_ideal_fresh_per_output). The 16 earlier 16-agent replays of 2026-10-26, timed from a cold start, read 17.8-67.7 (cold first prompts and re-reads after cache evictions) and no longer set this profile"},
+   "trace": {"v": "16 recorded agents, 923 turns", "tag": "MEASURED", "src": "MEASURED: our recorded-trace file (lab notes, not published) trace agent-long-16 stats (16 recorded agents, 923 turns; token counts in the recorded model's tokenizer)"},
+   "trace_ideal_fresh_per_output": {
+    "agent-long-16": {"v": 4.33, "tag": "MEASURED-HERE", "src": "MEASURED: our recorded-trace file (lab notes, not published) trace agent-long-16 (sha256 62ad76293fd9): 16 long coding subagents, 923 turns; ideal fresh prompt tokens 1,792,139 (cold first prompts plus each turn's growth past the previous prompt) over 413,804 recorded output tokens = 4.33, what a replay of this trace reads with a perfect cache"},
+    "trace-r8": {"v": 4.5, "tag": "MEASURED-HERE", "src": "MEASURED: our recorded-trace file (lab notes, not published) trace trace-r8 (sha256 5e17dac21d26): the 9 agents' cold first prompts (110,424 tokens) plus each turn's prompt growth past the previous prompt (214,508) over the 158 recorded outputs (72,208 tokens) = 4.50 fresh prompt tokens per output token, what a replay of this trace reads with a perfect cache"}
+   },
+   "fresh_reference_prior": {"v": "fresh-per-output-hosted-here", "tag": "READ", "src": "a setting: the data/priors-serving.json row a real-agent row of this profile is compared with when it names no trace with a trace-ideal ratio (check replay_artifact; a [low, high] value counts as its high end)"},
+   "delta_tokens": {"v": {"median": 963, "p10": 374, "p90": 3294, "max": 16701}, "tag": "MEASURED", "src": "MEASURED: our recorded-trace file (lab notes, not published) trace agent-long-16 stats (16 recorded agents, 923 turns; token counts in the recorded model's tokenizer): new prompt tokens per turn past the previous turn's prompt (907 turns)"},
+   "first_prompt_tokens": {"v": {"min": 20719, "median": 23148.5, "max": 32838}, "tag": "MEASURED", "src": "MEASURED: our recorded-trace file (lab notes, not published) trace agent-long-16 stats (16 recorded agents, 923 turns; token counts in the recorded model's tokenizer): each agent's cold first prompt (system prompt + tools + task), 16 agents"},
+   "prompt_tokens": {"v": {"median": 81724, "p90": 109674, "max": 119861}, "tag": "MEASURED", "src": "MEASURED: our recorded-trace file (lab notes, not published) trace agent-long-16 stats (16 recorded agents, 923 turns; token counts in the recorded model's tokenizer): whole prompt per turn (923 turns); this is the context depth decode runs at"},
+   "out_tokens": {"v": {"median": 304, "p90": 878, "max": 7187}, "tag": "MEASURED", "src": "MEASURED: our recorded-trace file (lab notes, not published) trace agent-long-16 stats (16 recorded agents, 923 turns; token counts in the recorded model's tokenizer): output tokens per turn (923 turns)"},
+   "tool_gap_s": {"v": {"median": 1.004, "p90": 11.946}, "tag": "MEASURED", "src": "MEASURED: our recorded-trace file (lab notes, not published) trace agent-long-16 stats (16 recorded agents, 923 turns; token counts in the recorded model's tokenizer): client time between a turn's answer and the next request (907 gaps)"}
+  },
+  "synthetic-short": {
+   "label": "the bench driver's synthetic decode load: one short prompt per agent, read before the timed window, then decode to max_tokens",
+   "fresh_per_output": {"v": 0, "tag": "ESTIMATE", "src": "ESTIMATE: the prompt is read before the timed decode window, so the window counts no fresh prompt tokens; what such a run measures is decode capacity D"},
+   "decode_capacity_only": true
+  }
+ },
+ "engines": {
+  "strata": {
+   "reads_stall_decode": {"v": true, "tag": "READ", "src": "XeStrata --batch-groups: a read longer than STRATA_BATCH_PREFILL_MAX_TOKENS (512) drains the pipe and every decoding slot waits until the read is done (generate.cpp); MEASURED in the engine log of the 16-agent replay: 76 reads, 446 s of prompt time in a 600 s window"},
+   "prefill_levers": {
+    "v": [
+     {"id": "pipeline_reads", "lever": "pipeline the two layer-split stages inside a batched read (several chunks per read)", "gain": [1.2, 1.3]},
+     {"id": "async_refill", "lever": "refill the lent cache slots through pinned bounce buffers instead of one blocking pageable copy per slot", "gain": [1.1, 1.25]},
+     {"id": "fixed_per_read", "lever": "halve the ~1007 ms fixed cost of each read", "gain": [1.09, 1.09], "tag": "INFERRED-BY-US",
+      "src": "INFERRED gain on a MEASURED decomposition: lab notes, prefill phase timing on the 16-agent replay control's engine log (75 reads over 512 tokens): a read costs ~1007 ms + 0.791 ms a token. Of the fixed part: parking the previous conversation 99 ms a read; giving the slot back 122 ms in 55 of the 75 reads (~83 ms a read); the batched read itself 614 ms + 0.8 ms a token; the remainder ~175 ms is INFERRED (checkpoint saves per stage and the 4-token header window). Copying the conversation into the slot takes another ~216 ms a read outside the read timing. The gain (halving the fixed part) is arithmetic, not yet measured"},
+     {"id": "shared_prefix", "lever": "share exact prompt prefixes across slots (STRATA_SHARED_PREFIX=1): cold subagents reuse the common system prompt start", "gain": [1.09, 1.18], "tag": "MEASURED",
+      "src": "MEASURED: two paired 16-agent real-agent replays on odie (2x B70, Flash-Next, one build, 600 s each). Run 1: shared prefix 39.46 agent tok/s and 0.845 turns per agent-minute against the control's 33.4 / 0.769 (ledger rows odie-fnx-iq3xxs-2xb70-real-sp-n16-1026, odie-fnx-iq3xxs-2xb70-real-ctl-n16-1026). Repeat: 40.46 / 0.896 against 37.25 / 0.845 (odie-fnx-iq3xxs-2xb70-real-sp-r2-n16-1026, odie-fnx-iq3xxs-2xb70-real-ctl-r2-n16-1026). Two-run means: agent tok/s +13 %, turns per agent-minute +8 %. The gain range is the agent tok/s ratio of each pair (x1.18, x1.09); replay noise between the two identical control runs was ~11 % in agent tok/s (settings.replay_noise_pct), so the repeat's +8.6 % alone is inside noise and the mean +13 % only just outside it. The lever lowers fresh prompt tokens per output (F 18.8 and 18.6 against 23.95 and 19.8) rather than raising the prefill rate P; the report applies the measured agent tok/s ratio as a factor on P, which moves the ceiling P / F by the same ratio"}
+    ],
+    "tag": "INFERRED-BY-US",
+    "src": "INFERRED: lab notes, prefill floor analysis (arithmetic on the 76 measured reads, prompt_ms ~ 940 + 0.776 x tokens, and the code paths); each gain multiplies the prefill rate P, so a prefill-bound ceiling P / F rises by the same factor; not yet measured, except where a lever carries its own tag and src (shared_prefix: MEASURED)"
+   }
+  }
+ },
+ "prefill_pass": {
+  "about": "First-principles prefill (src/model.js prefillPass): a read of T fresh tokens runs in chunks of C tokens; each chunk makes one pass over the experts (almost every expert of every MoE layer is routed to when C x k >> E): the experts a card does not hold cross the PCIe link (less the share the CPU computes), the ones it holds are read once from VRAM. t(T) = ceil(T / C) x t_pass + T x m, t_pass = sum over the stages of nonresident bytes x (1 - cpu_share) / link + resident bytes / VRAM bandwidth, m = 2 x active params / (eta x card int8 ops). eta is the ONE fitted factor per engine (fit rows below); every other input is MEASURED, READ or INFERRED here. Attention and DeltaNet terms that grow with depth are left out (the model under-predicts the time of very long reads). P over an agent workload = mean read / (chunks per read x t_pass + mean read x m), over the read-size mix.",
+  "settings": {
+   "chunk_re": {"v": "--prefill (\\d+)", "tag": "READ", "src": "a setting: the engine flag that sets the prefill chunk; '--prefill auto' (no digits) keeps the engine's chunk_default. The last match wins"},
+   "split_re": {"v": "(?:--layer-split|layer split) (\\d+)", "tag": "READ", "src": "a setting: the layer-split boundary in the engine flags (stage 1 = layers below it, stage 2 = the rest, one card each)"},
+   "cpu_share_re": {"v": "STRATA_PREFILL_STREAM_CPU_SHARE=([0-9.]+)", "tag": "READ", "src": "a setting: the share of the nonresident experts the CPU computes instead of streaming them (strata prefill.cpp); assumed to overlap the PCIe stream"},
+   "pcie_gbs_per_lane": {"v": {"3": 0.985, "4": 1.969, "5": 3.938}, "tag": "READ", "src": "PCI-SIG spec rates per lane per direction (8, 16, 32 GT/s with 128b/130b)"},
+   "link_eff": {"v": 0.508, "tag": "INFERRED", "src": "INFERRED: engines.sycl.recipe_rates.cache_link_gbs (16 GB/s ESTIMATE for single-expert uploads) over the PCIe 4.0 x16 spec 31.5 GB/s; no direction-specific measured rate is retained (data/interconnects.json unknown_rate)"}
+  },
+  "engines": {
+   "strata": {
+    "chunk_default": {"v": 2048, "tag": "READ", "src": "the served build's launcher log 'prompts are read in 2048-token chunks' under --prefill auto (our lab notes, 2026-10-26); the engine's prefill.cpp constructs every nonresident expert per chunk for chunkT >= 2048 (engine source read 2026-10-26)"},
+    "cpu_share_default": {"v": 0, "tag": "READ", "src": "STRATA_PREFILL_STREAM_CPU_SHARE unset: every nonresident expert streams"},
+    "eta_ref_card": {"v": "b70", "tag": "READ", "src": "a setting: the card the fit rows ran on; eta is relative to its int8 ops"},
+    "fit": {
+     "rows": {"v": ["odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026", "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2", "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3"], "tag": "READ", "src": "the three matched real-agent rows of the build served on 2026-10-26 (16 agents, 600 s warm-up)"},
+     "box": "odie",
+     "model": "fnx",
+     "flags": {"v": "--prefill auto --batch 32 --batch-groups 2 --kv-resident 4096 --kv k8v4; layer split 25; STRATA_PREFILL_STREAM_CPU_SHARE=0.25", "tag": "READ", "src": "runs odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026, -r2, -r3 recipe.conditions.engine_flags"},
+     "reads": {"v": 609, "tag": "MEASURED", "src": "server_delta.requests 206 + 207 + 196 (the three rows' replay result files, our lab notes, not published; turns[].fresh of the in-window turns)"},
+     "fresh_tokens": {"v": 731958, "tag": "MEASURED", "src": "fresh_prompt_tokens 246,752 + 247,143 + 238,063 (same files)"},
+     "prompt_s": {"v": 844.813, "tag": "MEASURED", "src": "server_delta.prompt_ms 285,437 + 284,422 + 274,954 (same files): the server's prompt time"}
+    }
+   }
+  },
+  "cards": {
+   "b70": {
+    "match": "0xe223|B70",
+    "int8_tops": {"v": 367, "tag": "INFERRED", "src": "INFERRED: Intel Arc Pro B70 (32 Xe2 cores, XMX) dense INT8 peak as announced; not checked against a spec sheet in this repo. Only eta's scale rests on it"}
+   },
+   "rtx6000": {
+    "match": "Quadro RTX 6000",
+    "int8_tops": {"v": 261, "tag": "INFERRED", "src": "INFERRED: NVIDIA Quadro RTX 6000 (Turing) dense INT8 tensor peak 261 TOPS, spec sheet figure from memory"}
+   }
+  },
+  "stores": {
+   "fnx": {
+    "expert_bytes": {"v": 47000000000.0, "tag": "MEASURED", "src": "the served build's engine log at load 'loading the experts the GPU does not hold into RAM (of about 47 GB)' (GSQ-RCO IQ3_XXS store; our lab notes, 2026-10-26), taken as the whole routed-expert store"},
+    "active_params": {"v": 6000000000.0, "tag": "READ", "src": "models.fnx name 'Qwen3.8-Flash-Next (125B / 6B active)'"},
+    "cache_bytes_per_card": {
+     "odie": {"v": 19990000000.0, "tag": "MEASURED", "src": "the served build's engine log 'filling the GPU's expert cache (12800 experts, 18.62 GiB of VRAM)'; INFERRED that each stage card holds as much"},
+     "droopy": {"v": 7151000000.0, "tag": "MEASURED", "src": "droopy CUDA strata single-card run: 6.66 GiB resident expert cache, 39.97 GiB expert arena on host (our lab notes, 2026-10-26)"}
+    }
+   }
+  },
+  "read_mix": {"v": [121, 121, 121, 137, 137, 137, 140, 140, 140, 141, 141, 141, 142, 142, 142, 146, 146, 152, 152, 153, 163, 163, 163, 167, 167, 167, 168, 171, 171, 171, 171, 171, 171, 173, 173, 173, 179, 179, 179, 181, 181, 181, 182, 182, 182, 188, 188, 188, 188, 188, 188, 189, 189, 189, 193, 193, 193, 205, 205, 205, 205, 205, 205, 211, 211, 211, 213, 213, 213, 213, 216, 216, 216, 218, 218, 218, 228, 228, 228, 236, 241, 241, 241, 248, 248, 248, 256, 256, 257, 257, 257, 268, 268, 268, 272, 272, 272, 283, 283, 283, 285, 285, 285, 293, 293, 293, 293, 293, 293, 294, 294, 294, 305, 305, 305, 325, 329, 329, 329, 330, 330, 330, 330, 330, 330, 335, 335, 335, 339, 345, 345, 359, 359, 359, 363, 363, 363, 365, 365, 365, 367, 367, 367, 368, 368, 368, 369, 369, 369, 383, 383, 383, 385, 385, 385, 394, 394, 394, 398, 398, 398, 403, 403, 403, 404, 417, 417, 417, 433, 433, 433, 440, 440, 440, 458, 458, 464, 464, 464, 478, 478, 478, 486, 486, 493, 493, 493, 495, 495, 495, 500, 500, 500, 503, 503, 503, 507, 507, 507, 511, 511, 511, 516, 516, 523, 523, 523, 533, 533, 533, 553, 554, 554, 556, 556, 556, 567, 567, 567, 567, 569, 569, 569, 585, 585, 585, 596, 596, 614, 614, 614, 617, 617, 617, 636, 636, 636, 638, 639, 639, 639, 644, 644, 644, 646, 666, 666, 666, 675, 675, 675, 709, 709, 709, 721, 721, 738, 738, 738, 750, 750, 750, 761, 761, 761, 762, 762, 762, 773, 773, 781, 781, 781, 785, 785, 785, 790, 790, 790, 798, 798, 798, 804, 804, 828, 828, 828, 836, 836, 836, 836, 836, 836, 849, 849, 849, 858, 858, 858, 859, 871, 871, 871, 893, 893, 921, 921, 921, 923, 923, 923, 932, 932, 932, 938, 938, 938, 979, 979, 990, 990, 990, 1003, 1003, 1003, 1028, 1028, 1028, 1048, 1048, 1048, 1084, 1084, 1084, 1089, 1089, 1089, 1093, 1093, 1093, 1094, 1094, 1094, 1108, 1123, 1123, 1123, 1151, 1151, 1151, 1152, 1152, 1152, 1173, 1173, 1173, 1195, 1195, 1195, 1239, 1239, 1239, 1252, 1252, 1278, 1278, 1278, 1291, 1291, 1291, 1297, 1297, 1297, 1304, 1308, 1308, 1308, 1313, 1313, 1313, 1334, 1334, 1334, 1346, 1346, 1346, 1354, 1354, 1354, 1370, 1370, 1428, 1428, 1428, 1460, 1460, 1460, 1471, 1486, 1486, 1486, 1547, 1557, 1557, 1557, 1559, 1559, 1559, 1625, 1625, 1625, 1633, 1633, 1633, 1642, 1642, 1642, 1700, 1700, 1700, 1771, 1771, 1771, 1789, 1789, 1789, 1801, 1801, 1801, 1839, 1839, 1839, 1912, 1912, 1912, 1916, 1916, 1916, 1924, 1924, 1925, 1925, 1925, 1932, 1932, 1932, 1959, 1959, 1959, 1962, 1962, 1962, 2061, 2061, 2061, 2113, 2113, 2113, 2160, 2160, 2160, 2173, 2173, 2173, 2269, 2269, 2269, 2388, 2388, 2388, 2408, 2409, 2409, 2409, 2595, 2595, 2595, 2610, 2610, 2610, 2641, 2641, 2641, 2657, 2674, 2674, 2674, 2703, 2703, 2703, 2744, 2773, 2773, 2773, 2807, 2807, 2807, 2851, 2851, 2851, 2853, 2977, 2977, 2977, 3006, 3006, 3245, 3249, 3249, 3249, 3340, 3340, 3340, 3501, 3501, 3501, 3571, 3571, 3571, 3602, 3602, 3602, 4903, 4903, 4903, 6063, 6063, 6063, 6389, 6389, 6389, 6712, 6712, 6712, 6857, 6857, 6857, 9544], "tag": "MEASURED", "src": "the fresh tokens of each read (538 in-window turns, sorted) of the three fit rows: turns[].fresh of the in-window turns in their replay result files (our lab notes, not published). Agent reads are short (median 781, p90 ~2.6k): only the 47 % of fresh tokens in reads over 2048 tokens see a bigger chunk"},
+  "checks": [
+   {"id": "droopy-fnx-rtx6000-11565", "box": "droopy", "model": "fnx", "engine": "strata", "tokens": 11565, "cpu_share": [0.5, 0.84], "measured": {"v": [630, 640], "tag": "MEASURED", "src": "droopy CUDA strata, one Quadro RTX 6000 (PCIe 3 x16), Flash-Next same store, CPU share 0.5-0.84, single-stream prefill of an 11,565-token prompt: 630-640 tok/s (our lab notes, 2026-10-26)"}, "note": "held out: a CUDA build, another card and link; the eta of the SYCL fit rows carried by int8 ops"}
+  ]
+ }
+}

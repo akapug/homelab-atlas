@@ -20,13 +20,13 @@ One B70 per row, one request at a time unless the row says otherwise. Terms: [GL
 | Qwen3.8-27B (dense) | vLLM (llm-scaler 0.26.0-b2) + [our changes](vllm-xpu/) with the [reduced draft vocabulary](vllm-xpu/#3-a-smaller-vocabulary-for-the-mtp-drafter-draft-vocabpy), AutoRound int4 | **74.6 decode** at 1 stream (59.5 without the reduced vocabulary) | MTP 3, eager, fp8 KV, 131,072-token window, 1,024-token replies summarizing a log, Ryzen host, 2026-09 | output unchanged by design (every draft is checked against the full vocabulary); 41 of 41 exact on our correctness eval with it in production | [vLLM notes, section 3](vllm-xpu/#3-a-smaller-vocabulary-for-the-mtp-drafter-draft-vocabpy) |
 | Qwen3.8-27B (dense), many streams | vLLM (llm-scaler 0.26.0-b2) + [our changes](vllm-xpu/), AutoRound int4, without the reduced vocabulary | **61.2-61.5 decode** at 1 stream, **351.4** summed at 8 | MTP 3, compiled mode with XPU graphs (not yet supported by Intel; 54.4 at 1 stream in eager mode, which our servers ran), 1.5k-token prompts, Ryzen host, 2026-09 | 41 of 41 exact on our correctness eval; 22 of 24 [agent tasks](agent-eval/) | [Results](#results) |
 | Qwen3.8 Flash-Next (125B MoE, 6B active) | [XeStrata](https://github.com/chriscorbell/intel-arc-pro-b70-qwen38-flash-next) (the SYCL port of Strata), GSQ-RCO IQ3_S; about 10,900 of its 24,576 experts in VRAM, the rest computed on the CPU | **87.1 decode** (median of 3 runs, 512 tokens, one code prompt); 79.9 on the installed server at a short prompt, 70.4 after a 67.6k prompt | MTP 4, int8 KV, Threadripper host; speed: XeStrata xe0.1.45, 262,144-token window, 2026-10-19; agent tasks: xe0.1.40.2.2, 229,376-token window, 2026-10-18; card 1 has served the smaller IQ3_XXS since 2026-10-20 | **11 of 12** agent tasks in one pass; 3 of 3 real repository changes | [moe-offload point 22](../moe-offload/#what-we-learned-measured) |
-| Qwen3.8 Flash-Next, many agents, both cards | XeStrata + our batched-decode branches (not published yet), GSQ-RCO IQ3_XXS, layers split across the two cards | **329.6 decode summed over 32 agents**, 10.27-10.32 each, with 2 slots of 262,144 and 30 of 131,072 and a 248k-token prompt among them (0.623 tok/s per W of card + CPU package power); **349.6** with every slot 131,072 and ~14k prompts | k8v4 KV, layer split across the cards, no speculation, synthetic load of coding-agent prompts, Threadripper host, 2026-10-24, one run each | engine card parity suites pass (0 failures) on the 349.6 build; no agent or KL check on either build | [32 agents on two B70s](many-agents.md) |
-| Ornith-1.5-35B-A3B (35B MoE, 3B active) | vLLM (llm-scaler 0.26.0-b2), int4 | **198 decode** at 1 stream, 290 summed at 2; 164-167 with 4 host cores while builds ran on the other CCD | MTP 3 with the smaller drafter vocabulary, 1,200-1,500-token replies, 6 host cores, Ryzen host, 2026-10-04 | 17 of 24 agent tasks; 31 of 40 household questions | [Ornith-1.5-35B-A3B](ornith-35b-a3b.md) |
+| Qwen3.8 Flash-Next, many agents, both cards | XeStrata + our batched-decode branches ([experimental fork](many-agents.md#engine-code-experimental)), GSQ-RCO IQ3_XXS, layers split across the two cards | on recorded coding-agent sessions replayed with their own prompts, outputs and tool time: **80-86 tok/s in total over 16 agents** (mean 83.4, three runs; about 5 each), **32.6 for one agent**; on a synthetic load that reads each prompt once: 377.9 decode summed over 32 agents | k8v4 KV, no speculation, Threadripper host; real-agent replays 2026-10-26, 600 s each after a 600 s warm-up; synthetic 2026-10-24, one 60 s window each | engine card parity suites pass (0 failures) on the 349.6 synthetic build; no agent-task or KL check on any batched build | [Many agents on two B70s](many-agents.md) |
+| Ornith-1.5-35B-A3B (35B MoE, 3B active) | vLLM (llm-scaler 0.26.0-b2), int4 | **198 decode** at 1 stream with MTP 3, 290 summed at 2; 164-167 with 4 host cores while builds ran on the other CCD; MTP later garbled 3 of 106 replies under mixed load, and without it one stream runs about 118 (measured on the same architecture) | MTP 3 with the smaller drafter vocabulary, 1,200-1,500-token replies, 6 host cores, Ryzen host, 2026-10-04 | 17 of 24 agent tasks; 31 of 40 household questions | [Ornith-1.5-35B-A3B](ornith-35b-a3b.md) |
 
-What the two cards serve today (2026-10-22): card 1 runs Qwen3.8 Flash-Next (IQ3_XXS since 2026-10-20) as a coding
-model; card 2 runs Ornith-1.5-35B-A3B (a prequantized GPTQ copy since 2026-10-19, MTP off for the reason in
+What the two cards served on 2026-10-22: card 1 Qwen3.8 Flash-Next (IQ3_XXS since 2026-10-20) as a coding
+model; card 2 Ornith-1.5-35B-A3B (a prequantized GPTQ copy since 2026-10-19, MTP off for the reason in
 [its entry](ornith-35b-a3b.md#a-bug-mtp-garbled-about-3--of-replies-from-the-first-token)) for a household assistant
-and a coding agent.
+and a coding agent. Since 2026-10-24 both cards serve the batched Flash-Next build together.
 
 Card 2 has also run block-diffusion models on a stock diffusion engine (q4_0, 2026-10-19): LLaDA2.1-mini at 59.71 tok/s
 over 33 HumanEval prompts, Ling-mini-2.0 at 147.46 over 4 short prompts. Their conditions are in
@@ -76,10 +76,11 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
   at 2.1-5.1x llama.cpp Vulkan on one card, its full 262k window, a silent load hang to watch for,
   and running Claude Code on it.
 - [`ornith-35b-a3b.md`](ornith-35b-a3b.md): Ornith-1.5-35B-A3B, a fine-tune of the MoE above, serving a household
-  assistant and a coding agent from one card with the house first: it coded 17 of 24 against Qwen3.6's 13, a
+  assistant and a coding agent from one card (until 2026-10-24) with the house first: it coded 17 of 24 against Qwen3.6's 13, a
   speculative-decoding bug that garbled 3 % of replies and its repro, thinking with a budget, photos, and voice on CPUs.
-- [`many-agents.md`](many-agents.md): both cards serving 32 agents at once with Qwen3.8 Flash-Next, 329.6 tok/s in
-  total at about 10.3 each with 2 agents at 262,144 tokens of slot and 30 at 131,072 (349.6 with short prompts), with every switch we tried, the losers and why they lost.
+- [`many-agents.md`](many-agents.md): both cards serving many agents at once with Qwen3.8 Flash-Next: 80-86 tok/s in
+  total over 16 replayed real agent sessions, against 377.9 decode over 32 agents on a synthetic load, with every
+  switch we tried on each, the losers, and the engine code as an experimental fork.
 - [`agent-eval/`](agent-eval/): can a local model finish real repository work? Twelve tasks with
   hidden checks, a sandboxed runner, and 72 runs: on all twelve, the dense 27B finished 22 of 24
   and the MoE 15 of 24 (p = 0.036), at little more speed once the tasks got hard.
@@ -105,4 +106,4 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
 
 ---
 
--- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

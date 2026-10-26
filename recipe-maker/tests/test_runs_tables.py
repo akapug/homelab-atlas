@@ -56,6 +56,17 @@ class DraftTwins(unittest.TestCase):
 
 
 class Served(unittest.TestCase):
+    def test_unobserved_churn_phases_are_not_averaged_or_changed(self):
+        r = run('refill', {'c30_no_read_median': None, 'c30_reading_median': 6.95})
+        before = copy.deepcopy(r)
+        self.assertEqual(R.served(r), {'other': 6.95, 'other_phase': 'c30_reading_median', 'guess': True})
+        self.assertEqual(r, before)
+        self.assertIsNone(R.served(run('missing', {'n0': None, 'bad': float('nan'), 'flag': True})))
+        self.assertEqual(R.served(run('stall', {'n0': 0})), {'off': 0, 'off_phase': 'n0'})
+        twins = R.draft_twins([run('part', {'n4': None, 'n4b': 9, 'n0': 7.5}), run('none', {'n4': None, 'n0': 7.5})])
+        self.assertEqual([x['id'] for x in twins['droopy|glm']], ['part'])
+        self.assertEqual(twins['droopy|glm'][0]['mult'], 1.2)
+
     def test_draft_and_off_arms(self):
         self.assertEqual(R.served(run('a', {'n4': 9.0, 'n4b': 11.0, 'n0': 7.5})), {'on': 10.0, 'on_phase': 'n4/n4b', 'off': 7.5, 'off_phase': 'n0'})
         s = R.served(run('b', {'std-m3': 47.0, 'std-n0': 42.0}))

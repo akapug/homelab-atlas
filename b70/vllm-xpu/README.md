@@ -338,4 +338,4 @@ python3 effort-template.py /path/to/Qwen3.8-27B-checkpoint qwen38-effort.jinja
 vllm serve ... --chat-template qwen38-effort.jinja
 ```
 
--- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

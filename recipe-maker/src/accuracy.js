@@ -198,4 +198,175 @@ function taxonomy(rows, causes) {
     undecided: cls.filter(k => !(((causes || {})[k] || {}).decided_by || []).length) };
 }
 
-module.exports = { taxonomy, median, draftN, draftRatios, causesOf, disturbed, wentBad, primaryPhase, pairs, summarize, verdicts, perCheck, bucketOf, slope, gapVerdict, trend, fmtPrediction };
+// Frozen validation stays on the existing recipe -> --check -> record_run ledger path. A hash is an identity,
+// not evidence that two experiments match. Never infer a decision cohort from a box, date or model name.
+const FM = require('./model.js'), crypto = require('crypto');
+const canonical = x => JSON.stringify(FM.networkCanonical(x));
+const digest = x => crypto.createHash('sha256').update(canonical(x)).digest('hex');
+const copy = x => JSON.parse(JSON.stringify(x));
+const sha = x => typeof x === 'string' && /^[0-9a-f]{64}$/.test(x);
+const same = (a, b) => canonical(a) === canonical(b);
+const field = (x, p) => typeof p === 'string' && p.split('.').every(k => k && !['__proto__', 'constructor', 'prototype'].includes(k)) ?
+  p.split('.').reduce((a, k) => a && Object.prototype.hasOwnProperty.call(a, k) ? a[k] : undefined, x) : undefined;
+const sourced = (m, p) => [field(m.src, p), (m.src || {})[p], (m.src || {})[p.split('.')[0]]].some(x => typeof x === 'string' && x.trim());
+const bareRecipe = r => Object.fromEntries(Object.entries(r || {}).filter(([k]) => k !== 'validation'));
+
+// Use the actual evaluator for its fitted dLLM membership, rather than maintaining a second eligibility predicate.
+function calibrationSplit(data) {
+  const D = data.dllm, dt = FM.dllmTerms(data), ids = xs => [...new Set(xs)].sort(), fitted = [];
+  const collect = x => {
+    if (!x || typeof x !== 'object') return;
+    if (Array.isArray(x.runs)) fitted.push(...x.runs);
+    Object.values(x).forEach(collect);
+  };
+  // cal.rows also contains residual-only observations; only fitted term operands belong in fitted_run_ids.
+  Object.entries(data.cal || {}).filter(([k]) => k !== 'rows').forEach(([, x]) => collect(x));
+  return {
+    shared: { anchors: Object.fromEntries((data.anchors || []).map(a => [a.id, { fit: a.fit || null, twin: a.twin || null }])), fitted_run_ids: ids(fitted) },
+    observed_runs: ids((data.recipes || []).map(r => r.run_id).concat((D && D.rows || []).map(r => r.id)).filter(Boolean)),
+    decode: Object.fromEntries(Object.entries(data.decode_fits || {}).map(([k, x]) => [k, { train: ids(x.train), holdout: ids(x.holdout) }])),
+    dllm: { holdout: ids(D && D.holdout.v || []), efficiency_train: ids(dt.used),
+      tpf_train: Object.fromEntries(Object.entries(dt.tpf).map(([k, x]) => [k, ids(x.runs)])),
+      submitted_train: Object.fromEntries(Object.entries(dt.b).map(([k, x]) => [k, ids(x.runs)])) },
+    window: Object.fromEntries(Object.entries(data.window && data.window.configs || {}).map(([k, W]) => [k, {
+      fit: ids(W.points.filter(p => p.use === 'fit').map(p => p.id)), eta_train: ids(FM.winFit(data, k).eta_training),
+      check: ids(W.points.filter(p => p.use === 'check').map(p => p.id)),
+      law: ids(W.points.filter(p => p.use === 'law').map(p => p.id)),
+      // Profile/anchor conditioning is not an untouched end-to-end check, even when its point has use: check.
+      conditioning: ids([W.profile && W.profile.point, W.profile && W.profile.curve_anchor && W.profile.curve_anchor.v,
+        W.settings.plan_anchor && W.settings.plan_anchor.v].filter(Boolean)),
+      ledger: Object.fromEntries(W.points.filter(p => p.ledger).map(p => [p.id, p.ledger])) }]))
+  };
+}
+function frozenValid(x) {
+  return !!(x && x.status === 'FROZEN' && x.format === 'fit-calibration-v1' && sha(x.data_sha256) && x.evaluator_sha256 &&
+    Object.keys(x.evaluator_sha256).length && Object.values(x.evaluator_sha256).every(sha) &&
+    x.split && Array.isArray(x.split.observed_runs) && sha(x.split_sha256) && digest(x.split) === x.split_sha256);
+}
+const time = x => typeof x === 'string' && /Z$/.test(x) && Number.isFinite(Date.parse(x)) ? Date.parse(x) : null;
+function cohortProblems(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return ['cohort is missing'];
+  const out = [], w = c.workload || {}, o = c.objective || {}, cs = c.constraints;
+  if (typeof c.id !== 'string' || !c.id || time(c.declared_at) === null) out.push('cohort id and UTC declaration time required');
+  if (!frozenValid(c.frozen)) out.push('valid frozen built-data, evaluator and split identity required');
+  if (!sha(w.model_sha256) || !sha(w.prompt_set_sha256) || !sha(w.quality_reference_sha256) || !sha(w.quality_prompt_set_sha256) ||
+      !Number.isInteger(w.context_tokens) || w.context_tokens <= 0 || !Number.isInteger(w.agents) || w.agents <= 0 ||
+      !w.sampling || typeof w.sampling !== 'object' || Array.isArray(w.sampling)) out.push('exact model/prompt and quality-reference/prompt hashes, context, agents and sampling required');
+  if (!c.isolation || !c.isolation.id || !c.isolation.scope || !c.isolation.src) out.push('sourced isolation identity required');
+  if (!['single-seat', 'batch-fleet'].includes(o.mode) || (o.mode === 'single-seat' &&
+      (!/^decode_tps\.[^.]+$/.test(o.measured || '') || !['decode_tps', 'decode_tps_nodraft'].includes(o.predicted)))) out.push('named workload objective and per-stream decode metric mapping required');
+  if (o.mode === 'batch-fleet' && (!o.power_scope || !Array.isArray(o.power_scope.participants) || !o.power_scope.participants.length ||
+      !Array.isArray(o.power_scope.components) || !same(o.power_scope.components.slice().sort(), ['cpu', 'gpu']) || !o.power_scope.src)) out.push('batch-fleet needs a sourced all-participant CPU+GPU meter scope');
+  if (!Array.isArray(cs) || cs.some(x => !x || typeof x !== 'object') || !['quality', 'memory'].every(k => cs.some(x => x.kind === k)) ||
+      cs.some(x => typeof x.id !== 'string' || !x.id || !x.unit || !['quality', 'memory'].includes(x.kind) || typeof x.measured !== 'string' || !x.measured ||
+        typeof x.predicted !== 'string' || !x.predicted || !['<=', '>='].includes(x.op) || !num(x.limit) || x.limit < 0) ||
+      new Set(cs.map(x => x.id)).size !== cs.length) out.push('distinct finite quality and memory constraints required');
+  if (!Array.isArray(c.candidates) || c.candidates.length < 2 || c.candidates.some(x => !x || typeof x !== 'object' ||
+      typeof x.id !== 'string' || !x.id || typeof x.run_id !== 'string' || !x.run_id || !x.recipe || typeof x.recipe !== 'object' || x.recipe.validation) ||
+      new Set(c.candidates.map(x => x.id)).size !== c.candidates.length || new Set(c.candidates.map(x => x.run_id)).size !== c.candidates.length) out.push('at least two distinct exact candidate recipes/run ids required');
+  if (frozenValid(c.frozen) && Array.isArray(c.candidates) && c.candidates.some(x => x && c.frozen.split.observed_runs.includes(x.run_id))) out.push('candidate outcomes already occur in frozen data');
+  if (Array.isArray(c.candidates) && c.candidates.every(x => x && x.recipe) && new Set(c.candidates.map(x => canonical(Object.fromEntries(Object.entries(x.recipe).filter(([k]) => !['id', 'label'].includes(k)))))).size !== c.candidates.length) out.push('replicas of one recipe are not distinct alternatives');
+  return out;
+}
+function objectiveValue(x, o, measured) {
+  if (o.mode === 'batch-fleet') return num(x.accepted_tps) && x.accepted_tps >= 0 && num(x.gpu_cpu_watts) && x.gpu_cpu_watts > 0 ? x.accepted_tps / x.gpu_cpu_watts : null;
+  const n = field(x, measured ? o.measured : o.predicted);
+  return num(n) && n >= 0 ? n : null;
+}
+const constraintPass = (x, cs, measured) => cs.every(c => c.op === '<=' ? field(x, measured ? c.measured : c.predicted) <= c.limit : field(x, measured ? c.measured : c.predicted) >= c.limit);
+function captureDecision(data, recipe, predict, capturedAt) {
+  const v = recipe.validation, c = v && v.cohort, bad = cohortProblems(c);
+  if (bad.length) throw new Error('validation: ' + bad.join('; '));
+  if (!same(c.frozen, data.meta.calibration)) throw new Error('validation: cohort is not the current frozen build/split');
+  if (time(capturedAt) === null || time(c.declared_at) > time(capturedAt)) throw new Error('validation: declaration must precede capture');
+  const member = c.candidates.find(x => x.id === v.candidate);
+  if (!member || !same(member.recipe, bareRecipe(recipe))) throw new Error('validation: recipe is not the exact declared candidate');
+  const defaults = data.accuracy.workloads[c.objective.mode];
+  const objective = { ...defaults, ...c.objective,
+    metric: c.objective.mode === 'batch-fleet' ? 'total_accepted_tps_per_gpu_cpu_watt' : 'per_stream_decode_tps',
+    unit: c.objective.mode === 'batch-fleet' ? 'accepted tok/s/W' : 'tok/s', direction: 'max' };
+  if (objective.mode === 'single-seat' && !(num(objective.decode_target_tps) && objective.decode_target_tps > 0) ||
+      objective.mode === 'batch-fleet' && !(num(objective.per_agent_floor_tps) && objective.per_agent_floor_tps > 0)) throw new Error('validation: positive named workload target/floor required');
+  if (objective.mode === 'batch-fleet') {
+    const boxes = [...new Set(c.candidates.flatMap(x => {
+      const network = (data.network && data.network.recipes || []).find(n => n.id === x.recipe.network_recipe);
+      return network ? network.boxes : [x.recipe.box];
+    }))].sort();
+    if (!same(boxes, [...new Set(objective.power_scope.participants)].sort())) throw new Error('validation: meter scope must cover every participating box');
+  }
+  const predictions = c.candidates.map(x => ({ id: x.id, prediction: predict(copy(x.recipe)) }));
+  const core = { cohort: c, objective, predictions };
+  return copy({ ...core, cohort_sha256: digest(core), candidate: v.candidate, captured_at: capturedAt });
+}
+
+function decisions(rows) {
+  const groups = new Map(), excluded = [];
+  rows.forEach(r => {
+    const v = r.pred && r.pred.validation;
+    if (!v || !v.cohort || typeof v.cohort.id !== 'string' || !v.cohort.id) { excluded.push({ id: r.id, reason: 'NO_PROSPECTIVE_CAPTURE' }); return; }
+    if (!groups.has(v.cohort.id)) groups.set(v.cohort.id, []);
+    groups.get(v.cohort.id).push(r);
+  });
+  const cohorts = [...groups.entries()].map(([id, rs]) => {
+    const v = rs[0].pred.validation, c = v.cohort, o = v.objective;
+    const unknown = (reason, detail) => ({ id, status: 'UNKNOWN', reason, detail, regret: null, selected_observed_rank: null });
+    if (cohortProblems(c).length || !o || !Array.isArray(v.predictions) || v.predictions.length !== c.candidates.length ||
+        c.candidates.some(m => v.predictions.filter(p => p && p.id === m.id).length !== 1) || o.mode !== c.objective.mode ||
+        (o.mode === 'single-seat' ? !(num(o.decode_target_tps) && o.decode_target_tps > 0) : !(num(o.per_agent_floor_tps) && o.per_agent_floor_tps > 0))) return unknown('INVALID_CAPTURE', cohortProblems(c));
+    const core = x => ({ cohort: x.cohort, objective: x.objective, predictions: x.predictions });
+    if (rs.some(r => !sha(r.pred.validation.cohort_sha256) || digest(core(r.pred.validation)) !== r.pred.validation.cohort_sha256 ||
+        !same(core(r.pred.validation), core(v)))) return unknown('COHORT_IDENTITY_MISMATCH', 'declaration and frozen predictions must match exactly');
+    if (rs.length !== c.candidates.length || c.candidates.some(x => rs.filter(r => r.id === x.run_id).length !== 1)) return unknown('INCOMPLETE_COHORT', 'one actual observation for every predeclared alternative required');
+    const firstOutcome = Math.min(...rs.map(r => time(r.when) === null ? Infinity : time(r.when)));
+    const badTime = rs.some(r => { const t = time(r.pred.validation.captured_at); return t === null || time(c.declared_at) > t || t >= firstOutcome || time(r.when) === null; });
+    if (badTime) return unknown('HINDSIGHT_CAPTURE', 'every full-cohort prediction must precede the first observed run');
+    const measured = [];
+    for (const member of c.candidates) {
+      const r = rs.find(x => x.id === member.run_id), cap = r.pred.validation, m = r.run.measured || {}, mv = m.validation;
+      const p = (v.predictions || []).find(x => x.id === member.id);
+      if (r.pred_basis !== 'launch' || r.pred.basis !== 'launch' || cap.candidate !== member.id || !same(r.pred.calibration, c.frozen) ||
+          !same(((r.run.check || {}).prediction || {}).validation, cap) || !same(bareRecipe(r.run.recipe), member.recipe) ||
+          !same((r.run.recipe.validation || {}).cohort, c)) return unknown('MEMBER_MISMATCH', member.id);
+      if ((r.causes || []).includes('tool_bug')) return unknown('HARNESS_FAILURE', member.id);
+      if ((r.disturbed || []).length || (r.causes || []).includes('interference')) return unknown('INTERFERENCE', member.id);
+      if (m.outcome !== 'ok') return unknown('OUTCOME_NOT_OK', member.id + ': ' + (m.outcome || 'not measured'));
+      if ((m.degraded || []).length || (r.bad || []).length) return unknown('DEGRADED_OBSERVATION', member.id);
+      if (!r.scored || (r.in_sample || []).length) return unknown('CONFOUNDED_OR_TRAINING', member.id);
+      if (!mv || !sourced(m, 'validation') || mv.cohort_sha256 !== v.cohort_sha256 || mv.candidate !== member.id || !same(mv.workload, c.workload) ||
+          !same(mv.isolation, c.isolation) || (o.mode === 'batch-fleet' && !same(mv.power_scope, o.power_scope))) return unknown('MEASUREMENT_IDENTITY_MISMATCH', member.id);
+      const paths = c.constraints.map(x => x.measured).concat(o.mode === 'batch-fleet' ? ['accepted_tps', 'gpu_cpu_watts', 'min_agent_tps'] : [o.measured]);
+      if (paths.some(k => !num(field(m, k)) || field(m, k) < 0 || !sourced(m, k)) || objectiveValue(m, o, true) === null) return unknown('MISSING_MEASUREMENT', member.id + ': sourced objective, power (when needed), quality and memory operands required');
+      const prediction = p && p.prediction;
+      if (!prediction || prediction.status !== 'PREDICTED' || objectiveValue(prediction, o, false) === null ||
+          c.constraints.some(x => !num(field(prediction, x.predicted))) || (o.mode === 'batch-fleet' && !num(prediction.min_agent_tps))) return unknown('UNMODELLED_PREDICTION', member.id);
+      const qp = constraintPass(prediction, c.constraints.filter(x => x.kind === 'quality'), false), qm = constraintPass(m, c.constraints.filter(x => x.kind === 'quality'), true);
+      const fp = constraintPass(prediction, c.constraints, false) && (o.mode !== 'batch-fleet' || prediction.min_agent_tps >= o.per_agent_floor_tps);
+      const fm = constraintPass(m, c.constraints, true) && (o.mode !== 'batch-fleet' || m.min_agent_tps >= o.per_agent_floor_tps);
+      measured.push({ id: member.id, run_id: r.id, predicted: objectiveValue(prediction, o, false), measured: objectiveValue(m, o, true),
+        quality_predicted: qp, quality_measured: qm, feasible_predicted: fp, feasible_measured: fm,
+        total_accepted_tps: num(m.accepted_tps) && sourced(m, 'accepted_tps') ? m.accepted_tps : null });
+    }
+    const best = (xs, k) => xs.reduce((a, x) => !a || x[k] > a[k] ? x : a, null);
+    const selected = best(measured.filter(x => x.feasible_predicted), 'predicted'), observed = best(measured.filter(x => x.feasible_measured), 'measured');
+    const eligible = selected && selected.feasible_measured && observed;
+    const ranked = measured.filter(x => x.feasible_predicted && x.feasible_measured);
+    const comparisons = ranked.flatMap((a, i) => ranked.slice(i + 1).filter(b => a.predicted !== b.predicted && a.measured !== b.measured)
+      .map(b => (a.predicted - b.predicted) * (a.measured - b.measured) < 0));
+    return { id, status: 'SCORED', cohort_sha256: v.cohort_sha256, frozen: c.frozen, objective: o, members: measured,
+      selected: selected && selected.id, observed_best: observed && observed.id,
+      regret: eligible ? observed.measured - selected.measured : null,
+      regret_reason: eligible ? null : !selected ? 'NO_PREDICTED_FEASIBLE_CHOICE' : !selected.feasible_measured ? 'SELECTED_INFEASIBLE' : 'NO_MEASURED_FEASIBLE_ALTERNATIVE',
+      selected_observed_rank: eligible ? 1 + measured.filter(x => x.feasible_measured && x.measured > selected.measured).length : null,
+      rank_pairs: comparisons.length, rank_inversions: comparisons.length ? comparisons.filter(Boolean).length : null,
+      rank_error_fraction: comparisons.length ? comparisons.filter(Boolean).length / comparisons.length : null,
+      selected_error: selected ? selected.predicted - selected.measured : null,
+      selected_decode_target_met: selected && o.mode === 'single-seat' ? selected.measured >= o.decode_target_tps : null,
+      headline_total_accepted_tps: selected ? selected.total_accepted_tps : null,
+      quality_misclassifications: measured.filter(x => x.quality_predicted !== x.quality_measured).length,
+      feasibility_misclassifications: measured.filter(x => x.feasible_predicted !== x.feasible_measured).length };
+  });
+  return { status: cohorts.some(x => x.status === 'SCORED') ? 'SCORED' : 'UNKNOWN', regret: null, cohorts, excluded,
+    why: cohorts.length ? null : 'no explicit prospective matched-alternative cohort capture; historicals are not decision trials' };
+}
+
+module.exports = { captureDecision, decisions, calibrationSplit, digest, frozenValid, taxonomy, median, draftN, draftRatios, causesOf, disturbed, wentBad, primaryPhase, pairs, summarize, verdicts, perCheck, bucketOf, slope, gapVerdict, trend, fmtPrediction };

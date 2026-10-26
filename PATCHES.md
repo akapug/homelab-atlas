@@ -68,7 +68,8 @@ configuration below. If yours matches, this is what they were measured on.
 
 - **The B70 model server, until 2026-10-07**: an AMD Ryzen 9 9950X3D (AM5) with two Intel Arc Pro B70 (32 GB each), on Linux
   with the kernel's `xe` driver. Since 2026-10-07 the two B70s sit in a Threadripper 3960X box (TRX40, 128 GB DDR4),
-  one serving Qwen3.8 Flash-Next and one Ornith-1.5-35B-A3B ([the B70 entry](b70/)); the Ryzen box now holds an
+  which served Qwen3.8 Flash-Next and Ornith-1.5-35B-A3B one per card until 2026-10-24 and Flash-Next across both
+  since ([the B70 entry](b70/)); the Ryzen box now holds an
   [RTX 3090 Ti](3090-ti/). Back then: vLLM runs from `intel/llm-scaler-vllm:0.26.0-b2` in Docker, one model
   per card, both in eager mode (no compiled graphs), with an fp8 KV cache, 8 requests at a time and
   MTP 3:
@@ -597,4 +598,4 @@ depend on the text.
 
 ---
 
--- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

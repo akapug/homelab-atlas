@@ -1,0 +1,72 @@
+{
+ "about": "Falsifiable prefill predictions written BEFORE the prefill-chunk arms (real-comp1-ng-pf4096, -pf8192, -pf16384; arm definitions in our lab notes, not published) ran on odie. Written 2026-10-26T16:10Z; the arms run ~16:30Z-17:40Z. Model: the per-read prefill model of src/model.js prefillPass (data/prefill-physics.json). Do not edit the predicted numbers after the measurements land; add a 'measured' block beside them instead.",
+ "written_utc": "2026-10-26T16:10Z",
+ "recipe": "the build served on 2026-10-26, its no-gdn lever set (ledger rows odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026, -r2, -r3; image 0de528f7): odie 2x Arc Pro B70, Qwen3.8-Flash-Next GSQ-RCO IQ3_XXS, layer split 25, --batch 32 --batch-groups 2 --kv k8v4 --kv-resident 4096, MAX_CONTEXT 131072, STRATA_PREFILL_STREAM_CPU_SHARE=0.25, 16 real agents (the 16-agent recorded trace, 600 s warm-up, 300 s window as planned; the arms ran a 600 s window). The arms change only --prefill (chunk T).",
+ "equation": "one read of T fresh tokens with chunk C: t(T) = ceil(T / C) x t_pass + T x m. t_pass = sum over the layer-split stages of nonresident expert bytes x (1 - cpu_share) / link + resident expert bytes / VRAM bandwidth (the expert pass each chunk pays). m = per-token compute, the one calibrated factor for strata (2 x active params / (eta x card int8 ops)). Server prefill P = sum T / sum t(T) over the run's reads. Useful agent output = 1 / (F / P + 1 / D) (strata reads stall decode, data/workload.json).",
+ "inputs": {
+  "host_expert_bytes": {"v": 47e9, "tag": "MEASURED", "src": "the served build's engine log at load: 'loading the experts the GPU does not hold into RAM (of about 47 GB)' (our lab notes, 2026-10-26); taken as the whole expert store"},
+  "experts": {"v": 24576, "tag": "READ", "src": "data/models/fnx.json L 48 x E 512"},
+  "expert_bytes": {"v": 1.912e6, "tag": "INFERRED", "src": "47e9 / 24576 (3.11 bits a weight on P 4,915,200: IQ3_XXS 3.06 + scales)"},
+  "stage_layers": {"v": [25, 23], "tag": "READ", "src": "--layer-split 25 of 48 layers"},
+  "vram_expert_cache_bytes_per_card": {"v": 19.99e9, "tag": "MEASURED", "src": "the served build's engine log 'filling the GPU's expert cache (12800 experts, 18.62 GiB of VRAM)'; INFERRED that each stage card holds the same 18.62 GiB"},
+  "nonresident_bytes": {"v": 7.01e9, "tag": "INFERRED", "src": "stage 1 25 x 512 x 1.912 MB = 24.47 GB - 19.99 = 4.48 GB; stage 2 22.51 - 19.99 = 2.52 GB"},
+  "cpu_share": {"v": 0.25, "tag": "READ", "src": "arm env STRATA_PREFILL_STREAM_CPU_SHARE=0.25; the CPU share is assumed to overlap the PCIe stream (INFERRED)"},
+  "link_gbs": {"v": 16.0, "tag": "INFERRED", "src": "engines.sycl.recipe_rates.cache_link_gbs (ESTIMATE, PCIe 4.0 x16 31.5 GB/s spec, single-expert uploads); odie B70 links MEASURED gen4 x16 (data/boxes/odie.json)"},
+  "vram_gbs": {"v": 608, "tag": "READ", "src": "B70 608 GB/s (lab notes, build.py boxes.odie.gpus)"},
+  "t_pass_s": {"v": 0.3945, "tag": "INFERRED", "src": "7.01e9 x 0.75 / 16e9 + 39.99e9 / 608e9 = 0.329 + 0.066 s per 2048-token chunk, the two stages serial"},
+  "m_ms_per_token": {"v": 0.757, "tag": "FIT", "src": "the one strata factor, fitted on the three 16-agent rows of the served build pooled: 609 reads (server), 731,958 fresh tokens, 844.8 s of server prompt time, the read sizes of each in-window turn (538 turns) scaled to the server read count; 737 chunks (1.21 a read over the read mix, x 609 reads) x 0.3945 s + 731,958 x m = 844.8 s (corrected 16:2xZ from a typo \"597 chunks\"; m unchanged). Cross-check: the control build's MEASURED marginal 0.776-0.791 ms a token (data/workload.json fixed_per_read)"},
+  "read_sizes": {"v": {"p10": 189, "p50": 781, "p75": 1500, "p90": 2650, "max": 9544, "mean": 1202, "share_of_tokens_in_reads_over_2048": 0.47}, "tag": "MEASURED", "src": "turns[].fresh (in window) of the three rows' replay result files (our lab notes, not published)"},
+  "baseline": {"v": {"P": 866.4, "agent_tps": 83.4, "F": 4.88, "D_implied": 157.2}, "tag": "MEASURED", "src": "the three 16-agent rows of the served build: P = 731,958 / 844.8 s; agent tok/s mean of 86.02, 84.56, 79.64; F mean of 4.78, 4.87, 4.98; D_implied = 1 / (1 / agent - F / P), the decode term those rows imply under real traffic (deep contexts), held fixed across the arms"}
+ },
+ "predictions": {
+  "regime": "separate reads (each agent's read pays its own expert pass per chunk): the served build's regime, since STRATA_BATCH_PREFILL batches only reads up to 512 tokens and a longer read drains the pipe (data/workload.json engines.strata.reads_stall_decode)",
+  "rows": [
+   {"arm": "real-comp1-ng (baseline, --prefill auto = 2048)", "chunk": 2048, "P": 866, "agent_tps_16": 83.4},
+   {"arm": "real-comp1-ng-pf4096", "chunk": 4096, "P": 913, "agent_tps_16": 85.4},
+   {"arm": "real-comp1-ng-pf8192", "chunk": 8192, "P": 921, "agent_tps_16": 85.8},
+   {"arm": "real-comp1-ng-pf16384", "chunk": 16384, "P": 922, "agent_tps_16": 85.8}
+  ],
+  "headline": "a bigger chunk lifts server prefill only ~5-6 % (866 -> 913-922 tok/s) and 16-agent output ~2-3 % (83.4 -> 85.4-85.8), inside the 11 % replay noise: only reads over 2048 tokens (47 % of fresh tokens, p90 read 2.65k) pay fewer passes, and per-token compute m (0.757 ms) is 2.6x the pass per token (0.19 ms at 2048). Prefill on the served build is per-token compute-bound, not pass-bound. If the engine halves T to fit buffers, read the row of the halved chunk",
+  "falsified_if": "measured P of any arm exceeds 1,000 tok/s (+15 %, outside noise): the pass cost is larger than the physics t_pass (e.g. per-chunk fixed work beyond the stream); measured P below 780 (-10 %): a bigger chunk adds cost the model does not carry (buffers, attention growth)",
+  "sensitivity": [
+   {"case": "t_pass = 0.614 s (the control build's MEASURED fixed cost of the batched read, data/workload.json fixed_per_read)", "m_ms": 0.536, "P": {"4096": 941, "8192": 954, "16384": 955}, "agent_tps_16": {"4096": 86.6, "8192": 87.2, "16384": 87.2}},
+   {"case": "every expert VRAM-resident on the split (t_pass = 0.066 s, VRAM read only)", "m_ms": 1.088, "P": {"4096": 874, "8192": 875, "16384": 875}, "agent_tps_16": {"4096": 83.7, "8192": 83.8, "16384": 83.8}}
+  ],
+  "cross_agent_batching": {
+   "about": "if the engine batched several agents' fresh reads into one pass (cross-agent prefill batching), the pass is shared and P approaches the long-read rate 1 / (t_pass / C + m); separate reads keep P at the rows above",
+   "rows": [
+    {"chunk": 2048, "P_shared": 1053, "agent_tps_16": 91.0},
+    {"chunk": 4096, "P_shared": 1172, "agent_tps_16": 95.0},
+    {"chunk": 8192, "P_shared": 1242, "agent_tps_16": 97.2},
+    {"chunk": 16384, "P_shared": 1280, "agent_tps_16": 98.3}
+   ],
+   "tag": "MODEL",
+   "src": "same inputs; not an arm today"
+  }
+ },
+ "calibration_points": {
+  "xestrata_022_one_b70": {"tag": "MEASURED-BY-THEM", "url": "https://github.com/MistVVK/XeStrata/releases/tag/xe0.2.2-1", "src": "release notes 'Speed against upstream': ONE Arc Pro B70 32 GB, i7-14700 DDR4-3200, Flash-Next IQ3_XXS, experts the GPU does not hold in RAM; single-stream prefill 1K 1,173, 4K 1,639, 32K 2,487, 64K 2,513, 128K 2,464, 262K 2,337 tok/s; serve 32K first prefill 2,469, agent prefill 566; upstream Strata v0.2.2 sycl 1K 393, 4K 917, 32K 1,265",
+   "fit": "least squares t = ceil(T / C) x t_pass + T x m over 1K-128K, C unknown for that build: C 16384 gives t_pass 0.74 s, m 0.359 ms (1K 926 vs 1,173, 4K 1,854 vs 1,639, 32K-128K 2,474 vs 2,464-2,513); C 8192 gives t_pass 0.81 s, m 0.305 ms. A 2048 chunk cannot fit the curve (m < 0). The one-card t_pass ~0.7-0.8 s against ~24 GB nonresident means an effective stream of ~30 GB/s or a CPU share near 0.5 (INFERRED)",
+   "lesson": "xe0.2.2 on ONE B70 reads at ~0.36 ms a token where our served build (xe0.1.45-based, two cards in series) spends 0.757: per-token prefill compute, not the expert pass, is what the served build loses; an xe0.2.2-class per-token rate (0.36 ms) with its t_pass would predict P ~1.33k (chunk 2048) to ~1.46k (16384) at agent read sizes (INFERRED, other build; corrected 16:2xZ from an arithmetic slip \"~1.7-1.9k\")"},
+  "vllm_cookbook_one_b70": {"tag": "MEASURED-BY-THEM", "url": "https://github.com/SergiioB/intel-arc-pro-b70-inference-cookbook/blob/main/docs/qwen36-35a3/QWEN36-MOE-VLLM-XPU.md", "src": "Qwen3.6-35B-A3B GPTQ-int4 on one B70, vLLM XPU, every weight in VRAM: p512 5,156, p2048 6,674, p4096 7,197, p8192 7,576 tok/s; 131K prompt 3,144",
+   "fit": "no stream term (all resident): t = t_pass + T x m. Two points (p512, p8192) give t_pass 0.034 s, m 0.128 ms; then p2048 predicts 6,924 (+3.7 %), p4096 7,340 (+2.0 %). The physics t_pass, every expert read once from VRAM (~18 GB int4 experts / 608 GB/s = 0.03 s, INFERRED size), matches the fitted 0.034 s. The 131K prompt (3,144 measured vs 7,800 predicted) is attention growth, a term this model leaves out. Recorded as a check of the pass physics and of what a fully resident B70 path reads per token (0.128 ms), not fitted into strata"}
+ },
+ "post_hoc": [
+  {"id": "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026", "label": "POST-HOC (not in the predictions above; the run landed after this file): the same served-build recipe at ONE agent (replaying sessions from the same 16-session trace), 300 s warm-up, 600 s window", "checked_utc": "2026-10-26T16:3xZ",
+   "model": {"P": 943.4, "agent_tps_formula": 43.3, "agent_tps_with_gaps": 34.1, "src": "MODEL from the committed inputs, no refit: t_pass 0.3947 s, m 0.757 ms over this run's own 72 in-window reads (median 938, mean 2,187, max 51,337 fresh tokens; 121 chunks) = 167.0 s of prompt time for 157,499 fresh tokens. agent_tps_formula = 1 / (F / P + 1 / D) with F 8.09 and D 68.78 (the run's measured per-request decode median). agent_tps_with_gaps = 19,574 output tokens / (167.0 s prompt + 19,574 / 68.78 s decode + 122.3 s of replayed tool gaps)"},
+   "measured": {"P": 852.3, "agent_tps": 32.62, "F": 8.09, "decode_median": 68.78, "prefill_busy_pct": 31.0, "tag": "MEASURED", "src": "the run's replay result file (our lab notes, not published)"},
+   "error": {"P": "+10.7 %", "agent_tps_formula": "+33 %", "agent_tps_with_gaps": "+4.5 %"},
+   "wall_time": "600 s window: server prompt 185.8 s (31.0 %) + server decode 298.8 s (49.8 %) = 80.8 %; the rest is the client-side gaps between one turn's end and the next send, 122.3 s summed over the 72 turns (median 0.71 s, max 20.7 s): the recorded tool gaps the replay plays back at gap_scale 1.0. One agent leaves the server idle in them; at 16 agents other agents' work fills them. The formula 1 / (F / P + 1 / D) has no gap term, so it over-predicts a lone agent by a third; with the gaps it is +4.5 %. The P miss (+10.7 %) is per-read work outside the pass model at this read mix: 75 conversation parks and 5 evictions with 1 restore in the window (server_delta), and longer reads (one 51k cold read) whose attention cost grows with depth"}
+ ],
+ "measured": {
+  "tag": "MEASURED",
+  "recorded_utc": "2026-10-26T17:3xZ",
+  "src": "the three arms' replay result files (our lab notes, not published; the batch's nonzero exit was a restore cpuset mismatch after the last arm, the data are good); ledger rows as named. P = fresh prompt tokens / server prompt time; F = fresh prompt tokens / output tokens (server totals, as the baseline's 4.88; the replay's client-side fresh_split F reads 4.77 / 3.99 / 3.94). err = predicted / measured - 1",
+  "rows": [
+   {"arm": "real-comp1-ng-pf4096", "chunk": 4096, "run": "odie-fnx-iq3xxs-2xb70-real-comp1-ng-pf4096-ss16-n16-1026", "P": 813.7, "agent_tps_16": 77.77, "F": 5.41, "prefill_busy_pct": 51.7, "fresh_tokens": 252289, "P_err_pct": 12.2, "agent_err_pct": 9.8, "P_vs_baseline_pct": -6.1},
+   {"arm": "real-comp1-ng-pf8192", "chunk": 8192, "run": "odie-fnx-iq3xxs-2xb70-real-comp1-ng-pf8192-ss16-n16-1026", "P": 843.6, "agent_tps_16": 89.74, "F": 4.86, "prefill_busy_pct": 51.7, "fresh_tokens": 261636, "P_err_pct": 9.2, "agent_err_pct": -4.4, "P_vs_baseline_pct": -2.6},
+   {"arm": "real-comp1-ng-pf16384", "chunk": 16384, "run": "odie-fnx-iq3xxs-2xb70-real-comp1-ng-pf16384-ss16-n16-1026", "P": 857.7, "agent_tps_16": 87.57, "F": 4.52, "prefill_busy_pct": 46.1, "fresh_tokens": 237316, "P_err_pct": 7.5, "agent_err_pct": -2.0, "P_vs_baseline_pct": -1.0}
+  ],
+  "verdict": "NOT FALSIFIED by the stated test (every arm's P inside 780-1000: 814 / 844 / 858). But the predicted gain did not show: P sits 1-6 % UNDER the 866 baseline instead of 5-6 % over it, so the model over-predicts P by 7.5-12.2 %, worst at the smallest chunk. Two parts held: P rises with the chunk (814 < 844 < 858, the predicted direction), and a bigger chunk is no big lever (all within the 11 % replay noise of the baseline). The 16-agent spread (77.8 / 89.7 / 87.6 against 85.4-85.8 predicted) follows F (5.41 / 4.86 / 4.52), not P"
+ }
+}

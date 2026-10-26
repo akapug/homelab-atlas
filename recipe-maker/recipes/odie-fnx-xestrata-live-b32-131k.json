@@ -38,7 +38,7 @@
   },
   "engine_flags": "--batch 32 --no-batch-mtp --batch-groups 2 --kv-resident 4096; layer split 24; env MAX_CONTEXT=131072 (runs odie-fnx-iq3xxs-2xb70-split-batch32-groups2-gm-v4-mmvqrows2-wgrows2-confirm-quick-1023)"
  },
- "src": "coordinator brief 2026-10-23: the live qfn2 config pinned 84.6 GiB of host GTT and hung odie twice; MemAvailable from the gm-round memprobe (runs odie-fnx-iq3xxs-2xb70-split-batch32-groups2-gm-v2-tilecols16-rerun-quick-1023)",
+ "src": "lab notes 2026-10-23: the live qfn2 config pinned 84.6 GiB of host GTT and hung odie twice; MemAvailable from the gm-round memprobe (runs odie-fnx-iq3xxs-2xb70-split-batch32-groups2-gm-v2-tilecols16-rerun-quick-1023)",
  "gpu_split": {
   "banks_gib": [
    17.72,

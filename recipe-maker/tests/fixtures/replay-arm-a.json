@@ -1,0 +1,61 @@
+{
+ "label": "arm-a",
+ "workload": "agent-replay",
+ "trace": "trace-a",
+ "trace_source": "REAL",
+ "qualification": "UNQUALIFIED diagnostic (client-side SSE timing + server /metrics totals)",
+ "agents": 16,
+ "recorded_agents": 9,
+ "batch_slots": 32,
+ "window_s": 600.0,
+ "gap_scale": 1.0,
+ "stagger_scale": 0.02,
+ "loop": true,
+ "turns_completed": 121,
+ "turns_started": 123,
+ "turns_per_agent_min": 0.769,
+ "agg_out_tok_s": 33.4,
+ "out_tokens": 20039,
+ "out_vs_recorded": 0.738,
+ "decode_tok_s": {
+  "n": 121,
+  "min": 0.28,
+  "p10": 1.11,
+  "median": 5.22,
+  "p90": 8.0,
+  "max": 12.46
+ },
+ "ttft_s": {
+  "n": 121,
+  "min": 1.4,
+  "p10": 2.0,
+  "median": 11.5,
+  "p90": 77.2,
+  "max": 162.1
+ },
+ "stall_s": 401.9,
+ "stall_pct": 67.0,
+ "errors": 0,
+ "err_sample": [],
+ "server_delta": {
+  "requests": 127,
+  "prompt_tokens": 2748887,
+  "reused": 2268938,
+  "output_tokens": 20717,
+  "prompt_ms": 445782.40000000014,
+  "decode_ms": 7804630.700000005,
+  "cc_evictions": 71,
+  "cc_restores": 0,
+  "cc_parks": 74,
+  "cc_requests_reused": 115
+ },
+ "fresh_prompt_tokens": 479949,
+ "prefill_busy_pct": 74.3,
+ "card_w": [
+  132.3,
+  127.4
+ ],
+ "tok_s_per_w": 0.1286,
+ "min_avail_minus_cma_gib": 50.4,
+ "max_gpuactive_gib": 48.9
+}

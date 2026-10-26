@@ -1,0 +1,50 @@
+{
+ "id": "lassie-orn35-q40-ml-l316",
+ "box": "lassie",
+ "model": "orn35",
+ "engine": "llamacpp",
+ "engine_build": "7790a92",
+ "label": "lassie Ornith-1.5-35B-A3B bartowski Q4_0, mainline llama.cpp 7790a92 one process: CUDA0 GTX 1080 Ti + Vulkan RADV MI25, -sm layer -ts 3/16, -fa on; fastest decode at 4k depth, quality UNMEASURED",
+ "store": {
+  "split": false,
+  "types": [
+   "q4_0",
+   "q6_K"
+  ],
+  "hot_type": "q4_0",
+  "cold_type": "q4_0"
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": 512,
+ "draft": false,
+ "banks_gib": 3.2,
+ "threads": 8,
+ "files": [
+  {
+   "path": "~/models/mi25/Ornith-1.5-35B-A3B-Q4_0.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded"
+  }
+ ],
+ "src": "lab notes bench-guarded.sh calls-ornith-1025l.txt row l-q40-3-16 (lassie ~/apps/llama-cv-7790a92, build-llama-cuda-vulkan.sh)",
+ "conditions": {
+  "ctx": "llama-bench (pp512 / tg128, depth as keyed)",
+  "kv_type": "f16 (llama-bench default)",
+  "draft_n": "none",
+  "sampling": {
+   "set_by": "llama-bench (no sampling)"
+  },
+  "reasoning_effort": "n/a",
+  "workload": {
+   "bench": "llama-bench -r 3, -fa 1, -ub 512 unless noted"
+  }
+ },
+ "gate_note": "recorded after the run with --no-check",
+ "knobs": {
+  "draft": false,
+  "split_ts": "3/16",
+  "mi25_dpm": "auto"
+ },
+ "gate_waiver": "the planner does not model the MI25 (16 GiB HBM, Vulkan RADV) as a second GPU; every weight and the KV sit on the two GPUs (-ngl 99, -sm layer), nothing on the host; banks_gib counts the 1080 Ti share only"
+}

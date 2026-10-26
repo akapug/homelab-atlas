@@ -1285,6 +1285,16 @@
     if (kvh) checks.push(kvh);
     const hp = hostPinnedCheck(data, r);
     if (hp) checks.push(hp);
+    const er = expertResidencyCheck(data, r);
+    if (er) checks.push(er);
+    const fb = fallbackCheck(data, r, opts && opts.measured);
+    if (fb) checks.push(fb);
+    const cp = cpuPoolCheck(data, r);
+    if (cp) checks.push(cp);
+    const aw = agentWorkloadCheck(data, r);
+    if (aw) checks.push(aw);
+    const pf = predictionFirstCheck(data, r, aw);
+    if (pf) checks.push(pf);
     const prediction = opts && opts.predict === false ? null : predictFirst || predictRecipe(data, r);
     if (prediction && prediction.ram_overflow_gib) checks.push({ id: 'ram_fit', label: 'loaded (pinned) experts fit DRAM', status: 'FAIL', detail: prediction.why });
     // host memory: the SYCL pinned host buffer is driver memory (GPUActive); the container memcg does not hold it (MEASURED odie
@@ -1299,7 +1309,7 @@
       checks.push({ id: 'mem_cap', label: 'pinned host peak + container anon fit under DRAM total - household floor; docker --memory holds the anon', status: st,
         detail: 'predicted pinned host peak ' + pk.toFixed(1) + ' GiB (pinned experts + host extra ' + prediction.host_extra_gib + ' FIT + driver extra ' + prediction.pinned_driver_extra_gib + ') + container anon ' + an + ' GiB; ceiling ' + top.toFixed(1) + ' GiB (' + v(box.dram.total_gib) + ' total - floor ' + floor + ' - margin ' + margin + '; a kill cannot land inside a driver allocation, so this ceiling is the containment); cap ' + (cap === undefined || cap === null ? 'not declared (mem_cap_gib)' : cap + ' GiB (holds anon + page cache, not the pinned buffer)') });
     }
-    return { checks, facts, notes, bad_input: false, prediction };
+    return { checks, facts, notes, bad_input: false, prediction, priors: priorsFor(data, r) };
   }
   // the serving conditions of data.conditions: a run that leaves one undeclared still runs (UNKNOWN; --strict holds it), but its
   // numbers do not compare with a run that differs in it
@@ -1340,7 +1350,7 @@
     const out = Object.fromEntries(Object.keys(D).map(k => [k, s[k] !== undefined && s[k] !== null ? s[k] : v(D[k])]));
     if (s.max_context === undefined || s.max_context === null) out.max_context = r.ctx !== undefined ? firstInt(r.ctx) : v(D.max_context);
     else if (r.ctx !== undefined && firstInt(r.ctx) !== s.max_context) bad.push('serving.max_context ' + s.max_context + ' != ctx ' + r.ctx);
-    ['max_context', 'batch', 'batch_groups', 'slot_context', 'big_slots', 'kv_resident', 'mtp_window'].forEach(k => { if (!Number.isInteger(out[k]) || out[k] < 0) bad.push('serving.' + k + ' ' + JSON.stringify(out[k]) + ' is not a whole number >= 0'); });
+    ['max_context', 'batch', 'batch_groups', 'slot_context', 'big_slots', 'kv_resident', 'mtp_window'].concat(['max_t', 'cpu_pool_max_rows'].filter(k => k in D)).forEach(k => { if (!Number.isInteger(out[k]) || out[k] < 0) bad.push('serving.' + k + ' ' + JSON.stringify(out[k]) + ' is not a whole number >= 0'); });
     if (out.batch_mtp === null) out.batch_mtp = !!r.draft;
     Object.keys(s).filter(k => !(k in D) && ['kv_host_reserve_gib', 'mem_available_gib', 'mem_available_src', 'host_reserve_gib', 'host_experts_gib'].indexOf(k) < 0).forEach(k => bad.push('serving.' + k + ' is not a serving field (' + Object.keys(D).join(', ') + ')'));
     return { s: out, S, bad };
@@ -1414,6 +1424,168 @@
     const reserve = own ? sr.host_reserve_gib : floor !== null && margin !== null ? floor + margin : null;
     return { own, floor, margin, reserve_gib: reserve, ceiling_gib: dram && reserve !== null ? v(dram.total_gib) - reserve : null };
   }
+  // Resident experts share the existing host/KV budget, not a total-RAM fit shortcut. available_gib is a
+  // declared pre-load MemAvailable (free + reclaimable after services); its explicit reserve_gib is additional
+  // headroom, including any allocatability discount that measurement did not exclude. The independent total
+  // ceiling stays hostPinnedBudget's containment law; never split its composite floor into guessed current/future use.
+  // other_gib includes staging/non-expert allocations not already charged by that pre-load measurement.
+  // Missing/historical inputs stay unverified.
+  function expertResidencyCheck(data, r) {
+    const p = r.expert_residency;
+    if (!p) return null;
+    const box = data.boxes[r.box], C = data.checks.expert_residency, budget = hostPinnedBudget(data, r);
+    const total = box && box.dram && v(box.dram.total_gib), kv = kvHostPlan(data, r);
+    const n = x => x !== null && x !== undefined && Number.isFinite(v(x)) && v(x) >= 0;
+    const required = n(p.host_experts_gib) ? v(p.host_experts_gib) : null;
+    const available = n(p.available_gib) ? v(p.available_gib) : null;
+    const other = n(p.other_gib) ? v(p.other_gib) : null;
+    const pinned = p.kv_gib !== undefined ? n(p.kv_gib) ? v(p.kv_gib) : null : kv.pinned_gib === undefined ? null : kv.pinned_gib;
+    const reserve = n(p.reserve_gib) ? v(p.reserve_gib) : null;
+    const usable = [total, available, other, pinned, reserve, budget.reserve_gib].every(n) && Number.isFinite(budget.ceiling_gib)
+      ? Math.min(budget.ceiling_gib, available - reserve) - other - pinned : null;
+    const control = C && C.controls[r.engine], mode = p.mode || 'unknown';
+    const fit = required !== null && usable !== null ? required <= usable : null;
+    const invalid = ['host_experts_gib', 'available_gib', 'other_gib', 'kv_gib', 'reserve_gib'].filter(k => p[k] !== undefined && v(p[k]) !== null && !n(p[k]));
+    const live = p.live_verified === undefined ? !!(C && C.default_live_verified) : p.live_verified === true;
+    const sourced = p.src && ['host_experts_gib', 'available_gib', 'other_gib', 'kv_gib', 'reserve_gib'].filter(k => p[k] !== undefined)
+      .every(k => p[k] && p[k].src && evidenceOf(data, p[k]) !== 'unknown');
+    const status = invalid.length ? 'FAIL' : fit === null || !live || !sourced ? 'UNKNOWN' : fit ? 'PASS' : 'FAIL';
+    const matching = control && (!control.model || control.model === r.model) && (!control.engine_build || control.engine_build === r.engine_build);
+    const avoid = status === 'PASS' && ['mmap', 'auto'].includes(mode) && matching && control.resident.length ? control.resident : null;
+    return { id: 'expert_residency', label: C ? C.label : 'resident experts fit usable RAM', status,
+      pred: { host_experts_gib: required, total_gib: total, available_gib: available, other_gib: other, kv_gib: pinned, reserve_gib: reserve,
+        total_reserve_gib: budget.reserve_gib, total_ceiling_gib: budget.ceiling_gib,
+        usable_gib: usable, fits_declared_budget: fit, live_verified: p.live_verified === true, avoidable_streaming: !!avoid, resident_controls: avoid },
+      detail: 'host experts ' + (required === null ? 'UNKNOWN' : required.toFixed(2)) + ' GiB; totalRAM ' + total +
+        ' GiB is not usableRAM; usable = min(hostPinnedBudget total ceiling, pre-load MemAvailable - explicit additional reserve_gib) - KV - staging/other = ' +
+        (usable === null ? 'UNKNOWN (declare the total containment budget and available_gib, other_gib, kv_gib and explicit additional reserve_gib with sources)' : usable.toFixed(2) + ' GiB') +
+        '; total reserve ' + budget.reserve_gib + ' GiB, total ceiling ' + budget.ceiling_gib + ' GiB, additional available-budget reserve ' + reserve + ' GiB' +
+        '; ' + (p.live_verified === true ? 'declared live budget (not probed by the planner)' : 'current live residency/RAM UNVERIFIED; inventory and retained source only') +
+        (invalid.length ? '; invalid nonnegative GiB fields: ' + invalid.join(', ') : '') +
+        (avoid ? '; avoidable SSD/USB expert streaming: matching engine controls ' + avoid.join(' ') : '') +
+        (p.src ? '; ' + p.src : '; source UNKNOWN') };
+  }
+  // The recipe owns intent; measured.fallback_ledger owns receipts. Neither catalog capacity, an enabled flag,
+  // a dispatch setup line nor absence of a warning proves a path ran. Rows preserve partial proof, not a green blanket.
+  function fallbackCheck(data, r, measured) {
+    const P = r.fallback_plan, L = measured && measured.fallback_ledger, C = data.checks.fallback;
+    if (!P && !L) return null;
+    if (!C) return { id: 'fallback', status: 'UNKNOWN', detail: 'fallback check catalog is unavailable' };
+    const object = x => x && typeof x === 'object' && !Array.isArray(x);
+    if ((P && (!object(P) || !object(P.classes) || Object.values(P.classes).some(p => !object(p)))) ||
+        (L && (!object(L) || !Array.isArray(L.events) || L.events.some(e => !object(e)))))
+      return { id: 'fallback', label: C.label, status: 'FAIL', detail: 'invalid fallback plan or receipt structure' };
+    const rows = [], plans = P && P.classes || {}, box = data.boxes[r.box];
+    const add = (id, status, detail, extra) => rows.push(Object.assign({ id, status, detail }, extra || {}));
+    const source = x => x && typeof x.src === 'string' && x.src.trim() && !/^UNKNOWN\b/i.test(x.src.trim());
+    const proved = x => source(x) && C.capacity_tags.includes(x.tag) && Number.isFinite(x.v) && x.v >= 0 &&
+      evidenceOf(data, { tag: x.tag, src: x.src }) === 'seen';
+    const family = t => typeof t === 'string' && /^gpu\d*$/.test(t) ? 'gpu' : t;
+    const decision = x => x && source(x) && typeof x.reason === 'string' && x.reason.trim();
+    const identity = ['box', 'model', 'engine', 'engine_build'];
+    const bound = L && source(L) && identity.every(k => typeof r[k] === 'string' && r[k] && L.identity && L.identity[k] === r[k]);
+    const ctx = context(data, r.box, r.model, r.engine, Object.assign({}, data.knobs, r.knobs || {}));
+    const memory = new Set(ctx.tiers.filter(t => t.id !== 'pmem' || box.pmem).map(t => family(t.id)));
+    // GPU presence alone is not engine capability. USB exists only when an actual box mount identifies it.
+    if (!(box.gpus || []).some(g => (g.engines || []).includes(r.engine))) memory.delete('gpu');
+    (box.disks || []).forEach(d => { if (C.disk_tiers[d.kind]) memory.add(C.disk_tiers[d.kind]); });
+    const fills = Object.fromEntries(Object.entries(plans).filter(([id]) => C.classes[id] === 'memory')
+      .map(([id, p]) => [id, { tier: p.tier, gib: p.gib === undefined ? null : v(p.gib) }]));
+    const sameFills = b => b && b.fills && Object.keys(b.fills).length === Object.keys(fills).length &&
+      Object.entries(fills).every(([id, x]) => b.fills[id] && x.tier === b.fills[id].tier && x.gib === b.fills[id].gib);
+    if (!P || !source(P)) add('plan', 'UNKNOWN', 'intended paths lack a sourced fallback_plan');
+    Object.entries(C.classes).forEach(([id, kind]) => {
+      const p = plans[id], ladder = C.ladders[kind], tier = p && family(p.tier);
+      if (!p || !source(p) || !p.tier || p.tier === 'unknown') { add(id + ':plan', 'UNKNOWN', 'intended ' + id + ' path is unproved'); return; }
+      if (!ladder.includes(tier)) { add(id + ':plan', 'FAIL', 'invalid ' + id + ' tier ' + p.tier); return; }
+      if (kind === 'memory' && !memory.has(tier)) {
+        add(id + ':capability', 'UNKNOWN', p.tier + ' is not a proved ' + r.engine + ' tier on ' + r.box);
+      }
+      const cap = P.capabilities && P.capabilities[id];
+      if (kind !== 'memory' && tier !== ladder[0] && !decision(p.decision)) {
+        const faster = cap && source(cap) && (cap.tiers || []).filter(t => ladder.includes(t) && ladder.indexOf(t) < ladder.indexOf(tier));
+        add(id + ':capacity', faster && faster.length ? 'FAIL' : 'UNKNOWN', faster && faster.length
+          ? 'unchosen compute downgrade to ' + tier + '; supported faster paths ' + faster.join('/')
+          : 'faster operation-specific capability is unproved; no inference from GPU model');
+      }
+      if (kind === 'memory' && ladder.indexOf(tier) > 0 && !decision(p.decision)) {
+        const higher = ladder.slice(0, ladder.indexOf(tier)).filter(t => memory.has(t));
+        higher.forEach(t => {
+          const b = (P.headroom || {})[t], u = p.unit_gib;
+          const eligible = b && b.live_verified === true && source(b) && sameFills(b) && proved(b.idle_gib) && proved(u) && u.v > 0 &&
+            C.capacity_accounting.every(k => source((b.accounting || {})[k]));
+          // The certificate is residual allocatable idle AFTER all fills, KV, staging, service/safety, CMA and
+          // GTT discounts. Its exact fill snapshot prevents reuse after a plan change. No raw MemAvailable shortcut.
+          const total = t === 'dram' ? hostPinnedBudget(data, r).ceiling_gib : null;
+          const allocated = Object.values(fills).filter(x => family(x.tier) === t);
+          const impossible = eligible && t === 'dram' && (!Number.isFinite(total) || allocated.some(x => !Number.isFinite(x.gib) || x.gib < 0) ||
+            b.idle_gib.v + allocated.reduce((s, x) => s + x.gib, 0) > total);
+          add(id + ':idle:' + t, !eligible || impossible ? 'UNKNOWN' : b.idle_gib.v >= u.v ? 'FAIL' : 'PASS',
+            !eligible || impossible ? 'allocatable idle after all fills/reserves on ' + t + ' is UNPROVED'
+              : b.idle_gib.v >= u.v ? 'unchosen ' + p.tier + ' placement leaves ' + b.idle_gib.v + ' GiB usable on ' + t
+                : t + ' residual headroom is below the movable allocation unit');
+        });
+      }
+      const events = bound ? (L.events || []).filter(e => e.class === id && source(e)) : [];
+      const paths = events.filter(e => e.tier && e.proof === 'observed');
+      const lower = events.filter(e => ['observed', 'configured'].includes(e.proof) && ladder.includes(family(e.tier)) && ladder.indexOf(family(e.tier)) > ladder.indexOf(tier));
+      if (lower.length) add(id + ':run', 'FAIL', 'observed below plan ' + p.tier + ': ' + lower.map(e => e.tier + ' (' + e.src + ')').join('; '));
+      else if (paths.some(e => family(e.tier) === tier)) add(id + ':run', 'PASS', 'observed planned path ' + p.tier);
+      else add(id + ':run', 'UNKNOWN', (!bound ? 'no matching box/model/engine/build receipt' : 'no positive path receipt; setup/flags/quiet logs are not dispatch proof') +
+        ((C.placement_controls[r.engine] || {})[id] ? '; verify ' + C.placement_controls[r.engine][id].join(', ') : ''));
+      Object.entries(C.metrics).forEach(([metric, field]) => {
+        if (p[field] === undefined) return;
+        const limit = v(p[field]), hits = events.filter(e => e.metric === metric && Number.isFinite(e.value) && e.proof === 'observed');
+        const bad = hits.filter(e => field.startsWith('min_') ? e.value < limit : e.value > limit);
+        add(id + ':' + metric, !Number.isFinite(limit) ? 'FAIL' : !hits.length ? 'UNKNOWN' : bad.length ? 'FAIL' : 'PASS',
+          !hits.length ? 'no measured ' + metric : metric + ' ' + hits.map(e => e.value).join('/') + ', plan ' + field + ' ' + limit);
+      });
+    });
+    const flags = [(r.conditions || {}).engine_flags, (r.conditions || {}).engine_extra].filter(Boolean).join(' ');
+    (C.controls || []).filter(c => c.engine === r.engine && (!c.model || c.model === r.model)).forEach(c => {
+      const p = plans[c.class];
+      if (!p || p.tier !== c.want) return;
+      const match = c.pattern && new RegExp(c.pattern).exec(flags + ' ' + ((r.conditions || {}).draft_n || ''));
+      const triggered = c.pattern ? !!match : !(c.requires || []).every(pattern => new RegExp(pattern).test(flags));
+      if (!triggered) return;
+      if (c.requires_layer_split) {
+        // gpu_split is the existing per-stage bank plan; explicit null follows its single-GPU branch.
+        // Retained split flags are configuration evidence too, never proof of executed dispatch.
+        const split = C.layer_split_pattern && new RegExp(C.layer_split_pattern).exec(flags + ' ' + ((r.conditions || {}).isolation || ''));
+        const banks = r.gpu_split && r.gpu_split.banks_gib;
+        const declared = Array.isArray(banks) && banks.length ? banks.length : Object.prototype.hasOwnProperty.call(r, 'gpu_split') && r.gpu_split === null ? 1 : null;
+        const stages = [declared, split ? split[1].split(',').length + 1 : null].filter(x => x !== null);
+        if (!stages.length || !stages.every(x => x === stages[0])) {
+          add('control:' + c.id, 'UNKNOWN', 'configured layer split is missing or contradictory; build/group flags alone do not establish this rule');
+          return;
+        }
+        if (stages[0] === 1) return;
+        const s = r.serving || {}, group = match && match[1];
+        // For auto, an explicit serving count must demonstrate a divisor available on the declared stages.
+        // Otherwise retain UNKNOWN; do not invent an engine resolver from box hardware or defaults.
+        if (group === 'auto' && !(Number.isInteger(s.batch_groups) && s.batch_groups > 1 && s.batch_groups <= stages[0] &&
+            Number.isInteger(s.batch) && s.batch > 0 && s.batch % s.batch_groups === 0)) {
+          add('control:' + c.id, 'UNKNOWN', 'auto effective groups > 1 are unproved by the declared serving shape');
+          return;
+        }
+      }
+      add('control:' + c.id, c.builds.includes(r.engine_build) ? 'FAIL' : 'UNKNOWN', c.src + '; configured intent applicability ' + r.engine_build);
+    });
+    const sv = servingOf(data, r);
+    if (plans.batch_mtp && plans.batch_mtp.tier === 'on' && sv && sv.s.batch > 0 && sv.s.batch_groups > 1 && !decision(plans.batch_mtp.decision))
+      add('control:groups-mtp', 'UNKNOWN', 'grouped pipeline may disable batch-MTP on this build; require its engine receipt or an explicit chosen off plan');
+    if (plans.hot_experts && sv && sv.s.batch > sv.s.big_slots && sv.s.max_context > 0) {
+      const effective = sv.s.slot_context > 0 ? Math.min(sv.s.slot_context, sv.s.max_context) : sv.s.max_context;
+      const limit = v(plans.hot_experts.max_regular_slot_context);
+      if (Number.isFinite(limit)) add('control:slot-context', effective > limit ? 'FAIL' : 'PASS',
+        'regular slots reserve ' + effective + ' cells each; planned ceiling ' + limit + '; big slots remain separately charged by kvHostPlan');
+      else if (!sv.s.slot_context) add('control:slot-context', 'UNKNOWN',
+        'every slot inherits MAX_CONTEXT; cache capacity requires per-slot allocation and engine slot receipts');
+    }
+    return { id: 'fallback', label: C.label, status: rows.some(x => x.status === 'FAIL') ? 'FAIL' : rows.some(x => x.status === 'UNKNOWN') ? 'UNKNOWN' : 'PASS',
+      detail: (r.fallback_plan_basis ? r.fallback_plan_basis + '; ' : '') + rows.map(x => x.id + ' ' + x.status + ': ' + x.detail).join('; '),
+      pred: { rows, identity_matched: !!bound, live_capacity_inferred: false } };
+  }
   function hostPinnedCheck(data, r) {
     const C = data.checks.host_pinned, p = C ? hostPinnedPlan(data, r) : null, box = data.boxes[r.box];
     if (!p) return null;
@@ -1435,13 +1607,18 @@
   function checkRecipes(data) {
     return (data.recipes || []).map(r => {
       if (!r.recipe) return Object.assign({}, r, { checks: runChecks(data, r) });
-      const res = checkRecipe(data, r.recipe, null, { predict: false });
+      const res = checkRecipe(data, r.recipe, null, { predict: false, measured: r.observed });
       if (res.bad_input || ['dllm', 'network'].includes(r.recipe.kind)) return Object.assign({}, r, { checks: res.checks });
       const o = r.observed || {};
       const f = Object.assign({}, res.facts, { numa: Object.assign({}, res.facts.numa || {}, o.numa || {}) });
       if (o.decode_kl !== undefined && o.decode_kl !== null) f.decode_kl = o.decode_kl;
-      const inp = res.checks.filter(c => c.id === 'inputs' && c.status !== 'PASS');
-      return Object.assign({}, r, { checks: inp.concat(runChecks(data, f)) });
+      const inp = res.checks.filter(c => (c.id === 'inputs' && c.status !== 'PASS') || c.id === 'expert_residency' || c.id === 'fallback' || c.id === 'cpu_pool_rows');
+      // a serving run keeps its host_pinned check with what it measured beside the prediction (end of run, or a guard stop's lower bound)
+      const hp = res.checks.find(c => c.id === 'host_pinned'), end = o.pinned_gib, stop = o.pinned_at_stop_gib;
+      const seen = !hp || !hp.pred ? '' : end !== undefined ? '; MEASURED pinned ' + end + ' GiB at the run end (predicted ' + hp.pred.pinned_gib.toFixed(2) + ', ' + (hp.pred.pinned_gib >= end ? '+' : '') + (100 * (hp.pred.pinned_gib / end - 1)).toFixed(1) + ' %)'
+        : stop !== undefined ? '; MEASURED pinned ' + stop + ' GiB where a guard stopped the run (a lower bound; predicted ' + hp.pred.pinned_gib.toFixed(2) + ')' : '';
+      const host = hp ? [Object.assign({}, hp, { detail: hp.detail + seen, measured: end !== undefined ? { pinned_gib: end } : stop !== undefined ? { pinned_at_stop_gib: stop } : null })] : [];
+      return Object.assign({}, r, { checks: inp.concat(runChecks(data, f), host) });
     });
   }
 
@@ -2015,6 +2192,7 @@
     return Object.assign({}, fit, { anchor: p.id, K: Object.assign({}, fit.K, { offset: v(p.stage_ms).map((m, i) => (m - model[i]) / rows) }) });
   }
   function winLaw(stage, rows, groups, eta) {
+    if (!Number.isFinite(eta) || eta <= 0) return null;
     const tot = stage.reduce((a, b) => a + b, 0), mx = Math.max(...stage);
     return eta * rows * 1000 * Math.min(groups / tot, 1 / mx);
   }
@@ -2024,7 +2202,7 @@
   function winStep(W, N, K, o) {
     const split = winSplit(W, o), G = winGroups(W, N, split.length, o), rows = N / G, U = W.ubench;
     const stage = winStageMs(W, split, rows, K, o), total = winLaw(stage, rows, G, K.eta);
-    return { N, groups: G, rows, split, stage_ms: stage, bottleneck: stage.indexOf(Math.max(...stage)), total, per_agent: total / N,
+    return { N, groups: G, rows, split, stage_ms: stage, bottleneck: stage.indexOf(Math.max(...stage)), total, per_agent: total === null ? null : total / N,
       beyond_grid: rows > U.grid[U.grid.length - 1], beyond_engine: rows > v(W.max_window_rows) || N > v(W.max_agents) };
   }
   // the best contiguous split of the layers over nS stages at the step's rows (least slowest stage), then the step on it
@@ -2067,7 +2245,8 @@
     return go(Array.from({ length: n }, (_, i) => i));
   }
   // calibrate: omega by a grid + golden-section search, the extras by non-negative least squares on the 'fit' points' stage
-  // times (relative error), eta = the median of measured tok/s over the law on the measured stage times of every point
+  // times (relative error), eta = the median of valid training tok/s over the law on those same training stage times.
+  // Checks/law points remain observations only. Without throughput training there is no efficiency estimate.
   // fo: {phi: a routing share, gamma_free: fit gamma too, dropping the extras marked kernel_scale_alt (the variant where the
   // in-graph per-row cost the isolated kernels miss lives in the kernels, so a lever saves more)}
   function winFit(data, key, fo) {
@@ -2091,17 +2270,19 @@
     const gr = S.gamma_range ? v(S.gamma_range) : [v(S.gamma), v(S.gamma)];
     const best = x0.gamma_free ? golden(omegaAt, gr[0], gr[1]) : omegaAt(prior.gamma);
     const K = Object.assign({}, prior, { omega_us: best.omega, gamma: best.gamma, extras: Object.fromEntries(W.extras.map(e => [e.id, ex.includes(e) ? best.x[ex.indexOf(e)] : 0])) });
-    const law = W.points.filter(p => p.tps).map(p => v(p.tps) / winLaw(v(p.stage_ms), rowsOf(p), G(p), 1));
-    K.eta = law.length ? med(law) : 1;
+    const etaPoints = fit.filter(p => Number.isFinite(v(p.tps)) && v(p.tps) > 0 && v(p.stage_ms).every(x => Number.isFinite(x) && x > 0));
+    const law = etaPoints.map(p => v(p.tps) / winLaw(v(p.stage_ms), rowsOf(p), G(p), 1)).filter(x => Number.isFinite(x) && x > 0);
+    K.eta = law.length ? med(law) : null;
     const residuals = W.points.map(p => {
       const r = rowsOf(p), sp = winStageMs(W, sp0(p), r, K), meas = v(p.stage_ms), t = p.tps ? v(p.tps) : null;
       const chain = winLaw(sp, r, G(p), K.eta), lawp = winLaw(meas, r, G(p), K.eta);
       return { id: p.id, use: p.use, change: p.change || null, agents: p.agents, rows: r, split: sp0(p), stage_meas: meas, stage_pred: sp, stage_err: sp.map((x, i) => x / meas[i] - 1),
-        tps_meas: t, tps_pred: p.use === 'law' ? null : chain, tps_err: t && p.use !== 'law' ? chain / t - 1 : null, law_pred: lawp, law_err: t ? lawp / t - 1 : null };
+        tps_meas: t, tps_pred: p.use === 'law' ? null : chain, tps_err: t > 0 && chain !== null && p.use !== 'law' ? chain / t - 1 : null, law_pred: lawp, law_err: t > 0 && lawp !== null ? lawp / t - 1 : null };
     });
     const pick = (use, f) => [].concat(...residuals.filter(x => use.includes(x.use)).map(f)).filter(x => x !== null).map(Math.abs);
     const mx = xs => (xs.length ? 100 * Math.max(...xs) : null);
-    return { key: W.key, K, gamma_free: !!x0.gamma_free, residuals, free: ex.length + 1 + (x0.gamma_free ? 1 : 0), equations: fit.reduce((a, p) => a + sp0(p).length, 0),
+    return { key: W.key, K, status: K.eta === null ? 'UNKNOWN' : 'FIT', why: K.eta === null ? 'no finite positive training throughput for pipeline eta' : null,
+      eta_training: etaPoints.map(p => p.id), gamma_free: !!x0.gamma_free, residuals, free: ex.length + 1 + (x0.gamma_free ? 1 : 0), equations: fit.reduce((a, p) => a + sp0(p).length, 0),
       stage_fit_max_abs_pct: mx(pick(['fit'], x => x.stage_err)), stage_check_max_abs_pct: mx(pick(['check'], x => x.stage_err)),
       tps_fit_max_abs_pct: mx(pick(['fit'], x => [x.tps_err])), tps_check_max_abs_pct: mx(pick(['check'], x => [x.tps_err])), law_max_abs_pct: mx(pick(['fit', 'check', 'law'], x => [x.law_err])) };
   }
@@ -2112,6 +2293,7 @@
     const W = winCfg(data, key), o = opts || {}, f = o.fit || winFit(data, key), K = f.K, U = W.ubench;
     const N = o.agents || v(W.settings.plan_agents), k = o.xfloor || v(W.settings.lever_xfloor), base = { bw: o.bw };
     const now = winStep(W, N, K, base), reb = winRebalance(W, N, K, base);
+    if (K.eta === null) return { status: 'UNKNOWN', why: f.why, now, rebalanced: reb, levers: [], unmeasured: [] };
     const one = (c, kk) => {
       const cur = winClassMs(W, c, U.floor_rows, K), floor = winFloorMs(W, c), lo = v(W.settings.graph_launch_us) * c.layers * c.launches / 1000;
       const scale = cur > 0 ? Math.min(1, Math.max(kk * floor, lo) / cur) : 1, oo = Object.assign({}, base, { scale: { [c.name]: scale } });
@@ -2197,7 +2379,7 @@
     const checks = W.points.filter(p => ids.includes(p.id)).map(p => {
       const split = winPointSplit(W, p), G = winGroups(W, p.agents, split.length), r = p.agents / G, sp = winStageMs(W, split, r, K), meas = v(p.stage_ms), t = p.tps ? v(p.tps) : null, tp = winLaw(sp, r, G, K.eta);
       return { id: p.id, use: p.id === W.profile.point ? 'profile' : 'check', agents: p.agents, rows: r, split, change: p.change || null, stage_meas: meas, stage_pred: sp, stage_err: sp.map((x, i) => x / meas[i] - 1),
-        tps_meas: t, tps_pred: tp, tps_err: t ? tp / t - 1 : null };
+        tps_meas: t, tps_pred: tp, tps_err: t > 0 && tp !== null ? tp / t - 1 : null };
     });
     return { key: W.key, source: 'profile', K, rows: C.R0, point: W.profile.point, split: C.split, gap_ms: C.gap, term_sum_ms: C.term_sum, totals_ms: v(W.profile.totals_ms), checks };
   }
@@ -2207,6 +2389,7 @@
     const W = winCfg(data, key), o = opts || {}, K = o.fit.K, C = K.prof, S = W.settings, share = v(S.extra_lever_share);
     const N = o.agents || v(S.plan_agents), k = o.xfloor || v(S.lever_xfloor), base = { bw: o.bw };
     const now = winStep(W, N, K, base), reb = winRebalance(W, N, K, base);
+    if (K.eta === null) return { status: 'UNKNOWN', why: 'no training throughput for pipeline eta', now, rebalanced: reb, levers: [], unmeasured: [] };
     const run = oo => { const x = Object.assign({}, base, oo); return { st: winStep(W, N, K, x), rb: winRebalance(W, N, K, x) }; };
     const row = (lever, kind, oo, extra) => {
       const { st, rb } = run(oo);
@@ -2494,7 +2677,8 @@
     const hit = a => (!a.network_recipe && (lever.kind === 'layout' ? !!a.layout : !a.layout && (lever.classes || []).some(c => a.classes.includes('*') || a.classes.includes(c))));
     return A.filter(a => a.outcome !== 'control' && hit(a)).map(a => ({ id: a.id, label: a.label, mechanism: a.mechanism, action: a.action, outcome: a.outcome, scope: a.scope,
       parent: a.parent || null, repairs: a.repairs || null, repaired_by: fixedBy(a.id), engine_wide: a.classes.includes('*'), tps: a.tps ? Object.fromEntries(Object.entries(a.tps).map(([k, x]) => [k, v(x)])) : null,
-      sanity: a.sanity ? v(a.sanity) : null, result: a.result || null }));
+      sanity: a.sanity ? v(a.sanity) : null, result: a.result || null, source_scope: a.source_scope || null, power_w: a.power_w || null,
+      quality_gate: a.quality_gate || null, crossover: a.crossover || null, diagnostic_profile: a.diagnostic_profile || null }));
   }
   const winTried = ev => (ev.length ? ev.reduce((m, a) => Object.assign(m, { [a.outcome]: (m[a.outcome] || 0) + 1 }), {}) : null);
   // whole-engine value against the measured frontier: the frontier is a tuned split, so a lever's modelled gain on its own
@@ -2544,6 +2728,7 @@
   // stage's largest classes, the levers, and the what-ifs (each card's bandwidth with the config's stages; 1..n stages)
   function winReport(data, key, opts) {
     const W = winCfg(data, key), o = opts || {}, fit0 = winFit(data, key), N = o.agents || v(W.settings.plan_agents);
+    if (fit0.K.eta === null) return { key: W.key, label: W.label, status: 'UNKNOWN', why: fit0.why, fit: fit0, plan: null };
     // the plan, levers and what-ifs start from the anchor point when one is named (o.anchor, else settings.plan_anchor)
     const aid = o.anchor !== undefined ? o.anchor : W.settings.plan_anchor ? W.settings.plan_anchor.v : null, fit = (aid && winAnchor(data, key, fit0, aid)) || fit0;
     // a measured profile (config `profile`) is the source when present, the ubench classes the fallback (o.source = 'ubench')
@@ -2651,6 +2836,11 @@
     const un = why => Object.assign(out, { why });
     const box = data.boxes[r.box], m = data.models[r.model], E = data.engines[r.engine];
     if (!box || !m || !E) return un('unknown box, model or engine');
+    if (r.cpu_expert_evidence) {
+      out.cpu_expert_evidence = Object.assign({}, r.cpu_expert_evidence, { reference_only: true,
+        residency_matches: !!r.expert_residency && r.expert_residency.mode === r.cpu_expert_evidence.applies_to_mode });
+      A.push(r.cpu_expert_evidence.calibration_policy);
+    }
     if (E.no_solver) return un(E.unmodelled_why || (r.engine + ' has no planner model (it sizes and places its own caches)'));
     if (E.calibrated_builds && E.calibrated_builds.indexOf(r.engine_build) < 0)
       return un(r.engine + ' build ' + (r.engine_build || '(not given)') + ' is not a calibrated build (' + E.calibrated_builds.join(', ') + '): its host and lane rates are unmeasured');
@@ -3495,14 +3685,255 @@
     const ceiling = cc => { let ceil = 0, over = null; for (let n = 1; n <= max; n++) { const h = curveHost(data, cc, n); if (h.status !== 'PASS') { over = Object.assign({ n }, h); break; } ceil = n; } return { ceiling: over && over.status === 'UNKNOWN' ? null : ceil, all_fit: !over, first_over: over }; };
     const host = ceiling(c), lend = v(c.stages) > 1 && c.slots && !c.serving.stage_lend_drop ? ceiling(Object.assign({}, c, { serving: Object.assign({}, c.serving, { stage_lend_drop: true }) })) : null;
     if (lend && lend.ceiling !== null && lend.ceiling !== host.ceiling) host.with_lend_drop = lend.ceiling;
-    if (!f.ok) return { cfg: c, ok: false, why: f.why, fit: f, host, power, min, second, max };
+    if (!f.ok) return { cfg: c, contention: c.contention || [], ok: false, why: f.why, fit: f, host, power, min, second, max };
     const rows = Array.from({ length: max }, (_, i) => { const n = i + 1, t = f.at(n); return { n, total: t, each: t / n, measured: c.points.filter(p => p.n === n).map(p => ({ tps: v(p.tps), used: p.used, run: p.run })), fits_host: host.ceiling === null ? null : n <= host.ceiling, beyond_slots: c.slots ? n > v(c.slots) : null, extrapolated: n > f.n_max }; });
     const pick = (X, cap) => { const r = rows.filter(x => x.each >= X && (!cap || x.fits_host !== false)).pop(); if (!r) return { each_min: X, n: 0, total: 0 }; const w = curveWatts(c, r.n); return { each_min: X, n: r.n, total: r.total, each: r.each, at_max: r.n === max, past_host: host.ceiling !== null && r.n > host.ceiling, extrapolated: r.extrapolated, watts: w, tps_per_w: w ? r.total / w.w : null }; };
     const G = v(c.groups), K = Math.max(G, v(c.stages));
-    return { cfg: c, ok: true, fit: f, fit_warn: 100 * f.err_max > v(S.fit_warn_pct), rows, headline: pick(min), headline_in_memory: host.ceiling !== null && pick(min).past_host ? pick(min, true) : null, second: pick(second), asymptote: G / (K * f.B), host, power, min, second_min: second, max };
+    return { cfg: c, contention: c.contention || [], ok: true, decode_capacity: true, fit: f, fit_warn: 100 * f.err_max > v(S.fit_warn_pct), rows, headline: pick(min), headline_in_memory: host.ceiling !== null && pick(min).past_host ? pick(min, true) : null, second: pick(second), asymptote: G / (K * f.B), host, power, min, second_min: second, max };
   }
   function curveReports(data, opts) { return data.curves.configs.map(c => curveReport(data, c, opts)); }
 
-  const api = { networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
+  // ---------- agent workload: useful output from decode capacity and prefill (data.workload, build.py) ----------
+  // A coding agent's turn reads its fresh prompt tokens, then decodes its answer. With F fresh prompt tokens per output token,
+  // a prefill rate P and a decode capacity D (total tok/s of the agents decoding together), useful output is at most
+  // min(D, P / F); an engine whose reads stop every decoding slot (workload.engines.<engine>.reads_stall_decode) runs the two
+  // in turn: 1 / (F / P + 1 / D). The smaller of D and P / F binds. A synthetic short-prompt run measures D only
+  function agentThroughput(t) {
+    const { decode, prefill, fresh, stall } = t;
+    const cap = prefill && fresh > 0 ? prefill / fresh : prefill ? Infinity : null;
+    if (cap === null) return { prefill_cap: null, ceiling: decode, serial: null, expect: null, binding: null, busy: null };
+    if (decode === null || decode === undefined) return { prefill_cap: cap, ceiling: cap, serial: null, expect: null, binding: null, busy: null };
+    const read = fresh / prefill, serial = 1 / (read + 1 / decode), ceiling = Math.min(decode, cap);
+    return { prefill_cap: cap, ceiling, serial, expect: stall ? serial : ceiling, binding: cap < decode ? 'prefill' : 'decode',
+      busy: stall ? read / (read + 1 / decode) : Math.min(1, ceiling * read) };
+  }
+  const buildKey = (data, b) => { const m = new RegExp(v(data.workload.settings.build_key_re)).exec(String(b || '')); return m ? m[1] : b || null; };
+  // the real-agent rows of a box/model/engine: same = the same build key, other = other builds (never borrowed as evidence)
+  function agentEvidence(data, q) {
+    const rows = ((data.workload || {}).measured || []).filter(x => x.box === q.box && x.model === q.model && x.engine === q.engine), k = buildKey(data, q.build);
+    return { key: k, same: rows.filter(x => x.build_key === k), other: rows.filter(x => x.build_key !== k) };
+  }
+  // ---------- prefill from first principles (data.workload.prefill_pass) ----------
+  // A read of T fresh tokens runs in chunks of C; each chunk is one pass over the experts of every stage (one card each): the
+  // bytes a card does not hold cross its PCIe link (less the CPU's share), the bytes it holds are read once from VRAM; then
+  // m per token. t(T) = ceil(T / C) x t_pass + T x m. m = sum over stages of layer share x 2 x active / (eta x card int8 ops),
+  // eta the one FIT factor per engine (its fit rows' server prompt time). Attention / DeltaNet depth terms are left out.
+  const lastNum = (re, s) => { const g = new RegExp(re, 'g'); let h, x = null; while ((h = g.exec(s))) x = h[1]; return x === null || x === undefined ? null : Number(x); };
+  function passTerms(data, q, o) {
+    const PP = (data.workload || {}).prefill_pass, E = PP && PP.engines[q.engine], S = PP && PP.stores[q.model], box = data.boxes[q.box], m = data.models[q.model] || {};
+    const cache = S && S.cache_bytes_per_card[q.box], flags = String(q.flags || ''), st = PP && PP.settings, oo = o || {};
+    const miss = !PP ? 'no data.workload.prefill_pass' : !E ? 'engine ' + q.engine + ' has no prefill pass model' : !S ? 'model ' + q.model + ' has no expert store bytes (prefill_pass.stores)'
+      : !cache ? 'no expert cache bytes of ' + q.model + ' on ' + q.box + ' (prefill_pass.stores.' + q.model + '.cache_bytes_per_card)' : !box ? 'box ' + q.box + ' unknown' : null;
+    if (miss) return { status: 'UNMODELLED', why: miss };
+    const L = Number(v(m.L)), cut = lastNum(v(st.split_re), flags), layers = cut > 0 && cut < L ? [cut, L - cut] : [L];
+    const share = oo.cpu_share !== undefined ? oo.cpu_share : lastNum(v(st.cpu_share_re), flags) !== null ? lastNum(v(st.cpu_share_re), flags) : v(E.cpu_share_default);
+    const C = oo.chunk || lastNum(v(st.chunk_re), flags) || v(E.chunk_default), lane = v(st.pcie_gbs_per_lane), eff = v(st.link_eff);
+    const stages = layers.map((n, i) => {
+      const g = box.gpus[i], geo = g && g.pcie ? v(g.pcie) : null, card = g ? Object.keys(PP.cards).find(k => new RegExp(PP.cards[k].match).test(v(g.model) + ' ' + g.name)) : null;
+      const bytes = v(S.expert_bytes) * n / L, res = Math.min(bytes, v(cache));
+      return { layers: n, gpu: g ? g.id : null, card, resident_gb: res / 1e9, nonresident_gb: (bytes - res) / 1e9, vram_gbs: g ? v(g.bw) : null,
+        link_gbs: geo && lane[geo.gen] ? lane[geo.gen] * geo.width * eff : null, int8_tops: card ? v(PP.cards[card].int8_tops) : null };
+    });
+    const bad = stages.find(s => !s.gpu || !s.link_gbs || !s.vram_gbs || !s.int8_tops);
+    if (bad) return { status: 'UNMODELLED', why: 'stage ' + (stages.indexOf(bad) + 1) + ' of ' + q.box + ': no card, PCIe geometry, VRAM bandwidth or int8 ops row (prefill_pass.cards)' };
+    const t_pass = stages.reduce((a, s) => a + s.nonresident_gb * (1 - share) / s.link_gbs + s.resident_gb / s.vram_gbs, 0);
+    return { status: 'OK', PP, E, chunk: C, cpu_share: share, stages, t_pass, active: v(S.active_params), L };
+  }
+  // chunks per read over the measured read-size mix at chunk C
+  const chunksPerRead = (PP, C) => { const x = v(PP.read_mix); return x.reduce((a, t) => a + Math.ceil(t / C), 0) / x.length; };
+  // eta of an engine from its fit rows: m_ref = (prompt_s / reads - chunks per read x t_pass) / (fresh / reads) on the fit box
+  function prefillFit(data, engine) {
+    const PP = data.workload.prefill_pass, F = PP.engines[engine].fit, ref = passTerms(data, { box: F.box, model: F.model, engine, flags: v(F.flags) });
+    if (ref.status !== 'OK') return { status: 'UNMODELLED', why: 'fit recipe: ' + ref.why };
+    const reads = v(F.reads), mean = v(F.fresh_tokens) / reads, m = (v(F.prompt_s) / reads - chunksPerRead(PP, ref.chunk) * ref.t_pass) / mean;
+    const ops = ref.stages.reduce((a, s) => a + s.layers / ref.L / s.int8_tops, 0);
+    return { status: m > 0 ? 'FIT' : 'UNMODELLED', why: m > 0 ? null : 'the fit rows leave no per-token time after the pass term', m_ref: m, mean_read: mean, t_pass_ref: ref.t_pass, eta: 2 * ref.active * ops / (m * 1e12),
+      src: 'FIT on ' + v(F.rows).join(', ') + ': ' + reads + ' reads, ' + v(F.fresh_tokens) + ' fresh tokens, ' + v(F.prompt_s) + ' s of server prompt time, t_pass ' + ref.t_pass.toFixed(3) + ' s at chunk ' + ref.chunk };
+  }
+  // predicted prefill of a box/model/engine/flags: per read tps(T); P over the agent read mix (separate reads, each pays its
+  // passes); shared_tps = the long-read rate a cross-agent batched read would approach (one pass shared by every read in it)
+  function prefillPass(data, q, o) {
+    const b = passTerms(data, q, o);
+    if (b.status !== 'OK') return b;
+    const f = prefillFit(data, q.engine);
+    if (f.status !== 'FIT') return { status: 'UNMODELLED', why: f.why };
+    const m = b.stages.reduce((a, s) => a + s.layers / b.L * 2 * b.active / (f.eta * s.int8_tops * 1e12), 0), C = b.chunk;
+    const tps = T => T / (Math.ceil(T / C) * b.t_pass + T * m), cpr = chunksPerRead(b.PP, C);
+    return { status: 'MODEL', tag: 'MODEL', chunk: C, cpu_share: b.cpu_share, stages: b.stages, t_pass: b.t_pass, m_ms: m * 1e3, eta: f.eta, fit: f, tps,
+      mix_tps: f.mean_read / (cpr * b.t_pass + f.mean_read * m), shared_tps: 1 / (b.t_pass / C + m), chunks_per_read: cpr, mean_read: f.mean_read,
+      src: 'MODEL prefillPass: t_pass ' + b.t_pass.toFixed(3) + ' s a ' + C + '-token chunk (' + b.stages.map(s => s.layers + ' layers on ' + s.gpu + ': ' + s.nonresident_gb.toFixed(1) + ' GB streamed x ' + (1 - b.cpu_share).toFixed(2) + ' at ' + s.link_gbs.toFixed(1) + ' GB/s + ' + s.resident_gb.toFixed(1) + ' GB from VRAM').join('; ') +
+        '), m ' + (m * 1e3).toFixed(3) + ' ms a token (eta ' + f.eta.toFixed(4) + ', ' + f.src + '), over the measured read mix (mean ' + Math.round(f.mean_read) + ' tokens, ' + cpr.toFixed(2) + ' chunks a read)' };
+  }
+  // the predicted P as a tagged term, or null
+  const prefillPredicted = (data, q) => { const p = prefillPass(data, q); return p.status === 'MODEL' ? { v: p.mix_tps, tag: 'MODEL', evidence: 'inferred', src: p.src, model: p } : null; };
+  // the held-out checks of data.workload.prefill_pass.checks: predicted tok/s at each end of the row's CPU-share range
+  function prefillPassChecks(data) {
+    return (((data.workload || {}).prefill_pass || {}).checks || []).map(x => {
+      const ps = x.cpu_share.map(s => prefillPass(data, { box: x.box, model: x.model, engine: x.engine }, { cpu_share: s }));
+      const pred = ps.map(p => p.status === 'MODEL' ? p.tps(x.tokens) : null), meas = v(x.measured);
+      return { id: x.id, tokens: x.tokens, cpu_share: x.cpu_share, pred, measured: meas, why: ps.map(p => p.why).filter(Boolean)[0] || null,
+        brackets: pred.every(y => y !== null) && Math.min(...pred) <= Math.max(...meas) && Math.max(...pred) >= Math.min(...meas) };
+    });
+  }
+  // the workload profile and its F (opts.fresh overrides), the engine's stall rule
+  function agentProfile(data, opts) {
+    const W = data.workload, o = opts || {}, name = o.profile || v(W.settings.default_profile), p = W.profiles[name];
+    if (!p) throw new Error('workload profile ' + name + ' is not in data.workload.profiles (' + Object.keys(W.profiles).join(', ') + ')');
+    return { name, p, fresh: o.fresh !== undefined ? { v: o.fresh, tag: 'READ', src: 'a setting (report.js --fresh)' } : p.fresh_per_output };
+  }
+  // per curve config: D from the fitted curve (FIT; a measured point where no fit), P from the newest real-agent row of the same
+  // build (MEASURED; opts.prefill overrides), F from the profile; one row per agent count with the binding term, the window-row
+  // check at that count and the real-agent rows measured there
+  function agentPlan(data, c, opts) {
+    const W = data.workload, o = opts || {}, pr = agentProfile(data, o), F = v(pr.fresh), ev = agentEvidence(data, c);
+    const st = W.engines[c.engine] && W.engines[c.engine].reads_stall_decode, stall = st ? !!v(st) : false;
+    const last = agentReference(ev);
+    // no real-agent row of the build: P PREDICTED from the box and recipe (prefillPass, tag MODEL)
+    const P = o.prefill !== undefined ? { v: o.prefill, tag: 'READ', src: 'a setting (report.js --prefill)' } : last ? last.prefill_tps : prefillPredicted(data, { box: c.box, model: c.model, engine: c.engine, flags: c.flags });
+    const f = curveFit(data, c), ns = o.n || v(W.settings.table_n), lev = W.engines[c.engine] && W.engines[c.engine].prefill_levers;
+    const rows = ns.map(n => {
+      const pt = c.points.filter(p => p.n === n && p.used), D = f.ok ? f.at(n) : pt.length ? v(pt[pt.length - 1].tps) : null;
+      const t = agentThroughput({ decode: D, prefill: P ? v(P) : null, fresh: F, stall });
+      const cpu = cpuPoolCheck(data, { box: c.box, model: c.model, engine: c.engine, ctx: c.ctx, draft: c.draft, serving: Object.assign({}, c.serving, { batch: n }),
+        engine_build: c.build, gpu_split: v(c.stages) > 1 ? { banks_gib: Array(v(c.stages)).fill(0) } : undefined, conditions: { engine_flags: c.flags } });
+      // each real-agent row at n judged with its own P and F (the arm's own reads), so the miss is the model's, not the workload's
+      const real = ev.same.filter(x => x.n === n).map(x => { const w = agentThroughput({ decode: D, prefill: x.prefill_tps ? v(x.prefill_tps) : null, fresh: x.fresh_per_output ? v(x.fresh_per_output) : F, stall }), m = v(x.agent_tps);
+        return { run: x.run, label: x.label, tps: m, prefill: x.prefill_tps ? v(x.prefill_tps) : null, fresh: x.fresh_per_output ? v(x.fresh_per_output) : null, own: w, err_expect: w.expect ? w.expect / m - 1 : null, err_ceiling: w.ceiling ? w.ceiling / m - 1 : null, busy: x.prefill_busy_pct ? v(x.prefill_busy_pct) / 100 : null }; });
+      return Object.assign({ n, decode: D, decode_tag: f.ok ? 'FIT' : pt.length ? 'MEASURED' : 'UNKNOWN', extrapolated: f.ok ? n > f.n_max : !pt.length, cpu_pool: cpu, real }, t);
+    });
+    // each lever carries its own tag when it has one (else the list's); a MEASURED gain whose smallest value is within the
+    // replay's run-to-run noise (settings.replay_noise_pct) is marked inside_noise
+    const noise = W.settings.replay_noise_pct ? v(W.settings.replay_noise_pct) / 100 : null;
+    const levers = P && lev ? v(lev).map(x => { const tag = x.tag || lev.tag;
+      return { id: x.id, lever: x.lever, gain: x.gain, tag, src: x.src || lev.src, prefill_cap: x.gain.map(g => v(P) * g / F),
+        inside_noise: tag === 'MEASURED' && noise !== null ? Math.min(...x.gain) - 1 < noise : null }; }) : [];
+    return { cfg: c, profile: pr.name, fresh: pr.fresh, prefill: P, prefill_run: o.prefill !== undefined || !last ? null : last.run, prefill_basis: o.prefill !== undefined ? 'setting' : last ? 'measured' : P ? 'model' : null, stall, evidence: ev, decode_capacity_only: true, fit_ok: f.ok, why: f.ok ? null : f.why, rows, levers, noise_pct: noise === null ? null : 100 * noise };
+  }
+  // the prefill reference of a build: its real-agent row with the highest agent tok/s (the arm a server of that build would run)
+  const agentReference = ev => ev.same.filter(x => x.prefill_tps).reduce((a, x) => !a || v(x.agent_tps) > v(a.agent_tps) ? x : a, null);
+  function agentPlans(data, opts) { return data.curves.configs.map(c => agentPlan(data, c, opts)); }
+  // a many-agent recipe (agents >= many_agents_min) must rest on a real-agent row of its own build: without one its numbers are
+  // decode capacity from a synthetic short-prompt load, flagged (UNKNOWN; --strict holds it). With one: the binding term at its
+  // agent count from the newest such row's P and the profile's F (D from the same build's curve when one fits)
+  function agentWorkloadCheck(data, r) {
+    const W = data.workload, sv = servingOf(data, r);
+    if (!W || !sv) return null;
+    const wl = (r.conditions || {}).workload || {}, n = firstInt(wl.agents) || sv.s.batch;
+    if (!(n >= v(W.settings.many_agents_min))) return null;
+    const out = (status, detail, pred) => ({ id: 'agent_workload', label: data.checks.agent_workload.label, status, detail, pred: pred || null });
+    const ev = agentEvidence(data, { box: r.box, model: r.model, engine: r.engine, build: r.engine_build }), pr = agentProfile(data, {}), F = v(pr.fresh);
+    const last = agentReference(ev), cfg = data.curves.configs.filter(c => c.box === r.box && c.model === r.model && c.engine === r.engine && buildKey(data, c.build) === ev.key).map(c => ({ c, f: curveFit(data, c) })).filter(x => x.f.ok).slice(-1)[0];
+    // P: the build's real-agent row (MEASURED), else predicted from the box and recipe (prefillPass, MODEL)
+    const P = last ? last.prefill_tps : prefillPredicted(data, { box: r.box, model: r.model, engine: r.engine, flags: (r.conditions || {}).engine_flags });
+    const st = W.engines[r.engine] && W.engines[r.engine].reads_stall_decode, D = cfg ? cfg.f.at(n) : null;
+    const t = agentThroughput({ decode: D, prefill: P ? v(P) : null, fresh: F, stall: st ? !!v(st) : false });
+    const seen = ev.same.filter(x => x.n === n).map(x => x.n + ' agents ' + v(x.agent_tps) + ' tok/s (' + x.run + ')');
+    const t1 = x => x === null || x === undefined ? '?' : x === Infinity ? 'inf' : x.toFixed(1);
+    const pred = Object.assign({ n, fresh: F, fresh_tag: pr.fresh.tag, profile: pr.name, prefill_tps: P ? v(P) : null, prefill_tag: P ? P.tag : null }, t);
+    const body = (t.binding ? t.binding.toUpperCase() + '-BOUND at ' + n + ' agents: ' : 'binding term UNKNOWN at ' + n + ' agents: ') + 'prefill ' + (last ? v(P) + ' tok/s (' + last.run + ')' : P ? t1(v(P)) + ' tok/s (MODEL, predicted: ' + P.src + ')' : '?') + ' / ' + F + ' fresh per output = ' + t1(t.prefill_cap) + ' tok/s; decode capacity ' + (D !== null ? t1(D) + ' tok/s (FIT, ' + cfg.c.id + ')' : 'UNKNOWN (no fitted curve of this build)') +
+      '; ceiling ' + t1(t.ceiling) + (t.serial ? ', reads stall decode so ' + t1(t.serial) + ' expected' : '');
+    if (!ev.same.length) return out('UNKNOWN', 'FLAG: ' + n + ' agents judged only on synthetic short-prompt decode: that is decode capacity, not agent throughput. No real-agent row (measured.workload_kind ' + v(W.settings.real_kind) + ') for build ' + (ev.key || '(none)') + ' on ' + r.box + ' ' + r.model + ' ' + r.engine +
+      (ev.other.length ? '; other builds have ' + ev.other.length + ' (' + [...new Set(ev.other.map(x => x.build_key))].join(', ') + '), not borrowed' : '') + '. Replay recorded agent traffic on this build; the ' + pr.name + ' profile reads ' + F + ' fresh prompt tokens per output token (' + pr.fresh.tag + ')' +
+      (P ? '. Before launch: ' + body : ''), P ? pred : null);
+    return out('PASS', body + (seen.length ? '; MEASURED ' + seen.join(', ') : ''), pred);
+  }
+  // where a stage computes experts on the CPU pool (a layer split on an engine whose split stages do: serving.split_cpu_experts,
+  // or serving.cpu_experts), every batch window row goes through that pool: ceil(batch / batch_groups) rows must fit its cap
+  // (serving.cpu_pool_max_rows). A window-row prefill may fill spare rows up to max_t, so max_t above the cap is UNKNOWN
+  function cpuPoolCheck(data, r) {
+    const sv = servingOf(data, r);
+    if (!sv || !('cpu_pool_max_rows' in sv.S.defaults)) return null;
+    const s = sv.s, S = sv.S, re = new RegExp(v(S.layer_split_re));
+    const split = ((r.gpu_split || {}).banks_gib || []).length > 1 || re.test(String((r.conditions || {}).engine_flags || ''));
+    const cpu = s.cpu_experts !== null && s.cpu_experts !== undefined ? !!s.cpu_experts : split && !!(S.split_cpu_experts && v(S.split_cpu_experts));
+    if (!cpu || !s.batch) return null;
+    const byBuild = S.cpu_pool_rows_by_build ? v(S.cpu_pool_rows_by_build)[buildKey(data, r.engine_build)] : undefined;
+    const own = (r.serving || {}).cpu_pool_max_rows !== undefined, cap = own || byBuild === undefined ? s.cpu_pool_max_rows : byBuild;
+    const rows = Math.ceil(s.batch / Math.max(1, s.batch_groups)), why = s.cpu_experts !== null && s.cpu_experts !== undefined ? 'serving.cpu_experts' : 'a layer split computes its missed experts on the CPU pool (engines.' + r.engine + '.serving.split_cpu_experts)';
+    const out = (status, detail) => ({ id: 'cpu_pool_rows', label: data.checks.cpu_pool_rows.label, status, detail, pred: { rows, cap, max_t: s.max_t } });
+    const head = s.batch + ' agents in ' + s.batch_groups + ' group' + (s.batch_groups > 1 ? 's' : '') + ' = ' + rows + ' rows a window; CPU pool cap ' + cap + ' rows (' + (own ? 'serving.cpu_pool_max_rows' : byBuild !== undefined ? 'engines.' + r.engine + '.serving.cpu_pool_rows_by_build for build ' + buildKey(data, r.engine_build) : 'the engine default, serving.cpu_pool_max_rows') + '); ' + why;
+    if (rows > cap) return out('FAIL', head + ': the window cannot load (' + S.split_cpu_experts.src + '); fewer agents a group (more batch_groups), or a build with a larger pool cap');
+    if (s.max_t > cap) return out('UNKNOWN', head + '; max_t ' + s.max_t + ' lets window-row prefill fill a window past the cap: not measured');
+    return out('PASS', head);
+  }
+
+  // ---------- grounding: serving priors and the replay checks (data.priors from data/priors-serving.json, data.workload) ----------
+  // a many-agent recipe carries its prediction before launch: useful tok/s, the binding term (decode or prefill) and the F it
+  // assumed. The model's own (agent_workload) when it names a binding term, else one the recipe declares in
+  // conditions.workload.prediction {useful_tps, binding, fresh, src}; neither is FLAGGED (UNKNOWN; --strict holds it)
+  function predictionFirstCheck(data, r, aw) {
+    if (!aw) return null;
+    const p = aw.pred, own = ((r.conditions || {}).workload || {}).prediction, t1 = x => x === Infinity ? 'inf' : x.toFixed(1);
+    const out = (status, detail, pred) => ({ id: 'prediction_first', label: data.checks.prediction_first.label, status, detail, pred });
+    if (p && p.binding && Number.isFinite(p.expect))
+      return out('PASS', p.n + ' agents: useful ' + t1(p.expect) + ' tok/s predicted, ' + p.binding.toUpperCase() + '-BOUND, assuming F = ' + p.fresh + ' fresh prompt tokens per output (profile ' + p.profile + ', ' + p.fresh_tag + ') and prefill ' + t1(p.prefill_tps) + ' tok/s (' + p.prefill_tag + ')',
+        { n: p.n, useful_tps: p.expect, binding: p.binding, fresh: p.fresh, fresh_tag: p.fresh_tag, profile: p.profile, prefill_tps: p.prefill_tps, prefill_tag: p.prefill_tag, basis: 'model' });
+    if (own && ['decode', 'prefill'].includes(own.binding) && Number.isFinite(own.useful_tps) && Number.isFinite(own.fresh) && own.src)
+      return out('PASS', 'declared: useful ' + t1(own.useful_tps) + ' tok/s, ' + own.binding.toUpperCase() + '-BOUND, assuming F = ' + own.fresh + ' (' + own.src + ')',
+        { n: p ? p.n : null, useful_tps: own.useful_tps, binding: own.binding, fresh: own.fresh, fresh_tag: 'DECLARED', profile: null, basis: 'declared' });
+    const why = !p ? 'the model has neither a real-agent prefill rate of this build nor a prefill pass model of its box and store (agent_workload)' :!p.binding ? 'decode capacity is UNKNOWN (no fitted curve of this build), so neither term can be named' : 'no expected useful tok/s';
+    return out('UNKNOWN', 'FLAG: no predicted binding term: ' + why + '. Before launch a many-agent recipe names its predicted useful tok/s, its binding term (decode or prefill) and the F it assumed: replay agent traffic on this build and fit its curve, or declare conditions.workload.prediction {useful_tps, binding, fresh, src}', null);
+  }
+  // the recipe facts a serving prior's applies_when reads (data.priors.predicates); every key of a prior must hold
+  function priorFacts(data, r) {
+    const S0 = (data.workload || {}).settings || {}, sv = servingOf(data, r), wl = (r.conditions || {}).workload || {};
+    const agents = firstInt(wl.agents) || (sv ? sv.s.batch : null) || 1, re = sv && sv.S.layer_split_re ? new RegExp(v(sv.S.layer_split_re)) : null;
+    const m = data.models[r.model] || {}, E = m.E !== undefined ? Number(v(m.E)) : 0;
+    return { agents, agent_traffic: agents >= (S0.many_agents_min ? v(S0.many_agents_min) : Infinity) || (!!S0.real_kind && wl.kind === v(S0.real_kind)), moe: E > 1,
+      layer_split: ((r.gpu_split || {}).banks_gib || []).length > 1 || (re !== null && re.test(String((r.conditions || {}).engine_flags || ''))), draft: !!r.draft, ctx: firstInt(r.ctx) };
+  }
+  const PRIOR_TESTS = { agent_traffic: (f, x) => f.agent_traffic === x, agents_min: (f, x) => f.agents >= x, moe: (f, x) => f.moe === x,
+    layer_split: (f, x) => f.layer_split === x, draft: (f, x) => f.draft === x, ctx_below: (f, x) => f.ctx !== null && f.ctx < x };
+  function priorsFor(data, r) {
+    if (!data.priors) return [];
+    const f = priorFacts(data, r);
+    return data.priors.rows.filter(p => Object.entries(p.applies_when).every(([k, x]) => {
+      if (!PRIOR_TESTS[k]) throw new Error('prior ' + p.id + ': applies_when.' + k + ' has no test in model.js PRIOR_TESTS (' + Object.keys(PRIOR_TESTS).join(', ') + ')');
+      return PRIOR_TESTS[k](f, x);
+    }));
+  }
+  // a prior's value as one number (a [low, high] range counts as its high end; named numbers have none)
+  const priorValue = p => Array.isArray(p.value) ? Math.max(...p.value) : typeof p.value === 'number' ? p.value : null;
+  const fmtPrior = p => (Array.isArray(p.value) ? p.value.join('-') : p.value !== null && typeof p.value === 'object' ? Object.entries(p.value).map(([k, x]) => k + ' ' + x).join(', ') : String(p.value)) + ' ' + p.unit;
+  // the fresh-per-output reference of a real-agent row (data.workload.measured): the trace-ideal ratio of the trace it replayed
+  // (its profile's trace_ideal_fresh_per_output), else the profile's fresh_reference_prior (data.priors)
+  function freshReference(data, x) {
+    const W = data.workload, pr = W.profiles[x.profile || v(W.settings.default_profile)] || {};
+    const ti = x.trace && pr.trace_ideal_fresh_per_output ? pr.trace_ideal_fresh_per_output[x.trace] : null;
+    if (ti) return { basis: 'trace-ideal', name: x.trace, v: v(ti), tag: ti.tag, src: ti.src };
+    const id = pr.fresh_reference_prior ? v(pr.fresh_reference_prior) : null, p = id && data.priors ? data.priors.rows.find(y => y.id === id) : null;
+    return p ? { basis: 'prior', name: id, v: priorValue(p), tag: p.tag, src: p.src } : null;
+  }
+  // the numeric parts of a replay's fresh breakdown with their shares ([] when the row has none)
+  const breakdownParts = b => { const xs = b && typeof b === 'object' ? Object.entries(b).filter(([, n]) => typeof n === 'number' && n >= 0) : [], tot = xs.reduce((a, [, n]) => a + n, 0);
+    return xs.map(([k, n]) => ({ k, n, share: tot > 0 ? n / tot : null })); };
+  const fmtBreakdown = ps => ps.map(p => p.k + ' ' + p.n + (p.share === null ? '' : ' (' + (100 * p.share).toFixed(0) + ' %)')).join(', ');
+  // a real-agent row whose F exceeds K (settings.replay_artifact_k) x its reference read what a working cache keeps: FLAG it a
+  // suspect replay artifact with the excess, the fresh tokens above the reference and the suspected causes
+  function replayArtifactCheck(data, x) {
+    const W = data.workload, K = v(W.settings.replay_artifact_k), ref = freshReference(data, x), F = x.fresh_per_output ? v(x.fresh_per_output) : null;
+    const out = (status, detail, o) => Object.assign({ id: 'replay_artifact', label: data.checks.replay_artifact.label, status, detail, run: x.run, n: x.n, k: K, ref, fresh: F, excess: null, surplus_tokens: null, causes: [] }, o || {});
+    if (F === null || !ref || !(ref.v > 0)) return out('UNKNOWN', F === null ? 'the row has no fresh_per_output' : 'no reference: trace ' + (x.trace || '(not named)') + ' has no trace-ideal ratio and the profile names no reference prior');
+    const excess = F / ref.v, surplus = x.out_tokens ? Math.round((F - ref.v) * x.out_tokens) : null, bd = breakdownParts(x.fresh_breakdown);
+    const head = 'F ' + F + ' fresh prompt tokens per output = ' + excess.toFixed(1) + 'x the ' + (ref.basis === 'trace-ideal' ? 'trace-ideal ratio of trace ' : 'reference prior ') + ref.name + ' (' + ref.v + ', ' + ref.tag + ')';
+    if (excess <= K) return out('PASS', head + ', within K = ' + K, { excess, surplus_tokens: surplus });
+    const causes = v(W.settings.replay_artifact_causes);
+    return out('FLAG', head + ' > K = ' + K + ': suspect replay artifact (cold restarts / evictions / template drift)' + (surplus !== null ? '; ' + surplus + ' fresh tokens above the reference in the window' : '') +
+      (x.cache_evictions ? '; ' + x.cache_evictions + ' cache evictions in the window' : '') + (bd.length ? '; fresh breakdown ' + fmtBreakdown(bd) : '; no fresh breakdown to split the causes'), { excess, surplus_tokens: surplus, causes });
+  }
+  // a real-agent row states its warm-up: seconds before the timed window (PASS), settings.warmup_none or 0 (NOTE: a cold-start
+  // window, so its F is an upper bound), nothing (FLAG); the fresh breakdown is shown when the replay gave one
+  function steadyStateCheck(data, x) {
+    const none = v(data.workload.settings.warmup_none), w = x.warmup_s, bd = breakdownParts(x.fresh_breakdown);
+    const out = (status, detail) => ({ id: 'steady_state', label: data.checks.steady_state.label, status, detail, run: x.run, n: x.n, warmup_s: w === undefined ? null : w, breakdown: bd });
+    const cold = 'cold-start window, F upper bound (every agent\'s first prompt is read cold inside the timed window)', brk = bd.length ? '; fresh breakdown ' + fmtBreakdown(bd) : '; no fresh breakdown (cold / growth / re-read)';
+    if (w === null || w === undefined) return out('FLAG', 'warmup_s not stated: ' + cold + brk);
+    if (w === none || w === 0) return out('NOTE', 'warmup_s ' + w + ': ' + cold + brk);
+    if (typeof w !== 'number' || !(w > 0)) return out('FLAG', 'warmup_s ' + JSON.stringify(w) + ' is neither seconds nor ' + none + brk);
+    return out('PASS', w + ' s of warm-up before the timed window' + brk);
+  }
+  function replayChecks(data) { return ((data.workload || {}).measured || []).map(x => ({ run: x.run, n: x.n, label: x.label, checks: [replayArtifactCheck(data, x), steadyStateCheck(data, x)] })); }
+
+  const api = { prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

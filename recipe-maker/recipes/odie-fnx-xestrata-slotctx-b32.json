@@ -54,5 +54,42 @@
   "big_slots": 1,
   "kv_resident": 4096,
   "kv": "int8"
+ },
+ "fallback_plan": {
+  "src": "lab notes retained slot-context serving intent; no live placement receipt",
+  "classes": {
+   "dense": {"tier": "gpu", "src": "retained two-B70 layer split"},
+   "hot_experts": {"tier": "gpu", "src": "gpu_split banks_gib 17.72/22.24"},
+   "cold_experts": {"tier": "dram", "src": "source host expert complement; stage-lend applicability still unverified"},
+   "kv": {"tier": "dram", "src": "serving.kv_resident ring with pinned host copy", "decision": {"reason": "explicitly stream older KV to preserve expert VRAM", "src": "--kv-resident 4096"}},
+   "drafter": {"tier": "unknown", "src": "UNKNOWN: actual drafter allocation not proved"},
+   "drafter_state": {"tier": "on", "src": "recipe draft=true, MTP --spec 4"},
+   "batch_mtp": {"tier": "on", "src": "conditions.draft_n expects engine default batch-MTP; grouped pipeline must be checked"},
+   "dense_op": {"tier": "unknown", "src": "UNKNOWN: setup flags are not dispatch evidence"},
+   "shexp_op": {"tier": "unknown", "src": "UNKNOWN: no positive kernel receipt"},
+   "hc_op": {"tier": "unknown", "src": "UNKNOWN: no positive kernel receipt"},
+   "execution": {"tier": "batched", "src": "--batch 32 --batch-groups 2"},
+   "host_pins": {"tier": "dram", "src": "hostPinnedBudget accounts for GTT outside memcg", "decision": {"reason": "host KV and expert pins are deliberate; total ceiling still applies", "src": "checks.host_pinned"}}
+  }
+ },
+ "expert_residency": {
+  "host_experts_gib": {
+   "v": null,
+   "tag": "READ",
+   "src": "checks.host_pinned fnx/strata experts_offgpu_gib; only with stage-lend dropped; retained plan does not declare it, so add stage-lend below"
+  },
+  "available_gib": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: current pre-load MemAvailable not probed for this recipe"
+  },
+  "other_gib": {
+   "v": null,
+   "tag": "UNKNOWN",
+   "src": "UNKNOWN: staging, dense-host/shadow and service allocations not live-audited"
+  },
+  "mode": "resident",
+  "live_verified": false,
+  "src": "checks.host_pinned fnx/strata experts_offgpu_gib; only with stage-lend dropped; retained plan does not declare it, so add stage-lend below; current live residency/RAM unverified pending passive audit"
  }
 }

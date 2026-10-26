@@ -2,7 +2,7 @@
 
 [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) is a mixture-of-experts model (35B
 total, about 3B active per token) with 40 layers: 30 Gated DeltaNet (linear attention) and 10 full
-attention layers with 2 KV heads of 256. It is the model our coding agents run on. Measured
+attention layers with 2 KV heads of 256. Our coding agents ran on it in September 2026. Measured
 2026-09-24 on one B70.
 
 ## Decode
@@ -86,4 +86,4 @@ model finished 15 of 24 runs with thinking capped (about 2 minutes a task), and 
 Qwen3.8-27B 22 of 24 with thinking off (about 3 minutes); capping or disabling thinking made no
 detectable difference for either.
 
--- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

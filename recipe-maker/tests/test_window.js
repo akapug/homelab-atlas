@@ -94,6 +94,34 @@ test('calibration: the fit points are matched, the check points within 3 % stage
   W.extras.filter(e => e.kernel_scale_alt).forEach(e => assert.strictEqual(g.K.extras[e.id], 0));
 });
 
+test('held-out throughput and stages cannot change fitted efficiency; training throughput can', () => {
+  const d = clone(data), X = d.window.configs[key], checks = X.points.filter(p => p.use === 'check');
+  assert(checks.length > 0, 'the causal control must perturb actual held-out points');
+  X.points.filter(p => p.use !== 'fit').forEach(p => { if (p.tps) p.tps.v *= 2; p.stage_ms.v = p.stage_ms.v.map(x => x * 3); });
+  assert.deepStrictEqual(FM.winFit(d, key).K, fit.K, 'check observations are not training operands');
+  X.points.filter(p => p.use === 'fit' && p.tps).forEach(p => { p.tps.v *= 2; });
+  assert(Math.abs(FM.winFit(d, key).K.eta / fit.K.eta - 2) < 1e-12, 'training throughput changes the fitted eta');
+});
+
+test('without valid training throughput efficiency and downstream throughput remain UNKNOWN', () => {
+  const d = clone(data), X = d.window.configs[key];
+  X.points.filter(p => p.use === 'fit').forEach(p => { p.tps = { v: null }; });
+  const f = FM.winFit(d, key), step = FM.winStep(X, v(X.settings.plan_agents), f.K);
+  assert.strictEqual(f.K.eta, null);
+  assert.strictEqual(f.status, 'UNKNOWN');
+  assert.strictEqual(step.total, null);
+  assert.strictEqual(step.per_agent, null);
+  assert(f.residuals.every(p => p.tps_pred === null && p.tps_err === null && p.law_err === null));
+  const report = FM.winReport(d, key);
+  assert.strictEqual(report.status, 'UNKNOWN');
+  assert.strictEqual(report.plan, null);
+  assert.deepStrictEqual(FM.winLevers(d, key, { fit: f }).levers, [], 'no ranking of unknown throughput');
+  for (const invalid of [0, -1, NaN, Infinity]) {
+    X.points.filter(p => p.use === 'fit').forEach(p => { p.tps = { v: invalid }; });
+    assert.strictEqual(FM.winFit(d, key).K.eta, null, 'only finite positive training observations may identify eta');
+  }
+});
+
 test('an anchor starts the plan at a measured point and predicts the same run at two agents within 2 %', () => {
   const id = W.settings.plan_anchor && W.settings.plan_anchor.v, p = id && W.points.find(x => x.id === id);
   assert(p, 'the config names a plan anchor among its points');
@@ -200,7 +228,7 @@ generic('another model and card: a config built from scratch gets its own rankin
     card_bw_gbs: t(100, 'READ'), whatif_cards: [], extras: [],
     settings: { gamma: t(1, 'PRIOR'), omega_max_us: { v: 10, src: 'test' }, omega_step_us: { v: 1, src: 'test' }, graph_launch_us: t(0, 'ESTIMATE'), lever_xfloor: t(1, 'ESTIMATE'), lever_xfloor_grid: { v: [1, 2], src: 'test' },
       plan_agents: { v: 8, src: 'test' }, agents_grid: { v: [2, 8], src: 'test' }, whatif_stages: { v: [1, 2], src: 'test' }, extra_lever_share: t(0.5, 'ESTIMATE') },
-    points: [{ id: 'p', use: 'fit', agents: 8, stage_ms: t([12, 12]) }]
+    points: [{ id: 'p', use: 'fit', agents: 8, stage_ms: t([12, 12]), tps: t(1000 / 3) }]
   };
   const d = { window: { default: 'toy', configs: { toy: X } } }, f = FM.winFit(d, 'toy');
   assert(Math.abs(f.residuals[0].stage_pred[0] - 12) < 1e-6, JSON.stringify(f.residuals[0]));
@@ -301,7 +329,7 @@ generic('a profile on another model and card: its terms, its gap, its floors ran
     card_bw_gbs: t(100, 'READ'), whatif_cards: [], extras: [],
     settings: { gamma: t(1, 'PRIOR'), omega_max_us: { v: 10, src: 'test' }, omega_step_us: { v: 1, src: 'test' }, graph_launch_us: t(0, 'ESTIMATE'), lever_xfloor: t(1, 'ESTIMATE'), lever_xfloor_grid: { v: [1, 2], src: 'test' },
       plan_agents: { v: 8, src: 'test' }, agents_grid: { v: [2, 8], src: 'test' }, whatif_stages: { v: [1, 2], src: 'test' }, extra_lever_share: t(0.5, 'ESTIMATE') },
-    points: [{ id: 'p', use: 'fit', agents: 8, stage_ms: t([12, 12]) }],
+    points: [{ id: 'p', use: 'fit', agents: 8, stage_ms: t([12, 12]), tps: t(1000 / 3) }],
     profile: { point: 'p', totals_ms: t([5, 6]), gap: { label: 'g', rows_basis: t('stage', 'ESTIMATE') },
       terms: [term('A', 'a', [2, 2], [['alpha', 1]]), term('B', 'b', [3, 3], [['beta', 1]]), term('last', 'head', [0, 1], [], 'fixed')] }
   };
@@ -333,7 +361,7 @@ etest('evidence: each lever lists the attempts on its classes, a loss with its r
     assert.deepStrictEqual(e.repaired_by, W.attempts.filter(b => b.repairs === e.id).map(b => b.id));
   }));
   // an engine-wide attempt shows on every lever with kernels and on none without
-  W.attempts.filter(a => a.classes.includes('*')).forEach(a => all.forEach(x => assert.strictEqual((RE.evidence[x.lever] || []).some(e => e.id === a.id), (x.classes || []).length > 0, x.lever)));
+  W.attempts.filter(a => a.classes.includes('*')).forEach(a => all.forEach(x => assert.strictEqual((RE.evidence[x.lever] || []).some(e => e.id === a.id), a.outcome !== 'control' && (x.classes || []).length > 0, x.lever + ' <- ' + a.id)));
   const rep = W.attempts.find(a => a.repairs && W.attempts.find(b => b.id === a.repairs).outcome === 'loss');
   if (rep) assert(all.some(x => (RE.evidence[x.lever] || []).some(e => e.id === rep.repairs && e.repaired_by.includes(rep.id))), 'a loss is shown with its repair');
   console.log('EVIDENCE', RE.levers.levers.slice(0, 4).map(x => x.lever + ': ' + RE.evidence[x.lever].map(e => e.id + ' ' + e.outcome).join(', ')).join(' | '));

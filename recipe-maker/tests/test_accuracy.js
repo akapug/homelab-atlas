@@ -1102,4 +1102,214 @@ t('a ledger fit on runs from a dated box condition names it: lassie host, MI25 h
   assert.ok(!data.cal.boxes.droopy.host.orn122.box_conditions && !/ran under/.test(data.cal.boxes.droopy.host.orn122.src), 'droopy runs: no condition');
 });
 
+// Prospective validation uses the existing recipe -> gate capture -> ledger path, never a retrospective day/box group.
+function decisionFixture(mode) {
+  const frozen = { status: 'FROZEN', format: 'fit-calibration-v1', data_sha256: 'a'.repeat(64), evaluator_sha256: { 'src/model.js': 'b'.repeat(64) },
+    split: { observed_runs: [], decode: {}, dllm: {}, window: {} }, split_sha256: null };
+  frozen.split_sha256 = ACC.digest(frozen.split);
+  const recipes = ['a', 'b'].map((id, i) => ({ id, box: 'toy', model: 'toy', engine: 'toy', engine_build: 'toy-build', banks_gib: i + 1 }));
+  const cohort = { id: 'toy-cohort', declared_at: '2026-10-24T10:00:00Z', frozen,
+    workload: { model_sha256: 'c'.repeat(64), prompt_set_sha256: 'd'.repeat(64), quality_reference_sha256: 'e'.repeat(64), quality_prompt_set_sha256: 'f'.repeat(64),
+      context_tokens: 1024, agents: mode === 'batch-fleet' ? 2 : 1, sampling: { temperature: 0 } },
+    isolation: { id: 'dedicated-toy', scope: 'exclusive', src: 'retained isolation capture' },
+    objective: { mode: mode || 'single-seat', measured: 'decode_tps.c1', predicted: 'decode_tps',
+      ...(mode === 'batch-fleet' ? { power_scope: { participants: ['toy'], components: ['cpu', 'gpu'], src: 'synthetic complete CPU+GPU meter scope' } } : {}) },
+    constraints: [{ id: 'quality', kind: 'quality', unit: 'KL/token', measured: 'kl', predicted: 'quality.kld', op: '<=', limit: 0.1 },
+      { id: 'memory', kind: 'memory', unit: 'GiB', measured: 'vram_post_gib', predicted: 'vram_post_gib', op: '<=', limit: 10 }],
+    candidates: recipes.map(r => ({ id: r.id, run_id: 'run-' + r.id, recipe: r })) };
+  const d = { meta: { calibration: frozen }, accuracy: { workloads: { 'single-seat': { decode_target_tps: 25 }, 'batch-fleet': { per_agent_floor_tps: 10 } } } };
+  const predict = r => ({ status: 'PREDICTED', decode_tps: r.id === 'a' ? 30 : 28, quality: { kld: 0.02 }, vram_post_gib: 5,
+    accepted_tps: r.id === 'a' ? 60 : 56, gpu_cpu_watts: 100, min_agent_tps: 20 });
+  const rows = recipes.map((r, i) => {
+    const recipe = { ...r, validation: { candidate: r.id, cohort } }, capture = ACC.captureDecision(d, recipe, predict, '2026-10-24T10:01:00Z');
+    return { id: 'run-' + r.id, when: '2026-10-24T10:02:00Z', pred_basis: 'launch', scored: true, bad: [], disturbed: [], in_sample: [],
+      run: { recipe, check: { prediction: { validation: capture } }, measured: { outcome: 'ok', decode_tps: { c1: i ? 32 : 26 }, kl: 0.03, vram_post_gib: 5,
+        accepted_tps: i ? 64 : 52, gpu_cpu_watts: 100, min_agent_tps: 20,
+        validation: { cohort_sha256: capture.cohort_sha256, candidate: r.id, workload: cohort.workload, isolation: cohort.isolation,
+          ...(mode === 'batch-fleet' ? { power_scope: cohort.objective.power_scope } : {}) },
+        src: { decode_tps: 'decode log', kl: 'quality log', vram_post_gib: 'memory log', accepted_tps: 'accepted log', gpu_cpu_watts: 'CPU+GPU meter', min_agent_tps: 'per-agent log', validation: 'exact scope capture' } } },
+      pred: { ...predict(r), basis: 'launch', calibration: frozen, validation: capture } };
+  });
+  return { d, cohort, recipes, predict, rows };
+}
+
+t('prospective matched alternatives score decision error, observed rank and regret without fitting outcomes', () => {
+  const { rows } = decisionFixture(), before = JSON.stringify(rows), x = ACC.decisions(rows);
+  assert.strictEqual(x.status, 'SCORED');
+  assert.strictEqual(x.cohorts.length, 1);
+  const c = x.cohorts[0];
+  assert.strictEqual(c.selected, 'a');
+  assert.strictEqual(c.observed_best, 'b');
+  assert.strictEqual(c.selected_observed_rank, 2);
+  assert.strictEqual(c.rank_pairs, 1);
+  assert.strictEqual(c.rank_inversions, 1);
+  assert.strictEqual(c.rank_error_fraction, 1);
+  assert.strictEqual(c.regret, 6);
+  assert.strictEqual(c.quality_misclassifications, 0);
+  assert.strictEqual(c.feasibility_misclassifications, 0);
+  assert.strictEqual(JSON.stringify(rows), before, 'scoring never rewrites captured predictions or observations');
+});
+
+t('missing alternatives and historical predictions never invent regret', () => {
+  const { rows } = decisionFixture();
+  assert.strictEqual(ACC.decisions(rows.slice(0, 1)).cohorts[0].reason, 'INCOMPLETE_COHORT');
+  const historical = JSON.parse(JSON.stringify(rows));
+  historical.forEach(r => { delete r.pred.validation; });
+  const x = ACC.decisions(historical);
+  assert.strictEqual(x.status, 'UNKNOWN');
+  assert.strictEqual(x.cohorts.length, 0);
+  assert.strictEqual(x.regret, null);
+});
+
+t('observed outcomes cannot change the frozen selected candidate; a known quality loss is not a timeout penalty', () => {
+  const { rows } = decisionFixture(), saved = JSON.stringify(rows.map(r => r.pred.validation));
+  rows[0].run.measured.decode_tps.c1 = 40;
+  const better = ACC.decisions(rows).cohorts[0];
+  assert.strictEqual(better.selected, 'a');
+  assert.strictEqual(better.regret, 0);
+  rows[0].run.measured.kl = 0.2;
+  const bad = ACC.decisions(rows).cohorts[0];
+  assert.strictEqual(bad.status, 'SCORED');
+  assert.strictEqual(bad.quality_misclassifications, 1);
+  assert.strictEqual(bad.feasibility_misclassifications, 1);
+  assert.strictEqual(bad.regret, null);
+  assert.strictEqual(bad.regret_reason, 'SELECTED_INFEASIBLE');
+  assert.strictEqual(JSON.stringify(rows.map(r => r.pred.validation)), saved);
+});
+
+t('decision cohorts type every unsupported observation UNKNOWN instead of zero regret or infeasibility', () => {
+  const cases = [
+    ['quality absent', r => { delete r[0].run.measured.kl; }, 'MISSING_MEASUREMENT'],
+    ['source absent', r => { r[0].run.measured.src.kl = ''; }, 'MISSING_MEASUREMENT'],
+    ['workload changed', r => { r[0].run.measured.validation.workload.context_tokens++; }, 'MEASUREMENT_IDENTITY_MISMATCH'],
+    ['isolation changed', r => { r[0].run.measured.validation.isolation.scope = 'unprobed shared'; }, 'MEASUREMENT_IDENTITY_MISMATCH'],
+    ['recipe changed', r => { r[0].run.recipe.banks_gib++; }, 'MEMBER_MISMATCH'],
+    ['missing launch checks', r => { delete r[0].run.check; }, 'MEMBER_MISMATCH'],
+    ['post-hoc', r => { r[0].pred_basis = 'post-hoc'; }, 'MEMBER_MISMATCH'],
+    ['interference', r => { r[0].disturbed = ['c1']; }, 'INTERFERENCE'],
+    ['harness', r => { r[0].causes = ['tool_bug']; }, 'HARNESS_FAILURE'],
+    ['timeout', r => { r[0].run.measured.outcome = 'stopped'; }, 'OUTCOME_NOT_OK'],
+    ['degraded', r => { r[0].run.measured.degraded = ['memory pressure']; }, 'DEGRADED_OBSERVATION'],
+    ['confounded', r => { r[0].scored = false; }, 'CONFOUNDED_OR_TRAINING'],
+    ['in training', r => { r[0].in_sample = ['anchor']; }, 'CONFOUNDED_OR_TRAINING'],
+    ['late capture', r => { r[0].pred.validation.captured_at = '2026-10-24T10:03:00Z'; }, 'HINDSIGHT_CAPTURE'],
+    ['changed prediction', r => { r[0].pred.validation.predictions[0].prediction.decode_tps++; }, 'COHORT_IDENTITY_MISMATCH'],
+  ];
+  cases.forEach(([name, mutate, reason]) => {
+    const rows = JSON.parse(JSON.stringify(decisionFixture().rows)); mutate(rows);
+    const x = ACC.decisions(rows).cohorts[0];
+    assert.strictEqual(x.status, 'UNKNOWN', name);
+    assert.strictEqual(x.reason, reason, name);
+    assert.strictEqual(x.regret, null, name);
+    assert.strictEqual(x.selected_observed_rank, null, name);
+  });
+});
+
+t('batch-fleet uses total accepted work per measured CPU+GPU watt and the named configurable per-agent floor', () => {
+  const { rows } = decisionFixture('batch-fleet'), x = ACC.decisions(rows).cohorts[0];
+  assert.strictEqual(x.status, 'SCORED');
+  assert.strictEqual(x.objective.per_agent_floor_tps, 10);
+  assert.strictEqual(x.headline_total_accepted_tps, 52);
+  assert(Math.abs(x.regret - 0.12) < 1e-12);
+  assert.strictEqual(x.members[0].measured, 0.52);
+  rows[0].run.measured.min_agent_tps = 9;
+  assert.strictEqual(ACC.decisions(rows).cohorts[0].regret_reason, 'SELECTED_INFEASIBLE');
+  for (const watts of [undefined, null, 0, -1]) {
+    rows[0].run.measured.gpu_cpu_watts = watts;
+    const c = ACC.decisions(rows).cohorts[0];
+    assert.strictEqual(c.status, 'UNKNOWN');
+    assert.strictEqual(c.reason, 'MISSING_MEASUREMENT');
+    assert.strictEqual(c.regret, null, 'never substitute predicted/zero watts');
+  }
+});
+
+t('capture rejects observed alternatives, stale splits, replicas and missing identities and freezes a defensive copy', () => {
+  const make = () => { const f = decisionFixture(); return { ...f, r: { ...f.recipes[0], validation: { candidate: 'a', cohort: f.cohort } } }; };
+  const cases = [
+    f => { f.cohort.frozen.split.observed_runs.push('run-a'); f.cohort.frozen.split_sha256 = ACC.digest(f.cohort.frozen.split); },
+    f => { f.cohort.frozen.split_sha256 = '9'.repeat(64); },
+    f => { f.cohort.workload.quality_reference_sha256 = null; },
+    f => { f.cohort.candidates[1].recipe.banks_gib = f.cohort.candidates[0].recipe.banks_gib; },
+    f => { f.cohort.frozen.status = 'UNKNOWN'; },
+  ];
+  cases.forEach(mutate => { const f = make(); mutate(f); assert.throws(() => ACC.captureDecision(f.d, f.r, f.predict, '2026-10-24T10:01:00Z'), /validation:/); });
+  const f = make(), cap = ACC.captureDecision(f.d, f.r, f.predict, '2026-10-24T10:01:00Z'), bytes = JSON.stringify(cap);
+  f.cohort.constraints[0].limit = 99;
+  assert.strictEqual(JSON.stringify(cap), bytes, 'later declaration edits do not mutate captured predictions');
+  const stale = make(); stale.d.meta.calibration = { ...stale.d.meta.calibration, data_sha256: '9'.repeat(64) };
+  assert.throws(() => ACC.captureDecision(stale.d, stale.r, stale.predict, '2026-10-24T10:01:00Z'), /current frozen/);
+});
+
+['single-seat', 'batch-fleet'].forEach(mode => t('prospective ' + mode + ' survives the real --check, record_run and --accuracy JSON-file contracts', () => {
+  const cp = require('child_process'), os = require('os'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fit-decision-'));
+  try {
+    const fixture = decisionFixture(mode), c = fixture.cohort;
+    c.id = 'synthetic-integration-' + mode; c.frozen = JSON.parse(JSON.stringify(data.meta.calibration));
+    if (mode === 'batch-fleet') c.objective.power_scope.participants = ['droopy'];
+    c.constraints.forEach(x => { x.limit = 100; });
+    const base = recipe('droopy-b1b-hot2p2-t20.json');
+    c.candidates = ['a', 'b'].map((id, i) => ({ id, run_id: 'synthetic-decision-' + id,
+      recipe: { ...base, id: 'synthetic-recipe-' + id, banks_gib: 2.24 + i * 0.01 } }));
+    const captures = c.candidates.map(member => {
+      const r = { ...member.recipe, validation: { candidate: member.id, cohort: c } }, file = path.join(dir, member.id + '.recipe.json');
+      fs.writeFileSync(file, JSON.stringify(r));
+      const p = cp.spawnSync(process.execPath, [path.join(ROOT, 'report.js'), '--check', file, '--json'], { encoding: 'utf8', maxBuffer: 8 << 20 });
+      assert([0, 1, 3].includes(p.status), p.stdout + p.stderr);
+      const check = JSON.parse(p.stdout), cf = path.join(dir, member.id + '.check.json');
+      assert(check.prediction.validation.cohort_sha256);
+      if (mode === 'batch-fleet') check.prediction.validation.predictions.forEach(x => {
+        ['accepted_tps', 'gpu_cpu_watts', 'min_agent_tps'].forEach(k => assert.strictEqual(x.prediction[k], undefined, 'real predictor does not supply ' + k));
+      });
+      fs.writeFileSync(cf, p.stdout);
+      return { member, check, file, cf };
+    });
+    const when = new Date(Date.now() + 2000).toISOString().slice(0, 19) + 'Z', ledger = path.join(dir, 'runs.jsonl');
+    captures.forEach(({ member, check, file, cf }, i) => {
+      const m = { outcome: 'ok', decode_tps: { c1: i ? 32 : 26 }, kl: 0.03, vram_post_gib: 5,
+        ...(mode === 'batch-fleet' ? { accepted_tps: i ? 64 : 52, gpu_cpu_watts: 100, min_agent_tps: 20 } : {}),
+        validation: { cohort_sha256: check.prediction.validation.cohort_sha256, candidate: member.id, workload: c.workload, isolation: c.isolation,
+          ...(mode === 'batch-fleet' ? { power_scope: c.objective.power_scope } : {}) },
+        src: { decode_tps: 'synthetic decode fixture', kl: 'synthetic quality fixture', vram_post_gib: 'synthetic memory fixture',
+          accepted_tps: 'synthetic accepted fixture', gpu_cpu_watts: 'synthetic CPU+GPU meter fixture', min_agent_tps: 'synthetic per-agent fixture', validation: 'synthetic exact workload/isolation fixture' } };
+      const mf = path.join(dir, member.id + '.measured.json'); fs.writeFileSync(mf, JSON.stringify(m));
+      const p = cp.spawnSync('python3', [path.join(ROOT, 'tools', 'record_run.py'), '--recipe', file, '--check', cf, '--measured', mf,
+        '--id', member.run_id, '--when', when, '--source', 'synthetic integration fixture, no model execution', '--runs', ledger], { encoding: 'utf8' });
+      assert.strictEqual(p.status, 0, p.stdout + p.stderr);
+      if (i === 0) {
+        m.validation.isolation = { ...m.validation.isolation, scope: 'unknown scope' };
+        fs.writeFileSync(mf, JSON.stringify(m));
+        const refused = cp.spawnSync('python3', [path.join(ROOT, 'tools', 'record_run.py'), '--recipe', file, '--check', cf, '--measured', mf,
+          '--id', member.run_id, '--when', when, '--source', 'synthetic negative identity fixture', '--dry-run'], { encoding: 'utf8' });
+        assert.strictEqual(refused.status, 1);
+        assert(/measured.validation/.test(refused.stderr), refused.stderr);
+      }
+    });
+    const raw = fs.readFileSync(ledger, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepStrictEqual(raw[0].prediction, captures[0].check.prediction, 'record_run does not replace frozen predictions');
+    const out = path.join(dir, 'accuracy.json'), p = cp.spawnSync(process.execPath, [path.join(ROOT, 'report.js'), '--accuracy', ledger, '--json', out], { encoding: 'utf8', maxBuffer: 8 << 20 });
+    assert.strictEqual(p.status, 0, p.stderr);
+    const scored = JSON.parse(fs.readFileSync(out, 'utf8')).decision_validation;
+    if (mode === 'batch-fleet') {
+      assert.strictEqual(scored.status, 'UNKNOWN', JSON.stringify(scored));
+      assert.strictEqual(scored.cohorts[0].reason, 'UNMODELLED_PREDICTION');
+      assert.strictEqual(scored.cohorts[0].regret, null);
+      assert.strictEqual(scored.cohorts[0].selected_observed_rank, null);
+    } else {
+      assert.strictEqual(scored.status, 'SCORED', JSON.stringify(scored));
+      assert.strictEqual(scored.cohorts[0].members.length, 2);
+      assert.strictEqual(scored.cohorts[0].objective.decode_target_tps, 25);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}));
+
+t('split identity records actual efficiency training and excludes residual-only rows from fitted operands', () => {
+  const split = ACC.calibrationSplit({ cal: { boxes: { toy: { f: { runs: ['train'] } } }, rows: [{ runs: ['check'] }] },
+    recipes: [{ run_id: 'train' }, { run_id: 'check' }] });
+  assert.deepStrictEqual(split.shared.fitted_run_ids, ['train']);
+  assert.deepStrictEqual(split.observed_runs, ['check', 'train']);
+  Object.keys((data.window || {}).configs || {}).forEach(key => {
+    assert.deepStrictEqual(data.meta.calibration.split.window[key].eta_train, FM.winFit(data, key).eta_training.slice().sort());
+  });
+});
+
 console.log(`${n} tests passed`);

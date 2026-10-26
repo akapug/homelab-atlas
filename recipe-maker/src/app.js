@@ -526,6 +526,27 @@
     const notes = [r.measured.length ? 'measured ' + r.measured.map(m => f1(m.tps) + (m.used ? '' : ' (not fitted)')).join(', ') + ' tok/s total' : '', r.extrapolated ? 'past the largest measured count (' + R.fit.n_max + '): extrapolated' : '', r.beyond_slots ? 'needs the engine started with --batch ' + n + ' or more' : '', r.fits_host === false ? 'more slots than host memory safely holds (' + R.host.ceiling + ')' : ''].filter(Boolean);
     return `<b>${n} agent${n > 1 ? 's' : ''} at once</b><br>${f1(r.total)} tok/s in total, ${f1(r.each)} tok/s each${notes.length ? '<br><span class="muted">' + esc(notes.join('; ')) + '</span>' : ''}`;
   }
+  // the curve's totals are decode capacity (short synthetic prompts); real agents also read fresh prompt tokens, and the
+  // prefill rate measured on replayed agent traffic of the same build caps useful output at P / F (src/model.js agentPlan)
+  function workloadHTML(R) {
+    if (!data.workload) return '';
+    const n = R.headline.n >= 1 ? R.headline.n : v(data.workload.settings.table_n)[0], P = FM.agentPlan(data, R.cfg, { n: [n] }), r = P.rows[0], F = v(P.fresh);
+    let h = `<div class="callout" id="workload-head"><p class="small" style="margin:0 0 4px"><b>These totals are decoding speed, not agent throughput.</b> The runs behind the curve give each agent one short prompt and then time the writing only. A real coding agent also reads new prompt text every turn: about ${F} fresh prompt tokens for every token it writes ${chip(P.fresh)} (new tool results and file contents, plus text read again after the engine drops it from its cache).</p>`;
+    if (!P.prefill) return h + `<p class="small" style="margin:0">No run replayed real agent traffic on this build, so how much useful text ${n} agents get here is not known yet.</p>` + groundingHTML(R.cfg, n, P) + '</div>';
+    h += `<p class="small" style="margin:0">${P.prefill_basis === 'model' ? 'No run replayed real agent traffic on this build yet; from its cards, link and expert placement it is predicted to read' : 'On real agent traffic this build reads'} prompts at ${f1(v(P.prefill))} tok/s ${chip(P.prefill)}, so agents can write at most ${f1(r.prefill_cap)} tok/s in total however many there are. At ${n} agents decoding alone could give ${f1(r.decode)} tok/s, so <b>${r.binding === 'prefill' ? 'reading prompts is the limit (prefill-bound)' : 'decoding is the limit (decode-bound)'}</b>${P.stall && r.expect ? `; because a long read pauses every agent's decoding, expect about ${f1(r.expect)} tok/s` : ''}.${r.real.length ? ' Measured on replayed agent traffic: ' + r.real.map(x => f1(x.tps) + ' tok/s').join(', ') + '.' : ''}</p>`;
+    return h + groundingHTML(R.cfg, n, P) + '</div>';
+  }
+  // what the replays of this build are worth (checks replay_artifact, steady_state) and what published work and our own logs
+  // expect at this agent count (data.priors whose applies_when the config's facts satisfy: src/model.js priorsFor)
+  function groundingHTML(c, n, P) {
+    const rec = { box: c.box, model: c.model, engine: c.engine, ctx: c.ctx, draft: c.draft, serving: Object.assign({}, c.serving, { batch: n }), conditions: { engine_flags: c.flags, workload: { agents: n } } };
+    const ps = FM.priorsFor(data, rec), runs = new Set(P.evidence.same.map(x => x.run));
+    const rc = FM.replayChecks(data).filter(x => runs.has(x.run)), art = rc.filter(x => x.checks[0].status === 'FLAG'), cold = rc.filter(x => x.checks[1].status !== 'PASS');
+    let h = '';
+    if (art.length || cold.length) h += `<p class="small" style="margin:4px 0 0"><b>Read the replays with care:</b> ${art.length ? `${art.length} of ${rc.length} read ${art.map(x => x.checks[0].excess.toFixed(1)).join(', ')}x the fresh prompt tokens per output a perfect cache would (suspect replay artifacts: cold restarts, evictions, template drift), so their prefill limit understates a well-cached server. ` : ''}${cold.length ? `${cold.length} timed their window from a cold start, so their F is an upper bound.` : ''}</p>`;
+    if (ps.length) h += `<details><summary class="small">What published work and our own logs expect at ${n} agents (${ps.length} priors)</summary><ul class="small">${ps.map(p => `<li><b>${esc(FM.fmtPrior(p))}</b> ${chip({ tag: p.tag, src: p.src, evidence: p.evidence })} ${esc(p.statement)}</li>`).join('')}</ul></details>`;
+    return h;
+  }
   function curveHTML() {
     const S = data.curves.settings, min = st.curveMin || v(S.min_each_tps), list = curveList(min);
     if (!list.length) return '<h2 id="agents-h">How many agents at once</h2><p class="muted">No ledger run measured two or more agent counts in this build.</p>';
@@ -533,7 +554,7 @@
     st.curveR = R;
     const AW = app.clientWidth || 720, W = Math.round(Math.max(280, Math.min(AW >= 980 ? (AW - 60) / 2 : AW - 40, 620)));
     const ag = n => n + ' agent' + (n === 1 ? '' : 's');
-    let h = `<h2 id="agents-h">How many agents at once</h2><p class="small muted">An agent here is one coding assistant session asking the model for text. More agents at once make more text in total, but each one gets a smaller share. These curves come from runs we measured on our own boxes; between and past them the model fills in.</p>`;
+    let h = `<h2 id="agents-h">How many agents at once</h2><p class="small muted">An agent here is one coding assistant session asking the model for text. More agents at once make more text in total, but each one gets a smaller share. These curves come from runs we measured on our own boxes; between and past them the model fills in. Those runs give each agent one short prompt and time only the writing, so the curves show decode speed, not what real coding agents get.</p>`;
     h += `<div class="row"><label style="max-width:100%">setup <select id="c-curve" style="max-width:100%">${list.map(r => `<option value="${esc(r.cfg.key)}" ${r === R ? 'selected' : ''}>${esc(r.cfg.box + ': ' + (r.cfg.label || r.cfg.id))}</option>`).join('')}</select></label>`;
     h += `<label title="${esc(S.min_each_tps.src)}">each agent needs at least <input type="number" id="c-cmin" min="1" max="200" step="1" value="${min}" style="width:5em"> tok/s</label></div>`;
     h += `<div class="callout" id="curve-head"><p style="margin:0 0 4px"><b style="font-size:18px">${H.n >= 1 ? ag(H.n) + (H.at_max ? ' or more' : '') : 'No agent count'}</b> can work at once with each getting at least ${min} tok/s${H.n >= 1 ? `; together they make <b>${f1(H.total)} tok/s</b> (${f1(H.each)} each).` : '.'}</p>`;
@@ -543,6 +564,7 @@
     else if (hc.ceiling !== null && !hc.all_fit) h += `<p class="small" style="margin:0">Host memory holds up to ${ag(hc.ceiling)} on ${esc(c.box)}.${hc.with_lend_drop !== undefined ? ` With STRATA_STAGE_LEND_DROP=1: ${hc.with_lend_drop}.` : ''}</p>`;
     h += `<p class="small" style="margin:0">At ${R.second_min} tok/s or more each: ${ag(S2.n)}, ${f1(S2.total)} tok/s in total. However many agents join, this setup tops out near ${f1(R.asymptote)} tok/s in total.</p>`;
     h += `<p class="small muted" style="margin:0">${R.power.length ? 'Power: ' + R.power.map(p => `${ag(p.n)} at ${f1(p.watts)} W = ${f2(p.tps_per_w)} tok/s per watt`).join('; ') + (H.tps_per_w ? `; at the headline ${f2(H.tps_per_w)} tok/s per watt (${H.watts.tag === 'MEASURED' ? 'measured' : 'between measured counts'})` : '') + '. Watts as each run measured them (the run row says what they count), not wall power unless it says so.' : 'Power: no watts recorded for these runs yet.'}</p></div>`;
+    h += workloadHTML(R);
     h += `<div class="grid2"><div>${curveChart(R, 'total', W, 'Total tok/s, all agents together')}</div><div>${curveChart(R, 'each', W, 'tok/s each agent gets')}</div></div>`;
     h += `<p class="small muted">Solid line: between the agent counts we measured; dashed: projected past them. Filled dots: measured runs (hollow: shown but not used, e.g. one agent on the single-stream path). Shaded: more agent slots than host memory safely holds. Hover a chart for any agent count.</p>`;
     h += `<p class="sr-only">${esc(`${c.label}: at ${min} tok/s each, ${H.n} agents, ${f1(H.total)} tok/s total; at ${R.second_min} each, ${S2.n} agents; asymptote ${f1(R.asymptote)} tok/s; host memory holds ${hc.ceiling === null ? 'an unknown number of' : hc.ceiling} slots.`)}</p>`;
@@ -560,10 +582,11 @@
   const networkOriginal = { catalog: data.network, window: data.window };
   function networkHTML() {
     const keys = Object.keys((data.window || {}).configs || {});
-    if (!data.network || !keys.length) return '<h2 id="network-h">Kernel and network recipes</h2><p>No private window/catalog inputs in this build.</p>';
+    if (!data.network || !keys.length) return '<h2 id="network-h">Kernel and network recipes</h2><p>This tab needs a catalog of measured links between your boxes (data/interconnects.json) and a batch-window config (data/window/). This build is missing one of them, so there is nothing to rank yet.</p>';
     const key = keys.includes(st.networkWindow) ? st.networkWindow : keys.includes(data.network.settings.default_window) ? data.network.settings.default_window : keys[0], W = data.window.configs[key];
     const report = FM.winReport(data, key, { agents: st.networkAgents || v(W.settings.plan_agents) });
     window.FIT_NETWORK_REPORT = report;
+    if (report.status === 'UNKNOWN') return '<h2 id="network-h">Kernel and network recipes</h2><p id="network-rank-summary">UNKNOWN: ' + esc(report.why) + '. No throughput rank is available.</p>';
     const frontier = report.frontier, rows = frontier ? frontier.candidates : report.network, ranked = frontier ? frontier.shared_rank : [];
     const detail = x => [x.status, ...(x.comparison ? x.comparison.why : []), ...(x.checks || []).map(c => c.id + ': ' + c.detail)].join('; ');
     const editor = st.networkEditor || JSON.stringify({ catalog: data.network, profile_identity: Object.fromEntries(['mode', 'evidence_config', 'metric'].map(k => [k, W.profile && W.profile[k]])), frontier_identity: Object.fromEntries(['mode', 'evidence_config', 'metric'].map(k => [k, W.frontier && W.frontier[k]])) }, null, 2);
@@ -584,8 +607,8 @@
   // the page in tabs: [id = its first section, tab name, the one-line summary first, every section on it]; a link to any section opens its tab
   const PAGES = [
     ['box', 'Plan', 'Pick a box, then a large marker on the chart. The layout card sums that layout up.', ['box', 'whatif', 'chart', 'layout']],
-    ['network', 'Kernel + network', 'Price kernels and cross-box recipes with the same window report. Missing mode, resources or transfer inputs stay unranked.', ['network']],
-    ['agents', 'Agents at once', 'How many agents one box can serve at the same time, and how fast each one goes. Every curve comes from measured runs.', ['agents']],
+    ['network', 'Kernel + network', 'What a kernel rewrite or a plan that spans boxes would pay, from the same batch-window report. Needs measured links between your boxes; anything unmeasured is listed but not ranked.', ['network']],
+    ['agents', 'Agents at once', 'How many agents one box can serve at the same time, and how fast each one goes. The curves are decode speed on a synthetic load from measured runs; real coding agents also read new prompt text every turn and get less (see the note under the headline).', ['agents']],
     ['bytes', 'Where it lives', 'The loaded layout, byte by byte: one bar per memory tier, then how many bits each expert gets by how often it is used.', ['bytes', 'bits']],
     ['trust', 'Trust', 'How far each number goes: its evidence class, the hard checks each recorded run met or failed, whether each screening round may give a verdict, and how close the model came to every measured run. Each card opens one level deeper.', ['trust', 'checks', 'screen', 'calibration']],
     ['types', 'Edit', 'Change the quant type numbers the model uses, and write down an idea to download with the current view.', ['types', 'idea']],
@@ -803,14 +826,14 @@
     return h + '</table></div></details></div>';
   }
   function checksCardHTML() {
-    let h = '<div class="card"><h2>Hard checks on every recorded run</h2><div class="small muted">Each recipe is checked for: storage tier of on-file tensors (never a rotational disk), VRAM peak (post-warm-up + transient margin, not the warm-up reading), the -rtr prefill penalty on split models, DRAM headroom per NUMA node (node MemFree after experts + non-expert interleave + host buffers + page cache must stay >= 3 GiB), the box P0 settings (numa_balancing, demotion, swap), and the 2-bit read-share quality gate. Recorded windows show what a run cost.</div>';
+    let h = '<div class="card"><h2>Hard checks on every recorded run</h2><div class="small muted">Each recipe is checked for: storage tier of on-file tensors (never a rotational disk), VRAM peak (post-warm-up + transient margin, not the warm-up reading), the -rtr prefill penalty on split models, DRAM headroom per NUMA node (node MemFree after experts + non-expert interleave + host buffers + page cache must stay >= 3 GiB), the box P0 settings (numa_balancing, demotion, swap), the 2-bit read-share quality gate, expert RAM residency, and declared memory/compute fallback paths. Missing placement/dispatch proof stays UNKNOWN. Maintained intent is labelled post-hoc and never rewrites a captured launch. Recorded windows show what a run cost.</div>';
     const recs = FM.checkRecipes(data), failed = recs.filter(r => r.checks.some(c => c.status === 'FAIL')).length;
     h += `<p class="small" style="margin:6px 0">${recs.length} recorded runs checked; ${failed} fail at least one check.</p><details><summary>Every run, check by check</summary>`;
-    h += '<div class="scroll"><table><tr><th>when</th><th>run</th><th>outcome</th><th>storage</th><th>VRAM peak</th><th>NUMA free</th><th>P0</th><th>-rtr</th><th>quality</th><th>cost</th></tr>';
+    h += '<div class="scroll"><table aria-label="Recorded run checks"><tr><th>when</th><th>run</th><th>outcome</th><th>storage</th><th>VRAM peak</th><th>NUMA free</th><th>P0</th><th>-rtr</th><th>quality</th><th>expert RAM</th><th>fallbacks</th><th>cost</th></tr>';
     recs.forEach(r => {
       const by = Object.fromEntries(r.checks.map(c => [c.id, c]));
-      const cell = id => { const c = by[id]; return c ? `<td title="${esc(c.detail || '')}" style="color:${CHKTXT[c.status]};font-weight:${c.status === 'FAIL' ? 700 : 400}">${esc(c.status)}</td>` : '<td>-</td>'; };
-      h += `<tr><td>${esc(r.when)}</td><td>${esc(r.box + ' ' + r.label)}</td><td class="small">${esc(r.outcome)}</td>${cell('storage')}${cell('vram_peak')}${cell('numa_free')}${cell('system')}${cell('rtr')}${cell('quality')}<td class="small muted">${esc(r.wasted || '')}</td></tr>`;
+      const cell = id => { const c = by[id]; return c ? `<td data-check-id="${esc(id)}" title="${esc(c.detail || '')}" style="color:${CHKTXT[c.status]};font-weight:${c.status === 'FAIL' ? 700 : 400}">${esc(c.status)}</td>` : '<td>-</td>'; };
+      h += `<tr data-run-id="${esc(r.id)}"><td>${esc(r.when)}</td><td>${esc(r.box + ' ' + r.label)}${r.recipe_audit_src ? '<br><span class="small muted">post-hoc maintained intent: ' + esc(r.recipe_audit_src) + '</span>' : ''}</td><td class="small">${esc(r.outcome)}</td>${cell('storage')}${cell('vram_peak')}${cell('numa_free')}${cell('system')}${cell('rtr')}${cell('quality')}${cell('expert_residency')}${cell('fallback')}<td class="small muted">${esc(r.wasted || '')}</td></tr>`;
     });
     h += `</table></div></details><details><summary>Measured levers (10-17): ${(data.levers || []).length}</summary><div class="scroll">`;
     h += '<table><tr><th>box</th><th>lever</th><th>before</th><th>after</th><th>source</th></tr>';

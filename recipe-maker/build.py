@@ -6,8 +6,32 @@ alone), plus OPTIONAL live source directories on the research hub (see INPUTS be
 quant-recipes.json are embedded when present.
 Run: python3 build.py   (then: node report.js for the numbers in the report)
 """
-import json, os, re, datetime, shutil, math, importlib.util
+import json, os, re, datetime, shutil, math, importlib.util, hashlib, sys
 from pathlib import Path
+
+# One Python canonicalization owner for both the build and prospective capture. The hash-only path reads stdin and
+# exits before local imports, optional live inputs or writes; callers pass raw stored JSON, never JS-reserialized floats.
+CALIBRATION_EXCLUDED_PATHS = [('meta', 'built'), ('meta', 'calibration'), ('upgrade', 'advice', 'built')]
+CALIBRATION_EXCLUDED_PATHS += [('siblings', k, 'mtime') for k in ('quant_priors', 'quant_recipes')]
+
+
+def calibration_digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+
+
+def calibration_data_sha256(data):
+    core = json.loads(json.dumps(data))
+    for path in CALIBRATION_EXCLUDED_PATHS:
+        parent = core
+        for key in path[:-1]:
+            parent = parent.get(key) or {}
+        parent.pop(path[-1], None)
+    return calibration_digest(core)
+
+
+if __name__ == '__main__' and sys.argv[1:] == ['--calibration-data-sha256']:
+    print(calibration_data_sha256(json.load(sys.stdin)))
+    raise SystemExit(0)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, 'src')
@@ -72,8 +96,11 @@ EVIDENCE = {
                 INFERRED: 'fitted, derived, estimated, or taken from a vendor spec or a community claim; src names the source',
                 UNKNOWN: 'not modelled: no number is given, or none is trusted'},
     'by_tag': {M: SEEN, 'MEASURED (bounded)': SEEN, 'MEASURED, CONFOUNDED': SEEN, 'MEASURED-UNKNOWN': UNKNOWN, 'MEASURED-BY-THEM': INFERRED,
+               'MAKER-REPORTED': INFERRED,   # a model maker's own published score (a card's benchmark table), not reproduced by us
                'INFERRED-BY-US': INFERRED, R: INFERRED, P: INFERRED, 'CLAIMED': INFERRED, 'M-ext': INFERRED, E: INFERRED, FIT: INFERRED,
-               'UNKNOWN': UNKNOWN},
+               'UNKNOWN': UNKNOWN,
+               # the serving priors' labels (data/priors-serving.json): our own logged number, someone else's published one, arithmetic
+               'MEASURED-HERE': SEEN, 'MEASURED-ELSEWHERE': INFERRED, 'INFERRED': INFERRED},
     # a src that opens with one of these words declares its own class: a tag that disagrees is a build error (10-19 audit:
     # fnx dense_gib was MEASURED with an M-ext source, strata overlap ESTIMATE with an UNKNOWN one)
     'src_words': {'MEASURED': SEEN, 'M-ext': INFERRED, 'ESTIMATE': INFERRED, 'INFERRED': INFERRED, 'PRIOR': INFERRED, 'CLAIMED': INFERRED,
@@ -307,6 +334,21 @@ types['iq3_kt'] = T(3.125, R, 'ik trellis IQ3_KT', 0.28, E, 'ESTIMATE: trellis d
 for _q in ('q4k_nl', 'gsq_iq3xxs', 'gsq_iq3s', 'iq4_kt', 'iq3_kt'):
     types[_q]['mix_handles_rows'] = 'a published or defined per-tensor mix: its down tensors already use a block-32 type'
 
+# DeepSeek V4.1 1017 GSQ-RCO files (ISTA-DASLab, created 2026-10-23): one IQ type per expert tensor and layer (all 384 experts
+# kept, no pruning), dense Q5_K/Q8_0, the Engram tables in a separate shared IQ4_NL file (103.0 GiB). bpw = routed expert
+# bytes / routed weights from the shard headers; the mixes are the repo's tensor-allocation/*.rco-allocation.txt.
+# Engines: Strata's strata-dsv41 runs them (RTX 30-50, R9700); ik's types load, but its loader reads the Engram hash
+# constants from KV arrays and the tables from the model file, while these files keep the constants as I64/I32 tensors and the
+# tables in a sidecar file (deepseek41.engram.file): ik needs a loader patch first. No MTP / DSpark tensors in the files.
+GSQ41 = 'ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF@cb02422c'
+GSQ41_KAPPA = 'ESTIMATE: IQ1/IQ2 grid-lookup kernels are compute-bound on CPU, as iq2_ks (odie AVX2 smoke 0.33)'
+for _q, _b, _gib, _mix in (('gsq41_iq1m', 1.686, 106.69, 'IQ1_S 83 / IQ2_XXS 20 / IQ1_M 15 / IQ2_S 2 of 120 expert tensors'),
+                           ('gsq41_iq2xxs', 1.944, 123.00, 'IQ1_M 60 / IQ2_XXS 42 / IQ2_XS 18 of 120 expert tensors (layers 0-9 mostly IQ1_M)'),
+                           ('gsq41_iq2xs', 2.194, 138.82, 'IQ2_XXS 76 / IQ2_XS 27 / IQ2_S 16 / IQ3_XXS 1 of 120 expert tensors')):
+    types[_q] = T(_b, R, GSQ41 + ' shard headers: routed experts %.2f GiB over 40 x 384 x 3 x 5120 x 2304 weights; %s' % (_gib, _mix), 0.33, E, GSQ41_KAPPA, None, None,
+                  note='per-layer GSQ-RCO mix; needs an ik loader patch (Engram constants as tensors + sidecar Engram file); Strata strata-dsv41 runs it as shipped',
+                  engines=('ik', 'strata'))
+
 # ---------------- expert-type KLD priors (from the sibling quant-recipes.json measured tables) ----------------
 REC = sibling_json = None
 _rp = os.path.join(HERE, 'quant-recipes.json')
@@ -429,6 +471,12 @@ kld41 = {
     'q2_K': k41('q2_K', KQ, 'K-quant factor 1.15', 0.17),
     'q2kq3k': k41('q2kq3k', KQ, 'gate/up q2_K + down q3_K at the mean bpw, K-quant factor 1.15', 0.10),
 }
+# the GSQ-RCO files: KL measured by a third party (Strata) on the final files vs the original model, 4,995 positions, its own
+# harness (not our gate's 1376-position set). For scale in our gate: our q3_K/q2_K requant (2.91 bpw read-weighted) 0.0404
+GSQ41_KL = 'PRIOR (community): Niko1221/Strata lab notes @8183c6b671 (2026-10-24), the final files vs the original model, 4,995 positions, its own harness: '
+kld41['gsq41_iq1m'] = n(0.217, P, GSQ41_KL + 'IQ1_M KL 0.217, top-1 82.5 %, perplexity +21 % (prose +53 %); maker card: 98.7 % of the task average (AIME25 / GPQA-D / LCB v6, effort 50)')
+kld41['gsq41_iq2xxs'] = n(0.170, P, GSQ41_KL + 'IQ2_XXS KL 0.170, perplexity +15.5 % (code +8.6 %, agent +5.3 %); maker card: 100.0 % of the task average')
+kld41['gsq41_iq2xs'] = n(0.107, P, GSQ41_KL + 'IQ2_XS KL 0.107, perplexity +7.3 % (code +3.2 %, agent +2.2 %); maker card: not yet scored')
 G = 'glm53f_unsloth_kld'
 GA = 'glm53f_aessedai_kld'
 kldglm = {
@@ -537,7 +585,8 @@ QPAIRS = [{'kld': k, 'top1': tp, 'src': s_} for k, tp, s_ in QP]
 engines = {
     'ik': {'name': 'ik_llama.cpp hybrid (GPU dense + hot experts, CPU experts; GPU and CPU run one after the other)',
            'types': ['mxfp4', 'mxfp4_r8', 'q2_K', 'q2kq3k', 'iq2xxs_q2k', 'q3_K', 'iq2_ks', 'iq2_kl', 'iq3_ks', 'iq4_ks', 'iq4_xs', 'q4_K', 'q5_K', 'q6_K', 'q8_0',
-                     'q4_0', 'iq4_nl', 'q4k_nl', 'gsq_iq3xxs', 'gsq_iq3s', 'iq4_kt', 'iq3_kt', 'ud_q4kxl', 'ud_q3kxl', KQM_TY],
+                     'q4_0', 'iq4_nl', 'q4k_nl', 'gsq_iq3xxs', 'gsq_iq3s', 'iq4_kt', 'iq3_kt', 'ud_q4kxl', 'ud_q3kxl', KQM_TY,
+                     'gsq41_iq1m', 'gsq41_iq2xxs', 'gsq41_iq2xs'],
            'overlap': n(0.0, M, 'lab notes lever ledger: GPU/CPU overlap (stack2) worth ~1 %')},
     'glmlite': {'name': 'glm-flash-lite / nv2 (0xSero exllamav3 offload; CPU lane runs beside the GPU)', 'types': ['exl3_2.05', 'exl3_3.05', 'exl3_4.0'],
                 'overlap': n(1.0, R, 'nv2 design: CPU lane + zero-copy beside GPU (lab notes NOTES)'),
@@ -579,10 +628,10 @@ engines = {
                  'unmodelled_why': 'mainline llama.cpp has no planner rate model (host, lane and IQ CPU kernel rates unmeasured for it); ledger-only',
                  'overlap': n(0.0, E, 'ESTIMATE: GPU and CPU run one after the other, as ik')},
     'strata': {'name': 'Strata (Niko1221/Strata @477ac13c; Qwen3.8-Flash-Next engine: expert cache in VRAM, experts in RAM, PLE table read from NVMe)',
-               'types': ['q8_0', 'q6_K', 'q5_K', 'q4_K', 'iq4_nl', 'q2_0', 'gsq_iq3s', 'gsq_iq3xxs'],
+               'types': ['q8_0', 'q6_K', 'q5_K', 'q4_K', 'iq4_nl', 'q2_0', 'gsq_iq3s', 'gsq_iq3xxs', 'gsq41_iq1m', 'gsq41_iq2xxs', 'gsq41_iq2xs'],
                'types_src': 'gsq_iq3xxs SEEN 2026-10-19: XeStrata xe0.1.45-1 served the GSQ-RCO IQ3_XXS file on odie B70 #1 (pack built by its '
                             'entrypoint), 92.7 tok/s code decode, answer checks 6/6 at effort none and high (runs/bench-raw/odie-strata-xe0145-cookbook-1019.jsonl)',
-               'models': ['fnx', 'fnxc'], 'no_solver': True, 'self_sizing_cache': True,
+               'models': ['fnx', 'fnxc', 'v41'], 'no_solver': True, 'self_sizing_cache': True,
                'overlap': n(0.0, 'UNKNOWN', 'UNKNOWN: no rate model yet; Strata is check-only (no solver curves)'),
                'packages': {'snoopy': {'backend': 'cuda', 'path': 'odie:/mnt/bulk/build/strata-477ac13c-sm86-z5 (image strata:477ac13c-sm86-z5, sm_86 + znver5, CUDA 13; SHA256SUMS)', 'src': 'odie ~/qfn-kit/Dockerfile.z5 + build-strata-z5.sh (READ 10-17)'},
                             'odie': {'backend': 'sycl', 'path': 'odie container qfn-xestrata (chriscorbell/intel-arc-pro-b70-qwen38-flash-next @6aad350 = XeStrata xe0.1.40.2.2, the SYCL port of Strata)', 'src': 'lab notes; measured run-1018T1549 (51.3 tok/s, GSQ-RCO IQ3_S)'}},
@@ -656,6 +705,9 @@ models = {
 }
 
 # V4.1 entry = the 1017 checkpoint from 10-17 on (same layout; measurements so far ran the earlier V4.1 weights)
+models['v41']['dense_gib_by_type'] = {_q: n(5.313, R, GSQ41 + ' shard headers: attention 3.487 + shared experts 0.906 + output 0.424 + Engram projections 0.202 + router 0.147 + hyper-connection 0.146 GiB '
+                                                 '(Q5_K / Q8_0 / BF16 / F32; token_embd and the Engram tables excluded, as for the 1017 Q8_0)')
+                                    for _q in ('gsq41_iq1m', 'gsq41_iq2xxs', 'gsq41_iq2xs')}
 models['v41']['checkpoint'] = {
     'id': 'deepseek-ai V4.1-Flash-1017', 'adopted': '2026-10-17 16:0xZ',
     'layout': n('byte-identical config/layout; all weights changed (MTP heads most)', R, 'lab notes 15:16Z, lab notes V4.1-Flash-1017 section'),
@@ -722,11 +774,12 @@ models['fnx'] = {
              'sets': {'glm_shape': {'label': 'synthetic: GLM live coding-routing shape (no Flash-Next counts yet)', 'tag': E, 'src': FNXH, 'layers': synth_heat(48, 512)}}},
 }
 # XeStrata serving: batch slots of mixed context and KV streaming (checks.kv_host). Every default below is the engine's
-# own, so a recipe that leaves a field out is judged as the engine would run it. Source: the lab notes fork
-# (lab notes, branch odie-fix bf0d97c..13c3f2a), src/program/generate.cpp Options and src/core/layer.cpp
-XS = 'XeStrata lab notes fork odie-fix 13c3f2a '
-QFN2 = 'MEASURED (coordinator brief 2026-10-23, qfn2 Flash-Next IQ3_XXS 2x B70 layer split, --batch 32 --batch-groups 2, MAX_CONTEXT 131072, int8 KV past --kv-resident 4096: 84.6 GiB of host-pinned GTT that cgroups and the OOM killer cannot see; it hung odie twice)'
-HL353U = 'MEASURED (lab notes uniform sweep 2026-10-23, runs odie-fnx-iq3xxs-2xb70-sweep-u24i/u32i/u32k-1023, engine init lines: host pins 45.63 / 60.99 / 47.72 GiB at 24 int8 / 32 int8 / 32 k8v4 slots of 131,072 cells, STRATA_STAGE_LEND_DROP=1)'
+# own, so a recipe that leaves a field out is judged as the engine would run it. Source: our batched XeStrata fork
+# (branch odie-fix bf0d97c..13c3f2a; the experimental fork is public at https://github.com/akapug/XeStrata, branch
+# homelab-batched), src/program/generate.cpp Options and src/core/layer.cpp
+XS = 'XeStrata batched fork (github.com/akapug/XeStrata homelab-batched; read at odie-fix 13c3f2a) '
+QFN2 = 'MEASURED (lab notes 2026-10-23, qfn2 Flash-Next IQ3_XXS 2x B70 layer split, --batch 32 --batch-groups 2, MAX_CONTEXT 131072, int8 KV past --kv-resident 4096: 84.6 GiB of host-pinned GTT that cgroups and the OOM killer cannot see; it hung odie twice)'
+HL353U = 'MEASURED (uniform sweep 2026-10-23, runs odie-fnx-iq3xxs-2xb70-sweep-u24i/u32i/u32k-1023, engine init lines: host pins 45.63 / 60.99 / 47.72 GiB at 24 int8 / 32 int8 / 32 k8v4 slots of 131,072 cells, STRATA_STAGE_LEND_DROP=1)'
 engines['strata']['serving'] = {
     'defaults': {
         'max_context': n(4096, R, XS + 'generate.cpp Options::max_context (--max-context); a recipe without serving.max_context uses its ctx'),
@@ -738,9 +791,15 @@ engines['strata']['serving'] = {
         'kv': n('fp16', R, XS + 'generate.cpp Options::kv (--kv): fp16 | int8 | q4_0 | k8v4'),
         'batch_mtp': n(None, R, XS + 'generate.cpp Options::batch_mtp -1: a drafter per batch slot whenever the recipe drafts (--batch-mtp / --no-batch-mtp)'),
         'mtp_window': n(32768, R, XS + 'generate.cpp Options::mtp_window (--mtp-window): the drafter attends to its last N cells; streamed (a ring over a host copy) when shorter than its context'),
-        'stage_lend_drop': n(False, R, 'XeStrata env STRATA_STAGE_LEND_DROP unset (coordinator brief 2026-10-23): a layer split keeps a host duplicate of the experts one stage lends the other; set it (serving.stage_lend_drop) to drop that copy'),
+        'stage_lend_drop': n(False, R, 'XeStrata env STRATA_STAGE_LEND_DROP unset (lab notes 2026-10-23): a layer split keeps a host duplicate of the experts one stage lends the other; set it (serving.stage_lend_drop) to drop that copy'),
+        'max_t': n(16, R, 'XeStrata env STRATA_BATCH_MAX_T as served (16): the most rows a batch window takes; window-row prefill fills the spare rows up to it'),
+        'cpu_pool_max_rows': n(16, R, 'XeStrata verify.cpp:476 (engine 6655dc0): the CPU expert pool computes at most MAXT 16 rows a window; a build that lifts it (engine b61bba2: 32) sets serving.cpu_pool_max_rows'),
+        'cpu_experts': n(None, R, 'null = the engine rule (engines.strata.serving.split_cpu_experts); true or false declares whether a stage computes experts on the CPU pool'),
     },
-    'main_session_per_group': n(False, M, QFN2 + ': 397 KV host copies = 12 full-attention layers x 33 streamed sessions + 1 drafter copy, so one main session beside the 32 slots (the brief\'s words "2 main + 32 slots" would make 409 copies and 53.5 GiB, not the 51.95 GiB measured); set true for an engine that keeps a main session per row group'),
+    'cpu_pool_rows_by_build': n({'4e5e5048': 32}, R, 'the CPU expert pool cap by engine build (the image key of recipe.engine_build): image 4e5e5048 (engine b61bba2) raises MAXT to 32; any other build keeps serving.cpu_pool_max_rows'),
+    'layer_split_re': n('(?:--layer-split[ =]+|layer split )(\\d[\\d,]*)', R, 'the layer split in recipe.conditions.engine_flags (the bench driver writes "layer split 25"); a recipe gpu_split with two or more banks is a split too'),
+    'split_cpu_experts': n(True, R, 'XeStrata layer split: a stage computes the experts it misses on the CPU pool (no PCIe expert share across a layer split), so its window rows must fit the pool (check cpu_pool_rows). MEASURED: 64 agents in 2 groups (32-row windows) failed to load on engine 965713e, "strata serve: layer split, stage 2: verify: the window must hold 2..32 tokens"'),
+    'main_session_per_group': n(False, M, QFN2 + ': 397 KV host copies = 12 full-attention layers x 33 streamed sessions + 1 drafter copy, so one main session beside the 32 slots (the notes\' words "2 main + 32 slots" would make 409 copies and 53.5 GiB, not the 51.95 GiB measured); set true for an engine that keeps a main session per row group'),
     'copy_overhead_mib': n(2, M, QFN2 + ': each KV host copy of 131,072 cells x 1,056 B (132 MiB of cells) takes 134 MiB; 397 copies = 51.95 GiB'),
     'kv_resident_min': n(20480, R, XS + 'layer.cpp qsa_kv_resident_min(): the VRAM ring of a streamed session holds at least 20,480 cells whatever --kv-resident says'),
     'page_cells': n(4, R, XS + 'qsa.hpp qsa_real_shapes page_size 4: KV capacity rounds up to whole pages of 4 cells'),
@@ -850,7 +909,7 @@ boxes = {
                  {'id': 'b70_2', 'name': 'Arc Pro B70 #2 (23:00.0, PCIe 4 x16)', 'vram_gib': n(29.8, R, D01), 'bw': n(608, R, D01), 'engines': ['sycl', 'strata'],
                   'other': [{'what': 'resident always-on model service (keep)', 'household': True, 'gib': n(26984 / 1024, M, PROBE + ' xpu-smi 26,984 MiB')}]}],
         'dram': {'total_gib': n(121, M, PROBE + ' free -g'), 'usable_gib': n(90, E, 'ESTIMATE: odie is the build primary and hosts the resident model service'),
-                 'pinned_margin_gib': n(16, R, 'ruling 2026-10-18 09:0xZ (homelab lead + coordinator) after two stalls (b1n2 07:12Z, b1n4 08:57Z): the xe driver allocates the pinned buffer past any floor in one burst and a SIGKILL cannot land while it is inside that allocation (b1n4: killed 08:57:01Z, exited after 09:02:41Z), so the pinned peak keeps 16 GiB beyond the household floor'),
+                 'pinned_margin_gib': n(16, R, 'ruling 2026-10-18 09:0xZ (our lab) after two stalls (b1n2 07:12Z, b1n4 08:57Z): the xe driver allocates the pinned buffer past any floor in one burst and a SIGKILL cannot land while it is inside that allocation (b1n4: killed 08:57:01Z, exited after 09:02:41Z), so the pinned peak keeps 16 GiB beyond the household floor'),
                  'host_floor_gib': n(27, M, 'odie 2026-10-18 07:12:32Z global OOM report (b1n2): CMA free 11.0 GiB (not usable for the pinned SYCL host buffer or user anon) + anon 12.2 GiB (window stop list applied; shmem tmpfs 7.9 GiB inside it) + kernel/page tables ~3 GiB; b1n at 88 GiB pinned loaded, b1n2 at ~94 GiB livelocked the box. The pinned buffer is driver memory (gpu_active), so a docker --memory cap does not hold it: this floor is the containment'),
                  'bw': n(70.1, M, 'lab notes G14: 70.1 GB/s at 16 threads (CONTAMINATED: beside the resident model service)'), 'nodes': [{'name': 'node 0', 'gib': 121}]},
         'pmem': None,
@@ -905,6 +964,8 @@ _k1 = {'mxfp4': 0.4645, 'q2_K': 0.5308, 'q2kq3k': 0.5308, 'iq2_ks': 0.3391, 'iq2
 boxes['droopy']['kappa'] = {q: n(x, M, K1 + (' (row q2_K gate/up + q3_K down)' if q in ('q2_K', 'q2kq3k') else '')) for q, x in _k1.items()}
 boxes['droopy']['kappa']['q3_K'] = n(0.5308, E, 'ESTIMATE: the K1 q2_K:q3_K row')
 boxes['droopy']['kappa']['mxfp4_r8'] = n(0.4645, M, 'END TO END = mxfp4: B0 -rtr arm decode n0 6.91 vs -rtr off 6.83 (lab notes 14:58Z / 15:52Z); K1 kernel-only 0.6885 did not carry to the server')
+for _q in ('gsq41_iq1m', 'gsq41_iq2xxs', 'gsq41_iq2xs'):
+    boxes['droopy']['kappa'][_q] = n(0.30, E, 'ESTIMATE: droopy K1 iq2_ks 0.339 at V4.1 shapes and K1-FNX IQ2_S 0.29 at Flash-Next shapes (both MEASURED); IQ1_S / IQ1_M / IQ2_XXS cells unmeasured')
 boxes['droopy']['kappa']['gsq_iq3s'] = n(0.274, M, 'K1-FNX 10-18 17:20-17:27Z (droopy, the K1 bench: ik llama-moe-mbench unpublished build, T20 on CPUs 0-19, ft, B1, xread ceiling 141-147 GB/s; lab notes): Flash-Next shapes (embd 2560, ff 640, k 10 of 512), cells IQ3_XXS 0.27 / IQ3_S 0.24 / IQ2_S 0.29 / IQ4_XS 0.50 gate-up with IQ4_NL down, weighted by the ISTA GSQ-RCO IQ3_S file\'s layer mix (gate/up 17 IQ3_XXS, 10 IQ3_S, 20 IQ2_S, 1 IQ4_XS; down IQ4_NL 39 + Q2_0 9, IQ4_NL standing in for Q2_0, which the ik bench lacks) = 0.274; experts 25.9 ms per token for 48 layers. Drift anchor: iq3_ks at V4.1 shapes 0.52 = K1 0.5217. ik iqk kernels; mainline llama.cpp IQ kernels unmeasured')
 _kr = _k1['mxfp4'] / 0.85
 for q in types:
@@ -1070,6 +1131,56 @@ anchors = [a for a in anchors if a['model'] in models and not (alloc is None and
 NUMA_B = lambda h: {'headroom_gib': h}
 B1B = 'B1b (droopy, launched 16:3xZ: 3.0 GiB banks T40, then 2.2 GiB T20). Survives -> margin <= 1.49 GiB; OOM -> margin > 1.49 GiB'
 checks = {
+    'agent_workload': {'label': 'agent throughput rests on a real-agent workload (decode capacity vs prefill / fresh tokens per output)'},
+    'cpu_pool_rows': {'label': 'batch window rows fit the CPU expert pool where a stage computes experts on the CPU'},
+    'prediction_first': {'label': 'a many-agent recipe carries its predicted useful tok/s and binding term (decode or prefill) with the F it assumed, before launch'},
+    'replay_artifact': {'label': 'a real-agent row reads no more than K x its reference fresh prompt tokens per output (else a suspect replay artifact)'},
+    'steady_state': {'label': 'a real-agent row states its warm-up (warmup_s or none) and its fresh breakdown (cold / growth / re-read) when the replay gives one'},
+    'fallback': {
+        'label': 'no unchosen memory or compute fallback',
+        'disk_tiers': {'nvme': 'nvme', 'usb-ssd': 'usb', 'usb': 'usb'},
+        'ladders': {'memory': ['gpu', 'dram', 'pmem', 'nvme', 'usb'], 'kernel': ['matrix', 'vector', 'cpu'],
+                    'execution': ['batched', 'serial'], 'enabled': ['on', 'off']},
+        'classes': {'dense': 'memory', 'hot_experts': 'memory', 'cold_experts': 'memory', 'kv': 'memory', 'drafter': 'memory', 'host_pins': 'memory',
+                    'dense_op': 'kernel', 'shexp_op': 'kernel', 'hc_op': 'kernel', 'execution': 'execution',
+                    'drafter_state': 'enabled', 'batch_mtp': 'enabled'},
+        'layer_split_pattern': '(?:--layer-split[ =]+|layer split )([0-9,]+)(?:\\s|$)',
+        'capacity_tags': ['READ', 'MEASURED'],
+        'capacity_accounting': ['kv', 'staging', 'services', 'safety', 'cma', 'gtt', 'planned_fills'],
+        'placement_controls': {
+            'ik': {'cold_experts': ['mmap', '-ot tensor placement'], 'kv': ['KV offload'],
+                   'src': 'retained unpublished build V4.1 launcher uses --no-mmap and per-NUMA LLAMA_EXPERT_PLACEMENT; generic -ot/mmap/KV defaults require exact tensor/build proof, never imported dsv41 switches'},
+            'strata': {'hot_experts': ['per-slot MAX_CONTEXT sessions', 'expert cache auto', 'prefill read loans'],
+                       'kv': ['resident KV ring versus host copy'], 'batch_mtp': ['batch-groups auto'],
+                       'src': 'XeStrata67fcb0a generate.cpp4552-4589 and per-slot sizing before expert-cache auto; canonical servingOf/kvHostPlan'},
+        },
+        'metrics': {'cache_slots': 'min_cache_slots', 'kv_ram_mib': 'max_kv_ram_mib',
+                    'borrowed_slots': 'max_borrowed_slots', 'host_gtt_gib': 'max_host_gtt_gib'},
+        'controls': [
+            {'id': 'dspark-auto', 'engine': 'strata', 'model': 'v41', 'builds': ['8183c6b6'], 'class': 'drafter_state',
+             'want': 'on', 'pattern': '--dspark[ =]+auto', 'src': 'lab notes retained default and RAM-copy arms: --dspark auto never loaded the drafter'},
+            {'id': 'dsv41-streaming', 'engine': 'strata', 'model': 'v41', 'builds': ['8183c6b6'], 'class': 'cold_experts',
+             'want': 'dram', 'requires': ['--ssd-cache[ =]+0(?:\\s|$)', '--mmap-experts[ =]+off(?:\\s|$)'],
+             'src': 'lab notes default auto 48 GB RAM store with USB-streamed CPU experts; matching resident override requires both flags'},
+            {'id': 'groups-disable-mtp', 'engine': 'strata', 'model': 'fnx', 'builds': ['k2', 'comb7'],
+             'class': 'batch_mtp', 'want': 'on', 'requires_layer_split': True,
+             'pattern': '--batch-groups[ =]+(auto|[2-9]|[1-9][0-9]+)(?:\\s|$)',
+             'src': 'd0d21baa76f1 retained batch-groups auto drops batch-MTP; generate.cpp4552-4589 on XeStrata67fcb0a confirms the mechanism; historical applicability limited to cited builds'},
+        ],
+        'src': 'd0d21baa76f1; existing context tiers and checkRecipe; XeStrata 67fcb0a generate.cpp 4552-4589,11977-12021 and verify.cpp535. Dense setup threshold is not proof of execution; no SHEXP/HC positive dispatch receipt exists here.',
+    },
+    'expert_residency': {
+        'label': 'resident CPU experts fit free/reclaimable usable RAM after KV, staging, services and safety reserves',
+        'default_live_verified': False,
+        'controls': {
+            'strata': {'model': 'v41', 'engine_build': '8183c6b6', 'resident': ['--ssd-cache 0', '--mmap-experts off'], 'src': 'lab notes Strata strata-dsv41 8183c6b6 RAM-copy arm; model/build scope must match, not universal XeStrata flags'},
+            'ik': {'model': 'v41', 'engine_build': 'unpublished build', 'resident': ['--no-mmap'],
+                   'placement': ['LLAMA_EXPERT_PLACEMENT=<per-NUMA placement TSV>', 'LLAMA_HOT_EXPERTS=<hot bank TSV>', 'LLAMA_NO_HOST_WEIGHTS=1'],
+                   'src': 'lab notes: NOMMAP=--no-mmap; expert/hot placement TSVs; NOHOST uses plain CPU weights, not pinned weights. Maintained v41-serve recipe selects droopy-tiersplit-unpublished. Do not add --mlock: DRAM and PMem budgets/NUMA placement are separate; engram remains on-file on NVMe'},
+            'glmlite': {'resident': [], 'ram_tier_setting': 'GLM53_NV_RAM_GB', 'exclusive_setting': 'GLM53_NV_EXCL', 'warm_setting': 'GLM53_NV_WARM',
+                        'src': 'lab notes lines 14, 26-32: 107 GiB RAM tier, EXCL=0, PREFETCH=1, WARM=1, container memory=130g with equal memory-swap. mmap-backed store; tier size/warm flags alone do not prove all mapped pages resident; no dsv41 flags apply'},
+        },
+    },
     'kv_host': {
         'label': 'the pinned host copy of streamed KV (every session\'s whole capacity) leaves the engine\'s RAM reserve of MemAvailable',
         'reserve_gib': n(16, R, XS + 'layer.cpp kv_host_fits (325640f): STRATA_KV_HOST_RESERVE_GIB default 16; a recipe sets serving.kv_host_reserve_gib when it sets the variable'),
@@ -1083,7 +1194,7 @@ checks = {
         'default_margin_gib': n(16, E, 'ESTIMATE for a box without dram.pinned_margin_gib: the odie ruling\'s 16 GiB'),
         # host-pinned terms besides the KV copies, per model/engine (a recipe sets serving.host_experts_gib for its own placement)
         'terms': {'fnx/strata': {
-            'experts_offgpu_gib': n(2.85, M, HL353U + ': the expert complement left with STRATA_STAGE_LEND_DROP=1, experts not on either card (the brief split its 27.14 GiB as 5.87 + 21.27; the lend-drop runs show 2.85 stays)'),
+            'experts_offgpu_gib': n(2.85, M, HL353U + ': the expert complement left with STRATA_STAGE_LEND_DROP=1, experts not on either card (the notes split its 27.14 GiB as 5.87 + 21.27; the lend-drop runs show 2.85 stays)'),
             'stage_lend_gib': n(round(27.14 - 2.85, 2), M, QFN2 + ': 27.14 GiB expert complement with the lend copy, less the 2.85 GiB ' + HL353U + ' measured without it = the stage-lend duplicate of a layer split (one stage\'s lent experts kept again in host memory); STRATA_STAGE_LEND_DROP removes it'),
             'prefill_staging_gib': n(2.5, M, QFN2 + ': prefill staging'),
             'prompt_handoff_gib': n(1.25, M, QFN2 + ': prompt hand-off'),
@@ -1091,7 +1202,7 @@ checks = {
             'misc_gib': n(1.5, M, QFN2 + ': the rest (~1.5 GiB)'),
         }},
         'total_measured_gib': n(84.6, M, QFN2 + ': the whole host-pinned footprint the terms above and the KV copies add up to'),
-        'event': {'v': 'odie 2026-10-23: the live qfn2 config pinned 84.6 GiB of GTT and hung the box twice (MemAvailable 24.9 GiB at load, 18-19.6 at 32 agents, 12.4 with a CI job beside it)', 'src': 'coordinator brief 2026-10-23'},
+        'event': {'v': 'odie 2026-10-23: the live qfn2 config pinned 84.6 GiB of GTT and hung the box twice (MemAvailable 24.9 GiB at load, 18-19.6 at 32 agents, 12.4 with a CI job beside it)', 'src': 'lab notes 2026-10-23'},
     },
     'cpu_reserve': {
         'label': 'CPU decode keeps the box reserve free of decode threads (threads + cpu_reserve declared in recipe.conditions)',
@@ -1143,7 +1254,7 @@ checks = {
     'numa_free': {
         'label': 'DRAM headroom per NUMA node',
         'rule': 'predicted node MemFree = node memory free at plan time - planned experts on the node - load extra (interleaved non-expert share + CUDA host compute/staging buffers + page cache of on-file tensors) must stay >= min_free',
-        'min_free_gib': n(3.0, E, 'ESTIMATE (coordinator 10-17): below ~3 GiB MemFree kswapd starts reclaiming and prefill collapses'),
+        'min_free_gib': n(3.0, E, 'ESTIMATE (lab notes 2026-10-17): below ~3 GiB MemFree kswapd starts reclaiming and prefill collapses'),
         'load_extra_scope': 'node 0 only: the CUDA host buffers, the main thread and first-touch non-expert pages land on node 0 (B1c steady state: +12.6 GiB on N0 over N1). Every other DRAM node is planned at load extra other_nodes',
         'other_nodes': n(0.0, M, 'resident minus planned experts on node 1, all 7 droopy runs with a per-node plan: B0c-rtr -0.88, B0c-nortr -1.07, B1c -5.33, B1d -2.10, d1g q2d-p0 -9.65, d1g place12-p0 -6.15, E2 -5.83 GiB (ledger runs/runs.jsonl resident_gib_by_node); 0 is the bound above all of them'),
         'load_extra': {
@@ -1254,7 +1365,33 @@ sys.path.insert(0, SRC)
 import runs_tables  # noqa: E402
 RUNS = runs_tables.load_runs(os.path.join(HERE, 'runs', 'runs.jsonl'))
 _holdout = {rid for spec in json.load(open(os.path.join(HERE, 'data', 'decode-fits.json'))).values() for rid in spec['holdout']}
-recipes = runs_tables.recipes_from_runs(RUNS, _holdout, boxes)
+def maintained_recipe_checks(rows, root):
+    """Project maintained intent into today's check table; never rewrite a run or its captured launch checks."""
+    maintained = {}
+    for path in sorted((Path(root) / 'recipes').glob('*.json')):
+        spec = json.loads(path.read_text())
+        if spec.get('fallback_plan'):
+            maintained[spec['id']] = (spec, path.relative_to(root).as_posix())
+    out = []
+    for row in rows:
+        original = row.get('recipe') or {}
+        match = maintained.get(original.get('id'))
+        if not match or original.get('fallback_plan'):
+            out.append(row)
+            continue
+        spec, src = match
+        compatible = all(original.get(k) == spec.get(k) for k in ('box', 'model', 'engine')) and not (
+            original.get('engine_build') and spec.get('engine_build') and original['engine_build'] != spec['engine_build'])
+        if not compatible:
+            out.append(row)
+            continue
+        fields = {k: spec[k] for k in ('fallback_plan', 'expert_residency') if k in spec and k not in original}
+        recipe = dict(original, **fields, fallback_plan_basis='post-hoc maintained intent from ' + src + '; not a captured historical launch plan')
+        out.append(dict(row, recipe=recipe, recipe_audit_src=src))
+    return out
+
+
+recipes = maintained_recipe_checks(runs_tables.recipes_from_runs(RUNS, _holdout, boxes), HERE)
 # per-card expert placement of recorded recipes that state it only in their label (the ledger stays as recorded):
 # predictRecipe reads placements[recipe id] when the recipe has no placement of its own. gpu_layers: layers = MoE layer
 # indices on the engine's first card, cards = {gpu id: layers} on the others
@@ -1348,7 +1485,7 @@ if _nocard:
     raise ValueError('%s names cards with no data/cards file: %s' % (SCREEN_SRC, ', '.join(_nocard)))
 checks['verdict_ready'] = {
     'label': 'verdict-ready: a keep/delete verdict needs the card conditions (or a recorded best-config sweep) and few failure shapes',
-    'shape_rate_max': {'v': 0.2, 'src': 'owner brief 2026-10-21: refuse a verdict when more than 20 % of the requests end in a failure shape'},
+    'shape_rate_max': {'v': 0.2, 'src': 'owner\'s ask 2026-10-21: refuse a verdict when more than 20 % of the requests end in a failure shape'},
     'eq_tol': {'v': 1e-6, 'src': 'two sampling numbers closer than this are the same setting (server defaults are rounded to 6 digits on intake)'},
     # run setting -> the card value it is judged against and how: eq = the same value; min = at least the card value; room =
     # the context holds the longest prompt plus the card max output (or the run's own, if the card states none), capped at the
@@ -1401,7 +1538,11 @@ causes = {
 # after the launch-time captures, evaluated post hoc on launch rows too (labelled in the report)
 accuracy = {
     'replay_checks': {'v': ['cpu_reserve', 'placement'], 'src': 'cpu_reserve added 2026-10-19 after q4t, placement after r1; launch captures before them lack them'},
-    'trend_bucket': {'v': 'day', 'src': 'owner brief 2026-10-19 (per time bucket: week or launch batch). The ledger spans 2026-09-29..10-19, so one ISO week holds most rows; a UTC day = one launch batch here. --bucket week overrides'},
+    'trend_bucket': {'v': 'day', 'src': 'owner\'s ask 2026-10-19 (per time bucket: week or launch batch). The ledger spans 2026-09-29..10-19, so one ISO week holds most rows; a UTC day = one launch batch here. --bucket week overrides'},
+    # Prospective recipe.validation declarations may override these named workload settings explicitly.
+    # Batch-fleet: total accepted tok/s / measured GPU+CPU watts, with a per-agent floor. Missing power is UNKNOWN.
+    # Single-seat: per-stream decode target plus declared quality/memory bounds. TTFT is diagnostic unless declared.
+    'workloads': {'single-seat': {'decode_target_tps': 25}, 'batch-fleet': {'per_agent_floor_tps': 10}},
 }
 
 
@@ -1787,10 +1928,10 @@ batch = {
     'kv_resident_tokens': n(20480, R, 'odie-fnx-iq3xxs-1xb70-batch-262k-r20k-xe0145-1022: --kv-resident 20480 keeps the newest 20,480 tokens of each stream in VRAM, older KV in pinned RAM'),
     'cache_gib_one': n(21.1, M, 'MEASURED: %s layout note "expert cache 21.1 GiB + pinned RAM complement" (13,006 experts in VRAM) at one stream' % BATCH_ONE),
     'vram_free_split_gib': n(13.1, M, 'MEASURED: %s layout note "VRAM free after load 9.8 / 3.3 GiB" (cards 1 + 2) with every expert resident' % BATCH_SPLIT),
-    'hit_one': n(0.987, M, 'MEASURED (lead brief 2026-10-22, lab notes): one-card expert-cache hit rate 98.7 % at one stream'),
-    'hit_four': n(0.92, M, 'MEASURED (lead brief 2026-10-22, lab notes): one-card hit rate 88-96 % at four streams; the midpoint (report.js --batch prints the fit at both ends)'),
+    'hit_one': n(0.987, M, 'MEASURED (lab notes 2026-10-22): one-card expert-cache hit rate 98.7 % at one stream'),
+    'hit_four': n(0.92, M, 'MEASURED (lab notes 2026-10-22): one-card hit rate 88-96 % at four streams; the midpoint (report.js --batch prints the fit at both ends)'),
     'hit_four_range': {'v': [0.88, 0.96], 'src': 'the measured spread of the four-stream hit rate'},
-    'hit_four_streams': n(4, M, 'MEASURED (lead brief): the stream count of hit_four'),
+    'hit_four_streams': n(4, M, 'MEASURED (lab notes): the stream count of hit_four'),
     'fit_depth_tokens': n(10000, E, 'ESTIMATE: the lab notes bench sends 2-5k-token agent prompts and decodes 7-18k tokens uncapped, so a row decodes at ~10k tokens of depth on average'),
     'twin_depth_tokens': n(1000, E, 'ESTIMATE: qfn2-bench.py speed prompts are short (one code/reason/prose prompt + 800 tokens out)'),
     'fit_rounds': {'v': 6, 'src': 'alternations of the kernel fit and the VRAM-miss fit (they share the miss term); the constants settle in 3-4'},
@@ -1812,7 +1953,7 @@ batch = {
                      'overhead_gib': n(2.0, E, 'ESTIMATE: per-card runtime, activations and graphs not counted elsewhere')}},
     'sensitivity_row': {'config': 'split', 'variant': 'fit', 'ctx': 40960, 'src': 'the table row report.js --batch prints beside each sensitivity fit: the 2-card split at 40k, the planning question'},
     'twin': {'one': BATCH_ONE, 'split': BATCH_SPLIT, 'src': 'the same bench (qfn2-bench.py, one stream, 800 tokens, thinking off) on one card with the expert cache and on the 2-card split; their ratio checks the miss term'},
-    'checks': [{'id': 'live-1023-n4', 'cfg': 'one', 'kv_resident': 20480, 'ctx': 262144, 'N': 4, 'tps': n(80.63, M, 'MEASURED (lead brief): live re-measure 2026-10-23 00:14Z of the r20k xe0145 service at four streams')},
+    'checks': [{'id': 'live-1023-n4', 'cfg': 'one', 'kv_resident': 20480, 'ctx': 262144, 'N': 4, 'tps': n(80.63, M, 'MEASURED (lab notes): live re-measure 2026-10-23 00:14Z of the r20k xe0145 service at four streams')},
                {'id': 'franken2-1023-n4', 'cfg': 'split', 'kv_resident': 4096, 'ctx': 262144, 'N': 4, 'tps': n(134.65, M, 'MEASURED: runs odie-fnx-iq3xxs-2xb70-split-batch8-nobmtp-groups2-franken2-1023 at four streams (expert cache 100 % hit)')},
                {'id': 'franken2-1023-n8', 'cfg': 'split', 'kv_resident': 4096, 'ctx': 262144, 'N': 8, 'tps': n(181.62, M, 'MEASURED: runs odie-fnx-iq3xxs-2xb70-split-batch8-nobmtp-groups2-franken2-1023 at eight streams (the engine slot cap)')}],
     'rows': [],
@@ -1848,9 +1989,10 @@ _wsp.loader.exec_module(WIN)
 
 
 def _wtag(x):
-    """a config's {v, tag, src} leaves through n() (so a tag with no evidence class or a src that contradicts it fails the build)"""
+    """Validate canonical evidence through n(); keep structured qualifiers without letting them override that evidence."""
     if isinstance(x, dict) and 'v' in x and 'tag' in x and 'src' in x:
-        return n(x['v'], x['tag'], x['src'])
+        return dict({k: _wtag(y) for k, y in x.items() if k not in ('v', 'tag', 'src', 'evidence')},
+                    **n(x['v'], x['tag'], x['src']))
     if isinstance(x, dict):
         return {k: _wtag(y) for k, y in x.items()}
     if isinstance(x, list):
@@ -1883,7 +2025,12 @@ def window_attempts(key, cfg, names, ledger):
                                             'outcome': r['measured'].get('outcome'), 'measured': r['measured'], 'sources': r.get('sources', [])}
                     out.append(q)
                     continue  # native-unit recipes need no aggregate_tps or kernel sanity marker
-                note = (r.get('recipe') or {}).get('layout_note') or ''
+                recipe = r.get('recipe') or {}
+                q['source_scope'] = {k: recipe.get(k) for k in ('box', 'model', 'engine', 'engine_build', 'store', 'conditions')}
+                q['source_scope']['run'] = r['id']
+                q['source_scope']['sources'] = r['measured'].get('src', {})
+                q['power_w'] = r['measured'].get('power_w')
+                note = recipe.get('layout_note') or ''
                 q['tps'] = {k: n(r['measured']['aggregate_tps'][k], M, 'MEASURED: runs %s aggregate_tps.%s' % (a['ledger']['id'], k)) for k in a['ledger']['tps'] if k in r['measured']['aggregate_tps']}
                 q['sanity'] = n(True if re.search(r'sanity[^;]*391', note) else False if 'no sanity' in note or 'sanity' not in note else None, R,
                                 'READ: runs %s layout_note (%s)' % (a['ledger']['id'], 'a sanity line' if 'sanity' in note else 'no sanity line'))
@@ -2099,7 +2246,9 @@ def curve_configs(cfg, ledger):
                 if not re.fullmatch(r'c\d+', k) or not isinstance(x, (int, float)):
                     continue
                 c = int(k[1:])
-                why = ('n = 1 runs the MTP single-stream path (%s with a drafter), not the batch window' % ' '.join(S['single_path_flags']['v']) if c == 1 and single
+                contention = cfg.get('contention', {}).get(r['id'])
+                why = ('nonsteady read contention: client TTFT and unmatched native/polled waits are not decode-window training' if contention and not contention.get('fit_eligible', False)
+                       else 'n = 1 runs the MTP single-stream path (%s with a drafter), not the batch window' % ' '.join(S['single_path_flags']['v']) if c == 1 and single
                        else 'above the %d slots (--batch): agents queued' % slots if slots and c > slots
                        else 'caveated %s' % ', '.join(caveat) if caveat else None)
                 w = pw.get(k) if isinstance(pw, dict) else pw
@@ -2107,7 +2256,7 @@ def curve_configs(cfg, ledger):
                             'tps': n(x, M, 'MEASURED: runs %s aggregate_tps.%s (%s)' % (r['id'], k, (m.get('src') or {}).get('aggregate_tps', 'the run row'))),
                             'win_ms': n(wins[c], R, 'runs %s layout_note: stage run n=%d, the slowest stage' % (r['id'], c)) if c in wins else None,
                             'watts': n(w, M, 'MEASURED: runs %s measured.%s%s' % (r['id'], pf, '.' + k if isinstance(pw, dict) else '')) if isinstance(w, (int, float)) else None})
-        serving = {k: num(k) for k in ('kv_resident', 'slot_context', 'big_slots', 'max_context') if got[k]}
+        serving = {k: num(k) for k in ('kv_resident', 'slot_context', 'big_slots', 'max_context', 'max_t') if got[k]}
         serving.update({'batch_groups': groups, 'batch_mtp': not any(f in flags for f in S['single_path_flags']['v'])} if slots or each else {})
         if got['kv']:
             serving['kv'] = got['kv'].group(1)
@@ -2119,9 +2268,75 @@ def curve_configs(cfg, ledger):
                      'stages': n(stages, R, 'engine_flags (else conditions.isolation) %s' % ('"%s": %d stages' % (got['split'].group(0), stages) if got['split'] else 'carry no layer split: 1 stage')),
                      'slots': n(slots, R, 'engine_flags %s' % got['slots'].group(0)) if slots else None,
                      'slots_each_point': n(True, R, 'engine_flags %s: the run at n agents served --batch n' % got['slots_each_point'].group(0)) if each else None,
+                     'contention': [dict(_wtag(cfg['contention'][r['id']]), run=r['id'], scope=r['recipe'].get('conditions'),
+                                         engine_build=r['recipe'].get('engine_build'), sources=r['measured'].get('src'))
+                                    for r in rows if r['id'] in cfg.get('contention', {})],
                      'serving': serving, 'points': sorted(pts, key=lambda p: (p['n'], p['run']))})
     return sorted(out, key=lambda c: c['id'])
 
+
+def replay_facts(S, r):
+    """what the replay_artifact and steady_state checks read off a real-agent row: the trace it replayed (settings.trace_re over
+    recipe.conditions.workload.trace, its trace_stats_src, then measured.workload.trace), its profile, the warm-up it states
+    (measured.workload.warmup_s, else the recipe's; None = not stated), the fresh breakdown and the window's evictions and outputs"""
+    wl, mw = ((r.get('recipe') or {}).get('conditions') or {}).get('workload') or {}, (r.get('measured') or {}).get('workload') or {}
+    trace = next((x.group(1) for x in (re.search(S['trace_re']['v'], 'trace ' + wl['trace'] if wl.get('trace') else ''),
+                                        re.search(S['trace_re']['v'], str(wl.get('trace_stats_src') or '')),
+                                        re.search(S['trace_re']['v'], str(mw.get('trace') or ''))) if x), None)
+    warm = mw.get('warmup_s', wl.get('warmup_s'))
+    return {'trace': trace, 'profile': wl.get('profile'), 'warmup_s': warm, 'fresh_breakdown': mw.get('fresh_breakdown'),
+            'cache_evictions': mw.get('cache_evictions'), 'out_tokens': mw.get('out_tokens'), 'fresh_prompt_tokens': mw.get('fresh_prompt_tokens')}
+
+
+def workload_measured(cfg, ledger):
+    """agent workload: every ledger row that replayed real agent traffic (measured.workload_kind == settings.real_kind), one
+    entry per agent count cN of measured.agent_tps, with its prefill rate, fresh prompt tokens per output token, prefill busy
+    share and watts (MEASURED) and its build key (settings.build_key_re READ from recipe.engine_build)"""
+    S = cfg['settings']
+    key_re, kind = re.compile(S['build_key_re']['v']), S['real_kind']['v']
+    out = []
+    for r in ledger.values():
+        m, rc = r.get('measured') or {}, r.get('recipe') or {}
+        if m.get('workload_kind') != kind or m.get('outcome') != 'ok':
+            continue
+        b = key_re.search(str(rc.get('engine_build') or ''))
+        for k, x in sorted((m.get('agent_tps') or {}).items()):
+            if not re.fullmatch(r'c\d+', k) or not isinstance(x, (int, float)):
+                continue
+            src = lambda f: 'MEASURED: runs %s measured.%s.%s (%s)' % (r['id'], f, k, (m.get('src') or {}).get(f, 'the run row'))  # noqa: E731
+            got = {f: n(m[f][k], M, src(f)) for f in ('agent_tps', 'prefill_tps', 'fresh_per_output', 'prefill_busy_pct', 'power_w')
+                   if isinstance((m.get(f) or {}).get(k), (int, float))}
+            out.append(dict(got, run=r['id'], when=r.get('when'), box=r.get('box'), model=r.get('model'), engine=r.get('engine'),
+                            build=rc.get('engine_build'), build_key=b.group(1) if b else rc.get('engine_build'), n=int(k[1:]),
+                            label=rc.get('label') or r['id'], read_fit=m.get('prefill_read_fit'), **replay_facts(S, r)))
+    return sorted(out, key=lambda x: (x['when'] or '', x['run']))
+
+
+_wl = json.load(open(os.path.join(HERE, 'data', 'workload.json')))
+workload = dict(_wtag({k: x for k, x in _wl.items() if k != 'about'}), about=_wl['about'], measured=workload_measured(_wl, _bl))
+
+
+def serving_priors(d, profiles):
+    """data/priors-serving.json: each row keeps its fields and gains evidence (EVIDENCE.by_tag); a row needs an id of its own, a
+    statement, a value, a unit, one of the file's tags, a source and an applies_when of known predicates (at least one), and every
+    profile's fresh_reference_prior must name a row. Any miss is a build error, never a silent prior"""
+    rows, seen = [], set()
+    for x in d['rows']:
+        miss = [k for k in ('id', 'statement', 'value', 'unit', 'tag', 'src', 'applies_when') if x.get(k) in (None, '', {})]
+        bad = sorted(set(x.get('applies_when') or {}) - set(d['predicates']))
+        if miss or bad or x['tag'] not in d['tags'] or x['id'] in seen:
+            raise ValueError('priors-serving row %s: missing %s, unknown predicates %s, tag %r (one of %s), or a repeated id'
+                             % (x.get('id'), miss, bad, x.get('tag'), ', '.join(d['tags'])))
+        seen.add(x['id'])
+        rows.append(dict(x, evidence=evidence_of(x['tag'], x['src'])))
+    for name, p in profiles.items():
+        ref = (p.get('fresh_reference_prior') or {}).get('v')
+        if ref is not None and ref not in seen:
+            raise ValueError('workload profile %s: fresh_reference_prior %r is not a priors-serving row' % (name, ref))
+    return {'about': d['about'], 'tags': d['tags'], 'predicates': d['predicates'], 'rows': rows}
+
+
+priors = serving_priors(json.load(open(os.path.join(HERE, 'data', 'priors-serving.json'))), _wl['profiles'])
 
 _cv = json.load(open(os.path.join(HERE, 'data', 'curves.json')))
 curves = {'about': _cv['about'], 'settings': _wtag(_cv['settings']), 'configs': curve_configs(_cv, _bl)}
@@ -2160,7 +2375,7 @@ data = {
     'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py', 'home': PUBLIC_HOME,
              'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}, 'left_out': left_out},
     'types': types, 'engines': engines, 'models': models, 'boxes': boxes, 'b70move': b70move, 'anchors': anchors, 'assume': assume, 'knobs': knobs, 'conditions': conditions, 'accuracy': accuracy, 'causes': causes, 'external': external, 'bench': bench,
-    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'curves': curves, 'layer_maps': layer_maps, 'upgrade': upgrade,
+    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'curves': curves, 'workload': workload, 'priors': priors, 'layer_maps': layer_maps, 'upgrade': upgrade,
     'routing_skew': [HM.skew_evidence(HEAT_MAPS, spec) for spec in HM.jload(os.path.join(HERE, 'tools', 'heat_sources.json')).get('skew', [])],
     'alloc3': {'src': 'homelab dsv41/skew/results/2026-10-08-alloc-3bpw.json (' + alloc['rule'] + ')', 'layers': alloc_layers, 'count': sum(len(x) for x in alloc_layers)} if alloc else None,
     'siblings': {'quant_priors': sibling('quant-priors.json'), 'quant_recipes': sibling('quant-recipes.json'),
@@ -2246,10 +2461,56 @@ _po = planner_outputs()
 data['layer_maps']['calibration'] = _po.get('layer_maps') or {'status': _po['status'], 'why': _po.get('why')}
 data['layer_maps']['trim_proposals'] = _po.get('trim') if 'trim' in _po else {'status': _po['status'], 'why': _po.get('why')}
 data['upgrade']['advice'] = _po.get('upgrades') or {'status': _po['status'], 'why': _po.get('why')}
+
+# Identity of the effective built bytes, not just a git tip (optional live inputs may refresh snapshots).
+# Only these exact self/clock/filesystem metadata paths are nonsemantic. Every prediction operand is hashed.
+CALIBRATION_EVALUATORS = ('build.py', 'report.js', 'src/model.js', 'src/accuracy.js', 'src/advisor.js', 'src/ledger.js',
+                          'src/runs_tables.py', 'src/ledger.py', 'tools/heatmap.py', 'tools/record_run.py')
+
+
+def calibration_identity(data, split):
+    missing = [p for p in CALIBRATION_EVALUATORS if not os.path.isfile(os.path.join(HERE, p))]
+    return {'format': 'fit-calibration-v1', 'data_sha256': calibration_data_sha256(data), 'split': split,
+            'split_sha256': calibration_digest(split) if split is not None else None,
+            'evaluator_sha256': {p: HM.sha256_file(os.path.join(HERE, p)) for p in CALIBRATION_EVALUATORS if p not in missing},
+            'excluded_paths': [list(p) for p in CALIBRATION_EXCLUDED_PATHS],
+            'status': 'FROZEN' if split is not None and not missing else 'UNKNOWN',
+            'why': ('missing evaluator files: ' + ', '.join(missing)) if missing else None if split is not None else _po.get('why', 'evaluator did not return split membership')}
+
+
+data['meta']['calibration'] = calibration_identity(data, _po.get('calibration_split'))
 json.dump(data, open(os.path.join(HERE, 'data.json'), 'w'), separators=(',', ':'))
 PAGE_DIR = os.path.join(HERE, 'page')   # the page's data scripts (generated, never in git); index.html loads them
 PAGE_FILE_LIMIT = 1 << 20                # no page file is larger: a part over it is a build error, so split it further
 PAGE_CODE = ('src/model.js', 'src/app.js')
+
+
+def page_assignment_parts(name, target, value):
+    """Split oversized containers into ordinary assignments, then pack statements under the existing byte limit.
+    An indivisible scalar stays oversized so write_page's guard still refuses it; never truncate or drop data."""
+    j = lambda x: json.dumps(x, separators=(',', ':'))
+
+    def statements(target, value):
+        text = target + ' = ' + j(value) + ';\n'
+        if len(text.encode()) <= PAGE_FILE_LIMIT or not isinstance(value, (dict, list)):
+            yield text
+            return
+        yield target + (' = {};\n' if isinstance(value, dict) else ' = [];\n')
+        items = value.items() if isinstance(value, dict) else enumerate(value)
+        for key, item in items:
+            yield from statements(target + '[' + j(key) + ']', item)
+
+    parts, chunk, size = [], [], 0
+    for text in statements(target, value):
+        count = len(text.encode())
+        if chunk and size + count > PAGE_FILE_LIMIT:
+            parts.append(''.join(chunk))
+            chunk, size = [], 0
+        chunk.append(text)
+        size += count
+    if chunk:
+        parts.append(''.join(chunk))
+    return [('%s%s.js' % (name, '-%d' % (i + 1) if i else ''), text) for i, text in enumerate(parts)]
 
 
 def page_parts(data):
@@ -2259,9 +2520,10 @@ def page_parts(data):
     heat = [k for k, m in data['models'].items() if (m.get('heat') or {}).get('sets')]
     core = dict(data, siblings={}, recipes=[], models={k: dict(m, heat=dict(m['heat'], sets={})) if k in heat else m
                                                        for k, m in data['models'].items()})
-    return ([('data.js', 'window.FIT_DATA = ' + j(core) + ';\n')]
-            + [('heat-%s.js' % k, 'window.FIT_DATA.models[%s].heat.sets = %s;\n' % (j(k), j(data['models'][k]['heat']['sets']))) for k in heat]
-            + [('%s.js' % k, 'window.FIT_DATA.%s = %s;\n' % (k, j(data[k]))) for k in ('siblings', 'recipes')])
+    values = ([('data', 'window.FIT_DATA', core)]
+              + [('heat-%s' % k, 'window.FIT_DATA.models[%s].heat.sets' % j(k), data['models'][k]['heat']['sets']) for k in heat]
+              + [(k, 'window.FIT_DATA.' + k, data[k]) for k in ('siblings', 'recipes')])
+    return [part for name, target, value in values for part in page_assignment_parts(name, target, value)]
 
 
 def write_page(data):

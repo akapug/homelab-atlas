@@ -1,6 +1,9 @@
 """probe/window_inputs.py: the batch-window spec and microbenchmark readers on inputs of another model and card"""
 import ast
 import importlib.util
+import copy
+import json
+import tempfile
 import os
 from pathlib import Path
 import unittest
@@ -85,6 +88,48 @@ class WindowInputs(unittest.TestCase):
         self.assertEqual(actual['network_receipt']['identity'], identity)
         self.assertIsNone(actual['tps'])
         self.assertIsNone(actual['sanity'])
+
+    def test_tagged_qualifiers_survive_but_cannot_override_canonical_evidence(self):
+        source = ast.parse((Path(HERE).parent / 'build.py').read_text())
+        nodes = [x for x in source.body if isinstance(x, ast.FunctionDef) and x.name in ('_wtag', 'n')]
+        namespace = {'evidence_of': lambda tag, src: 'validated:' + tag}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), 'build.py', 'exec'), namespace)
+        candidate = {'v': None, 'tag': 'UNKNOWN', 'src': 'synthetic unproved threshold', 'evidence': 'forged',
+                     'qualifier': 'independent processing only', 'nested': {'v': 1, 'tag': 'READ', 'src': 'synthetic input'}}
+        result = namespace['_wtag']([candidate])[0]
+        self.assertEqual(result['evidence'], 'validated:UNKNOWN')
+        self.assertEqual(result['qualifier'], candidate['qualifier'])
+        self.assertEqual(result['nested']['evidence'], 'validated:READ')
+        self.assertIsNone(result['v'])
+        self.assertEqual(candidate['evidence'], 'forged', 'projection must not mutate source data')
+
+    def test_maintained_intent_projection_preserves_historical_identity_and_captured_plans(self):
+        source = ast.parse((Path(HERE).parent / 'build.py').read_text())
+        nodes = [x for x in source.body if isinstance(x, ast.FunctionDef) and x.name == 'maintained_recipe_checks']
+        namespace = {'Path': Path, 'json': json}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), 'build.py', 'exec'), namespace)
+        spec = {'id': 'synthetic', 'box': 'fixture-box', 'model': 'fixture-model', 'engine': 'fixture-engine', 'engine_build': 'new-build',
+                'fallback_plan': {'src': 'synthetic maintained intent', 'classes': {'dense_op': {'tier': 'matrix', 'src': 'synthetic'}}}}
+        original = {'id': 'synthetic-run', 'recipe': {k: spec[k] for k in ('id', 'box', 'model', 'engine')}, 'observed': {}}
+        untouched = copy.deepcopy(original)
+        with tempfile.TemporaryDirectory() as root:
+            recipes = Path(root) / 'recipes'
+            recipes.mkdir()
+            (recipes / 'fixture.json').write_text(json.dumps(spec))
+            project = namespace['maintained_recipe_checks']
+            out = project([original], root)[0]
+            self.assertEqual(original, untouched)
+            self.assertNotIn('engine_build', out['recipe'], 'missing historical build is not guessed from the current file')
+            self.assertIn('post-hoc', out['recipe']['fallback_plan_basis'])
+            self.assertEqual(out['recipe_audit_src'], 'recipes/fixture.json')
+            captured = copy.deepcopy(original)
+            captured['recipe']['fallback_plan'] = {'src': 'synthetic captured plan', 'classes': {}}
+            self.assertEqual(project([captured], root), [captured])
+            foreign = copy.deepcopy(original)
+            foreign['recipe']['engine_build'] = 'different-build'
+            self.assertEqual(project([foreign], root), [foreign])
+            foreign['recipe']['box'] = 'different-box'
+            self.assertEqual(project([foreign], root), [foreign])
 
     def test_bad_inputs_fail_loudly(self):
         with self.assertRaises(ValueError):

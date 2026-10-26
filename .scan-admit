@@ -14,3 +14,6 @@ internal id | b70/agent-eval/sandbox-agent.sh | agent-eval:claude claude --dange
 e-mail address | b70/agent-eval/run.py | user.email=eval@example.com | reserved example domain (RFC 2606) for the eval's git commits
 e-mail address | b70/llama.cpp-sycl/patches/*.patch | <akapug@users.noreply.github.com> | GitHub's public no-reply author address in git format-patch headers
 lab notes pointer | docs/README.md | docs/README.md | this repository's own docs folder, not a lab-notes page
+internal id | recipe-maker/data/priors-serving.json | https://code.claude.com/docs/en/ | a public vendor docs page a Recipe Maker serving prior cites (the coding-agent CLI's timeouts and context window)
+internal id | recipe-maker/.scan-admit | https://code.claude.com/docs/en/ | Recipe Maker's own admission of that docs page
+internal id | docs/page/data.js | https://code.claude.com/docs/en/ | the built Pages copy of that serving prior

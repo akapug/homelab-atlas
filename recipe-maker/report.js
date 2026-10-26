@@ -6,16 +6,17 @@
 // Screening rounds against the card conditions (runs/screen.jsonl, data/cards): node report.js --screen [--json]
 // Batched decode (N concurrent streams, data.batch): node report.js --batch [--json]
 // Batch window (bottom-up kernel cost per pipeline stage, data.window; lever table): node report.js --window [CONFIG] [--agents N] [--xfloor K] [--bw GBS] [--stages S] [--anchor ID | --no-anchor] [--source ubench] [--propose LEVER] [--json]
+// Agent workload (useful output = min(decode capacity, prefill / fresh prompt tokens per output), data.workload): node report.js --workload [RUN_ID | all] [--profile NAME] [--fresh F] [--prefill P] [--n 16,32,64] [--json]
+// Serving priors (data/priors-serving.json; the ones that apply to a recipe): node report.js --priors [recipe.json] [--json]
 // Layer map + trim proposals + upgrade advisor only (src/advisor.js; also part of the full and --quick reports): node report.js --advice [--json]
 'use strict';
 const fs = require('fs'), path = require('path');
 const FM = require('./src/model.js');
 const ACC = require('./src/accuracy.js');
-const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8'));
+const storedData = fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8'), data = JSON.parse(storedData);
 const args = process.argv.slice(2);
 const quick = args.includes('--quick');
 const t0 = Date.now();
-FM.applyCal(data);
 const v = FM.v, GiB = FM.GiB;
 
 // ---------- pre-launch check of one recipe: node report.js --check recipe.json [--json] [--strict] ----------
@@ -26,6 +27,26 @@ if (ci >= 0) {
   let rs;
   try { rs = JSON.parse(fs.readFileSync(args[ci + 1], 'utf8')); } catch (e) { console.error('cannot read recipe ' + args[ci + 1] + ': ' + e.message); process.exit(2); }
   const list = Array.isArray(rs) ? rs : [rs];
+  // Verify once per invocation, before applyCal mutates loaded operands. Ordinary checks need no Python hash process.
+  const calibrationFailure = !list.some(r => r.validation) ? null : (() => {
+    try {
+      const frozen = data.meta.calibration;
+      if (!ACC.frozenValid(frozen)) throw new Error('validation: no valid frozen evaluator manifest');
+      const crypto = require('crypto');
+      for (const [relative, expected] of Object.entries(frozen.evaluator_sha256)) {
+        const file = path.resolve(__dirname, relative);
+        if (path.relative(__dirname, file).startsWith('..') || path.isAbsolute(relative) || !fs.existsSync(file))
+          throw new Error('validation: missing or invalid evaluator ' + relative);
+        if (crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== expected)
+          throw new Error('validation: stale evaluator ' + relative);
+      }
+      const hash = require('child_process').execFileSync('python3', ['-I', path.join(__dirname, 'build.py'), '--calibration-data-sha256'],
+        { input: storedData, encoding: 'utf8' }).trim();
+      if (hash !== frozen.data_sha256) throw new Error('validation: stale effective data');
+      return null;
+    } catch (e) { return e.message; }
+  })();
+  FM.applyCal(data);
   let worst = 0;
   const outAll = [], gaps = [];
   for (const r of list) {
@@ -33,16 +54,31 @@ if (ci >= 0) {
     const here = os.hostname().split('.')[0] === r.box;
     const resolve = p => { const x = String(p).replace(/^~(?=\/)/, os.homedir()); try { return here ? fs.realpathSync(x) : p; } catch (e) { return p; } };
     const res = FM.checkRecipe(data, r, resolve);
-    const pr = res.prediction || null;
+    const pr = res.prediction || null, at = new Date().toISOString();
+    const prediction = pr && Object.assign({ basis: 'launch', at, data_built: data.meta.built, calibration: data.meta.calibration || null }, pr);
+    if (r.validation) {
+      try {
+        if (!prediction) throw new Error('validation: no prediction to capture');
+        if (calibrationFailure) throw new Error(calibrationFailure);
+        prediction.validation = ACC.captureDecision(data, r, candidate => ({ ...(FM.checkRecipe(data, candidate).prediction || {}), quality: FM.recipeQuality(data, candidate) }), at);
+      } catch (e) {
+        res.checks.push({ id: 'validation', status: 'FAIL', detail: e.message + '; run python3 build.py and redeclare the cohort with the rebuilt identity before capture' });
+        res.bad_input = true;
+      }
+    }
     // the recipe fields the planner keys on travel with the gate output, so a ledger row read later shows what was predicted
     const carried = Object.fromEntries(['engine_build', 'banks_experts', 'ram_tier_gib'].filter(k => r[k] !== undefined).map(k => [k, r[k]]));
+    // a many-agent recipe's prediction (check prediction_first) travels as a field of its own, and the serving priors that apply by id
+    const pf = res.checks.find(c => c.id === 'prediction_first');
     outAll.push({ id: r.id, label: r.label, box: r.box, model: r.model, engine: r.engine, ...carried, paths_resolved: here, checks: res.checks.map(c => ({ id: c.id, status: c.status, detail: c.detail })), notes: res.notes, facts: res.facts,
-      prediction: pr && Object.assign({ basis: 'launch', at: new Date().toISOString().slice(0, 19) + 'Z', data_built: data.meta.built }, pr) });
+      prediction, agent_prediction: pf ? pf.pred : undefined, priors: (res.priors || []).map(p => p.id) });
     if (!args.includes('--json')) {
       console.log(`== ${r.id || '(no id)'}: ${r.label || ''} [${r.box} / ${r.model} / ${r.engine}]` + (here ? ' (paths resolved on this box)' : ' (paths taken as given: run on the box to resolve symlinks)'));
       res.checks.forEach(c => console.log(`  ${c.status.padEnd(7)} ${c.id.padEnd(9)} ${c.detail}`));
       if (pr) console.log('  predict ' + ACC.fmtPrediction(pr));
       if (pr && pr.evidence) pr.evidence.forEach(e => console.log('  trust   ' + FM.fmtRollup(e)));
+      if (pf) console.log('  agents  ' + (pf.pred ? `n=${pf.pred.n}: useful ${pf.pred.useful_tps.toFixed(1)} tok/s, ${pf.pred.binding.toUpperCase()}-BOUND, F ${pf.pred.fresh} (${pf.pred.basis}${pf.pred.profile ? ', profile ' + pf.pred.profile : ''}, ${pf.pred.fresh_tag})` : 'NO PREDICTED BINDING TERM (check prediction_first)'));
+      (res.priors || []).forEach(p => console.log(`  prior   ${p.id}: ${FM.fmtPrior(p)} [${p.tag}] ${p.src}`));
       res.notes.forEach(n => console.log('  note: ' + n));
     }
     // what the gate could not judge: UNKNOWN checks and speeds it has no number for; GO never covers them
@@ -59,6 +95,8 @@ if (ci >= 0) {
     (gaps.length ? `; not judged, so not passed: ${[...new Set(gaps)].join(', ')}` : ''));
   process.exit(worst);
 }
+
+FM.applyCal(data);
 
 // ---------- external validation: node report.js --external [--json] ----------
 // our physics on each community row (runs/external.jsonl, MEASURED-BY-THEM = inferred) and the gap per hardware class
@@ -103,6 +141,7 @@ if (wi >= 0) {
   if (!key || !W0.configs[key]) { console.log('batch window: no config ' + (key || '') + ' in this build (data/window/*.json; configs: ' + (Object.keys(W0.configs).join(', ') || 'none') + ')'); process.exit(key ? 2 : 0); }
   const R = FM.winReport(data, key, { agents: num('--agents'), xfloor: num('--xfloor'), bw: num('--bw'), stages: num('--stages'), anchor: args.includes('--no-anchor') ? null : (args.indexOf('--anchor') >= 0 ? args[args.indexOf('--anchor') + 1] : undefined), source: args.indexOf('--source') >= 0 ? args[args.indexOf('--source') + 1] : undefined, propose: args.indexOf('--propose') >= 0 ? args[args.indexOf('--propose') + 1] : undefined }), W = W0.configs[key];
   if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(R, null, 1) + '\n'); process.exit(0); }
+  if (R.status === 'UNKNOWN') { console.log('batch window: UNKNOWN: ' + R.why); process.exit(0); }
   if (args.includes('--propose')) {
     if (!R.template) { console.log('no lever named ' + args[args.indexOf('--propose') + 1] + '; levers: ' + R.levers.levers.concat(R.levers.unmeasured).map(x => x.lever).join(', ')); process.exit(2); }
     console.log('// a proposal for ' + R.template.model.lever + ': fill the blanks and add it to the config\'s proposals (the model and gate fields are for reading)');
@@ -205,8 +244,14 @@ if (cvi >= 0) {
   const R = FM.curveReport(data, c, opts);
   if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(Object.assign({}, R, { fit: R.ok ? Object.assign({}, R.fit, { at: undefined }) : R.fit }), null, 1) + '\n'); process.exit(0); }
   console.log(`agents vs speed: ${c.label}`);
+  console.log('  these totals are decode capacity from synthetic short-prompt runs, not agent throughput: node report.js --workload ' + c.id + ' adds prefill');
   console.log(`  ${c.box} ${c.model} ${c.engine}; ${v(c.groups)} batch group${v(c.groups) > 1 ? 's' : ''} (${c.groups.src}), ${v(c.stages)} stage${v(c.stages) > 1 ? 's' : ''} (${c.stages.src}), ${c.slots ? v(c.slots) + ' slots' : c.slots_each_point ? 'one server per agent count (--batch n)' : 'slots not given'}; runs ${c.runs.join(', ')}`);
   console.log('  measured: ' + c.points.map(p => `n=${p.n} ${t1(v(p.tps))}${p.used ? '' : ' (not fitted: ' + p.why + ')'}${p.watts ? ' at ' + t1(v(p.watts)) + ' W' : ''}`).join('; '));
+  (R.contention || []).forEach(x => {
+    console.log('  read contention ' + x.run + ': decode while reading ' + v(x.decode_while_reading_tps) + ' tok/s per stream; client TTFT seconds ' + JSON.stringify(v(x.client_ttft_s)) + ' (queue/requeue included)');
+    console.log('    native processing sum ' + (v(x.native_processing_sum_s) === null ? 'UNKNOWN' : v(x.native_processing_sum_s) + ' s') + (x.native_processing_sum_s.statistic ? ' (' + x.native_processing_sum_s.statistic + ')' : '') + '; per-arrival wait correlation UNPROVED; invalid training: ' + x.invalid_training_fields.join(', '));
+    console.log('    ' + x.baseline_limit + '; ' + x.native_processing_sum_s.src);
+  });
   if (!R.ok) { console.log('  no curve: ' + R.why); process.exit(0); }
   const f = R.fit;
   console.log(`  fit (FIT): n / total = ${f.A.toPrecision(4)} x max(G, S) + ${f.B.toPrecision(4)} x max(G, S) x n / G; max |err| ${(100 * f.err_max).toFixed(1)} % ` + f.errs.map(e => `(n=${e.n} ${t1(e.meas)} vs ${t1(e.pred)}, ${pct(e.err)})`).join(' '));
@@ -224,6 +269,71 @@ if (cvi >= 0) {
   const pick = new Set(v(C.settings.table_n).concat([H.n, S2.n, I ? I.n : 0, hc.ceiling || 0]).filter(n => n >= 1 && n <= R.max));
   console.log('      n   total  each  ' + ['', 'measured'].join(''));
   R.rows.filter(r => pick.has(r.n)).forEach(r => console.log(`  ${String(r.n).padStart(5)} ${t1(r.total).padStart(7)} ${t1(r.each).padStart(5)}  ${[r.measured.map(m => t1(m.tps) + (m.used ? '' : '*')).join('/'), r.extrapolated ? 'extrapolated' : '', r.beyond_slots ? 'needs --batch ' + r.n : '', r.fits_host === false ? 'over host memory' : '', r.n === H.n ? '<- headline' : '', r.n === S2.n ? '<- >= ' + R.second_min + ' each' : ''].filter(Boolean).join(', ')}`));
+  process.exit(0);
+}
+
+// ---------- agent workload: node report.js --workload [RUN_ID | all] [--profile NAME] [--fresh F] [--prefill P] [--n 16,32,64] [--json] ----------
+// Per curve config: decode capacity D at each agent count (the fitted curve, from synthetic short-prompt runs), the prefill rate P
+// of the build's best real-agent replay, the profile's fresh prompt tokens per output F; the ceiling min(D, P / F), what an engine
+// whose reads stall decode gets (1 / (F / P + 1 / D)), which term binds, the window-row check, and every real-agent row of the
+// build at that count judged with its own P and F. No RUN_ID: the curve's default config. all: one line per config with a P
+const wki = args.indexOf('--workload');
+if (wki >= 0) {
+  const W = data.workload, num = f => { const i = args.indexOf(f); return i >= 0 ? Number(args[i + 1]) : undefined; }, str = f => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : undefined; };
+  const opts = { profile: str('--profile'), fresh: num('--fresh'), prefill: num('--prefill'), n: str('--n') ? str('--n').split(',').map(Number) : undefined };
+  const want = args[wki + 1] && !args[wki + 1].startsWith('--') ? args[wki + 1] : null;
+  const t1 = x => x === null || x === undefined ? '?' : x === Infinity ? 'inf' : x.toFixed(1), pct = x => x === null ? '?' : (x >= 0 ? '+' : '') + (100 * x).toFixed(1) + ' %';
+  const warn = v(W.settings.real_err_warn_pct) / 100;
+  if (want === 'all') {
+    const all = FM.agentPlans(data, opts);
+    if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(all.map(p => Object.assign({}, p, { cfg: p.cfg.id })), null, 1) + '\n'); process.exit(0); }
+    const withP = all.filter(p => p.prefill);
+    console.log(`agent workload (${withP[0] ? withP[0].profile : opts.profile || v(W.settings.default_profile)}): ${all.length} curve configs, ${withP.length} with a real-agent prefill rate of their build; per agent count: decode capacity D (synthetic) / P over F / expected, binding term`);
+    withP.forEach(p => console.log('  ' + p.rows.map(r => `n=${r.n} ${t1(r.decode)}/${t1(r.prefill_cap)}/${t1(r.expect)} ${r.binding || '?'}${r.cpu_pool && r.cpu_pool.status === 'FAIL' ? ' WINDOW-FAIL' : ''}`).join('  ') + `  ${p.cfg.id}`));
+    console.log(`  ${all.length - withP.length} configs have no real-agent row of their build: their totals are decode capacity only`);
+    process.exit(0);
+  }
+  const C = data.curves, c = want ? C.configs.find(x => x.runs.indexOf(want) >= 0 || x.id === want) : C.configs.find(x => x.key === C.default);
+  if (!c) { console.log('agent workload: ' + (want ? 'no curve config holds run ' + want : 'no default config') + ' (node report.js --curve all lists them)'); process.exit(want ? 2 : 0); }
+  const P = FM.agentPlan(data, c, opts), RX = FM.replayChecks(data), RC = new Map(RX.map(x => [x.run, x.checks]));
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(Object.assign({}, P, { cfg: c.id, replay_checks: RX }), null, 1) + '\n'); process.exit(0); }
+  const pf = W.profiles[P.profile], cite = x => x.src.startsWith(x.tag) ? x.src : x.tag + ': ' + x.src;
+  console.log(`agent workload: ${c.label}`);
+  console.log(`  profile ${P.profile}: ${pf.label}; F = ${v(P.fresh)} fresh prompt tokens per output token (${cite(P.fresh)})`);
+  ['delta_tokens', 'first_prompt_tokens', 'prompt_tokens', 'out_tokens'].filter(k => pf[k]).forEach(k => console.log(`    ${k}: ${Object.entries(v(pf[k])).map(([a, b]) => a + ' ' + b).join(', ')} (${pf[k].tag})`));
+  console.log(`  P = ${P.prefill ? v(P.prefill) + ' prompt tok/s (' + cite(P.prefill) + ')' : 'UNKNOWN: no real-agent row of build ' + (P.evidence.key || '(none)') + (P.evidence.other.length ? ' (other builds: ' + [...new Set(P.evidence.other.map(x => x.build_key))].join(', ') + ', not borrowed)' : '') + '; give --prefill P'}`);
+  console.log(`  D = decode capacity: ${P.fit_ok ? 'the fitted curve of this config (node report.js --curve ' + c.id + ')' : 'measured points only (' + P.why + ')'}; synthetic short-prompt runs measure D, never agent throughput${pf.prompt_tokens ? '; D is measured at the synthetic runs\' depth, and this profile\'s prompts run deeper (median ' + v(pf.prompt_tokens).median + ' tokens): decode at that depth is not separately measured' : ''}`);
+  console.log(`  reads ${P.stall ? 'stall every decoding slot (workload.engines.' + c.engine + '.reads_stall_decode): expected = 1 / (F / P + 1 / D)' : 'overlap decode: expected = min(D, P / F)'}`);
+  console.log('      n       D   P / F  ceiling  expected  binding  prefill busy  window rows');
+  P.rows.forEach(r => {
+    console.log(`  ${String(r.n).padStart(5)} ${t1(r.decode).padStart(7)}${r.decode_tag === 'FIT' && r.extrapolated ? 'x' : ' '}${t1(r.prefill_cap).padStart(7)} ${t1(r.ceiling).padStart(8)} ${t1(r.expect).padStart(9)}  ${(r.binding || '?').padEnd(7)}  ${r.busy === null ? '    ?' : (100 * r.busy).toFixed(0).padStart(4) + ' %'}        ${r.cpu_pool ? r.cpu_pool.status + ' (' + r.cpu_pool.pred.rows + ' rows, cap ' + r.cpu_pool.pred.cap + ')' : '-'}`);
+    r.real.forEach(x => console.log(`        MEASURED ${x.tps} tok/s ${x.run}: own P ${t1(x.prefill)} F ${t1(x.fresh)} gives ${t1(x.own.expect)} expected (${pct(x.err_expect)}), ceiling ${t1(x.own.ceiling)} (${pct(x.err_ceiling)})${x.busy !== null ? ', prefill busy ' + (100 * x.busy).toFixed(1) + ' % (model ' + (x.own.busy === null ? '?' : (100 * x.own.busy).toFixed(1) + ' %') + ')' : ''}${x.err_expect !== null && Math.abs(x.err_expect) > warn ? '  MISS > ' + (100 * warn) + ' %' : ''}`));
+    if (r.cpu_pool && r.cpu_pool.status !== 'PASS') console.log(`        window: ${r.cpu_pool.detail}`);
+    r.real.forEach(x => (RC.get(x.run) || []).filter(c => c.status !== 'PASS').forEach(c => console.log(`        ${c.status} ${c.id} ${x.run}: ${c.detail}`)));
+  });
+  console.log('  (x = D extrapolated past the measured agent counts)');
+  if (P.levers.length) console.log('  prefill levers (gains on P; a prefill-bound ceiling rises with them): ' + P.levers.map(l => `${l.id} [${l.tag}${l.inside_noise ? ', inside noise' : ''}]: x${l.gain.join('-')} -> P / F ${l.prefill_cap.map(t1).join('-')}`).join('; '));
+  if (P.noise_pct !== null) console.log(`  replay noise: two identical real-agent replays differ by ~${P.noise_pct} % in agent tok/s (workload settings.replay_noise_pct); a single-pair difference below it is inside noise`);
+  // every real-agent row of the ledger, any build: is its F a replay artifact, and was its window warm
+  const flagged = RX.filter(x => x.checks[0].status === 'FLAG'), cold = RX.filter(x => x.checks[1].status !== 'PASS');
+  console.log(`  replay checks on ${RX.length} real-agent rows: replay_artifact FLAGS ${flagged.length} (K = ${v(W.settings.replay_artifact_k)} x the reference), steady_state notes ${cold.length} cold-start windows`);
+  RX.forEach(x => { const [a, s] = x.checks; console.log(`    ${a.status.padEnd(7)} ${x.run} n=${x.n}: ${a.excess === null ? '?' : a.excess.toFixed(1) + 'x'} (F ${a.fresh === null ? '?' : a.fresh} vs ${a.ref ? a.ref.v + ' ' + a.ref.basis + ' ' + a.ref.name : '?'})${a.surplus_tokens !== null ? ', ' + a.surplus_tokens + ' surplus fresh tokens' : ''}; steady_state ${s.status}${s.warmup_s !== null ? ' (warmup_s ' + s.warmup_s + ')' : ''}`); });
+  if (flagged.length) console.log('    suspected causes: ' + v(W.settings.replay_artifact_causes).join('; '));
+  if (cold.length) console.log('    cold-start window, F upper bound: a row with no warm-up times every agent\'s cold first prompt (record the replay with warmup_s)');
+  process.exit(0);
+}
+
+// ---------- serving priors: node report.js --priors [recipe.json] [--json] ----------
+// data.priors (data/priors-serving.json): every prior, or the ones whose applies_when a recipe's facts satisfy
+const pri = args.indexOf('--priors');
+if (pri >= 0) {
+  const file = args[pri + 1] && !args[pri + 1].startsWith('--') ? args[pri + 1] : null;
+  let r = null;
+  if (file) { try { r = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { console.error('cannot read recipe ' + file + ': ' + e.message); process.exit(2); } }
+  const rows = r ? FM.priorsFor(data, r) : data.priors.rows;
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(r ? { recipe: r.id, facts: FM.priorFacts(data, r), priors: rows } : rows, null, 1) + '\n'); process.exit(0); }
+  console.log(`serving priors: ${rows.length} of ${data.priors.rows.length}` + (r ? ` apply to ${r.id} (${JSON.stringify(FM.priorFacts(data, r))})` : ' (give a recipe to list the ones that apply)'));
+  rows.forEach(p => console.log(`  ${p.id} [${p.tag}, ${p.evidence}]: ${FM.fmtPrior(p)}\n    ${p.statement}\n    applies when ${JSON.stringify(p.applies_when)}; ${p.src}`));
   process.exit(0);
 }
 
@@ -275,31 +385,39 @@ if (ai >= 0) {
   const rows = runs.map(run => {
     const launch = run.prediction && run.prediction.basis === 'launch';
     // today's gate as --check runs it (with the prediction, so mem_cap / ram_fit apply)
-    const now = FM.checkRecipe(data, run.recipe, null), today = now.checks;
+    const now = FM.checkRecipe(data, run.recipe, null, { measured: run.measured }), today = now.checks;
     const pred = launch ? run.prediction : now.prediction || FM.predictRecipe(data, run.recipe);
     // a launch capture keeps its own verdicts; a check added after it (accuracy.replay_checks) is replayed post hoc and labelled
     const ck = run.check ? run.check.checks.concat(today.filter(c => replay.indexOf(c.id) >= 0 && !run.check.checks.some(x => x.id === c.id)).map(c => Object.assign({ replayed: true }, c))) : today;
     const lab = labels[run.id], bad = ACC.wentBad(run, lab);
     const predNow = now.prediction || FM.predictRecipe(data, run.recipe);
     return { id: run.id, when: run.when, box: run.box, model: run.model, engine: run.engine, run, pred, pred_basis: launch ? 'launch' : 'post-hoc', pairs_now: ACC.pairs(run, predNow),
-      checks: ck, today, launch_checks: run.check ? run.check.checks : null, check_basis: run.check ? 'launch' : 'post-hoc', bad, scored: !bad.length && !LED.caveated(run).length, pairs: ACC.pairs(run, pred),
+      checks: ck, today, post_run_fallback: today.find(c => c.id === 'fallback') || null,
+      launch_checks: run.check ? run.check.checks : null, check_basis: run.check ? 'launch' : 'post-hoc', bad, scored: !bad.length && !LED.caveated(run).length, pairs: ACC.pairs(run, pred),
       causes: [...new Set(ACC.causesOf(lab).map(c => c.class))], disturbed: ACC.disturbed(lab),
       in_sample: (run.tags || []).filter(t => t.startsWith('anchor:')).map(t => t.slice(7)),
       bound_source: (run.tags || []).filter(t => t.startsWith('bound-source:')).map(t => t.slice(13)) };
   });
   const pct = x => x === null ? '-' : ((x >= 0 ? '+' : '') + (100 * x).toFixed(1) + '%');
   const n2 = x => x === null || x === undefined ? '-' : x.toFixed(2);
-  const out = { file, built: data.meta.built, runs: [], summary: {}, verdicts: null, unmodelled: [] };
+  const out = { file, built: data.meta.built, calibration: data.meta.calibration || null, runs: [], summary: {}, verdicts: null, unmodelled: [], decision_validation: ACC.decisions(rows) };
   console.log(`== Run ledger accuracy (${rows.length} runs from ${path.relative(process.cwd(), file) || file}; planner data built ${data.meta.built}) ==`);
   console.log('decode: the draft prediction pairs with the primary draft phase (n4), the no-draft prediction with n0. post-hoc = predicted today from the recorded recipe; in-sample = the run is a calibration anchor.');
+  console.log('held-out decisions: ' + out.decision_validation.status + (out.decision_validation.why ? ': ' + out.decision_validation.why : ''));
+  out.decision_validation.cohorts.forEach(c => console.log('  ' + c.id + ': ' + c.status + (c.status === 'SCORED' ? '; selected ' + c.selected + ', observed best ' + c.observed_best + ', rank ' + c.selected_observed_rank + ', regret ' + c.regret + (c.regret_reason ? ' (' + c.regret_reason + ')' : '') : '; ' + c.reason)));
+  // These are separate from post-hoc component summaries below; old rows acquire no invented decision regret.
   console.log('\n-- per run --');
   rows.forEach(r => {
     const d = r.pairs.filter(p => p.metric.startsWith('decode'));
     const tag = [r.pred_basis, r.in_sample.length ? 'in-sample ' + r.in_sample.join('/') : '', r.bad.length ? 'went bad: ' + r.bad.join(', ') : '', !r.bad.length && !r.scored ? 'confounded: not scored' : ''].filter(Boolean).join('; ');
     if (r.pred.status !== 'PREDICTED') { console.log(`${r.id.padEnd(30)} UNMODELLED: ${r.pred.why}` + (d.length ? ` | measured ${d.map(p => p.phase + ' ' + n2(p.meas)).join(', ')}` : '') + ` [${tag}]`); out.unmodelled.push({ id: r.id, why: r.pred.why }); }
     else console.log(`${r.id.padEnd(30)} ` + (r.pairs.length ? r.pairs.map(p => `${p.metric}${p.phase ? '[' + p.phase + ']' : ''} ${n2(p.pred)} vs ${n2(p.meas)}` + (p.pred === null ? ' (UNMODELLED)' : p.pct !== null ? ` ${pct(p.pct)}` : ` (${p.err >= 0 ? '+' : ''}${n2(p.err)})`)).join(', ') : 'nothing measured') + ` [${tag}]`);
-    out.runs.push({ id: r.id, box: r.box, model: r.model, engine: r.engine, pred_basis: r.pred_basis, status: r.pred.status, why: r.pred.why, scored: r.scored, bad: r.bad, in_sample: r.in_sample, pairs: r.pairs });
+    out.runs.push({ id: r.id, box: r.box, model: r.model, engine: r.engine, pred_basis: r.pred_basis, status: r.pred.status, why: r.pred.why, scored: r.scored, bad: r.bad, in_sample: r.in_sample, pairs: r.pairs,
+      launch_fallback: (r.launch_checks || []).find(c => c.id === 'fallback') || null, post_run_fallback: r.post_run_fallback });
   });
+  out.fallback_receipts = rows.filter(r => r.post_run_fallback).map(r => ({ run_id: r.id, ...r.post_run_fallback }));
+  console.log('\n-- post-run fallback receipts (separate from preserved pre-launch verdicts) --');
+  out.fallback_receipts.forEach(r => console.log(r.run_id + ': ' + r.status + ' ' + r.detail));
   console.log('\n-- decode error per box / model / engine (runs that went fine; error = (pred - meas) / meas) --');
   const METRICS = ['decode_tps', 'decode_tps_nodraft', 'prefill_tps', 'vram_post_gib'];
   for (const metric of METRICS) {

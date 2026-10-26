@@ -9,8 +9,10 @@ weights on the GPU and computing the rest on the CPU from system memory:
 - Ornith-1.5-122B, a fine-tune of Qwen3.5-122B-A10B (122B total, about 10B active per token).
 
 The question on every box: how close does one mid-range GPU plus the memory already in the machine get to
-25 tok/s at one stream, without giving up output quality? 25 tok/s is our bar for a coding model we would
-hand an agent's work to.
+25 tok/s at one stream, without giving up output quality? 25 tok/s of one-request decode was our bar for a coding
+model we would hand an agent's work to. It is necessary, not sufficient: an agent also waits for prompt reading, and a
+recipe that reads prompts at tens of tok/s is too slow for interactive agent work whatever its decode (see the
+[many-agents page](../b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with)).
 
 Box D asks it from the other side: a two-socket server with 1 TB of DRAM and only an 11 GB Pascal card, running
 the largest model with its routed experts at release precision, all from DRAM.
@@ -351,8 +353,8 @@ These use our own private tests, not published here.
     room for only a few such turns.
   - The 262,144-token window with a Q8_0 KV cache does not fit beside these weights on a 24 GB card: both crashes
     came in prefills past 65k.
-  - A re-run with a configuration fixed for both is queued. Until then, the model's agent ability on this box is
-    not measured.
+  - A re-run with a configuration fixed for both was not run before the research paused (2026-10-26). The model's
+    agent ability on this box is not measured.
 
 **21. The same engine changes on box B: V4.1 from 10.6 to 11.9 tok/s.**
 
@@ -461,7 +463,7 @@ to BF16 can be penalized for disagreeing with the reference's own errors. The bo
 miss against that reference (KL 0.02997, top-1 0.960, 925 positions); its fidelity to BF16 is unmeasured.
 
 For scale, unsloth reports KL against BF16 of 0.049 for UD-Q4_K_XL and 0.160 for UD-Q3_K_XL, on their own prompts.
-A near-lossless reference (Q8_0 on a large-memory CPU box) is the next step.
+A near-lossless reference (Q8_0 on a large-memory CPU box) was not built before the research paused.
 
 ## Engine changes
 
@@ -504,4 +506,4 @@ Build option, upstream's and not ours: `-DGGML_EXPERT_CHUNKING=OFF` (point 13).
 
 ---
 
--- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fab) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [arc](https://github.com/akapug/arc) + [fab](https://github.com/akapug/fabric) for [@akapug](https://github.com/akapug)

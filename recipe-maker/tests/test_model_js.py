@@ -9,6 +9,22 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class ModelJs(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('node') and os.path.exists(os.path.join(ROOT, 'tests', 'test_research_memory.js')) and os.path.exists(os.path.join(ROOT, 'recipes', 'snoopy-v41-gsq-iq2xs-strata-ramcopy.json')), 'node or private maintained research fixtures not present')
+    def test_research_memory_js(self):
+        for script in ('test_expert_residency.js', 'test_research_memory.js'):
+            with self.subTest(script=script):
+                p = subprocess.run(['node', os.path.join('tests', script)], cwd=ROOT, capture_output=True, text=True)
+                self.assertEqual(p.returncode, 0, p.stdout[-10000:] + p.stderr[-10000:])
+                self.assertRegex(p.stdout, r'\d+ .* checks passed')
+                print(p.stdout)
+
+    @unittest.skipUnless(shutil.which('node') and os.path.exists(os.path.join(ROOT, 'tests', 'test_fallback.js')), 'node or private fallback integration fixture not present')
+    def test_fallback_js(self):
+        p = subprocess.run(['node', os.path.join('tests', 'test_fallback.js')], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stdout[-10000:] + p.stderr[-10000:])
+        self.assertRegex(p.stdout, r'\d+ fallback checks passed')
+        print(p.stdout)
+
     @unittest.skipUnless(shutil.which('node'), 'node not installed')
     def test_network_js(self):
         p = subprocess.run(['node', os.path.join('tests', 'test_network.js')], cwd=ROOT, capture_output=True, text=True)
