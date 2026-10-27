@@ -1,0 +1,36 @@
+From 2da7ba9df2adceb907a06d5b6a57e7d1251801e8 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 11:49:46 +0000
+Subject: [PATCH 12/22] sycl: decline CPY to or from TQ1_0 and TQ2_0
+
+cpy.cpp has no TQ1_0 or TQ2_0 kernel in either direction, but supports_op
+claimed those copies, so test-backend-ops CPY aborted at tq2_0 -> tq2_0 (and at
+f16 -> tq2_0 past it). Decline them and let the scheduler fall back, as for
+PTQ1_0/PQ2_0 destinations. CPY on an Arc Pro B70: an abort -> 402/403; the one
+left is f16 -> q2_0 missing its 1e-6 error bound by quantization rounding, in a
+kernel this does not touch.
+---
+ ggml/src/ggml-sycl/ggml-sycl.cpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/ggml/src/ggml-sycl/ggml-sycl.cpp b/ggml/src/ggml-sycl/ggml-sycl.cpp
+index 811bc6554..a33e877f7 100644
+--- a/ggml/src/ggml-sycl/ggml-sycl.cpp
++++ b/ggml/src/ggml-sycl/ggml-sycl.cpp
+@@ -6356,6 +6356,13 @@ static bool do_ggml_backend_sycl_device_supports_op(ggml_backend_dev_t dev, cons
+                     return false;
+                 }
+ 
++                // TQ1_0 and TQ2_0 have no copy kernel in cpy.cpp in either direction, so
++                // ggml_sycl_cpy() would abort on them
++                if (src0_type == GGML_TYPE_TQ1_0 || src0_type == GGML_TYPE_TQ2_0 ||
++                    src1_type == GGML_TYPE_TQ1_0 || src1_type == GGML_TYPE_TQ2_0) {
++                    return false;
++                }
++
+                 if (src0_type == GGML_TYPE_F16) {
+                     if (src1_type == GGML_TYPE_Q2_K ||
+                         src1_type == GGML_TYPE_Q3_K ||
+-- 
+2.51.0
+

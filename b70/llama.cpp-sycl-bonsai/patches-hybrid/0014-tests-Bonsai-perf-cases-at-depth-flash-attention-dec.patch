@@ -1,0 +1,45 @@
+From 359548e943408c7a7d9eec088fcfc2585c3dd407 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 13:42:45 +0000
+Subject: [PATCH 14/22] tests: Bonsai perf cases at depth: flash attention
+ decode and prefill, PTQ1_0 prefill
+
+Flash attention at Qwen3.5 attention shapes (head dim 256, 4 K/V heads, GQA 6): decode of 1
+and 2 tokens (an MTP verify step) at KV 256 to 64k, and a 512-token prefill ubatch at KV 4k,
+16k and 32k; and a 512-token PTQ1_0 mat-mul at the FFN and QKV shapes (dequantize to fp16 + GEMM).
+---
+ tests/test-backend-ops.cpp | 18 +++++++++++++++---
+ 1 file changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
+index 698dde812..3e73391a2 100644
+--- a/tests/test-backend-ops.cpp
++++ b/tests/test-backend-ops.cpp
+@@ -10584,9 +10584,21 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
+     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_BF16, GGML_TYPE_F32, 48, 1, 5120, {1, 1}, {1, 1})); // alpha, beta
+     test_cases.emplace_back(new test_get_rows(GGML_TYPE_F32, 128*128*48, 2, 1, 1, 1, false));   // recurrent state gather
+     test_cases.emplace_back(new test_concat(GGML_TYPE_F32, {3, 10240, 1, 1}, 1, 0, 2));          // conv state + new column
+-    for (int kv : {256, 4096}) {
+-        test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, kv, 1, true, false, 0, 0, GGML_PREC_F32,
+-                                                        GGML_TYPE_F16, GGML_TYPE_F16));
++    // flash attention: decode (1 token, and 2 for an MTP verify step) from a short to a long KV, and a 512-token
++    // prefill ubatch over a long KV, the attention half of a long-context turn
++    for (int kv : {256, 4096, 16384, 65536}) {
++        for (int nb : {1, 2}) {
++            test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, kv, nb, true, false, 0, 0,
++                                                            GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
++        }
++    }
++    for (int kv : {4096, 16384, 32768}) {
++        test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, kv, 512, true, false, 0, 0,
++                                                        GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
++    }
++    // the PTQ1_0 weights at a prefill ubatch (dequantize to fp16 + GEMM)
++    for (auto [m, k] : std::vector<std::pair<int64_t, int64_t>>{{17408, 5120}, {5120, 17408}, {10240, 5120}}) {
++        test_cases.emplace_back(new test_mul_mat(GGML_TYPE_PTQ1_0, GGML_TYPE_F32, m, 512, k, {1, 1}, {1, 1}));
+     }
+ 
+     // SWIGLU at a 27B-class FFN width, fused [gate|up] vs split operands
+-- 
+2.51.0
+

@@ -1,0 +1,120 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 14:15:31 +0000
+Subject: [PATCH 17/18] sycl: skip the KV tiles the mask hides in the
+ flash-attention tile kernel
+
+With a unified KV cache shared by several sequences (llama-server -kvu -np N), every
+sequence attends over the whole used cell range and the mask hides the other sequences'
+cells (-inf). The tile kernel still loaded and multiplied every KV tile, so a short chat
+decoding beside a long one paid the long one's attention cost. Each work-group now checks
+its Q columns' mask over a KV tile first (on the fp16 bits, so fast-math cannot fold the
+-inf test away) and skips the tile when it is -inf throughout. Skipping is exact: a
+masked tile adds exp(-inf) = 0 and leaves the running maximum alone.
+
+tests: FLASH_ATTN_EXT with another sequence's cells masked (kv_other), eval at 1024 KV with
+whole masked tiles and a tile boundary inside them, perf at 65536 KV with 61440 masked.
+
+Arc Pro B70, head dim 256, 4 K/V heads, GQA 6, f16 K/V, 65536 KV of which 61440 are another
+sequence's: 1 token 544 -> 66 us, 2 tokens 865 -> 103 us. Unmasked cases unchanged (65536 KV:
+546 / 884 us before, 546 / 889 after). FLASH_ATTN_EXT 4097/4097.
+---
+ ggml/src/ggml-sycl/fattn-tile.hpp | 19 +++++++++++++++
+ tests/test-backend-ops.cpp        | 40 +++++++++++++++++++++++++++++++
+ 2 files changed, 59 insertions(+)
+
+diff --git a/ggml/src/ggml-sycl/fattn-tile.hpp b/ggml/src/ggml-sycl/fattn-tile.hpp
+index f12c85b0a..be4a063f6 100644
+--- a/ggml/src/ggml-sycl/fattn-tile.hpp
++++ b/ggml/src/ggml-sycl/fattn-tile.hpp
+@@ -448,6 +448,25 @@ static __dpct_inline__ void flash_attn_tile_iter(T_vec_dot * const Q_tmp,
+     static_assert(cpw % KQ_cs == 0, "bad KQ_cs");
+     const int k_VKQ_sup = k_VKQ_max - k_VKQ_0; // k supremum, only smaller k values have valid KV data
+ 
++    // A KV tile that the mask hides (-inf) from every Q column of this block adds nothing to the
++    // result: skip its K/V loads and its math. In a unified KV cache shared by several sequences
++    // most of the KV range is other sequences' cells, masked. The test is on the fp16 bits (-inf
++    // is 0xFC00), which fast-math cannot fold away.
++    if (mask) {
++        constexpr int nthreads = nwarps * warp_size;
++        bool live = false;
++        for (int idx = item_ct1.get_local_linear_id(); idx < ncols1 * nbatch_fa; idx += nthreads) {
++            const int j = idx / nbatch_fa;
++            const int i = idx % nbatch_fa;
++            if (!oob_check || i < k_VKQ_sup) {
++                live = live || sycl::bit_cast<uint16_t>(mask[fastmodulo(col_Q_0 + j, ne01) * stride_mask + k_VKQ_0 + i]) != 0xFC00;
++            }
++        }
++        if (!sycl::any_of_group(item_ct1.get_group(), live)) {
++            return;
++        }
++    }
++
+     float KQ_max_new[cpw];
+ #pragma unroll
+     for (int jc0 = 0; jc0 < cpw; ++jc0) {
+diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
+index 96de23641..05a1f2ae6 100644
+--- a/tests/test-backend-ops.cpp
++++ b/tests/test-backend-ops.cpp
+@@ -7331,6 +7331,34 @@ struct test_flash_attn_ext : public test_case {
+     }
+ };
+ 
++// flash attention in a KV cache that other sequences share (a unified cache): the first kv_other KV
++// cells belong to another sequence, so the mask hides them (-inf) from every query
++struct test_flash_attn_ext_other_seqs : public test_flash_attn_ext {
++    const int64_t kv_other;
++
++    std::string vars() override {
++        return test_flash_attn_ext::vars() + ",kv_other=" + std::to_string(kv_other);
++    }
++
++    test_flash_attn_ext_other_seqs(int64_t hs, int64_t nh, std::array<int64_t, 2> nr23, int64_t kv, int64_t nb,
++                                   int64_t kv_other)
++        : test_flash_attn_ext(hs, hs, nh, nr23, kv, nb, true, false, 0.0f, 0.0f, GGML_PREC_F32, GGML_TYPE_F16,
++                              GGML_TYPE_F16),
++          kv_other(kv_other) {}
++
++    void initialize_tensors(ggml_context * ctx) override {
++        test_flash_attn_ext::initialize_tensors(ctx);
++        ggml_tensor * m = ggml_get_tensor(ctx, "m");
++        std::vector<ggml_fp16_t> data(ggml_nelements(m));
++        ggml_backend_tensor_get(m, data.data(), 0, ggml_nbytes(m));
++        const ggml_fp16_t neg_inf = ggml_fp32_to_fp16(-INFINITY);
++        for (int64_t r = 0; r < ggml_nrows(m); ++r) {
++            std::fill_n(data.begin() + r * m->ne[0], std::min(kv_other, m->ne[0]), neg_inf);
++        }
++        ggml_backend_tensor_set(m, data.data(), 0, ggml_nbytes(m));
++    }
++};
++
+ // GGML_OP_CROSS_ENTROPY_LOSS
+ struct test_cross_entropy_loss : public test_case {
+     const ggml_type type;
+@@ -9357,6 +9385,14 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+         test_cases.emplace_back(new test_mul_mat(GGML_TYPE_BF16, GGML_TYPE_F32, 48, n, 5120, {1, 1}, {1, 1}));
+     }
+ 
++    // flash attention with another sequence's cells masked out of the KV range (a unified KV cache),
++    // whole KV tiles of them and a tile boundary inside them
++    for (int nb : {1, 2, 4}) {
++        for (int64_t kv_other : {512, 700}) {
++            test_cases.emplace_back(new test_flash_attn_ext_other_seqs(256, 4, {6, 1}, 1024, nb, kv_other));
++        }
++    }
++
+     // flash attention at uneven GQA ratios (3, 5, 6, 7): packed into the next power of two
+     for (int hs : {64, 128, 256}) {
+         for (int gqa : {3, 5, 6, 7}) {
+@@ -10375,6 +10411,10 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
+         test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, kv, 512, true, false, 0, 0,
+                                                         GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+     }
++    // ... and a sequence with 4096 cells decoding beside another that holds 61440, in one unified KV cache
++    for (int nb : {1, 2}) {
++        test_cases.emplace_back(new test_flash_attn_ext_other_seqs(256, 4, {6, 1}, 65536, nb, 61440));
++    }
+     // the PTQ1_0 weights at a prefill ubatch (dequantize to fp16 + GEMM)
+     for (auto [m, k] : std::vector<std::pair<int64_t, int64_t>>{{17408, 5120}, {5120, 17408}, {10240, 5120}}) {
+         test_cases.emplace_back(new test_mul_mat(GGML_TYPE_PTQ1_0, GGML_TYPE_F32, m, 512, k, {1, 1}, {1, 1}));

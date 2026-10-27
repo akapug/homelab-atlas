@@ -13,6 +13,7 @@ internal id | b70/agent-eval/sandbox-agent.sh | CLAUDE_CONFIG_DIR=/tmp/home/.cla
 internal id | b70/agent-eval/sandbox-agent.sh | agent-eval:claude claude --dangerously-skip-permissions | the image tag and the harness's own command
 e-mail address | b70/agent-eval/run.py | user.email=eval@example.com | reserved example domain (RFC 2606) for the eval's git commits
 e-mail address | b70/llama.cpp-sycl/patches/*.patch | <akapug@users.noreply.github.com> | GitHub's public no-reply author address in git format-patch headers
+e-mail address | b70/llama.cpp-sycl-bonsai/patches*/*.patch | <akapug@users.noreply.github.com> | GitHub's public no-reply author address in git format-patch headers
 lab notes pointer | docs/README.md | docs/README.md | this repository's own docs folder, not a lab-notes page
 internal id | recipe-maker/data/priors-serving.json | https://code.claude.com/docs/en/ | a public vendor docs page a Recipe Maker serving prior cites (the coding-agent CLI's timeouts and context window)
 internal id | recipe-maker/.scan-admit | https://code.claude.com/docs/en/ | Recipe Maker's own admission of that docs page

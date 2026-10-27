@@ -45,6 +45,7 @@ measured it, what agents doing real work get. The card pages hold every conditio
 | GLM-5.3-Flash (321B MoE) | **26.69** | not measured in this run | [RTX 3090 Ti](3090-ti/#glm-53-flash-a-route-trim-clears-25-toks) + DDR5, route trim and CPU-lane changes not published (23.08 without the trim) | about 20-22 tok/s for one agent before tool time (our estimate from the coding-seat setup's 25.9 decode and 761 prompt reading; no replay) | KL 0.0154, top-1 0.975: passes | 2026-10-20 |
 | Qwen3.8 Flash-Next (125B MoE, 6B active) | **87.1** | not measured in this run | [one Arc Pro B70](b70/), public XeStrata | **32.6** tok/s for one agent with its tool time (about 42 while the server works for it); **80-86** (mean 83.4, three runs) in total over 16 agents, about 5 each, on [two B70s](b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with) with our experimental batched build | 11 of 12 agent tasks (one-card build); none on the batched build | 2026-10-26 |
 | Qwen3.8-27B (dense) | **103-105** | 1,407-1,410 at 16k | [RTX 3090 Ti](3090-ti/#qwen38-27b-on-vllm-cuda-about-104-toks), 57,344-token window at most | not measured | 41 of 41 correctness eval | 2026-10-07 |
+| Ternary Bonsai 2 27B (dense, 6.5 GiB) | **71.5-71.6** with MTP 2; 52.8-52.9 without | 907 cold at 49k tokens; 574-1,231 at 32-512 tokens (hybrid build) | [one Arc Pro B70](b70/bonsai-2-27b.md), PrismML's llama.cpp fork + our published SYCL patches | not measured | test-backend-ops; perplexity unchanged by the hybrid; no agent eval on these builds | 2026-09-27 |
 | Ornith-1.5-35B-A3B | **198** with MTP 3; we serve with MTP off (about 118 on the same architecture) after MTP garbled 3 of 106 replies under mixed load | not measured | [one Arc Pro B70](b70/ornith-35b-a3b.md#speed) | not measured | 17 of 24 agent tasks | 2026-10-04 |
 | the same, on retired cards | 59-60 | 331 | [GTX 1080 Ti + MI25](mi25/); 59.6 on the [RTX 6000](rtx-6000/#no-silent-fallback-experts-on-optane-by-accident) | not measured | code-review screen 1 of 2 | 2026-10-21 |
 | Ornith-1.5-122B | **31.6** | 165.5 | [Quadro RTX 6000](rtx-6000/) + DDR4 | 0 of 3 agent tasks in a limited setup | both planted defects found | 2026-10-20 |
@@ -160,7 +161,7 @@ with the symptom it fixes and how to apply it, check it and undo it. Start from 
 | your hardware | what applies | where |
 |---|---|---|
 | Intel Arc Pro B70 (our card), with vLLM | two Intel-only fixes, four fixes that are not tied to a GPU, two settings for Intel's `xe` driver | [B70 with vLLM](PATCHES.md#2-intel-arc-pro-b70-with-vllm), [any GPU](PATCHES.md#1-any-gpu-serving-software-and-chat-template-fixes) |
-| Intel Arc Pro B70, with llama.cpp | 18 patches and a build script | [B70 with llama.cpp](PATCHES.md#3-intel-arc-pro-b70-with-llamacpp) |
+| Intel Arc Pro B70, with llama.cpp | 18 patches and a build script; 22 more for ternary Bonsai models on PrismML's fork | [B70 with llama.cpp](PATCHES.md#3-intel-arc-pro-b70-with-llamacpp), [ternary Bonsai](PATCHES.md#ternary-bonsai-on-prismmls-fork) |
 | Other Intel Arc (B580, Pro B60, A-series) | untested, with what may carry over and why | [other Intel Arc](PATCHES.md#other-intel-arc-cards) |
 | NVIDIA with vLLM: our RTX 3090 Ti (Ampere) | two of the any-GPU patches on vLLM's official 0.31.0 image, in one Dockerfile | [3090 Ti](PATCHES.md#nvidia-rtx-3090-ti-ampere-24-gb) |
 | NVIDIA with big MoE models: our Quadro RTX 6000 (Turing) and GTX 1080 Ti (Pascal) | our ik_llama.cpp fork's engine changes, a Turing fix sent to another project | [RTX 6000](PATCHES.md#nvidia-quadro-rtx-6000-turing-24-gb), [1080 Ti](PATCHES.md#nvidia-gtx-1080-ti-pascal-11-gb) |
@@ -186,7 +187,7 @@ Before you start:
 |---|---|
 | [`3090-ti/`](3090-ti/) | RTX 3090 Ti: Qwen3.8-27B on vLLM CUDA, GLM-5.3-Flash with a route trim, Flash-Next agent runs, four models reviewing code |
 | [`rtx-6000/`](rtx-6000/) | Quadro RTX 6000 + Optane: DeepSeek V4.1 Flash best run and its full command, 189k-token recall, GLM, Ornith-1.5-122B |
-| [`b70/`](b70/) | Arc Pro B70: [many agents on two cards](b70/many-agents.md), vLLM and llama.cpp patches, Qwen3.8-27B, [Qwen3.6-35B-A3B](b70/qwen36-35b-a3b.md), [Ornith-1.5-35B-A3B](b70/ornith-35b-a3b.md) serving a household assistant and a coding agent from one card, [the agent eval](b70/agent-eval/), [benchmarks](b70/bench/) |
+| [`b70/`](b70/) | Arc Pro B70: [many agents on two cards](b70/many-agents.md), vLLM and llama.cpp patches, Qwen3.8-27B, [Qwen3.6-35B-A3B](b70/qwen36-35b-a3b.md), [Ornith-1.5-35B-A3B](b70/ornith-35b-a3b.md) serving a household assistant and a coding agent from one card, [Ternary Bonsai 2 27B](b70/bonsai-2-27b.md) on PrismML's llama.cpp fork, [the agent eval](b70/agent-eval/), [benchmarks](b70/bench/) |
 | [`network/`](network/) | three used ConnectX-3 cards as a 56 Gb/s triangle between three boxes: flash, setup, every link measured |
 | [`1080-ti/`](1080-ti/) | GTX 1080 Ti: V4.1 attention on a card with no kernel for it, and the fix |
 | [`mi25/`](mi25/) | Radeon Instinct MI25: a $50 card under Vulkan, a cold-boot fix, experts banked beside a CUDA card, heat |

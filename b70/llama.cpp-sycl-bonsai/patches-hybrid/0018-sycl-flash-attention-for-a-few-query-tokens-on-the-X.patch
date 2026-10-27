@@ -1,0 +1,509 @@
+From 9904ec3131f27c418cb057b19ed3bd4be0a0c2fb Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 14:53:14 +0000
+Subject: [PATCH 18/22] sycl: flash attention for a few query tokens on the XMX
+ engines
+
+Decode and speculative verify steps (up to 16 Q rows per K/V head: GQA heads x query
+tokens, e.g. GQA 6 x 2 tokens of an MTP verify) ran the tile kernel, whose K.Q and P.V
+products are vector FMAs from SLM: at 1 token it read the K/V at ~80 % of memory speed,
+at 2 tokens it turned compute bound (twice the math over the same K/V). The new kernel
+puts all those Q rows on the M side of joint_matrix products, one work-group per
+(sequence, K/V head, KV split), per 128-cell chunk:
+  S^T = K Q^T  (K straight from the cache as the A operand, Q^T staged in SLM),
+  an online softmax over S in SLM (the O accumulator rows rescaled in registers),
+  O += P V     (P from SLM, V straight from the cache as the B operand);
+the splits are merged by flash_attn_combine_results. The chunks of a split are interleaved
+over the KV range, and a first pass over the mask marks the live ones, so a unified KV
+cache's other-sequence cells cost nothing. Two work-groups per Xe core read the K/V best
+(64k KV, 1 token: 16 splits 475 us, 8 597, 32 485, 128 577).
+
+Taken for f16 K/V, head size 128 or 256, no sinks/ALiBi/softcap, KV a multiple of 128 and
+64-byte aligned; GGML_SYCL_FA_XMX=0 turns it off.
+
+Arc Pro B70, FLASH_ATTN_EXT head dim 256, 4 K/V heads, GQA 6, f16 K/V, tile -> XMX (us),
+1 token / 2 tokens: KV 4096 35 / 64 -> 25 / 31; 16384 187 / 274 -> 134 / 144; 65536 549 / 890
+-> 475 / 490 (93 % of the 608 GB/s bound at 1 token); 65536 of which 61440 another
+sequence's 59 / 116 -> 32 / 43; KV 256 unchanged (18 / 21 -> 16 / 22).
+FLASH_ATTN_EXT 4097/4097 (76 cases on the XMX kernel).
+---
+ ggml/src/ggml-sycl/fattn-xmx.cpp | 392 +++++++++++++++++++++++++++++++
+ ggml/src/ggml-sycl/fattn-xmx.hpp |  15 ++
+ ggml/src/ggml-sycl/fattn.cpp     |  12 +
+ 3 files changed, 419 insertions(+)
+ create mode 100644 ggml/src/ggml-sycl/fattn-xmx.cpp
+ create mode 100644 ggml/src/ggml-sycl/fattn-xmx.hpp
+
+diff --git a/ggml/src/ggml-sycl/fattn-xmx.cpp b/ggml/src/ggml-sycl/fattn-xmx.cpp
+new file mode 100644
+index 000000000..a63919268
+--- /dev/null
++++ b/ggml/src/ggml-sycl/fattn-xmx.cpp
+@@ -0,0 +1,392 @@
++//
++// MIT license
++// SPDX-License-Identifier: MIT
++//
++
++// Flash attention for a few query tokens (decode, a speculative verify step) on the XMX engines.
++//
++// One work-group per (sequence, K/V head, KV split). Its Q rows are all the query heads that share
++// the K/V head times the query tokens (GQA 6 x 2 tokens = 12 rows), padded to 16: the M side of
++// the matrix ops, so each K/V cell is read once for all of them. Per chunk of 128 KV cells:
++//   S^T = K Q^T  (K straight from the cache as the A operand, Q^T staged in SLM as the B operand),
++//   a row-wise online softmax over S in SLM (running max and sum per row; the O accumulator rows
++//   are rescaled in registers), and O += P V (P from SLM, V straight from the cache).
++// The splits are merged by flash_attn_combine_results, as for the tile kernel.
++//
++// The tile kernel does the two products with vector FMAs from SLM and turns compute bound at 2
++// query tokens (an MTP verify step reads the K/V once but does twice the math); here the math is
++// a small fraction of the time and the kernel reads the K/V near memory speed at 1 or 2 tokens.
++
++#include <sycl/sycl.hpp>
++#include <float.h>
++#include "common.hpp"
++#include "fattn-common.hpp"
++#include "fattn-xmx.hpp"
++
++namespace sm  = sycl::ext::oneapi::experimental::matrix;
++namespace smi = sycl::ext::intel::experimental::matrix;
++
++static constexpr int FX_SG   = 16;           // lanes per sub-group, the width of an XMX operand
++static constexpr int FX_NSG  = 8;            // sub-groups per work-group
++static constexpr int FX_WG   = FX_SG * FX_NSG;
++static constexpr int FX_ROWS = 16;           // Q rows per work-group (2 M tiles)
++static constexpr int FX_CH   = 16 * FX_NSG;  // KV cells per chunk: 16 per sub-group
++static constexpr int FX_TM = 8, FX_TN = 16, FX_TK = 16;  // XMX tile: M x N accumulator, K deep
++
++using fx_acc_t = sm::joint_matrix<sycl::sub_group, float, sm::use::accumulator, FX_TM, FX_TN>;
++using fx_a_t   = sm::joint_matrix<sycl::sub_group, sycl::half, sm::use::a, FX_TM, FX_TK, sm::layout::row_major>;
++using fx_b_t   = sm::joint_matrix<sycl::sub_group, sycl::half, sm::use::b, FX_TK, FX_TN, sm::layout::row_major>;
++
++template <typename T> static inline auto fx_local(T * p) {
++    return sycl::address_space_cast<sycl::access::address_space::local_space, sycl::access::decorated::no>(p);
++}
++template <typename T> static inline auto fx_global(T * p) {
++    return sycl::address_space_cast<sycl::access::address_space::global_space, sycl::access::decorated::no>(p);
++}
++
++struct fx_params {
++    const char * Q;
++    const char * K;
++    const char * V;
++    const char * mask;
++    float *        dst;       // nsplit == 1: the normalized result
++    float *        dst_tmp;   // nsplit > 1: unnormalized per-split results, merged by flash_attn_combine_results
++    sycl::float2 * dst_meta;  // nsplit > 1: (max, sum) per row and split
++    float   scale;
++    int     ntok, nqh, gqa, nkv, nkvh, nsplit, chunks;
++    int64_t nb01, nb02, nb03, nb11, nb12, nb13, nb21, nb22, nb23, nb31, nb33;
++    int     ne33;
++};
++
++template <int D>
++static void fattn_xmx_kernel(const fx_params p, const sycl::nd_item<1> & it, char * slm) {
++    constexpr int NT = D / (FX_TN * FX_NSG);  // O column tiles per sub-group
++    static_assert(NT >= 1 && D % (FX_TN * FX_NSG) == 0, "head size must split over the sub-groups");
++
++    auto      sg   = it.get_sub_group();
++    const int sgi  = sg.get_group_linear_id();
++    const int lane = sg.get_local_linear_id();
++    const int tid  = it.get_local_linear_id();
++
++    const int wg    = it.get_group(0);
++    const int split = wg % p.nsplit;
++    const int zk    = (wg / p.nsplit) % p.nkvh;  // K/V head
++    const int seq   = wg / p.nsplit / p.nkvh;
++    const int nrows = p.ntok * p.gqa;            // real Q rows: r = token * gqa + (query head - zk * gqa)
++
++    // SLM: Q^T [D][16] half | S [16][CH] float | P [16][CH] half | row rescale [16] | row (max, sum) [16] |
++    // live chunk marks [chunks of the split]; after the loop, O [16][D] float over Q^T and S
++    sycl::half *   QT   = (sycl::half *) slm;
++    float *        S    = (float *) (QT + D * FX_ROWS);
++    sycl::half *   P    = (sycl::half *) (S + FX_ROWS * FX_CH);
++    float *        rs   = (float *) (P + FX_ROWS * FX_CH);
++    sycl::float2 * stat = (sycl::float2 *) (rs + FX_ROWS);
++    int *          live = (int *) (stat + FX_ROWS);
++    float *        O    = (float *) slm;
++
++    for (int e = tid; e < D * FX_ROWS; e += FX_WG) {
++        const int r = e / D;
++        const int d = e % D;
++        float     v = 0.0f;
++        if (r < nrows) {
++            const int j = r / p.gqa;
++            const int h = zk * p.gqa + r % p.gqa;
++            v = *(const float *) (p.Q + seq * p.nb03 + h * p.nb02 + j * p.nb01 + d * sizeof(float)) * p.scale;
++        }
++        QT[d * FX_ROWS + r] = (sycl::half) v;
++    }
++
++    const sycl::half * Kh    = (const sycl::half *) (p.K + seq * p.nb13 + zk * p.nb12);
++    const sycl::half * Vh    = (const sycl::half *) (p.V + seq * p.nb23 + zk * p.nb22);
++    const int64_t      ldk   = p.nb11 / sizeof(sycl::half);
++    const int64_t      ldv   = p.nb21 / sizeof(sycl::half);
++    const sycl::half * maskh = p.mask ? (const sycl::half *) (p.mask + p.nb33 * (seq % p.ne33)) : nullptr;
++    const int64_t      ldm   = p.nb31 / sizeof(sycl::half);
++
++    // the softmax rows of this lane: lanes 0-7 row 2 sgi, lanes 8-15 row 2 sgi + 1
++    const int  sr      = 2 * sgi + lane / 8;
++    const int  sl      = lane % 8;
++    const bool sr_real = sr < nrows;
++    float      m_run   = -FLT_MAX / 2.0f;
++    float      l_run   = 0.0f;
++
++    const int n0     = sgi * NT * FX_TN;  // this sub-group's O columns
++    const int mtiles = nrows > FX_TM ? 2 : 1;
++    static_assert(NT <= 2, "at most 2 O column tiles per sub-group");
++    // the O accumulators (M tile, column tile) as named objects: the backend cannot index an array of them
++    fx_acc_t  a00, a01, a10, a11;
++    sm::joint_matrix_fill(sg, a00, 0.0f);
++    sm::joint_matrix_fill(sg, a01, 0.0f);
++    sm::joint_matrix_fill(sg, a10, 0.0f);
++    sm::joint_matrix_fill(sg, a11, 0.0f);
++
++    // The split's chunks are c = split + i nsplit: interleaved, so that the live cells of a mostly
++    // masked range spread over all the work-groups.
++    const int nchunk = (p.chunks - split + p.nsplit - 1) / p.nsplit;
++
++    // A chunk the mask hides (-inf) from every row adds nothing: in a unified KV cache most of the KV
++    // range can be other sequences' cells. One pass over the split's mask marks the live chunks (a
++    // sub-group per chunk, on the fp16 bits, which fast-math cannot fold away), so the loop skips the
++    // rest without touching memory.
++    if (maskh) {
++        for (int i = sgi; i < nchunk; i += FX_NSG) {
++            const int k0 = (split + i * p.nsplit) * FX_CH;
++            bool      l  = false;
++            for (int e = lane; e < p.ntok * FX_CH; e += FX_SG) {
++                l = l || sycl::bit_cast<uint16_t>(maskh[(e / FX_CH) * ldm + k0 + e % FX_CH]) != 0xFC00;
++            }
++            l = sycl::any_of_group(sg, l);
++            if (lane == 0) {
++                live[i] = l;
++            }
++        }
++    }
++
++    for (int i = 0; i < nchunk; ++i) {
++        const int k0 = (split + i * p.nsplit) * FX_CH;
++        sycl::group_barrier(it.get_group());  // Q^T and the live marks written, or the previous chunk's S and P consumed
++        if (maskh && !live[i]) {
++            continue;
++        }
++
++        // S^T for this sub-group's 16 cells: two 8-cell A tiles of K against the 16 Q^T columns
++        {
++            fx_acc_t s0, s1;
++            sm::joint_matrix_fill(sg, s0, 0.0f);
++            sm::joint_matrix_fill(sg, s1, 0.0f);
++            const sycl::half * Kc = Kh + (int64_t) (k0 + 16 * sgi) * ldk;
++#pragma unroll 4
++            for (int kt = 0; kt < D / FX_TK; ++kt) {
++                fx_b_t qb;
++                sm::joint_matrix_load(sg, qb, fx_local(QT + kt * FX_TK * FX_ROWS), FX_ROWS);
++                fx_a_t ka;
++                sm::joint_matrix_load(sg, ka, fx_global(Kc + kt * FX_TK), ldk);
++                sm::joint_matrix_mad(sg, s0, ka, qb, s0);
++                sm::joint_matrix_load(sg, ka, fx_global(Kc + 8 * ldk + kt * FX_TK), ldk);
++                sm::joint_matrix_mad(sg, s1, ka, qb, s1);
++            }
++            // stored transposed: S[row][cell]
++            sm::joint_matrix_store(sg, s0, fx_local(S + 16 * sgi), FX_CH, sm::layout::col_major);
++            sm::joint_matrix_store(sg, s1, fx_local(S + 16 * sgi + 8), FX_CH, sm::layout::col_major);
++        }
++        sycl::group_barrier(it.get_group());
++
++        // online softmax of row sr over the chunk: 8 lanes, 16 cells each
++        {
++            const sycl::half * mrow = maskh ? maskh + (sr_real ? sr / p.gqa : 0) * ldm + k0 : nullptr;
++            float              s[FX_CH / 8];
++            float              cmax = -INFINITY;
++#pragma unroll
++            for (int i = 0; i < FX_CH / 8; ++i) {
++                const int k = sl + 8 * i;
++                s[i]        = S[sr * FX_CH + k] + (mrow ? (float) mrow[k] : 0.0f);
++                cmax        = sycl::fmax(cmax, s[i]);
++            }
++#pragma unroll
++            for (int o = 4; o > 0; o >>= 1) {
++                cmax = sycl::fmax(cmax, sycl::permute_group_by_xor(sg, cmax, o));
++            }
++            const float m_new = sycl::fmax(m_run, cmax);
++            const float sc    = sycl::native::exp(m_run - m_new);
++            float       psum  = 0.0f;
++#pragma unroll
++            for (int i = 0; i < FX_CH / 8; ++i) {
++                const float e = sr_real ? sycl::native::exp(s[i] - m_new) : 0.0f;
++                P[sr * FX_CH + sl + 8 * i] = (sycl::half) e;
++                psum += e;
++            }
++#pragma unroll
++            for (int o = 4; o > 0; o >>= 1) {
++                psum += sycl::permute_group_by_xor(sg, psum, o);
++            }
++            l_run = l_run * sc + psum;
++            m_run = m_new;
++            if (sl == 0) {
++                rs[sr] = sc;
++            }
++        }
++        sycl::group_barrier(it.get_group());
++
++        // O = O * rescale + P V over this sub-group's O columns
++        const float * rs0 = rs;
++        const float * rs1 = rs + FX_TM;
++        smi::joint_matrix_apply(sg, a00, [=](float & x, size_t row, size_t) { x *= rs0[row]; });
++        if constexpr (NT > 1) {
++            smi::joint_matrix_apply(sg, a01, [=](float & x, size_t row, size_t) { x *= rs0[row]; });
++        }
++        if (mtiles > 1) {
++            smi::joint_matrix_apply(sg, a10, [=](float & x, size_t row, size_t) { x *= rs1[row]; });
++            if constexpr (NT > 1) {
++                smi::joint_matrix_apply(sg, a11, [=](float & x, size_t row, size_t) { x *= rs1[row]; });
++            }
++        }
++#pragma unroll 2
++        for (int kk = 0; kk < FX_CH / FX_TK; ++kk) {
++            const sycl::half * Vc = Vh + (int64_t) (k0 + kk * FX_TK) * ldv + n0;
++            fx_a_t pa;
++            fx_b_t vb0, vb1;
++            sm::joint_matrix_load(sg, vb0, fx_global(Vc), ldv);
++            if constexpr (NT > 1) {
++                sm::joint_matrix_load(sg, vb1, fx_global(Vc + FX_TN), ldv);
++            }
++            sm::joint_matrix_load(sg, pa, fx_local(P + kk * FX_TK), FX_CH);
++            sm::joint_matrix_mad(sg, a00, pa, vb0, a00);
++            if constexpr (NT > 1) {
++                sm::joint_matrix_mad(sg, a01, pa, vb1, a01);
++            }
++            if (mtiles > 1) {
++                sm::joint_matrix_load(sg, pa, fx_local(P + FX_TM * FX_CH + kk * FX_TK), FX_CH);
++                sm::joint_matrix_mad(sg, a10, pa, vb0, a10);
++                if constexpr (NT > 1) {
++                    sm::joint_matrix_mad(sg, a11, pa, vb1, a11);
++                }
++            }
++        }
++    }
++
++    sycl::group_barrier(it.get_group());
++    if (sl == 0) {
++        stat[sr] = sycl::float2(m_run, l_run);
++    }
++    sm::joint_matrix_store(sg, a00, fx_local(O + n0), D, sm::layout::row_major);
++    sm::joint_matrix_store(sg, a10, fx_local(O + FX_TM * D + n0), D, sm::layout::row_major);
++    if constexpr (NT > 1) {
++        sm::joint_matrix_store(sg, a01, fx_local(O + n0 + FX_TN), D, sm::layout::row_major);
++        sm::joint_matrix_store(sg, a11, fx_local(O + FX_TM * D + n0 + FX_TN), D, sm::layout::row_major);
++    }
++    sycl::group_barrier(it.get_group());
++
++    for (int e = tid; e < nrows * D; e += FX_WG) {
++        const int     r      = e / D;
++        const int     d      = e % D;
++        const int64_t j_dst  = ((int64_t) seq * p.ntok + r / p.gqa) * p.nqh + zk * p.gqa + r % p.gqa;
++        if (p.nsplit == 1) {
++            p.dst[j_dst * D + d] = O[r * D + d] / stat[r].y();
++        } else {
++            p.dst_tmp[(j_dst * p.nsplit + split) * D + d] = O[r * D + d];
++            if (d == 0) {
++                p.dst_meta[j_dst * p.nsplit + split] = stat[r];
++            }
++        }
++    }
++}
++
++bool ggml_sycl_flash_attn_ext_xmx_supported(const ggml_tensor * dst) {
++    static const int enabled = ggml_sycl_get_env("GGML_SYCL_FA_XMX", 1);
++    const ggml_tensor * Q     = dst->src[0];
++    const ggml_tensor * K     = dst->src[1];
++    const ggml_tensor * V     = dst->src[2];
++    const ggml_tensor * mask  = dst->src[3];
++    const ggml_tensor * sinks = dst->src[4];
++    float max_bias = 0.0f, logit_softcap = 0.0f;
++    memcpy(&max_bias, (const float *) dst->op_params + 1, sizeof(float));
++    memcpy(&logit_softcap, (const float *) dst->op_params + 2, sizeof(float));
++    if (!enabled || sinks || max_bias != 0.0f || logit_softcap != 0.0f) {
++        return false;
++    }
++    if (Q->type != GGML_TYPE_F32 || K->type != GGML_TYPE_F16 || V->type != GGML_TYPE_F16 || dst->type != GGML_TYPE_F32) {
++        return false;
++    }
++    const int64_t D = K->ne[0];
++    if ((D != 128 && D != 256) || V->ne[0] != D || Q->ne[0] != D) {
++        return false;
++    }
++    if (K->ne[2] == 0 || Q->ne[2] % K->ne[2] != 0 || Q->ne[1] * (Q->ne[2] / K->ne[2]) > FX_ROWS) {
++        return false;
++    }
++    if (K->ne[1] % FX_CH != 0 || V->ne[1] != K->ne[1] || K->ne[3] != Q->ne[3] || V->ne[3] != Q->ne[3]) {
++        return false;
++    }
++    // the XMX operand loads: 16-byte row strides, 64-byte aligned K/V
++    if (K->nb[1] % 16 != 0 || V->nb[1] % 16 != 0 || K->nb[2] % 64 != 0 || V->nb[2] % 64 != 0 ||
++        (uintptr_t) K->data % 64 != 0 || (uintptr_t) V->data % 64 != 0 || Q->nb[0] != sizeof(float)) {
++        return false;
++    }
++    if (mask && (mask->type != GGML_TYPE_F16 || mask->ne[2] != 1 || mask->ne[1] < Q->ne[1])) {
++        return false;
++    }
++    return true;
++}
++
++void ggml_sycl_flash_attn_ext_xmx(ggml_backend_sycl_context & ctx, ggml_tensor * dst) {
++    const ggml_tensor * Q    = dst->src[0];
++    const ggml_tensor * K    = dst->src[1];
++    const ggml_tensor * V    = dst->src[2];
++    const ggml_tensor * mask = dst->src[3];
++
++    fx_params p{};
++    p.Q    = (const char *) Q->data;
++    p.K    = (const char *) K->data;
++    p.V    = (const char *) V->data;
++    p.mask = mask ? (const char *) mask->data : nullptr;
++    memcpy(&p.scale, (const float *) dst->op_params + 0, sizeof(float));
++    p.ntok   = Q->ne[1];
++    p.nqh    = Q->ne[2];
++    p.nkvh   = K->ne[2];
++    p.gqa    = Q->ne[2] / K->ne[2];
++    p.nkv    = K->ne[1];
++    p.chunks = K->ne[1] / FX_CH;
++    p.nb01 = Q->nb[1]; p.nb02 = Q->nb[2]; p.nb03 = Q->nb[3];
++    p.nb11 = K->nb[1]; p.nb12 = K->nb[2]; p.nb13 = K->nb[3];
++    p.nb21 = V->nb[1]; p.nb22 = V->nb[2]; p.nb23 = V->nb[3];
++    p.nb31 = mask ? mask->nb[1] : 0;
++    p.nb33 = mask ? mask->nb[3] : 0;
++    p.ne33 = mask ? mask->ne[3] : 1;
++
++    // about two work-groups per Xe core in flight: split the KV range until there are that many
++    const int     heads   = K->ne[2] * Q->ne[3];
++    // Two work-groups per Xe core stream the K/V best on an Arc Pro B70 (32 Xe cores, nsm = EUs / 16 = 16:
++    // 64 work-groups): 64k KV, 1 token, 16 splits 475 us, 8 597, 32 485, 64 571, 128 577.
++    const int     target  = 4 * ggml_sycl_info().devices[ctx.device].nsm;
++    p.nsplit              = std::max(1, std::min(p.chunks, (target + heads - 1) / heads));
++    const int64_t nwg     = (int64_t) heads * p.nsplit;
++
++    dpct::queue_ptr stream = ctx.stream();
++    ggml_sycl_pool_alloc<float>        dst_tmp(ctx.pool());
++    ggml_sycl_pool_alloc<sycl::float2> dst_meta(ctx.pool());
++    if (p.nsplit > 1) {
++        dst_tmp.alloc((size_t) p.nsplit * ggml_nelements(dst));
++        dst_meta.alloc((size_t) p.nsplit * ggml_nrows(dst));
++        p.dst_tmp  = dst_tmp.get();
++        p.dst_meta = dst_meta.get();
++    } else {
++        p.dst = (float *) dst->data;
++    }
++
++    const int64_t D   = K->ne[0];
++    const size_t  slm = std::max<size_t>(D * FX_ROWS * sizeof(sycl::half) + FX_ROWS * FX_CH * (sizeof(float) + sizeof(sycl::half)) +
++                                             FX_ROWS * (sizeof(float) + sizeof(sycl::float2)) +
++                                             (p.chunks + p.nsplit - 1) / p.nsplit * sizeof(int),
++                                         FX_ROWS * D * sizeof(float));
++    stream->submit([&](sycl::handler & cgh) {
++        sycl::local_accessor<char, 1> lm(sycl::range<1>(slm), cgh);
++        cgh.parallel_for(sycl::nd_range<1>(nwg * FX_WG, FX_WG), [=](sycl::nd_item<1> it) [[sycl::reqd_sub_group_size(FX_SG)]] {
++            char * s = lm.get_multi_ptr<sycl::access::decorated::no>().get();
++            if (D == 256) {
++                fattn_xmx_kernel<256>(p, it, s);
++            } else {
++                fattn_xmx_kernel<128>(p, it, s);
++            }
++        });
++    });
++
++    if (p.nsplit > 1) {
++        const int      nsplit = p.nsplit;
++        float *        out    = (float *) dst->data;
++        const float *  tmp    = dst_tmp.get();
++        const sycl::float2 * meta = dst_meta.get();
++        const dpct::dim3 block_dim(D, 1, 1);
++        const dpct::dim3 blocks_num(Q->ne[1], Q->ne[2], Q->ne[3]);
++        stream->submit([&](sycl::handler & cgh) {
++            sycl::local_accessor<uint8_t, 1> lm(sycl::range<1>(nsplit * sizeof(sycl::float2)), cgh);
++            cgh.parallel_for(sycl::nd_range<3>(blocks_num * block_dim, block_dim), [=](sycl::nd_item<3>) {
++                uint8_t * l = lm.get_multi_ptr<sycl::access::decorated::no>().get();
++                if (D == 256) {
++                    flash_attn_combine_results<256>(tmp, meta, out, nsplit, l);
++                } else {
++                    flash_attn_combine_results<128>(tmp, meta, out, nsplit, l);
++                }
++            });
++        });
++    }
++}
+diff --git a/ggml/src/ggml-sycl/fattn-xmx.hpp b/ggml/src/ggml-sycl/fattn-xmx.hpp
+new file mode 100644
+index 000000000..ddfcffccd
+--- /dev/null
++++ b/ggml/src/ggml-sycl/fattn-xmx.hpp
+@@ -0,0 +1,15 @@
++//
++// MIT license
++// SPDX-License-Identifier: MIT
++//
++
++#ifndef GGML_SYCL_FATTN_XMX_HPP
++#define GGML_SYCL_FATTN_XMX_HPP
++
++#include "common.hpp"
++
++// flash attention for up to 16 Q rows per K/V head (GQA heads x query tokens) on the XMX engines
++bool ggml_sycl_flash_attn_ext_xmx_supported(const ggml_tensor * dst);
++void ggml_sycl_flash_attn_ext_xmx(ggml_backend_sycl_context & ctx, ggml_tensor * dst);
++
++#endif  // GGML_SYCL_FATTN_XMX_HPP
+diff --git a/ggml/src/ggml-sycl/fattn.cpp b/ggml/src/ggml-sycl/fattn.cpp
+index a85eb721f..3916702cd 100644
+--- a/ggml/src/ggml-sycl/fattn.cpp
++++ b/ggml/src/ggml-sycl/fattn.cpp
+@@ -19,6 +19,7 @@
+ #include "fattn-vec.hpp"
+ #include "fattn.hpp"
+ #include "fattn-onednn.hpp"
++#include "fattn-xmx.hpp"
+ 
+ 
+ #define FATTN_VEC_CASE(D, type_K, type_V)                                                                        \
+@@ -97,6 +98,7 @@ static void ggml_sycl_flash_attn_ext_vec(ggml_backend_sycl_context & ctx, ggml_t
+ enum best_fattn_kernel {
+     BEST_FATTN_KERNEL_NONE     =   0,
+     BEST_FATTN_KERNEL_VEC      = 100,
++    BEST_FATTN_KERNEL_XMX      = 120, // a few query tokens per K/V head on the XMX engines (decode, MTP verify)
+     BEST_FATTN_KERNEL_ONEDNN   = 150, // oneDNN SDPA: native F16 (PR #25222)
+     BEST_FATTN_KERNEL_TILE     = 200,
+     BEST_FATTN_KERNEL_MKL      = 300,
+@@ -253,6 +255,12 @@ static best_fattn_kernel ggml_sycl_get_best_fattn_kernel(const int device, const
+         return BEST_FATTN_KERNEL_ONEDNN;
+     }
+ 
++    // Up to 16 Q rows per K/V head (GQA heads x query tokens): the XMX kernel reads each K/V cell
++    // once for all of them and does the math on the matrix engines. GGML_SYCL_FA_XMX=0 turns it off.
++    if (ggml_sycl_flash_attn_ext_xmx_supported(dst)) {
++        return BEST_FATTN_KERNEL_XMX;
++    }
++
+     // If there are no tensor cores available, use the generic tile kernel:
+     if (can_use_vector_kernel) {
+         if (!ggml_is_quantized(K->type) && !ggml_is_quantized(V->type)) {
+@@ -289,6 +297,7 @@ void ggml_sycl_flash_attn_ext(ggml_backend_sycl_context & ctx, ggml_tensor * dst
+         if (k == BEST_FATTN_KERNEL_MKL)  kname = "MKL";
+         if (k == BEST_FATTN_KERNEL_ONEDNN)  kname = "ONEDNN";
+         if (k == BEST_FATTN_KERNEL_VEC)  kname = "VEC";
++        if (k == BEST_FATTN_KERNEL_XMX)  kname = "XMX";
+         int64_t delta = 0;
+         if (Dk == 256) {
+             delta = cur_nkv - last_nkv_d256;
+@@ -324,6 +333,9 @@ void ggml_sycl_flash_attn_ext(ggml_backend_sycl_context & ctx, ggml_tensor * dst
+         case BEST_FATTN_KERNEL_MKL:
+             ggml_sycl_flash_attn_ext_mkl(ctx, dst);
+             break;
++        case BEST_FATTN_KERNEL_XMX:
++            ggml_sycl_flash_attn_ext_xmx(ctx, dst);
++            break;
+     }
+ 
+     // --- Output fingerprint (GGML_SYCL_MKL_FA_DIAG=1) ---
+-- 
+2.51.0
+

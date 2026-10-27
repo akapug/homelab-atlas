@@ -53,6 +53,7 @@ the rest of the repo, are in the [GLOSSARY](GLOSSARY.md).
 | engine-reset watch | Intel only (`xe` driver) | vLLM | B70 | [section 2](#setting-a-model-load-that-hangs-with-no-error) |
 | [`gdn-mixed-batch/`](b70/vllm-xpu/gdn-mixed-batch/) | Intel only | llm-scaler 0.26.0-b2's kernels, a DeltaNet model with MTP | B70 | [section 2](#gdn-mixed-batch-a-check-for-the-deltanet-kernel-bug) |
 | llama.cpp [`0001`-`0014`, `0017`, `0018`](b70/llama.cpp-sycl/patches/) (`0009` adds tests only) | Intel only | llama.cpp `94256114c2` with SYCL, a GGUF model | B70 | [section 3](#3-intel-arc-pro-b70-with-llamacpp) |
+| llama.cpp SYCL for ternary Bonsai: [`patches/`](b70/llama.cpp-sycl-bonsai/patches/) 0001-0019 or [`patches-hybrid/`](b70/llama.cpp-sycl-bonsai/patches-hybrid/) 0001-0022 | Intel only | PrismML's llama.cpp fork at PR #235's head or at PR #294's merge, a PTQ1_0 GGUF | B70 | [section 3](#ternary-bonsai-on-prismmls-fork) |
 | [`serving-cpu-guard.sh`](b70/vllm-xpu/serving-cpu-guard.sh) | host CPU | a CPU with two CCDs, vLLM in Docker, systemd | Ryzen 9 9950X3D | [section 4](#serving-cpu-guard-keep-other-work-off-the-servers-ccd) |
 | [`agent-eval/`](b70/agent-eval/) | no GPU needed | an OpenAI-compatible server, a proxy, Docker | two B70s | [section 6](#agent-eval-can-a-local-model-finish-real-repository-work) |
 | [`bench/`](b70/bench/) | no GPU needed | llama-server or an OpenAI-compatible server | B70 | [section 6](#bench-the-measurements-behind-the-numbers) |
@@ -441,6 +442,26 @@ against the CPU with `test-backend-ops`; the counts are in the notes.
   [`decode-streams.py`](b70/bench/decode-streams.py) gives your own before and after.
 - **Undo.** Build upstream llama.cpp without the patches. At run time, `GGML_SYCL_XMX_MMVQ=0` turns the
   XMX path off.
+
+### Ternary Bonsai on PrismML's fork
+
+A separate set, for [PrismML's llama.cpp fork](https://github.com/PrismML-Eng/llama.cpp) and its ternary PTQ1_0
+models, measured with Ternary Bonsai 2 27B on one B70. Results: [the model page](b70/bonsai-2-27b.md). Notes, per-patch
+numbers and upstream status: [`b70/llama.cpp-sycl-bonsai/`](b70/llama.cpp-sycl-bonsai/README.md).
+
+- **For.** PTQ1_0 models on Intel GPUs with PrismML's fork, measured on Xe2 only. Four of the patches are
+  ports of ones above (get_rows, concat, two for decode flash attention); the rest are for PTQ1_0 and this model's
+  shapes, and most of those would help any Xe2 card.
+- **Which set.** `patches/` 0001-0019 apply to PR #235's head `42ce76d019` and give the long-context numbers (plain
+  decode 26.9 → 52.9 tok/s, 71.6 with MTP 2, prompt reading 907 tok/s at 49k tokens). `patches-hybrid/` 0001-0022
+  apply to the fork at PR #294's merge `a14c7de990`: the same 19, plus three that keep our decode kernel for 1-8
+  tokens and give PR #294's XMX path prompt chunks of 9 tokens or more (574-1,231 tok/s at 32-512 tokens, at a cost
+  of 6.02 GiB of VRAM). Neither applies to the fork's current `prism` branch, which has since merged overlapping work.
+- **Apply.** `b70/llama.cpp-sycl-bonsai/build.sh <dest> hybrid` (or `pr235`): clone, apply, verify the source tree,
+  build.
+- **Check.** It prints `patched (...): ... (tree verified)`; `test-backend-ops test -b SYCL0 -o MUL_MAT -p ptq1_0`
+  passes; `llama-bench` gives your own before and after (`GGML_SYCL_ENABLE_OPT=0` runs PR #235's own kernel).
+- **Undo.** Build the fork without the patches. In the hybrid, `GGML_SYCL_DISABLE_XMX=1` keeps PTQ1_0 off XMX.
 
 ## 4. The host CPU: a Ryzen with two CCDs
 

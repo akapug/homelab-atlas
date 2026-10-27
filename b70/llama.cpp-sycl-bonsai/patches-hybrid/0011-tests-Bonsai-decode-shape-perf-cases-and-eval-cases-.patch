@@ -1,0 +1,69 @@
+From 6131fd27a6055f76edb7bf5a6f1565f79dd68dde Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 11:44:57 +0000
+Subject: [PATCH 11/22] tests: Bonsai decode-shape perf cases, and eval cases
+ for BF16 and GQA 6
+
+- BF16 mat-vec at Qwen3.5's gated-delta-net alpha/beta shape, 5120 x 48, 1-8 columns.
+- Flash attention at uneven GQA ratios 3, 5, 6, 7 (96 cases).
+- make_test_cases_perf: the ops beside Ternary Bonsai 2 27B's PTQ1_0 mat-vecs at one
+  token, at the model's shapes: the signed 1024-point Hadamard at 5120, 6144 and
+  17408; the 48-row BF16 mat-vec; the 3 MB recurrent-state gather; the conv-state
+  concat; flash attention at head dim 256 and GQA 6.
+
+test_fwht_signed already runs as one graph upstream (#287), which this used to add.
+---
+ tests/test-backend-ops.cpp | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
+index a40236269..698dde812 100644
+--- a/tests/test-backend-ops.cpp
++++ b/tests/test-backend-ops.cpp
+@@ -9487,6 +9487,23 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+         }
+     }
+ 
++    // BF16 at Qwen3.5's gated-delta-net alpha/beta shape (5120 x 48), 1-8 columns
++    for (int64_t n = 1; n <= 8; ++n) {
++        test_cases.emplace_back(new test_mul_mat(GGML_TYPE_BF16, GGML_TYPE_F32, 48, n, 5120, {1, 1}, {1, 1}));
++    }
++
++    // flash attention at uneven GQA ratios (3, 5, 6, 7): packed into the next power of two
++    for (int hs : {64, 128, 256}) {
++        for (int gqa : {3, 5, 6, 7}) {
++            for (int nb : {1, 2, 4, 8}) {
++                for (bool sinks : {false, true}) {
++                    test_cases.emplace_back(new test_flash_attn_ext(hs, hs, 2, {gqa, 1}, 1024, nb, true, sinks, 0, 0,
++                                                                    GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
++                }
++            }
++        }
++    }
++
+     // prefill against a PTQ1_0 weight that a decode mat-vec already reordered, at a whole and a
+     // partial row group, through the fp16 and the fp32 dequantize
+     for (int64_t m : {64, 67}) {
+@@ -10559,6 +10576,19 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
+         test_cases.emplace_back(new test_mul_mat(GGML_TYPE_PQ2_0, GGML_TYPE_F32, 10240, n, 5120, {1, 1}, {1, 1}));
+     }
+ 
++    // Ternary Bonsai 2 27B (qwen35: 48 gated-delta-net and 16 attention layers) decoding one token:
++    // the ops beside its PTQ1_0 mat-vecs, at the model's shapes
++    for (int64_t width : {5120, 6144, 17408}) {
++        test_cases.emplace_back(new test_fwht_signed(1024, width, 1)); // sign flip + 1024-point Hadamard
++    }
++    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_BF16, GGML_TYPE_F32, 48, 1, 5120, {1, 1}, {1, 1})); // alpha, beta
++    test_cases.emplace_back(new test_get_rows(GGML_TYPE_F32, 128*128*48, 2, 1, 1, 1, false));   // recurrent state gather
++    test_cases.emplace_back(new test_concat(GGML_TYPE_F32, {3, 10240, 1, 1}, 1, 0, 2));          // conv state + new column
++    for (int kv : {256, 4096}) {
++        test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, kv, 1, true, false, 0, 0, GGML_PREC_F32,
++                                                        GGML_TYPE_F16, GGML_TYPE_F16));
++    }
++
+     // SWIGLU at a 27B-class FFN width, fused [gate|up] vs split operands
+     // note: same bytes either way, so a backend that indexes them differently shows it here
+     for (ggml_type type : {GGML_TYPE_F16, GGML_TYPE_F32}) {
+-- 
+2.51.0
+

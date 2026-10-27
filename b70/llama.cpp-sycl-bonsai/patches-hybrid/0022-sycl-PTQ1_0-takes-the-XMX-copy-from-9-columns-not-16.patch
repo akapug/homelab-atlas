@@ -1,0 +1,33 @@
+From 98e026efb8d0a230d60f7b8f3c8bd6962650a81b Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 4 Oct 2026 11:38:04 +0000
+Subject: [PATCH 22/22] sycl: PTQ1_0 takes the XMX copy from 9 columns, not 16
+
+Measured on a B70 with Bonsai 2 27B (GGML_SYCL_XMX_MIN_ROWS sweep): the row-per-lane mat-vec wins at 1-8 columns (pp4 192 vs 148, pp8 310 vs 278 tok/s); at 9-15 the only other path, dequantize and GEMM, is the slowest by far (pp9 40, pp12 53 tok/s vs 260 and 335 on XMX).
+---
+ ggml/src/ggml-sycl/ggml-sycl.cpp | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/ggml/src/ggml-sycl/ggml-sycl.cpp b/ggml/src/ggml-sycl/ggml-sycl.cpp
+index fd1a9cd81..8e00200bd 100644
+--- a/ggml/src/ggml-sycl/ggml-sycl.cpp
++++ b/ggml/src/ggml-sycl/ggml-sycl.cpp
+@@ -981,10 +981,12 @@ static bool ggml_sycl_xmx_disabled() {
+     return disabled;
+ }
+ 
+-// PTQ1_0 mul_mats with fewer columns than this stay on the weight's own layout (the row-per-lane mat-vec up to 8
+-// columns, then dequantize and GEMM); from here on they take the XMX path on a copy of the weight
++// PTQ1_0 mul_mats with fewer columns than this stay on the weight's own layout (the row-per-lane mat-vec, 1 to 8
++// columns); from here on they take the XMX path on a copy of the weight. 9 is measured (B70, Bonsai 2 27B, 2026-10-04):
++// at 1-8 columns the mat-vec beats XMX (pp4 192 vs 148, pp8 310 vs 278 tok/s), and at 9-15 dequantize + GEMM is the
++// only other path and the slowest (pp9 40, pp12 53 vs XMX 260, 335)
+ static int ggml_sycl_xmx_min_rows() {
+-    static const int rows = ggml_sycl_get_env("GGML_SYCL_XMX_MIN_ROWS", 16);
++    static const int rows = ggml_sycl_get_env("GGML_SYCL_XMX_MIN_ROWS", 9);
+     return rows;
+ }
+ 
+-- 
+2.51.0
+

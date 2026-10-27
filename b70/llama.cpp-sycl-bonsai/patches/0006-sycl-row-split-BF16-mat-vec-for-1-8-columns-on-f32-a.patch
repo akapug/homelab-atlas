@@ -1,0 +1,154 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 11:33:43 +0000
+Subject: [PATCH 06/12] sycl: row-split BF16 mat-vec for 1-8 columns, on f32
+ activations
+
+BF16 weights at one token went through DMMV, which gives each row one sub-group
+walking the whole row and wants its activations as fp16, converted by a kernel
+first. With few rows the device sits nearly idle: Qwen3.5's gated-delta-net
+alpha and beta projections are 5120 x 48, 96 of them per Bonsai 27B token, at
+20 us each on an Arc Pro B70 plus the conversion.
+
+A work-group of 256 now splits each row, 16 bytes of weights per lane at a time,
+reads the activations as f32 and sums in f32, for 1-8 columns (so the MTP verify
+at 2 tokens is served too). The dispatch takes contiguous rows of 8-value
+multiples, 16-byte aligned; anything else keeps the old paths.
+GGML_SYCL_BF16_MMV=0 turns it off.
+
+5120 x 48 at one column (test-backend-ops perf): 13.7 -> 2.0 us.
+---
+ ggml/src/ggml-sycl/dmmv.cpp      | 88 ++++++++++++++++++++++++++++++++
+ ggml/src/ggml-sycl/dmmv.hpp      |  5 ++
+ ggml/src/ggml-sycl/ggml-sycl.cpp |  5 ++
+ 3 files changed, 98 insertions(+)
+
+diff --git a/ggml/src/ggml-sycl/dmmv.cpp b/ggml/src/ggml-sycl/dmmv.cpp
+index d47d6831a..6b55cf24f 100644
+--- a/ggml/src/ggml-sycl/dmmv.cpp
++++ b/ggml/src/ggml-sycl/dmmv.cpp
+@@ -259,6 +259,94 @@ static void convert_mul_mat_vec_bf16_sycl(const void *vx, const dfloat *y,
+ }
+ #endif
+ 
++// BF16 mat-vec for 1-8 columns. The DMMV kernel above gives each row one sub-group walking the whole
++// row, and wants its activations as fp16 (a conversion kernel first). With few rows (Qwen3.5's 48-row
++// gated-delta-net alpha and beta projections) that leaves the device nearly idle: 20 us for a 5120 x 48
++// weight on a B70. Here a work-group of 256 splits each row, 16 bytes of weights per lane at a time,
++// reads the activations as f32 and sums in f32.
++template <int ncols_dst>
++static void mul_mat_vec_bf16_f32(const uint16_t * __restrict__ x, const float * __restrict__ y,
++                                 float * __restrict__ dst, const int ncols, const int64_t stride_row_x,
++                                 const int64_t stride_col_y, const int64_t stride_col_dst,
++                                 const sycl::nd_item<1> & it) {
++    const int64_t    row = it.get_group(0);
++    const int        tid = it.get_local_id(0);
++    const int        nt  = it.get_local_range(0);
++    const uint16_t * xr  = x + row * stride_row_x;
++
++    float sum[ncols_dst] = {};
++    for (int c = tid * 8; c < ncols; c += nt * 8) {
++        const sycl::uint4 w = *(const sycl::uint4 *) (xr + c);
++        float             wf[8];
++#pragma unroll
++        for (int k = 0; k < 4; ++k) {
++            // bf16 is the high half of an f32; the lower-addressed value is the low half of the word
++            wf[2 * k]     = sycl::bit_cast<float>((uint32_t) (w[k] << 16));
++            wf[2 * k + 1] = sycl::bit_cast<float>((uint32_t) (w[k] & 0xFFFF0000u));
++        }
++#pragma unroll
++        for (int j = 0; j < ncols_dst; ++j) {
++            const sycl::float4 y0 = *(const sycl::float4 *) (y + j * stride_col_y + c);
++            const sycl::float4 y1 = *(const sycl::float4 *) (y + j * stride_col_y + c + 4);
++            sum[j] += wf[0] * y0.x() + wf[1] * y0.y() + wf[2] * y0.z() + wf[3] * y0.w() +
++                      wf[4] * y1.x() + wf[5] * y1.y() + wf[6] * y1.z() + wf[7] * y1.w();
++        }
++    }
++#pragma unroll
++    for (int j = 0; j < ncols_dst; ++j) {
++        const float total = sycl::reduce_over_group(it.get_group(), sum[j], sycl::plus<float>());
++        if (tid == 0) {
++            dst[j * stride_col_dst + row] = total;
++        }
++    }
++}
++
++template <int ncols_dst>
++static void mul_mat_vec_bf16_f32_sycl(const uint16_t * x, const float * y, float * dst, const int ncols,
++                                      const int nrows, const int64_t stride_row_x, const int64_t stride_col_y,
++                                      const int64_t stride_col_dst, dpct::queue_ptr stream) {
++    constexpr int wg = 256;
++    stream->parallel_for(sycl::nd_range<1>(sycl::range<1>((size_t) nrows * wg), sycl::range<1>(wg)),
++                         [=](sycl::nd_item<1> it) [[sycl::reqd_sub_group_size(WARP_SIZE)]] {
++                             mul_mat_vec_bf16_f32<ncols_dst>(x, y, dst, ncols, stride_row_x, stride_col_y,
++                                                             stride_col_dst, it);
++                         });
++}
++
++bool ggml_sycl_mul_mat_vec_bf16(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1,
++                                ggml_tensor * dst) {
++    static const bool enabled = ggml_sycl_get_env("GGML_SYCL_BF16_MMV", 1) != 0;
++    const int64_t     ncols   = src0->ne[0];
++    const int64_t     n       = src1->ne[1];
++    const bool        aligned = ((uintptr_t) src0->data % 16 == 0) && ((uintptr_t) src1->data % 16 == 0) &&
++                         (src0->nb[1] % 16 == 0) && (src1->nb[1] % 16 == 0);
++    if (!enabled || src0->type != GGML_TYPE_BF16 || src1->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32 ||
++        n < 1 || n > 8 || ncols % 8 != 0 || !aligned || src0->nb[0] != sizeof(uint16_t) ||
++        src1->nb[0] != sizeof(float) || !ggml_is_contiguous(dst) || src0->ne[2] != 1 || src0->ne[3] != 1 ||
++        src1->ne[2] != 1 || src1->ne[3] != 1 || src1->ne[0] != ncols || src0->ne[1] > INT_MAX) {
++        return false;
++    }
++    const uint16_t * x      = (const uint16_t *) src0->data;
++    const float *    y      = (const float *) src1->data;
++    float *          d      = (float *) dst->data;
++    const int        nrows  = (int) src0->ne[1];
++    const int64_t    sx     = src0->nb[1] / sizeof(uint16_t);
++    const int64_t    sy     = src1->nb[1] / sizeof(float);
++    const int64_t    sd     = dst->nb[1] / sizeof(float);
++    dpct::queue_ptr  stream = ctx.stream();
++    switch (n) {
++        case 1: mul_mat_vec_bf16_f32_sycl<1>(x, y, d, (int) ncols, nrows, sx, sy, sd, stream); break;
++        case 2: mul_mat_vec_bf16_f32_sycl<2>(x, y, d, (int) ncols, nrows, sx, sy, sd, stream); break;
++        case 3: mul_mat_vec_bf16_f32_sycl<3>(x, y, d, (int) ncols, nrows, sx, sy, sd, stream); break;
++        case 4: mul_mat_vec_bf16_f32_sycl<4>(x, y, d, (int) ncols, nrows, sx, sy, sd, stream); break;
++        case 5: mul_mat_vec_bf16_f32_sycl<5>(x, y, d, (int) ncols, nrows, sx, sy, sd, stream); break;
++        case 6: mul_mat_vec_bf16_f32_sycl<6>(x, y, d, (int) ncols, nrows, sx, sy, sd, stream); break;
++        case 7: mul_mat_vec_bf16_f32_sycl<7>(x, y, d, (int) ncols, nrows, sx, sy, sd, stream); break;
++        case 8: mul_mat_vec_bf16_f32_sycl<8>(x, y, d, (int) ncols, nrows, sx, sy, sd, stream); break;
++    }
++    return true;
++}
++
+ static void dequantize_mul_mat_vec_q2_k(const void *__restrict__ vx,
+                                         const float *__restrict__ yy,
+                                         float *__restrict__ dst,
+diff --git a/ggml/src/ggml-sycl/dmmv.hpp b/ggml/src/ggml-sycl/dmmv.hpp
+index bd8373564..2cf720e65 100644
+--- a/ggml/src/ggml-sycl/dmmv.hpp
++++ b/ggml/src/ggml-sycl/dmmv.hpp
+@@ -24,4 +24,9 @@ void ggml_sycl_op_dequantize_mul_mat_vec(
+     const int64_t src1_ncols, const int64_t src1_padded_row_size,
+     const dpct::queue_ptr &stream);
+ 
++// BF16 weights against 1-8 f32 activation columns, when the shapes allow it: one work-group per row,
++// the activations read as f32 and summed in f32. Returns false (nothing run) otherwise.
++bool ggml_sycl_mul_mat_vec_bf16(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1,
++                                ggml_tensor * dst);
++
+ #endif // GGML_SYCL_DMMV_HPP
+diff --git a/ggml/src/ggml-sycl/ggml-sycl.cpp b/ggml/src/ggml-sycl/ggml-sycl.cpp
+index 0629c1c88..10689d1b0 100644
+--- a/ggml/src/ggml-sycl/ggml-sycl.cpp
++++ b/ggml/src/ggml-sycl/ggml-sycl.cpp
+@@ -4616,6 +4616,11 @@ static void ggml_sycl_mul_mat(ggml_backend_sycl_context & ctx, const ggml_tensor
+         min_compute_capability = ggml_sycl_info().devices[ctx.device].cc;
+     }
+ 
++    // BF16 weights at 1-8 columns: a row-split mat-vec that reads f32 activations
++    if (!split && ggml_sycl_mul_mat_vec_bf16(ctx, src0, src1, dst)) {
++        return;
++    }
++
+     // check data types and tensor shapes for custom matrix multiplication kernels:
+     bool use_dequantize_mul_mat_vec = can_use_dequantize_mul_mat_vec(src0, src1, dst);
+ 

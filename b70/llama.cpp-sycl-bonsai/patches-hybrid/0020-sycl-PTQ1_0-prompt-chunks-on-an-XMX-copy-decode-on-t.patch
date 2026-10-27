@@ -1,0 +1,477 @@
+From bef01acd40e2488a0034f5cf9fa33dab91046924 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 4 Oct 2026 11:09:50 +0000
+Subject: [PATCH 20/22] sycl: PTQ1_0 prompt chunks on an XMX copy, decode on
+ the row-per-lane mat-vec
+
+#294 rewrites a PTQ1_0 weight in place into its XMX layout on first use, and
+from then on every mul_mat on the weight takes XMX. On an Arc Pro B70 with
+Ternary Bonsai 2 27B, that wins prompt chunks against the row-per-lane mat-vec
+and dequantize path (pp32 543 against 150 tok/s, pp128 975 against 492). It
+loses decode (tg64 35.7 against 52.9) and small batches (batched decode at 4
+sequences 111 against 149). One layout cannot serve both kernels.
+
+A PTQ1_0 weight now keeps its own layout. The XMX path reads a separate copy
+in the 34-byte PQ2_0 XMX layout, in a device allocation of its own that the
+weight's extra owns and frees. The first mul_mat with GGML_SYCL_XMX_MIN_ROWS
+(default 16) or more columns makes the copy. It reads the weight in whichever
+layout the weight has at that time: the loaded blocks, or the layout that the
+mat-vec reordered them into. Mul_mats with fewer columns use the weight's own
+layout. The buffer no longer reserves room for an in-place expansion.
+
+PQ2_0 keeps #294's in-place path. GGML_SYCL_DISABLE_XMX=1 still keeps both
+types off XMX. The copy keeps #294's guards: MUL_MAT only, no views, no split
+or COMPUTE buffers, a 2D contiguous weight with a supported ne0, and a 64-byte
+aligned XMX weight.
+
+The copies take nelements / 128 * 34 bytes in addition to the weights: 6.02
+GiB for the 400 layer weights of Ternary Bonsai 2 27B (4.96 GiB of PTQ1_0).
+The output head adds 0.31 GiB when a ubatch has 16 or more outputs. After the
+first graph that makes copies, one info line gives their count and size.
+---
+ ggml/src/ggml-sycl/common.cpp    |   3 +
+ ggml/src/ggml-sycl/common.hpp    |   6 ++
+ ggml/src/ggml-sycl/ggml-sycl.cpp | 143 ++++++++++++++++++++++---------
+ ggml/src/ggml-sycl/pq2_xmx.cpp   | 110 +++++++++++++++++-------
+ ggml/src/ggml-sycl/pq2_xmx.hpp   |  22 +++--
+ 5 files changed, 208 insertions(+), 76 deletions(-)
+
+diff --git a/ggml/src/ggml-sycl/common.cpp b/ggml/src/ggml-sycl/common.cpp
+index e1b6db13e..dd11ca656 100644
+--- a/ggml/src/ggml-sycl/common.cpp
++++ b/ggml/src/ggml-sycl/common.cpp
+@@ -149,5 +149,8 @@ void release_extra_gpu(ggml_tensor_extra_gpu * extra, std::vector<queue_ptr> str
+             SYCL_CHECK(CHECK_TRY_ERROR(ggml_sycl_free_device(extra->data_device[i], *(streams[i]))));
+         }
+     }
++    if (extra->xmx_shadow != nullptr) {
++        SYCL_CHECK(CHECK_TRY_ERROR(ggml_sycl_free_device(extra->xmx_shadow, *extra->xmx_shadow_stream)));
++    }
+     delete extra;
+ }
+diff --git a/ggml/src/ggml-sycl/common.hpp b/ggml/src/ggml-sycl/common.hpp
+index 8f2106d83..285206d17 100644
+--- a/ggml/src/ggml-sycl/common.hpp
++++ b/ggml/src/ggml-sycl/common.hpp
+@@ -330,6 +330,12 @@ struct ggml_tensor_extra_gpu {
+   dpct::event_ptr events[GGML_SYCL_MAX_DEVICES]
+                         [GGML_SYCL_MAX_STREAMS]; // events for synchronizing multiple GPUs
+   optimize_feature optimized_feature;
++  // PTQ1_0 on 16-wide DPAS devices: a separate copy of the weight in the PQ2_0 XMX layout (pq2_xmx.hpp) for
++  // mul_mats of GGML_SYCL_XMX_MIN_ROWS or more columns, built on the first of them and freed with the extra
++  // through the queue it was allocated on. xmx_shadow_failed: the copy could not be made, so it is not retried.
++  void *    xmx_shadow        = nullptr;
++  queue_ptr xmx_shadow_stream = nullptr;
++  bool      xmx_shadow_failed = false;
+ };
+ 
+ extern int g_ggml_sycl_use_level_zero_api;
+diff --git a/ggml/src/ggml-sycl/ggml-sycl.cpp b/ggml/src/ggml-sycl/ggml-sycl.cpp
+index a33e877f7..fd1a9cd81 100644
+--- a/ggml/src/ggml-sycl/ggml-sycl.cpp
++++ b/ggml/src/ggml-sycl/ggml-sycl.cpp
+@@ -975,22 +975,20 @@ static size_t ggml_backend_sycl_buffer_type_get_max_size(ggml_backend_buffer_typ
+     GGML_UNUSED(buft);
+ }
+ 
+-static bool ggml_sycl_device_has_dpas16(int device);
+-
+-// GGML_SYCL_DISABLE_XMX=1 keeps PQ2_0/PTQ1_0 off the XMX path (and its layout)
++// GGML_SYCL_DISABLE_XMX=1 keeps PQ2_0/PTQ1_0 off the XMX path (and its layouts)
+ static bool ggml_sycl_xmx_disabled() {
+     static const bool disabled = ggml_sycl_get_env("GGML_SYCL_DISABLE_XMX", 0);
+     return disabled;
+ }
+ 
+-// PTQ1_0 weights are expanded into the 34-byte PQ2_0 XMX blocks on first use (pq2_xmx.hpp), so on devices
+-// that run that path their allocation reserves room for the expanded form
+-static bool ggml_sycl_ptq1_xmx_expands(int device, const ggml_tensor * tensor) {
+-    return tensor->type == GGML_TYPE_PTQ1_0 && g_ggml_sycl_enable_optimize && !ggml_sycl_xmx_disabled() &&
+-           tensor->ne[2] == 1 && tensor->ne[3] == 1 && ggml_sycl_pq2_xmx_supports_ne0(tensor->ne[0]) &&
+-           ggml_sycl_device_has_dpas16(device);
++// PTQ1_0 mul_mats with fewer columns than this stay on the weight's own layout (the row-per-lane mat-vec up to 8
++// columns, then dequantize and GEMM); from here on they take the XMX path on a copy of the weight
++static int ggml_sycl_xmx_min_rows() {
++    static const int rows = ggml_sycl_get_env("GGML_SYCL_XMX_MIN_ROWS", 16);
++    return rows;
+ }
+ 
++// the XMX copy of a PTQ1_0 weight: its 28-byte blocks expanded to 34-byte PQ2_0 blocks
+ static size_t ggml_sycl_ptq1_xmx_bytes(const ggml_tensor * tensor) {
+     return (size_t) (ggml_nelements(tensor) / QK_PTQ1_0) * sizeof(block_pq2_0);
+ }
+@@ -1005,12 +1003,9 @@ static size_t ggml_backend_sycl_buffer_type_get_alloc_size(ggml_backend_buffer_t
+         }
+     }
+ 
+-    const auto * buft_ctx = (const ggml_backend_sycl_buffer_type_context *) buft->context;
+-    if (ggml_sycl_ptq1_xmx_expands(buft_ctx->device, tensor)) {
+-        size = std::max(size, ggml_sycl_ptq1_xmx_bytes(tensor));
+-    }
+-
+     return size;
++
++    GGML_UNUSED(buft);
+ }
+ 
+ static const ggml_backend_buffer_type_i ggml_backend_sycl_buffer_type_interface = {
+@@ -4636,52 +4631,121 @@ static bool can_use_mul_mat_vec_q(const ggml_tensor * src0, const ggml_tensor *
+            src1->ne[1] <= MMVQ_MAX_BATCH_SIZE;
+ }
+ 
+-// PQ2_0/PTQ1_0 weights on 16-wide DPAS devices are rewritten into the XMX layout on first use. From then on every
++// XMX copies of PTQ1_0 weights made so far: how many, their bytes, and the bytes of the weights they copy
++static std::atomic<int64_t> g_ggml_sycl_xmx_shadows{ 0 };
++static std::atomic<int64_t> g_ggml_sycl_xmx_shadow_bytes{ 0 };
++static std::atomic<int64_t> g_ggml_sycl_xmx_shadowed_bytes{ 0 };
++
++// The XMX copy of a PTQ1_0 weight, made on the first mul_mat that wants it, in a device allocation of its own that
++// the weight's extra owns (release_extra_gpu frees it). The weight's own bytes stay as they are, in their loaded
++// blocks or in the layout the row-per-lane mat-vec reordered them into, and the copy is made from either. nullptr
++// if it cannot be made; the weight then stays on the other paths for good.
++static const void * ggml_sycl_ptq1_xmx_shadow(ggml_backend_sycl_context & ctx, const ggml_tensor * src0,
++                                              ggml_tensor_extra_gpu * extra) {
++    if (extra->xmx_shadow != nullptr || extra->xmx_shadow_failed) {
++        return extra->xmx_shadow;
++    }
++    extra->xmx_shadow_failed = true;  // until the copy is made
++
++    const size_t    size  = ggml_sycl_ptq1_xmx_bytes(src0);
++    dpct::queue_ptr owner = ((ggml_backend_sycl_buffer_context *) src0->buffer->context)->stream;
++    void *          w     = ggml_sycl_malloc_device(size, *owner);
++    if (w == nullptr || (uintptr_t) w % 64 != 0) {
++        static std::atomic<bool> warned{ false };
++        if (!warned.exchange(true)) {
++            GGML_LOG_WARN("%s: no 64-byte aligned %zu bytes of device memory for the XMX copy of %s: it, and any other "
++                          "PTQ1_0 weight that gets no copy, stays on the other paths\n",
++                          __func__, size, src0->name);
++        }
++        ggml_sycl_free_device(w, *owner);
++        return nullptr;
++    }
++    if (!ggml_sycl_pq2_xmx_copy_ptq1_0(src0, extra->optimized_feature.reorder, w, ctx.stream())) {
++        ggml_sycl_free_device(w, *owner);
++        return nullptr;
++    }
++    extra->xmx_shadow        = w;
++    extra->xmx_shadow_stream = owner;
++    extra->xmx_shadow_failed = false;
++    g_ggml_sycl_xmx_shadows += 1;
++    g_ggml_sycl_xmx_shadow_bytes += (int64_t) size;
++    g_ggml_sycl_xmx_shadowed_bytes += (int64_t) ggml_nbytes(src0);
++    return w;
++}
++
++// After a graph that made XMX copies: their count and size, at info level the first time (once per process, in
++// practice after the first prompt), at debug level after that
++static void ggml_sycl_xmx_shadow_report() {
++    static std::atomic<int64_t> reported{ 0 };
++    const int64_t               n    = g_ggml_sycl_xmx_shadows.load();
++    const int64_t               prev = reported.exchange(n);
++    if (n == prev) {
++        return;
++    }
++    const double mib    = g_ggml_sycl_xmx_shadow_bytes.load() / (1024.0 * 1024.0);
++    const double of_mib = g_ggml_sycl_xmx_shadowed_bytes.load() / (1024.0 * 1024.0);
++    if (prev == 0) {
++        GGML_LOG_INFO("%s: XMX copies of %lld PTQ1_0 weights (%.1f MiB) for mul_mats of %d+ columns: %.1f MiB of "
++                      "device memory beside the weights\n",
++                      __func__, (long long) n, of_mib, ggml_sycl_xmx_min_rows(), mib);
++    } else {
++        GGML_LOG_DEBUG("%s: XMX copies of %lld PTQ1_0 weights (%.1f MiB) for mul_mats of %d+ columns: %.1f MiB of "
++                       "device memory beside the weights\n",
++                       __func__, (long long) n, of_mib, ggml_sycl_xmx_min_rows(), mib);
++    }
++}
++
++// The weight the PQ2_0/PTQ1_0 XMX path reads for this mul_mat, or nullptr for the other paths.
++// PQ2_0 weights on 16-wide DPAS devices are rewritten into the XMX layout in place on first use. From then on every
+ // mul_mat on them has to take that path, so the layout flag alone decides once it is set.
+-static bool ggml_sycl_pq2_xmx_use(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1,
+-                                  const ggml_tensor * dst) {
++// PTQ1_0 weights keep their own layout, where the row-per-lane mat-vec beats XMX on decode and small batches, and
++// mul_mats of GGML_SYCL_XMX_MIN_ROWS or more columns read a separate XMX copy (ggml_sycl_ptq1_xmx_shadow).
++static const void * ggml_sycl_pq2_xmx_weight(ggml_backend_sycl_context & ctx, const ggml_tensor * src0,
++                                             const ggml_tensor * src1, const ggml_tensor * dst) {
+     if (src0->type != GGML_TYPE_PQ2_0 && src0->type != GGML_TYPE_PTQ1_0) {
+-        return false;
++        return nullptr;
+     }
+     // MUL_MAT_ID passes each expert as a 2D copy of the 3D weight that shares its extra, and a view shares
+     // its parent's data: rewriting either in place would corrupt the rest of the tensor
+     if (dst->op != GGML_OP_MUL_MAT || src0->view_src != nullptr) {
+-        return false;
++        return nullptr;
+     }
+     ggml_tensor_extra_gpu * extra = static_cast<ggml_tensor_extra_gpu *>(src0->extra);
+     if (extra && extra->optimized_feature.xmx_pq2) {
+-        return true;
++        return src0->data;
+     }
+-    // a PTQ1_0 weight the row-per-lane mat-vec reordered no longer holds the blocks the XMX rewrite reads
+-    if (extra && extra->optimized_feature.reorder) {
+-        return false;
++    const bool ptq1_0 = src0->type == GGML_TYPE_PTQ1_0;
++    if (ptq1_0 && ggml_nrows(src1) < ggml_sycl_xmx_min_rows()) {
++        return nullptr;
+     }
+     if (!g_ggml_sycl_enable_optimize || ggml_sycl_xmx_disabled() || !ggml_sycl_device_has_dpas16(ctx.device)) {
+-        return false;
++        return nullptr;
+     }
+-    // op offload refills COMPUTE buffers from host memory every time, so an in-place layout there goes stale
+-    if (!extra || ggml_backend_buffer_is_sycl_split(src0->buffer) ||
++    // op offload refills COMPUTE buffers from host memory every time, so a layout made there goes stale; a PTQ1_0
++    // copy belongs to a weight in a plain device buffer
++    if (!extra || !ggml_backend_buffer_is_sycl(src0->buffer) || ggml_backend_buffer_is_sycl_split(src0->buffer) ||
+         src0->buffer->usage == GGML_BACKEND_BUFFER_USAGE_COMPUTE) {
+-        return false;
++        return nullptr;
+     }
+     if (src0->ne[2] != 1 || src0->ne[3] != 1 || !ggml_is_contiguous(src0) ||
+-        !ggml_sycl_pq2_xmx_supports_ne0(src0->ne[0]) || (uintptr_t) src0->data % 64 != 0) {
+-        return false;
++        !ggml_sycl_pq2_xmx_supports_ne0(src0->ne[0])) {
++        return nullptr;
+     }
+     if (src1->type != GGML_TYPE_F32 || src1->nb[0] != sizeof(float) || dst->type != GGML_TYPE_F32 ||
+         !ggml_is_contiguous(dst)) {
+-        return false;
++        return nullptr;
+     }
+-    // PTQ1_0 expands to 34 bytes a block, which only fits where the buffer reserved room for it
+-    if (src0->type == GGML_TYPE_PTQ1_0 &&
+-        ggml_backend_buft_get_alloc_size(src0->buffer->buft, src0) < ggml_sycl_ptq1_xmx_bytes(src0)) {
+-        return false;
++    // the 2D block loads need the XMX weight 64-byte aligned: a PTQ1_0 copy is allocated so, a PQ2_0 weight is
++    // rewritten where it is
++    if (ptq1_0) {
++        return ggml_sycl_ptq1_xmx_shadow(ctx, src0, extra);
+     }
+-    if (!ggml_sycl_pq2_xmx_reorder(const_cast<ggml_tensor *>(src0), ctx.stream())) {
+-        return false;
++    if ((uintptr_t) src0->data % 64 != 0 ||
++        !ggml_sycl_pq2_xmx_reorder(const_cast<ggml_tensor *>(src0), ctx.stream())) {
++        return nullptr;
+     }
+     extra->optimized_feature.xmx_pq2 = true;
+-    return true;
++    return src0->data;
+ }
+ 
+ static void ggml_sycl_mul_mat(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
+@@ -4698,8 +4762,8 @@ static void ggml_sycl_mul_mat(ggml_backend_sycl_context & ctx, const ggml_tensor
+         return;
+     }
+ 
+-    if (ggml_sycl_pq2_xmx_use(ctx, src0, src1, dst)) {
+-        ggml_sycl_pq2_xmx_mul_mat(ctx, src0, src1, dst);
++    if (const void * w = ggml_sycl_pq2_xmx_weight(ctx, src0, src1, dst)) {
++        ggml_sycl_pq2_xmx_mul_mat(ctx, src0, w, src1, dst);
+         return;
+     }
+ 
+@@ -5930,6 +5994,7 @@ static void ggml_backend_sycl_graph_compute_impl(ggml_backend_sycl_context * syc
+         }
+         GGML_ASSERT(ok);
+     }
++    ggml_sycl_xmx_shadow_report();
+ }
+ 
+ #ifdef GGML_SYCL_GRAPH
+diff --git a/ggml/src/ggml-sycl/pq2_xmx.cpp b/ggml/src/ggml-sycl/pq2_xmx.cpp
+index 20fbf60f4..700b8b660 100644
+--- a/ggml/src/ggml-sycl/pq2_xmx.cpp
++++ b/ggml/src/ggml-sycl/pq2_xmx.cpp
+@@ -1,5 +1,6 @@
+ #include "pq2_xmx.hpp"
+ #include "dequantize.hpp"
++#include "quants.hpp"
+ 
+ // GGML_SYCL_NO_PQ2_XMX: an AOT build for a device without 16-wide DPAS, which cannot compile these kernels
+ #if defined(__INTEL_LLVM_COMPILER) && !defined(GGML_SYCL_NO_PQ2_XMX)
+@@ -244,7 +245,7 @@ bool ggml_sycl_pq2_xmx_supports_ne0(int64_t ne0) {
+ }
+ 
+ bool ggml_sycl_pq2_xmx_reorder(ggml_tensor * src0, dpct::queue_ptr stream) {
+-    GGML_ASSERT((src0->type == GGML_TYPE_PQ2_0 || src0->type == GGML_TYPE_PTQ1_0) && ggml_is_contiguous(src0));
++    GGML_ASSERT(src0->type == GGML_TYPE_PQ2_0 && ggml_is_contiguous(src0));
+ 
+     const size_t size = ggml_nbytes(src0);
+     const size_t nblk = (size_t) ggml_nelements(src0) / QK_PQ2_0;
+@@ -259,38 +260,84 @@ bool ggml_sycl_pq2_xmx_reorder(ggml_tensor * src0, dpct::queue_ptr stream) {
+ 
+     uint8_t *    qs = data;
+     sycl::half * d  = (sycl::half *) (data + nblk * PQ2_XMX_QS_BYTES);
+-    if (src0->type == GGML_TYPE_PQ2_0) {
+-        stream->parallel_for(sycl::range<1>(nblk), [=](sycl::id<1> i) {
+-            const block_pq2_0 * x = (const block_pq2_0 *) tmp + i;
++    stream->parallel_for(sycl::range<1>(nblk), [=](sycl::id<1> i) {
++        const block_pq2_0 * x = (const block_pq2_0 *) tmp + i;
+ #pragma unroll
+-            for (int j = 0; j < PQ2_XMX_QS_BYTES; ++j) {
+-                qs[i * PQ2_XMX_QS_BYTES + j] = x->qs[j];
+-            }
+-            d[i] = x->d;
+-        }).wait();
+-    } else {
+-        // base-3 trits (value -1..1) become PQ2_0 codes (value + 1), four to a byte, lowest first;
+-        // the caller made sure the buffer holds 34 bytes a block
+-        stream->parallel_for(sycl::range<1>(nblk), [=](sycl::id<1> i) {
+-            const block_ptq1_0 * x = (const block_ptq1_0 *) tmp + i;
+-            for (int j = 0; j < PQ2_XMX_QS_BYTES; ++j) {
+-                uint8_t byte = 0;
++        for (int j = 0; j < PQ2_XMX_QS_BYTES; ++j) {
++            qs[i * PQ2_XMX_QS_BYTES + j] = x->qs[j];
++        }
++        d[i] = x->d;
++    }).wait();
++
++    sycl::free(tmp, *stream);
++    return true;
++}
++
++// A PTQ1_0 block is 7 words in either of its layouts: words 0..5 are qs (5 trits a byte), word 6 holds the 8 qh
++// trits in its low half and d in its high half. Element e is trit e / 16 of qs byte e % 16 for e < 80, trit
++// (e - 80) / 8 of qs byte 16 + e % 8 for e < 120, and trit (e - 120) / 2 of qh[e % 2] after that, where trit t of
++// byte q is ((q * 3^t mod 256) * 3) >> 8, the value plus one: its PQ2_0 code. The reorder layout keeps the qs words
++// as they are and stores the qh trits as 2-bit codes (ggml_sycl_reordered::ptq1_0_qh_codes).
++template <bool reordered>
++static inline uint32_t ptq1_0_code(const uint32_t (&w)[7], const int e) {
++    if (e >= 120 && reordered) {
++        const int n = e - 120;
++        return (w[6] >> (((n & 1) << 3) | ((n & 2) << 1) | ((n & 4) >> 1))) & 3;
++    }
++    const int byte = e < 80 ? e & 15 : e < 120 ? 16 + (e & 7) : 24 + ((e - 120) & 1);
++    const int t    = e < 80 ? e >> 4 : e < 120 ? (e - 80) >> 3 : (e - 120) >> 1;
++    uint32_t  q    = (w[byte >> 2] >> (8 * (byte & 3))) & 0xFF;
++    for (int i = 0; i < t; ++i) {
++        q = (q * 3) & 0xFF;
++    }
++    return (q * 3) >> 8;
++}
++
++// one work-item per block: dword j of its 32 qs bytes holds the codes of elements 16j..16j+15, lowest first
++template <bool reordered>
++static void pq2_xmx_from_ptq1_0(const uint32_t * x, uint32_t * qs, sycl::half * d, const int64_t nb,
++                                const int64_t nrows, dpct::queue_ptr stream) {
++    using layout = ggml_sycl_reordered::ptq1_0_layout;
++    stream->parallel_for(sycl::range<1>(nrows * nb), [=](sycl::id<1> id) {
++        const int64_t i = id[0];
++        uint32_t      w[layout::words];
+ #pragma unroll
+-                for (int k = 0; k < 4; ++k) {
+-                    byte |= (uint8_t) ((ptq1_0_trit(x, 4 * j + k) + 1) << (2 * k));
+-                }
+-                qs[i * PQ2_XMX_QS_BYTES + j] = byte;
++        for (int k = 0; k < layout::words; ++k) {
++            w[k] = reordered ? x[layout::word_index(i / nb, i % nb, k, nb, nrows)] : x[i * layout::words + k];
++        }
++        for (int j = 0; j < PQ2_XMX_QS_DW; ++j) {
++            uint32_t v = 0;
++#pragma unroll
++            for (int k = 0; k < 16; ++k) {
++                v |= ptq1_0_code<reordered>(w, 16 * j + k) << (2 * k);
+             }
+-            d[i] = x->d;
+-        }).wait();
+-    }
++            qs[i * PQ2_XMX_QS_DW + j] = v;
++        }
++        d[i] = sycl::bit_cast<sycl::half>((uint16_t) (w[6] >> 16));
++    });
++}
+ 
+-    sycl::free(tmp, *stream);
++bool ggml_sycl_pq2_xmx_copy_ptq1_0(const ggml_tensor * src0, bool reordered, void * dst, dpct::queue_ptr stream) {
++    static_assert(sizeof(block_ptq1_0) == ggml_sycl_reordered::ptq1_0_layout::words * sizeof(uint32_t),
++                  "a PTQ1_0 block is 7 words");
++    GGML_ASSERT(src0->type == GGML_TYPE_PTQ1_0 && ggml_is_contiguous(src0) && src0->ne[2] == 1 && src0->ne[3] == 1);
++    GGML_ASSERT((uintptr_t) dst % 64 == 0);
++
++    const int64_t    nb    = src0->ne[0] / QK_PTQ1_0;
++    const int64_t    nrows = src0->ne[1];
++    const uint32_t * x     = (const uint32_t *) src0->data;
++    uint32_t *       qs    = (uint32_t *) dst;
++    sycl::half *     d     = (sycl::half *) ((uint8_t *) dst + nrows * nb * PQ2_XMX_QS_BYTES);
++    if (reordered) {
++        pq2_xmx_from_ptq1_0<true>(x, qs, d, nb, nrows, stream);
++    } else {
++        pq2_xmx_from_ptq1_0<false>(x, qs, d, nb, nrows, stream);
++    }
+     return true;
+ }
+ 
+-void ggml_sycl_pq2_xmx_mul_mat(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1,
+-                               ggml_tensor * dst) {
++void ggml_sycl_pq2_xmx_mul_mat(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const void * w,
++                               const ggml_tensor * src1, ggml_tensor * dst) {
+     GGML_ASSERT((src0->type == GGML_TYPE_PQ2_0 || src0->type == GGML_TYPE_PTQ1_0) && src0->ne[2] == 1 &&
+                 src0->ne[3] == 1);
+     GGML_ASSERT(src1->type == GGML_TYPE_F32 && src1->nb[0] == sizeof(float));
+@@ -351,8 +398,8 @@ void ggml_sycl_pq2_xmx_mul_mat(ggml_backend_sycl_context & ctx, const ggml_tenso
+             });
+     }
+ 
+-    const uint32_t * wq = (const uint32_t *) src0->data;
+-    const uint16_t * wd = (const uint16_t *) ((const uint8_t *) src0->data + (size_t) nrows * nb * PQ2_XMX_QS_BYTES);
++    const uint32_t * wq = (const uint32_t *) w;
++    const uint16_t * wd = (const uint16_t *) ((const uint8_t *) w + (size_t) nrows * nb * PQ2_XMX_QS_BYTES);
+     float *          dd = (float *) dst->data;
+     const int        nrows_dst = (int) dst->ne[0];
+ 
+@@ -375,7 +422,12 @@ bool ggml_sycl_pq2_xmx_reorder(ggml_tensor *, dpct::queue_ptr) {
+     return false;
+ }
+ 
+-void ggml_sycl_pq2_xmx_mul_mat(ggml_backend_sycl_context &, const ggml_tensor *, const ggml_tensor *, ggml_tensor *) {
++bool ggml_sycl_pq2_xmx_copy_ptq1_0(const ggml_tensor *, bool, void *, dpct::queue_ptr) {
++    return false;
++}
++
++void ggml_sycl_pq2_xmx_mul_mat(ggml_backend_sycl_context &, const ggml_tensor *, const void *, const ggml_tensor *,
++                               ggml_tensor *) {
+     GGML_ABORT("PQ2_0 XMX path is not built in");
+ }
+ 
+diff --git a/ggml/src/ggml-sycl/pq2_xmx.hpp b/ggml/src/ggml-sycl/pq2_xmx.hpp
+index 4ad3c7493..ac1b40277 100644
+--- a/ggml/src/ggml-sycl/pq2_xmx.hpp
++++ b/ggml/src/ggml-sycl/pq2_xmx.hpp
+@@ -2,19 +2,25 @@
+ 
+ #include "common.hpp"
+ 
+-// PQ2_0 in the XMX layout: the weight tensor is rewritten in place, once, into a plane of 32-byte qs blocks
+-// (row pitch nb * 32 bytes, so every row is 2D-block-load aligned) followed by a plane of fp16 block scales.
+-// PTQ1_0 weights take the same layout: their base-3 trits are expanded to PQ2_0 codes, which needs 34 bytes a
+-// block instead of 28, so the buffer type reserves that room for them on devices that use this path.
++// The XMX layout: a plane of 32-byte qs blocks of PQ2_0 codes (row pitch nb * 32 bytes, so every row is
++// 2D-block-load aligned) followed by a plane of fp16 block scales. A PQ2_0 weight, the same size in it, is
++// rewritten in place, once. A PTQ1_0 weight keeps its own layout, where the row-per-lane mat-vec serves decode
++// and small batches, and the XMX path reads a separate copy: its base-3 trits expanded to PQ2_0 codes, 34 bytes
++// a block instead of 28.
+ // Activations are quantized to int8 with one float scale per 128 values, so the four DPAS of a PQ2_0 block
+ // accumulate in integers before a single float rescale.
+ 
+ // ne[0] of a PQ2_0 weight the XMX path accepts: a 2D surface needs a row of at least 64 bytes
+ bool ggml_sycl_pq2_xmx_supports_ne0(int64_t ne0);
+ 
+-// rewrite src0 (PQ2_0 or PTQ1_0, AoS blocks) into the XMX layout in place
++// rewrite src0 (PQ2_0, AoS blocks) into the XMX layout in place
+ bool ggml_sycl_pq2_xmx_reorder(ggml_tensor * src0, dpct::queue_ptr stream);
+ 
+-// dst = src0 * src1 for a src0 already in the XMX layout; src1 is f32 with contiguous rows, dst is contiguous
+-void ggml_sycl_pq2_xmx_mul_mat(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1,
+-                               ggml_tensor * dst);
++// write src0 (a 2D PTQ1_0 weight) into dst in the XMX layout, nelements / 128 * 34 bytes, 64-byte aligned.
++// src0 is read in its loaded blocks or, with reordered, in ggml_sycl_reordered::ptq1_0_layout, and left as it is.
++bool ggml_sycl_pq2_xmx_copy_ptq1_0(const ggml_tensor * src0, bool reordered, void * dst, dpct::queue_ptr stream);
++
++// dst = src0 * src1, where w is src0 in the XMX layout: src0->data for a PQ2_0 weight rewritten in place, or the
++// copy of a PTQ1_0 weight. src1 is f32 with contiguous rows, dst is contiguous.
++void ggml_sycl_pq2_xmx_mul_mat(ggml_backend_sycl_context & ctx, const ggml_tensor * src0, const void * w,
++                               const ggml_tensor * src1, ggml_tensor * dst);
+-- 
+2.51.0
+

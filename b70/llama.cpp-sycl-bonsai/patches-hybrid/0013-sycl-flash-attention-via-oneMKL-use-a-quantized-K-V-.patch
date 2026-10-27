@@ -1,0 +1,53 @@
+From 720043116b678a4778bcdcd2f78f04324d0b798f Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 13:42:45 +0000
+Subject: [PATCH 13/22] sycl: flash attention via oneMKL: use a quantized K/V
+ view's own strides
+
+For quantized K/V whose heads are interleaved within a row, the MKL path rebuilt the row
+stride as n_kv_heads x blocks-per-row, which holds only when a row is exactly those heads.
+A view of a wider cache row (test-backend-ops: q8_0 K/V, permute [0,2,1,3], kv_view) has
+a longer row, so every row after the first was read from the wrong place (NMSE ~1.3).
+The tensor strides are exact in both cases: rows are whole blocks.
+FLASH_ATTN_EXT on an Arc Pro B70: 4090/4091 -> 4091/4091.
+---
+ ggml/src/ggml-sycl/fattn-mkl.cpp | 22 ++++++++--------------
+ 1 file changed, 8 insertions(+), 14 deletions(-)
+
+diff --git a/ggml/src/ggml-sycl/fattn-mkl.cpp b/ggml/src/ggml-sycl/fattn-mkl.cpp
+index 2d164a084..23ce2587c 100644
+--- a/ggml/src/ggml-sycl/fattn-mkl.cpp
++++ b/ggml/src/ggml-sycl/fattn-mkl.cpp
+@@ -284,21 +284,15 @@ static mkl_fa_kv_desc mkl_fa_make_desc(const ggml_tensor * T, bool interleaved,
+         d.mode = MKL_FA_KV_MODE_QUANT_CONTIG;
+     } else {
+         d.mode = MKL_FA_KV_MODE_QUANT_NC;
+-        const int64_t bs          = (int64_t)ggml_blck_size(T->type);
+-        const int64_t blk_per_row = T->ne[0] / bs;
+-        // True Gemma interleave packs heads within a row (nb[2] < ne[1]*nb[1])
+-        // → reconstruct physical strides. Padded seq-views (nb[2] > ne[1]*nb[1])
+-        // already have correct physical strides.
+-        const bool gemma = interleaved &&
+-            ((int64_t)T->nb[2] < (int64_t)T->ne[1] * (int64_t)T->nb[1]);
+-        if (gemma) {
+-            d.s01 = (int64_t)n_kv_heads * blk_per_row;
+-            d.s02 = blk_per_row;
+-        } else {
+-            d.s01 = d.nb1 / d.ts;
+-            d.s02 = d.nb2 / d.ts;
+-        }
++        // The tensor's own strides, in blocks: rows are whole blocks, so they are exact for
++        // heads interleaved within a KV row (nb[2] < ne[1]*nb[1]) as for padded seq-views.
++        // (Rebuilding the row stride as n_kv_heads blocks-per-row assumed a row holds exactly
++        // the n_kv_heads heads; a view of a wider cache row has a longer one.)
++        d.s01 = d.nb1 / d.ts;
++        d.s02 = d.nb2 / d.ts;
+     }
++    GGML_UNUSED(interleaved);
++    GGML_UNUSED(n_kv_heads);
+     return d;
+ }
+ 
+-- 
+2.51.0
+

@@ -1,6 +1,6 @@
 {
  "schema": "homelab-atlas/1",
- "updated": "2026-10-26",
+ "updated": "2026-10-27",
  "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). quality_on_this_build: false marks a result whose quality check ran on another build, card or configuration than the speed figure (its conditions and quality text say which); absent means the check ran on the configuration the result names. A result that needs several cards lists them all in cards; card is the one whose page it cites. workload: bench (fixed prompts, one request at a time), agent-served (per-request decode measured while serving a coding agent; the agent's wall time also holds prompt reading and tool time), synthetic-many-agents (every agent reads one prompt once, then writes: decode capacity, not what agents doing real work get), agent-replay (recorded coding-agent sessions replayed with their own prompts, outputs and tool time; agent_useful_tps is output tokens over the measured window, summed over agents). agent_useful_tps: what agents got, prompt reading and tool time included.",
  "boxes": [
   {
@@ -488,6 +488,29 @@
    "date": "2026-10-26",
    "status": "measured",
    "source": "b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with"
+  },
+  {
+   "card": "arc-pro-b70-2",
+   "model": "Ternary Bonsai 2 27B",
+   "weights": "PTQ1_0 (ternary, 1.75 bits a weight) with an MTP head (sudoingx/Ternary-Bonsai-2-27B-PTQ1_0-MTP-GGUF)",
+   "engine": "PrismML's llama.cpp fork, PR #235 head + our 19 SYCL patches (b70/llama.cpp-sycl-bonsai/patches)",
+   "decode_tps": [
+    71.5,
+    71.6
+   ],
+   "decode_tps_no_draft": [
+    52.8,
+    52.9
+   ],
+   "streams": 1,
+   "prefill_tps": 907.1,
+   "conditions": "MTP 2 (45 % of drafts accepted), f16 KV, one 16,384-token slot, chat endpoint, thinking off, temperature 0, 256-token replies, 3 requests; PR #235 unpatched 26.9 plain; at a 49,130-token depth with the served flags (-c 131072 -np 2 -kvu) decode 52.9 with MTP 2; prefill_tps is that cold 49,130-token prompt at ubatch 2,048; measured in snoopy, one window",
+   "quality": "test-backend-ops against the CPU: every PTQ1_0 op passes; greedy reply agrees with the fork's CUDA release for 536 of 569 characters (build with patches 0001-0012); no KL or agent eval on this build",
+   "quality_on_this_build": false,
+   "date": "2026-09-27",
+   "status": "measured",
+   "source": "b70/bonsai-2-27b.md#speed",
+   "workload": "bench"
   }
  ]
 }

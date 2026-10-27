@@ -33,6 +33,8 @@ The words and shorthand this repo uses, in plain terms. Alphabetical within each
   checkpoints for vLLM), **GGUF** files with llama.cpp types such as **Q4_K_M**, **Q8_0**, **IQ3_S**, **UD-Q4_K_XL**
   (unsloth's mixed-precision recipe), **EXL3** (exllamav3's format), **MXFP4** (the 4-bit float format DeepSeek
   released V4.1's experts in).
+- **Ternary**, **PTQ1_0**: weights that are only -1, 0 or +1, with a scale per group. PTQ1_0 is PrismML's GGUF
+  type for them: 1.75 bits a weight, packed in base 3. PQ2_0 is their 2-bit sibling.
 - **Release precision**: the weights as the model's makers published them, no further quantization.
 - **Split store**: one model file in which hot experts keep a higher precision and cold experts a lower one.
 - **Route trim**: computing only the top few of a token's expert picks that are not in VRAM, on some layers, and
@@ -88,7 +90,8 @@ The words and shorthand this repo uses, in plain terms. Alphabetical within each
   work, and [our fork of it](https://github.com/akapug/ik_llama.cpp) carries the engine changes in
   [moe-offload](moe-offload/#engine-changes).
 - **llm-scaler**: Intel's Docker image of vLLM for Arc GPUs. **XPU**: what PyTorch and vLLM call an Intel GPU.
-  **SYCL**: the programming layer of llama.cpp's Intel backend. **Xe2**: the B70's GPU generation.
+  **SYCL**: the programming layer of llama.cpp's Intel backend. **Xe2**: the B70's GPU generation. **XMX** (or
+  **DPAS**, its instruction): the matrix engines of an Intel GPU, used for batches of tokens.
 - **Strata / XeStrata**: an engine that serves Qwen3.8 Flash-Next with its experts in RAM and a VRAM expert cache;
   XeStrata is its port to Intel GPUs.
 - **RDMA** / **RoCE**: one machine writing into another's memory through the network card, without the CPU copying

@@ -1,0 +1,276 @@
+From b4e4621af6d07da6cf09b72e708ec1849fa69bb6 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 10:55:14 +0000
+Subject: [PATCH 04/22] sycl: fewer ops per trit plane in the PTQ1_0 reorder
+ mat-vec, and a one-wave split
+
+Three changes, measured on an Arc Pro B70 with every weight read from memory
+(8 distinct weights; the time includes the activation quantize):
+
+- After w = v * 3 each 16-bit lane's high byte is the trit. For one or two
+  columns w now goes to dp4a unmasked, against activation words whose bytes 0
+  and 2 are zeroed and whose bytes 1 and 3 hold the even (or odd) elements:
+  6 ops per plane of 4 weights instead of 8. From three columns the gathered
+  trit word, shared by all columns, stays cheaper, so those keep it.
+- A full row group's plane stride is a constant, so its 7 weight loads share
+  one address instead of building 7 64-bit per-lane addresses per block.
+- The sub-groups per row group target about 5/8 of the sub-groups the device
+  holds at once, so the launch fits one wave. A launch just past a whole number
+  of waves ran its tail on a fraction of the device: 5120x17408 split 2 (2176
+  sub-groups against 2048 resident) took 44.5 us, split 1 38.4.
+
+5120x17408 and 17408x5120 in turn, n = 1 / 2 / 4 / 8:
+  40.7 / 42.6 / 48.6 / 66.1 -> 38.7 / 39.6 / 41.7 / 57.2 us per mat-vec
+Each shape alone after: 5120x17408 38.4 / 39.7 / 42.8 / 59.5, 17408x5120
+38.5 / 39.1 / 40.4 / 56.2 (the 608 GB/s bound is 32.1 us: n = 1 is 83 %,
+n = 2 81-82 %). One mat-vec repeated, weight in L2: 5120x17408 n = 1 28.6 -> 22.7 us.
+---
+ ggml/src/ggml-sycl/mmvq.cpp | 157 +++++++++++++++++++++++-------------
+ 1 file changed, 103 insertions(+), 54 deletions(-)
+
+diff --git a/ggml/src/ggml-sycl/mmvq.cpp b/ggml/src/ggml-sycl/mmvq.cpp
+index 81a9f427a..2e188f6d8 100644
+--- a/ggml/src/ggml-sycl/mmvq.cpp
++++ b/ggml/src/ggml-sycl/mmvq.cpp
+@@ -1341,31 +1341,28 @@ static void mul_mat_vec_ptq1_0_q8_1_sycl_switch_ncols(
+ // PTQ1_0 on its reorder layout (ggml_sycl_reordered::ptq1_0_layout). A sub-group takes a group of
+ // 16 rows, one per lane, so each weight plane is one contiguous 64-byte read and every lane dots the
+ // same activations: the sub-group reads a block's 128 quants once (lane l holds words l and 16 + l)
+-// and each dp4a takes its word by a constant-lane broadcast. The sub-groups of a work-group split
+-// the group's blocks and add their sums in local memory. Trits are decoded two bytes per 32-bit
+-// multiply (even and odd bytes in separate 16-bit lanes) and dotted as 0..2; the -1 offset is
+-// folded in through the q8_1 sums.
+-template <int ncols_dst>
+-static void mul_mat_vec_ptq1_0_q8_1_reorder(const uint32_t * __restrict__ vx, const char * __restrict__ vy,
+-                                            float * __restrict__ dst, const int ncols, const int nrows,
+-                                            const int stride_col_y_bytes, const int stride_col_dst,
+-                                            float * __restrict__ slm, const sycl::nd_item<1> & it) {
+-    constexpr int R = ggml_sycl_reordered::ptq1_0_layout::rows;
+-    constexpr int W = ggml_sycl_reordered::ptq1_0_layout::words;
+-    static_assert(R == WARP_SIZE, "one row per lane");
++// and each dp4a takes its word by a constant-lane broadcast, which costs no instruction. The
++// sub-groups of a work-group split the group's blocks and add their sums in local memory.
++//
++// Decode: a qs word's even and odd bytes sit in 16-bit lanes, two bytes per multiply. After w = v * 3
++// each lane's high byte is the trit and its low byte the next plane's v. For one or two columns w goes
++// to dp4a unmasked, against an activation word whose bytes 0 and 2 are zero and whose bytes 1 and 3
++// hold the even (or the odd) elements: two dp4a per column instead of three ops to gather the four
++// trits into one word. From three columns the gathered word, shared by all, is cheaper. Trits are
++// dotted as 0..2; the -1 offset folds in through the q8_1 sums.
++template <int ncols_dst, bool full_group>
++static __dpct_inline__ void ptq1_0_reorder_rows(const uint32_t * __restrict__ xr, const char * __restrict__ vy,
++                                                const int ncols, const int stride_col_y_bytes, const int tw_runtime,
++                                                const int s, const int ns, const int l, const sycl::sub_group & sg,
++                                                float (&acc)[ncols_dst]) {
++    constexpr int      W  = ggml_sycl_reordered::ptq1_0_layout::words;
++    constexpr uint32_t M  = 0x00FF00FFu;
++    constexpr uint32_t MH = 0xFF00FF00u;
++    constexpr bool     split_dot = ncols_dst <= 2;
++    // a full group's plane stride is a constant, so the 7 loads share one address
++    const int          tw = full_group ? ggml_sycl_reordered::ptq1_0_layout::rows : tw_runtime;
++    const int          nb = ncols / QK_PTQ1_0;
+ 
+-    const auto sg = it.get_sub_group();
+-    const int  l  = sg.get_local_linear_id();
+-    const int  s  = sg.get_group_linear_id();
+-    const int  ns = sg.get_group_linear_range();
+-    const int  g  = it.get_group(0);
+-    const int  nb = ncols / QK_PTQ1_0;
+-    const int  tw = sycl::min(R, nrows - R * g);
+-
+-    // a lane past the end of a short last group reads the group's last row and drops the result
+-    const uint32_t * xr = vx + (size_t) R * W * nb * g + sycl::min(l, tw - 1);
+-
+-    float acc[ncols_dst] = {};
+     for (int b = s; b < nb; b += ns) {
+         const uint32_t * xb = xr + (size_t) W * tw * b;
+         uint32_t         w[W];
+@@ -1374,14 +1371,25 @@ static void mul_mat_vec_ptq1_0_q8_1_reorder(const uint32_t * __restrict__ vx, co
+             w[i] = xb[tw * i];
+         }
+ 
++        // per column: the block's activation words l and 16 + l, for the split dot also with their
++        // even elements moved to bytes 1 and 3 (ae) and their odd elements kept there (ao), and the
++        // (d, sum) of q8_1 sub-block l % 4
+         int   a0[ncols_dst], a1[ncols_dst];
+-        float d8[ncols_dst], ys[ncols_dst];  // lane l: the (d, sum) of q8_1 sub-block l % 4
++        int   ae0[split_dot ? ncols_dst : 1], ao0[split_dot ? ncols_dst : 1];
++        int   ae1[split_dot ? ncols_dst : 1], ao1[split_dot ? ncols_dst : 1];
++        float d8[ncols_dst], ys[ncols_dst];
+ #pragma unroll
+         for (int c = 0; c < ncols_dst; ++c) {
+             const char * yc = vy + (size_t) c * stride_col_y_bytes;
+             const int *  yq = (const int *) yc + 32 * b;
+             a0[c]           = yq[l];
+             a1[c]           = yq[16 + l];
++            if constexpr (split_dot) {
++                ae0[c] = (int) (((uint32_t) a0[c] << 8) & MH);
++                ao0[c] = (int) ((uint32_t) a0[c] & MH);
++                ae1[c] = (int) (((uint32_t) a1[c] << 8) & MH);
++                ao1[c] = (int) ((uint32_t) a1[c] & MH);
++            }
+             const sycl::float2 ds =
+                 ((const sycl::half2 *) (yc + ncols))[4 * b + (l & 3)].convert<float, sycl::rounding_mode::automatic>();
+             d8[c] = ds.x();
+@@ -1393,22 +1401,32 @@ static void mul_mat_vec_ptq1_0_q8_1_reorder(const uint32_t * __restrict__ vx, co
+         // qs word i = 4, 5, trit plane t: elements 80 + 8 t + 4 (i - 4) (activation word 20 + 2 t + i - 4)
+ #pragma unroll
+         for (int i = 0; i < 6; ++i) {
+-            uint32_t ve = w[i] & 0x00FF00FFu;
+-            uint32_t vo = (w[i] >> 8) & 0x00FF00FFu;
++            uint32_t ve = w[i] & M;
++            uint32_t vo = (w[i] >> 8) & M;
+ #pragma unroll
+             for (int t = 0; t < 5; ++t) {
+-                // trit t of byte v is ((v * 3^t mod 256) * 3) >> 8: bits 8-9 of each 16-bit lane
++                // trit t of byte v is ((v * 3^t mod 256) * 3) >> 8: the high byte of each 16-bit lane
+                 const uint32_t we = ve * 3u;
+                 const uint32_t wo = vo * 3u;
+-                ve                = we & 0x00FF00FFu;
+-                vo                = wo & 0x00FF00FFu;
+-                const int q       = (int) (((we >> 8) & 0x00FF00FFu) | (wo & 0xFF00FF00u));
++                ve                = we & M;
++                vo                = wo & M;
+                 const int j       = i < 4 ? 4 * t + i : 20 + 2 * t + i - 4;
+                 const int k       = i < 4 ? (t < 4 ? t / 2 : 2) : (t < 2 ? 2 : 3);
++                if constexpr (split_dot) {
++#pragma unroll
++                    for (int c = 0; c < ncols_dst; ++c) {
++                        const int e = sycl::select_from_group(sg, j < 16 ? ae0[c] : ae1[c], j & 15);
++                        const int o = sycl::select_from_group(sg, j < 16 ? ao0[c] : ao1[c], j & 15);
++                        sumi[c][k]  = dpct::dp4a((int) we, e, sumi[c][k]);
++                        sumi[c][k]  = dpct::dp4a((int) wo, o, sumi[c][k]);
++                    }
++                } else {
++                    const int q = (int) (((we >> 8) & M) | (wo & MH));
+ #pragma unroll
+-                for (int c = 0; c < ncols_dst; ++c) {
+-                    const int a = sycl::select_from_group(sg, j < 16 ? a0[c] : a1[c], j & 15);
+-                    sumi[c][k]  = dpct::dp4a(q, a, sumi[c][k]);
++                    for (int c = 0; c < ncols_dst; ++c) {
++                        const int a = sycl::select_from_group(sg, j < 16 ? a0[c] : a1[c], j & 15);
++                        sumi[c][k]  = dpct::dp4a(q, a, sumi[c][k]);
++                    }
+                 }
+             }
+         }
+@@ -1431,6 +1449,34 @@ static void mul_mat_vec_ptq1_0_q8_1_reorder(const uint32_t * __restrict__ vx, co
+             acc[c] += d * v;
+         }
+     }
++}
++
++template <int ncols_dst>
++static void mul_mat_vec_ptq1_0_q8_1_reorder(const uint32_t * __restrict__ vx, const char * __restrict__ vy,
++                                            float * __restrict__ dst, const int ncols, const int nrows,
++                                            const int stride_col_y_bytes, const int stride_col_dst,
++                                            float * __restrict__ slm, const sycl::nd_item<1> & it) {
++    constexpr int R = ggml_sycl_reordered::ptq1_0_layout::rows;
++    constexpr int W = ggml_sycl_reordered::ptq1_0_layout::words;
++    static_assert(R == WARP_SIZE, "one row per lane");
++
++    const auto sg = it.get_sub_group();
++    const int  l  = sg.get_local_linear_id();
++    const int  s  = sg.get_group_linear_id();
++    const int  ns = sg.get_group_linear_range();
++    const int  g  = it.get_group(0);
++    const int  nb = ncols / QK_PTQ1_0;
++    const int  tw = sycl::min(R, nrows - R * g);
++
++    // a lane past the end of a short last group reads the group's last row and drops the result
++    const uint32_t * xr = vx + (size_t) R * W * nb * g + sycl::min(l, tw - 1);
++
++    float acc[ncols_dst] = {};
++    if (tw == R) {
++        ptq1_0_reorder_rows<ncols_dst, true>(xr, vy, ncols, stride_col_y_bytes, tw, s, ns, l, sg, acc);
++    } else {
++        ptq1_0_reorder_rows<ncols_dst, false>(xr, vy, ncols, stride_col_y_bytes, tw, s, ns, l, sg, acc);
++    }
+ 
+     if (ns > 1) {
+ #pragma unroll
+@@ -1456,9 +1502,13 @@ static void mul_mat_vec_ptq1_0_q8_1_reorder(const uint32_t * __restrict__ vx, co
+     }
+ }
+ 
+-// Sub-groups per row group: enough for about 4096 in all (the B70 holds 2048 at once), keeping at
+-// least 4 blocks each. GGML_SYCL_PTQ1_0_SPLIT (a power of two, 1-16) overrides it for tuning.
+-static int ptq1_0_reorder_split(const int ngroups, const int nb) {
++// Sub-groups per row group (1-16, at least 2 blocks each). The launch should fit in one wave: one
++// just past a whole number of waves ends in a tail that runs on a fraction of the device. Within one
++// wave, about 5/8 of the sub-groups the device holds at once measured best. On a B70 (2048 resident)
++// with every weight read from memory: 5120x17408 split 1 (1088 sub-groups) 38.4 us, split 2 (2176)
++// 44.5; 17408x5120 split 4 (1280) 38.4, split 6 (1920) 38.6, split 7 (2240) 45.1, split 16 38.2 at
++// one column but 40.8 against 39.0 at two. GGML_SYCL_PTQ1_0_SPLIT overrides it.
++static int ptq1_0_reorder_split(const int ngroups, const int nb, const int resident_sgs) {
+     static const int forced = [] {
+         const char * e = getenv("GGML_SYCL_PTQ1_0_SPLIT");
+         return e ? atoi(e) : 0;
+@@ -1466,21 +1516,18 @@ static int ptq1_0_reorder_split(const int ngroups, const int nb) {
+     if (forced > 0) {
+         return forced;
+     }
+-    int ns = 1;
+-    while (ns < 16 && ngroups * ns < 4096 && nb / (2 * ns) >= 4) {
+-        ns *= 2;
+-    }
+-    return ns;
++    return std::max(1, std::min({ 16, nb / 2, resident_sgs * 5 / 8 / ngroups }));
+ }
+ 
+ template <int ncols_dst>
+ static void mul_mat_vec_ptq1_0_q8_1_reorder_sycl(const void * vx, const void * vy, float * dst, const int ncols,
+                                                  const int nrows, const int stride_col_y_bytes,
+-                                                 const int stride_col_dst, dpct::queue_ptr stream) {
++                                                 const int stride_col_dst, const int resident_sgs,
++                                                 dpct::queue_ptr stream) {
+     GGML_ASSERT(ncols % QK_PTQ1_0 == 0);
+     constexpr int R       = ggml_sycl_reordered::ptq1_0_layout::rows;
+     const int     ngroups = ceil_div(nrows, R);
+-    const int     ns      = ptq1_0_reorder_split(ngroups, ncols / QK_PTQ1_0);
++    const int     ns      = ptq1_0_reorder_split(ngroups, ncols / QK_PTQ1_0, resident_sgs);
+ 
+     stream->submit([&](sycl::handler & cgh) {
+         sycl::local_accessor<float, 1> slm(sycl::range<1>(ncols_dst * ns * R), cgh);
+@@ -1496,16 +1543,16 @@ static void mul_mat_vec_ptq1_0_q8_1_reorder_sycl(const void * vx, const void * v
+ static void mul_mat_vec_ptq1_0_q8_1_reorder_sycl_switch_ncols(const void * vx, const void * vy, float * dst,
+                                                               const int ncols, const int nrows, const int ncols_dst,
+                                                               const int stride_col_y_bytes, const int stride_col_dst,
+-                                                              dpct::queue_ptr stream) {
++                                                              const int resident_sgs, dpct::queue_ptr stream) {
+     switch (ncols_dst) {
+-        case 1: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<1>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
+-        case 2: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<2>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
+-        case 3: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<3>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
+-        case 4: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<4>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
+-        case 5: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<5>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
+-        case 6: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<6>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
+-        case 7: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<7>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
+-        case 8: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<8>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
++        case 1: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<1>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, resident_sgs, stream); break;
++        case 2: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<2>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, resident_sgs, stream); break;
++        case 3: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<3>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, resident_sgs, stream); break;
++        case 4: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<4>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, resident_sgs, stream); break;
++        case 5: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<5>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, resident_sgs, stream); break;
++        case 6: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<6>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, resident_sgs, stream); break;
++        case 7: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<7>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, resident_sgs, stream); break;
++        case 8: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<8>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, resident_sgs, stream); break;
+         default: GGML_ABORT("unsupported ncols_dst=%d for PTQ1_0 reorder MMVQ", ncols_dst);
+     }
+ }
+@@ -2640,9 +2687,11 @@ void ggml_sycl_op_mul_mat_vec_q(ggml_backend_sycl_context & ctx, const ggml_tens
+                     const int stride_col_y_bytes = src1_padded_col_size * q8_1_ts / q8_1_bs;
+                     const int stride_col_dst     = dst->ne[0];
+                     GGML_SYCL_DEBUG("Calling mul_mat_vec_ptq1_0_q8_1_reorder_sycl_switch_ncols ncols=%d\n", (int)src1_ncols);
++                    // the sub-groups the device holds at once: EUs (nsm is EUs / 16) x 8 threads
++                    const int resident_sgs = ggml_sycl_info().devices[id].nsm * 16 * 8;
+                     mul_mat_vec_ptq1_0_q8_1_reorder_sycl_switch_ncols(
+                         src0_dd_i, src1_ddq_i, dst_dd_i, ne00, row_diff,
+-                        src1_ncols, stride_col_y_bytes, stride_col_dst, stream);
++                        src1_ncols, stride_col_y_bytes, stride_col_dst, resident_sgs, stream);
+                     return;
+                 } else if (i == 0 && src1_ncols > 1 && src1_ncols <= 8) {
+                     const int stride_col_y   = src1_padded_col_size / QK8_1;
+-- 
+2.51.0
+

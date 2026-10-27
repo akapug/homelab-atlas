@@ -1,0 +1,504 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 10:17:56 +0000
+Subject: [PATCH 2/4] sycl: PTQ1_0 reorder layout and a row-per-lane mat-vec
+
+PR #235's PTQ1_0 mat-vec gives one lane a whole 128-weight block: 32 dp4a in series,
+each after ~20 integer ops of base-3 decode, with lanes reading activations 144 B
+apart. On an Arc Pro B70 it read 5120x17408 at 54 % of the memory bound when the
+weight sat in the 24 MiB L2, and 37 % when it did not.
+
+On the first single-token mat-vec a PTQ1_0 weight now moves, in place, to a layout
+that tiles its rows in groups of 16 (ggml_sycl_reordered::ptq1_0_layout): block b
+of a group is 7 planes of 16 words, so a sub-group takes one row per lane and
+reads each plane as one 64-byte line. The 28-byte block is exactly 7 words: 6 of
+qs, kept as they are, and one holding qh's 8 trits as 2-bit codes beside d. Every
+lane then dots the same activations, which the sub-group reads once per block and
+broadcasts by constant lane. Two bytes decode per 32-bit multiply (even and odd
+bytes in 16-bit lanes), trits are dotted as 0..2, and the -1 offset folds into the
+q8_1 sums. A short last row group is handled, and the sub-groups of a work-group
+split a group's blocks when rows are few. One launch serves 1-8 columns.
+
+Prefill against a reordered weight dequantizes it through a shape-aware function,
+since the layout needs the row length; the element-count getters return nullptr
+for a reordered PTQ1_0 weight instead of reading it as blocks.
+
+B70, 5120x17408, n = 1: hot (test-backend-ops perf) 59.0 -> 28.6 us; with every
+weight read from memory (8 distinct weights, up/down in turn) 87.6 -> 40.7 us.
+---
+ ggml/src/ggml-sycl/convert.cpp   |  49 ++++++++
+ ggml/src/ggml-sycl/convert.hpp   |   5 +
+ ggml/src/ggml-sycl/ggml-sycl.cpp |  70 ++++++++++--
+ ggml/src/ggml-sycl/mmvq.cpp      | 184 ++++++++++++++++++++++++++++++-
+ ggml/src/ggml-sycl/quants.hpp    |  35 ++++++
+ 5 files changed, 335 insertions(+), 8 deletions(-)
+
+diff --git a/ggml/src/ggml-sycl/convert.cpp b/ggml/src/ggml-sycl/convert.cpp
+index b04609151..f9a91e445 100644
+--- a/ggml/src/ggml-sycl/convert.cpp
++++ b/ggml/src/ggml-sycl/convert.cpp
+@@ -1,6 +1,7 @@
+ #include "convert.hpp"
+ #include "dequantize.hpp"
+ #include "presets.hpp"
++#include "quants.hpp"
+ 
+ template <int qk, int qr, dequantize_kernel_t dequantize_kernel, typename dst_t>
+ static void dequantize_block(const void * __restrict__ vx, dst_t * __restrict__ y, const int64_t k,
+@@ -653,11 +654,56 @@ static void convert_unary_sycl(const void * vx, dst_t * y, const int64_t k, dpct
+ }
+ 
+ 
++template <typename dst_t>
++void dequantize_ptq1_0_reorder_sycl(const void * vx, dst_t * y, const int64_t ncols, const int64_t nrows,
++                                    dpct::queue_ptr stream) {
++    using layout       = ggml_sycl_reordered::ptq1_0_layout;
++    const int64_t    nb = ncols / QK_PTQ1_0;
++    const uint32_t * x  = (const uint32_t *) vx;
++    // one work-item per word: a qs word holds 20 weights (5 trit planes of its 4 bytes), word 6 the last 8
++    stream->parallel_for(sycl::range<1>(nrows * nb * layout::words), [=](sycl::id<1> id) {
++        const int64_t  i   = id[0];
++        const int      w   = i % layout::words;
++        const int64_t  row = i / layout::words / nb;
++        const int64_t  b   = i / layout::words % nb;
++        const uint32_t v   = x[layout::word_index(row, b, w, nb, nrows)];
++        const uint32_t w6  = x[layout::word_index(row, b, 6, nb, nrows)];
++        const float    d   = sycl::bit_cast<sycl::half>((uint16_t) (w6 >> 16));
++        dst_t *        yb  = y + row * ncols + b * QK_PTQ1_0;
++        if (w < 6) {
++            for (int j = 0; j < 4; ++j) {
++                uint32_t q = (v >> (8 * j)) & 0xFF;
++                for (int t = 0; t < 5; ++t) {
++                    const uint32_t q3 = q * 3;
++                    const int      e  = w < 4 ? 16 * t + 4 * w + j : 80 + 8 * t + 4 * (w - 4) + j;
++                    yb[e]             = static_cast<dst_t>((float) ((int) (q3 >> 8) - 1) * d);
++                    q                 = q3 & 0xFF;
++                }
++            }
++        } else {
++            for (int e = 0; e < 8; ++e) {
++                const int pos = ((e & 1) << 3) | ((e & 2) << 1) | ((e & 4) >> 1);
++                yb[120 + e]   = static_cast<dst_t>((float) ((int) ((v >> pos) & 3) - 1) * d);
++            }
++        }
++    });
++}
++
++template void dequantize_ptq1_0_reorder_sycl<sycl::half>(const void *, sycl::half *, int64_t, int64_t, dpct::queue_ptr);
++template void dequantize_ptq1_0_reorder_sycl<float>(const void *, float *, int64_t, int64_t, dpct::queue_ptr);
++
++static bool ptq1_0_is_reordered(const ggml_tensor * dst) {
++    return dst->src[0]->extra && ((ggml_tensor_extra_gpu *) dst->src[0]->extra)->optimized_feature.reorder;
++}
++
+ to_fp16_sycl_t ggml_get_to_fp16_sycl(ggml_type type, ggml_tensor * dst) {
+     switch (type) {
+         case GGML_TYPE_Q1_0:
+             return dequantize_block_sycl<QK1_0, QR1_0, dequantize_q1_0>;
+         case GGML_TYPE_PTQ1_0:
++            if (ptq1_0_is_reordered(dst)) {
++                return nullptr;  // the reorder layout needs the row length: dequantize_ptq1_0_reorder_sycl
++            }
+             return dequantize_block_sycl<QK_PTQ1_0, QR_PTQ1_0, dequantize_ptq1_0>;
+         case GGML_TYPE_PQ2_0:
+             return dequantize_block_sycl<QK_PQ2_0, QR_PQ2_0, dequantize_pq2_0>;
+@@ -752,6 +798,9 @@ to_fp32_sycl_t ggml_get_to_fp32_sycl(ggml_type type, ggml_tensor *dst) {
+         case GGML_TYPE_Q1_0:
+             return dequantize_block_sycl<QK1_0, QR1_0, dequantize_q1_0>;
+         case GGML_TYPE_PTQ1_0:
++            if (ptq1_0_is_reordered(dst)) {
++                return nullptr;  // the reorder layout needs the row length: dequantize_ptq1_0_reorder_sycl
++            }
+             return dequantize_block_sycl<QK_PTQ1_0, QR_PTQ1_0, dequantize_ptq1_0>;
+         case GGML_TYPE_PQ2_0:
+             return dequantize_block_sycl<QK_PQ2_0, QR_PQ2_0, dequantize_pq2_0>;
+diff --git a/ggml/src/ggml-sycl/convert.hpp b/ggml/src/ggml-sycl/convert.hpp
+index 8de79d10f..791b2996d 100644
+--- a/ggml/src/ggml-sycl/convert.hpp
++++ b/ggml/src/ggml-sycl/convert.hpp
+@@ -34,6 +34,11 @@ using to_t_nc_sycl_t = void (*)(const void * x, T * y, int64_t ne00, int64_t ne0
+                                    int64_t s01, int64_t s02, int64_t s03, dpct::queue_ptr queue);
+ 
+ typedef to_t_nc_sycl_t<sycl::half> to_fp16_nc_sycl_t;
++
++// PTQ1_0 in its mat-vec reorder layout (ggml_sycl_reordered::ptq1_0_layout), which needs the row
++// length to address, so the getters above return nullptr for a reordered PTQ1_0 weight.
++template <typename dst_t>
++void dequantize_ptq1_0_reorder_sycl(const void * vx, dst_t * y, int64_t ncols, int64_t nrows, dpct::queue_ptr stream);
+ to_fp16_nc_sycl_t ggml_get_to_fp16_nc_sycl(ggml_type type);
+ 
+ template<typename dst_t, typename src_t>
+diff --git a/ggml/src/ggml-sycl/ggml-sycl.cpp b/ggml/src/ggml-sycl/ggml-sycl.cpp
+index 06f28c054..d23f04609 100644
+--- a/ggml/src/ggml-sycl/ggml-sycl.cpp
++++ b/ggml/src/ggml-sycl/ggml-sycl.cpp
+@@ -593,7 +593,8 @@ ggml_backend_sycl_buffer_init_tensor(ggml_backend_buffer_t buffer,
+             case GGML_TYPE_Q3_K:
+             case GGML_TYPE_Q4_K:
+             case GGML_TYPE_Q5_K:
+-            case GGML_TYPE_Q6_K:{
++            case GGML_TYPE_Q6_K:
++            case GGML_TYPE_PTQ1_0:{
+                 ggml_tensor_extra_gpu * extra = new ggml_tensor_extra_gpu{};
+                 tensor->extra                 = extra;
+                 ctx->tensor_extras.push_back(extra);
+@@ -2675,6 +2676,10 @@ inline void ggml_sycl_op_mul_mat_sycl(
+         CHECK_TRY_ERROR(id = get_current_device_id()));
+ 
+     const int64_t ne0 = dst->ne[0]; // used by MKL only
++    // PTQ1_0's reorder layout tiles whole rows, and only an unsplit weight is reordered
++    const bool ptq1_0_reordered = src0->type == GGML_TYPE_PTQ1_0 && src0->extra &&
++                                  ((ggml_tensor_extra_gpu *) src0->extra)->optimized_feature.reorder;
++    GGML_ASSERT(!ptq1_0_reordered || (row_low == 0 && row_diff == src0->ne[1]));
+     // the main device has a larger memory buffer to hold the results from all GPUs
+     // ldc == nrows of the matrix that cuBLAS writes into
+     int ldc = id == ctx.device ? ne0 : row_diff; // used by MKL only
+@@ -2715,11 +2720,15 @@ inline void ggml_sycl_op_mul_mat_sycl(
+         if (src0->type != GGML_TYPE_F16) {
+             scope_op_debug_print scope_dbg_print(__func__, "/to_fp16_sycl", dst, /*num_src=*/2,
+                                                  " : converting src0 to fp16");
+-            const to_fp16_sycl_t to_fp16_sycl = ggml_get_to_fp16_sycl(src0->type, dst);
+-            GGML_ASSERT(to_fp16_sycl != nullptr);
+             size_t ne = row_diff*ne00;
+             src0_as_f16.alloc(ne);
+-            to_fp16_sycl(src0_dd_i, src0_as_f16.get(), ne, stream);
++            if (ptq1_0_reordered) {
++                dequantize_ptq1_0_reorder_sycl(src0_dd_i, src0_as_f16.get(), ne00, row_diff, stream);
++            } else {
++                const to_fp16_sycl_t to_fp16_sycl = ggml_get_to_fp16_sycl(src0->type, dst);
++                GGML_ASSERT(to_fp16_sycl != nullptr);
++                to_fp16_sycl(src0_dd_i, src0_as_f16.get(), ne, stream);
++            }
+         }
+         const sycl::half *src0_ptr = src0->type == GGML_TYPE_F16
+                                          ? (const sycl::half *)src0_dd_i
+@@ -2764,10 +2773,14 @@ inline void ggml_sycl_op_mul_mat_sycl(
+         if (src0->type != GGML_TYPE_F32) {
+             scope_op_debug_print scope_dbg_print(__func__, "/to_fp32_sycl", dst, /*num_src=*/2,
+                                                  " : converting src0 to fp32");
+-            const to_fp32_sycl_t to_fp32_sycl = ggml_get_to_fp32_sycl(src0->type, dst);
+-            GGML_ASSERT(to_fp32_sycl != nullptr);
+             src0_ddq_as_f32.alloc(row_diff*ne00);
+-            to_fp32_sycl(src0_dd_i, src0_ddq_as_f32.get(), row_diff*ne00, stream);
++            if (ptq1_0_reordered) {
++                dequantize_ptq1_0_reorder_sycl(src0_dd_i, src0_ddq_as_f32.get(), ne00, row_diff, stream);
++            } else {
++                const to_fp32_sycl_t to_fp32_sycl = ggml_get_to_fp32_sycl(src0->type, dst);
++                GGML_ASSERT(to_fp32_sycl != nullptr);
++                to_fp32_sycl(src0_dd_i, src0_ddq_as_f32.get(), row_diff*ne00, stream);
++            }
+         }
+         if (src1->type != GGML_TYPE_F32) {
+             scope_op_debug_print scope_dbg_print(__func__, "/to_fp32_sycl", dst, /*num_src=*/2,
+@@ -3803,6 +3816,7 @@ inline bool ggml_sycl_supports_reorder_mmvq(enum ggml_type type) {
+         case GGML_TYPE_Q4_K:
+         case GGML_TYPE_Q5_K:
+         case GGML_TYPE_Q6_K:
++        case GGML_TYPE_PTQ1_0:
+             return true;
+         default:
+             return false;
+@@ -4406,6 +4420,46 @@ static bool reorder_qw_q6_k(uint8_t * data_device, size_t size, size_t offset, d
+     return true;
+ }
+ 
++// PTQ1_0 into ggml_sycl_reordered::ptq1_0_layout: row groups of 16 as 7 word planes per block.
++static bool reorder_qw_ptq1_0(uint8_t * data_device, const int64_t ncols, const int64_t nrows, size_t size,
++                              dpct::queue_ptr stream) {
++    using layout     = ggml_sycl_reordered::ptq1_0_layout;
++    const int64_t nb = ncols / QK_PTQ1_0;
++    GGML_ASSERT(size == (size_t) (nrows * nb) * sizeof(block_ptq1_0));
++    static_assert(sizeof(block_ptq1_0) == layout::words * sizeof(uint32_t), "a block is 7 words");
++
++    sycl_reorder_temp_buffer tmp(stream, size);
++    if (!tmp) {
++        GGML_LOG_WARN("%s: failed to allocate %zu bytes for reorder temp buffer, skipping reorder\n", __func__, size);
++        return false;
++    }
++    const uint32_t * src = static_cast<const uint32_t *>(tmp.ptr);
++    uint32_t *       dst = (uint32_t *) data_device;
++
++    sycl::event copy_event;
++    SYCL_CHECK(CHECK_TRY_ERROR(copy_event = stream->memcpy(tmp.ptr, data_device, size)));
++    if (!g_ggml_sycl_use_async_mem_op) {
++        copy_event.wait();
++    }
++
++    auto reorder_event = stream->parallel_for(sycl::range<1>(nrows * nb), [=](sycl::id<1> id) {
++        const int64_t    i   = id[0];
++        const int64_t    row = i / nb;
++        const int64_t    b   = i % nb;
++        const uint32_t * x   = src + i * layout::words;
++        for (int w = 0; w < 6; ++w) {
++            dst[layout::word_index(row, b, w, nb, nrows)] = x[w];
++        }
++        // word 6 is qh[0], qh[1], d: qh becomes 2-bit codes, d stays in the high half
++        dst[layout::word_index(row, b, 6, nb, nrows)] =
++            ggml_sycl_reordered::ptq1_0_qh_codes(x[6] & 0xFF, (x[6] >> 8) & 0xFF) | (x[6] & 0xFFFF0000u);
++    });
++    if (!g_ggml_sycl_use_async_mem_op) {
++        reorder_event.wait_and_throw();
++    }
++    return true;
++}
++
+ static bool reorder_qw(const ggml_tensor * src0, dpct::queue_ptr stream) {
+     uint8_t * data_device = (uint8_t *) src0->data;
+     size_t ncols = src0->ne[0];
+@@ -4443,6 +4497,8 @@ static bool reorder_qw(const ggml_tensor * src0, dpct::queue_ptr stream) {
+             return reorder_qw_q5_k(data_device, size, 0, stream);
+         case GGML_TYPE_Q6_K:
+             return reorder_qw_q6_k(data_device, size, 0, stream);
++        case GGML_TYPE_PTQ1_0:
++            return ggml_is_contiguous(src0) && reorder_qw_ptq1_0(data_device, ncols, nrows, size, stream);
+         default:
+             return false;
+     }
+diff --git a/ggml/src/ggml-sycl/mmvq.cpp b/ggml/src/ggml-sycl/mmvq.cpp
+index 36c4c1778..81a9f427a 100644
+--- a/ggml/src/ggml-sycl/mmvq.cpp
++++ b/ggml/src/ggml-sycl/mmvq.cpp
+@@ -1338,6 +1338,178 @@ static void mul_mat_vec_ptq1_0_q8_1_sycl_switch_ncols(
+     }
+ }
+ 
++// PTQ1_0 on its reorder layout (ggml_sycl_reordered::ptq1_0_layout). A sub-group takes a group of
++// 16 rows, one per lane, so each weight plane is one contiguous 64-byte read and every lane dots the
++// same activations: the sub-group reads a block's 128 quants once (lane l holds words l and 16 + l)
++// and each dp4a takes its word by a constant-lane broadcast. The sub-groups of a work-group split
++// the group's blocks and add their sums in local memory. Trits are decoded two bytes per 32-bit
++// multiply (even and odd bytes in separate 16-bit lanes) and dotted as 0..2; the -1 offset is
++// folded in through the q8_1 sums.
++template <int ncols_dst>
++static void mul_mat_vec_ptq1_0_q8_1_reorder(const uint32_t * __restrict__ vx, const char * __restrict__ vy,
++                                            float * __restrict__ dst, const int ncols, const int nrows,
++                                            const int stride_col_y_bytes, const int stride_col_dst,
++                                            float * __restrict__ slm, const sycl::nd_item<1> & it) {
++    constexpr int R = ggml_sycl_reordered::ptq1_0_layout::rows;
++    constexpr int W = ggml_sycl_reordered::ptq1_0_layout::words;
++    static_assert(R == WARP_SIZE, "one row per lane");
++
++    const auto sg = it.get_sub_group();
++    const int  l  = sg.get_local_linear_id();
++    const int  s  = sg.get_group_linear_id();
++    const int  ns = sg.get_group_linear_range();
++    const int  g  = it.get_group(0);
++    const int  nb = ncols / QK_PTQ1_0;
++    const int  tw = sycl::min(R, nrows - R * g);
++
++    // a lane past the end of a short last group reads the group's last row and drops the result
++    const uint32_t * xr = vx + (size_t) R * W * nb * g + sycl::min(l, tw - 1);
++
++    float acc[ncols_dst] = {};
++    for (int b = s; b < nb; b += ns) {
++        const uint32_t * xb = xr + (size_t) W * tw * b;
++        uint32_t         w[W];
++#pragma unroll
++        for (int i = 0; i < W; ++i) {
++            w[i] = xb[tw * i];
++        }
++
++        int   a0[ncols_dst], a1[ncols_dst];
++        float d8[ncols_dst], ys[ncols_dst];  // lane l: the (d, sum) of q8_1 sub-block l % 4
++#pragma unroll
++        for (int c = 0; c < ncols_dst; ++c) {
++            const char * yc = vy + (size_t) c * stride_col_y_bytes;
++            const int *  yq = (const int *) yc + 32 * b;
++            a0[c]           = yq[l];
++            a1[c]           = yq[16 + l];
++            const sycl::float2 ds =
++                ((const sycl::half2 *) (yc + ncols))[4 * b + (l & 3)].convert<float, sycl::rounding_mode::automatic>();
++            d8[c] = ds.x();
++            ys[c] = ds.y();
++        }
++
++        int sumi[ncols_dst][4] = {};
++        // qs word i < 4, trit plane t: elements 16 t + 4 i (activation word 4 t + i)
++        // qs word i = 4, 5, trit plane t: elements 80 + 8 t + 4 (i - 4) (activation word 20 + 2 t + i - 4)
++#pragma unroll
++        for (int i = 0; i < 6; ++i) {
++            uint32_t ve = w[i] & 0x00FF00FFu;
++            uint32_t vo = (w[i] >> 8) & 0x00FF00FFu;
++#pragma unroll
++            for (int t = 0; t < 5; ++t) {
++                // trit t of byte v is ((v * 3^t mod 256) * 3) >> 8: bits 8-9 of each 16-bit lane
++                const uint32_t we = ve * 3u;
++                const uint32_t wo = vo * 3u;
++                ve                = we & 0x00FF00FFu;
++                vo                = wo & 0x00FF00FFu;
++                const int q       = (int) (((we >> 8) & 0x00FF00FFu) | (wo & 0xFF00FF00u));
++                const int j       = i < 4 ? 4 * t + i : 20 + 2 * t + i - 4;
++                const int k       = i < 4 ? (t < 4 ? t / 2 : 2) : (t < 2 ? 2 : 3);
++#pragma unroll
++                for (int c = 0; c < ncols_dst; ++c) {
++                    const int a = sycl::select_from_group(sg, j < 16 ? a0[c] : a1[c], j & 15);
++                    sumi[c][k]  = dpct::dp4a(q, a, sumi[c][k]);
++                }
++            }
++        }
++
++        // word 6: elements 120..127 (activation words 30, 31) as 2-bit codes, and d
++        const uint32_t m  = w[6] & 0xFFFFu;
++        const uint32_t u  = m | (m << 12);
++        const int      qa = (int) (u & 0x03030303u);
++        const int      qb = (int) ((u >> 2) & 0x03030303u);
++        const float    d  = sycl::bit_cast<sycl::half>((uint16_t) (w[6] >> 16));
++#pragma unroll
++        for (int c = 0; c < ncols_dst; ++c) {
++            sumi[c][3] = dpct::dp4a(qa, sycl::select_from_group(sg, a1[c], 14), sumi[c][3]);
++            sumi[c][3] = dpct::dp4a(qb, sycl::select_from_group(sg, a1[c], 15), sumi[c][3]);
++            float v    = 0.0f;
++#pragma unroll
++            for (int k = 0; k < 4; ++k) {
++                v += sycl::select_from_group(sg, d8[c], k) * (float) sumi[c][k] - sycl::select_from_group(sg, ys[c], k);
++            }
++            acc[c] += d * v;
++        }
++    }
++
++    if (ns > 1) {
++#pragma unroll
++        for (int c = 0; c < ncols_dst; ++c) {
++            slm[(c * ns + s) * R + l] = acc[c];
++        }
++        sycl::group_barrier(it.get_group());
++        if (s != 0) {
++            return;
++        }
++#pragma unroll
++        for (int c = 0; c < ncols_dst; ++c) {
++            for (int s2 = 1; s2 < ns; ++s2) {
++                acc[c] += slm[(c * ns + s2) * R + l];
++            }
++        }
++    }
++    if (l < tw) {
++#pragma unroll
++        for (int c = 0; c < ncols_dst; ++c) {
++            dst[c * stride_col_dst + R * g + l] = acc[c];
++        }
++    }
++}
++
++// Sub-groups per row group: enough for about 4096 in all (the B70 holds 2048 at once), keeping at
++// least 4 blocks each. GGML_SYCL_PTQ1_0_SPLIT (a power of two, 1-16) overrides it for tuning.
++static int ptq1_0_reorder_split(const int ngroups, const int nb) {
++    static const int forced = [] {
++        const char * e = getenv("GGML_SYCL_PTQ1_0_SPLIT");
++        return e ? atoi(e) : 0;
++    }();
++    if (forced > 0) {
++        return forced;
++    }
++    int ns = 1;
++    while (ns < 16 && ngroups * ns < 4096 && nb / (2 * ns) >= 4) {
++        ns *= 2;
++    }
++    return ns;
++}
++
++template <int ncols_dst>
++static void mul_mat_vec_ptq1_0_q8_1_reorder_sycl(const void * vx, const void * vy, float * dst, const int ncols,
++                                                 const int nrows, const int stride_col_y_bytes,
++                                                 const int stride_col_dst, dpct::queue_ptr stream) {
++    GGML_ASSERT(ncols % QK_PTQ1_0 == 0);
++    constexpr int R       = ggml_sycl_reordered::ptq1_0_layout::rows;
++    const int     ngroups = ceil_div(nrows, R);
++    const int     ns      = ptq1_0_reorder_split(ngroups, ncols / QK_PTQ1_0);
++
++    stream->submit([&](sycl::handler & cgh) {
++        sycl::local_accessor<float, 1> slm(sycl::range<1>(ncols_dst * ns * R), cgh);
++        cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>((size_t) ngroups * ns * R), sycl::range<1>(ns * R)),
++                         [=](sycl::nd_item<1> it) [[sycl::reqd_sub_group_size(WARP_SIZE)]] {
++                             mul_mat_vec_ptq1_0_q8_1_reorder<ncols_dst>(
++                                 (const uint32_t *) vx, (const char *) vy, dst, ncols, nrows, stride_col_y_bytes,
++                                 stride_col_dst, get_pointer(slm), it);
++                         });
++    });
++}
++
++static void mul_mat_vec_ptq1_0_q8_1_reorder_sycl_switch_ncols(const void * vx, const void * vy, float * dst,
++                                                              const int ncols, const int nrows, const int ncols_dst,
++                                                              const int stride_col_y_bytes, const int stride_col_dst,
++                                                              dpct::queue_ptr stream) {
++    switch (ncols_dst) {
++        case 1: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<1>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
++        case 2: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<2>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
++        case 3: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<3>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
++        case 4: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<4>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
++        case 5: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<5>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
++        case 6: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<6>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
++        case 7: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<7>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
++        case 8: mul_mat_vec_ptq1_0_q8_1_reorder_sycl<8>(vx, vy, dst, ncols, nrows, stride_col_y_bytes, stride_col_dst, stream); break;
++        default: GGML_ABORT("unsupported ncols_dst=%d for PTQ1_0 reorder MMVQ", ncols_dst);
++    }
++}
++
+ static void mul_mat_vec_pq2_0_q8_1_sycl(const void * vx, const void * vy,
+                                         float * dst, const int ncols,
+                                         const int nrows,
+@@ -2462,7 +2634,17 @@ void ggml_sycl_op_mul_mat_vec_q(ggml_backend_sycl_context & ctx, const ggml_tens
+                 }
+                 break;
+             case GGML_TYPE_PTQ1_0:
+-                if (i == 0 && src1_ncols > 1 && src1_ncols <= 8) {
++                if ((ggml_tensor_extra_gpu *) dst->src[0]->extra &&
++                    ((ggml_tensor_extra_gpu *) dst->src[0]->extra)->optimized_feature.reorder) {
++                    // one launch serves every column
++                    const int stride_col_y_bytes = src1_padded_col_size * q8_1_ts / q8_1_bs;
++                    const int stride_col_dst     = dst->ne[0];
++                    GGML_SYCL_DEBUG("Calling mul_mat_vec_ptq1_0_q8_1_reorder_sycl_switch_ncols ncols=%d\n", (int)src1_ncols);
++                    mul_mat_vec_ptq1_0_q8_1_reorder_sycl_switch_ncols(
++                        src0_dd_i, src1_ddq_i, dst_dd_i, ne00, row_diff,
++                        src1_ncols, stride_col_y_bytes, stride_col_dst, stream);
++                    return;
++                } else if (i == 0 && src1_ncols > 1 && src1_ncols <= 8) {
+                     const int stride_col_y   = src1_padded_col_size / QK8_1;
+                     const int stride_col_dst = dst->ne[0];
+                     GGML_SYCL_DEBUG("Calling mul_mat_vec_ptq1_0_q8_1_sycl_switch_ncols ncols=%d\n", (int)src1_ncols);
+diff --git a/ggml/src/ggml-sycl/quants.hpp b/ggml/src/ggml-sycl/quants.hpp
+index a26a6ce6e..5cef932d3 100644
+--- a/ggml/src/ggml-sycl/quants.hpp
++++ b/ggml/src/ggml-sycl/quants.hpp
+@@ -199,6 +199,41 @@ template <> struct block_q_t<GGML_TYPE_Q8_0> {
+     static constexpr int block_to_q8_1_ratio() { return traits::qk / QK8_1; }  // 1
+ };
+ 
++// PTQ1_0 (28-byte blocks of 128 ternary weights: qs[24], qh[2], d) tiles its rows in groups of
++// 16, one row per sub-group lane in the mat-vec. Tile (g, b) holds block b of group g's rows as 7
++// planes of tw = min(16, nrows - 16 g) 32-bit words: word w of row 16 g + l is word
++// 112 nb g + 7 tw b + tw w + l, so a plane is one contiguous 64-byte read. Words 0-5 are the
++// block's qs bytes as they were; word 6 holds qh's 8 trits as 2-bit codes in its low half
++// (ptq1_0_qh_codes) and d in its high half. It is a permutation of the tensor's bytes, reordered
++// in place, and unlike the per-block layouts above it needs the row length to address.
++struct ptq1_0_layout {
++    static constexpr int rows  = 16;
++    static constexpr int words = 7;
++
++    static constexpr int64_t word_index(int64_t row, int64_t b, int w, int64_t nb, int64_t nrows) {
++        const int64_t g  = row / rows;
++        const int64_t tw = nrows - rows * g < rows ? nrows - rows * g : rows;
++        return rows * words * nb * g + words * tw * b + tw * w + row % rows;
++    }
++};
++
++// Element 120 + 2 n + h is trit n of qh[h] (n = 0..3). Its 2-bit code goes where, with
++// u = x | x << 12, the bytes of u & 0x03030303 are elements 120..123 and the bytes of
++// (u >> 2) & 0x03030303 are elements 124..127.
++static inline uint32_t ptq1_0_qh_codes(const uint8_t qh0, const uint8_t qh1) {
++    uint32_t x = 0;
++    for (int i = 0; i < 8; ++i) {
++        uint8_t q = i & 1 ? qh1 : qh0;
++        for (int n = 0; n < i >> 1; ++n) {
++            q = (uint8_t) (q * 3);
++        }
++        const uint32_t t   = ((uint32_t) q * 3) >> 8;
++        const int      pos = ((i & 1) << 3) | ((i & 2) << 1) | ((i & 4) >> 1);
++        x |= t << pos;
++    }
++    return x;
++}
++
+ }  // namespace ggml_sycl_reordered
+ 
+ #endif  // GGML_SYCL_QUANTS_HPP

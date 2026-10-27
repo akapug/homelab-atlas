@@ -1,0 +1,94 @@
+From ba1c8d1a5d6b207f8eadaf5740087bed85a42ef0 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 4 Oct 2026 11:09:50 +0000
+Subject: [PATCH 21/22] tests: PTQ1_0 batch before and after a mat-vec, and a
+ 12-column batch
+
+MUL_MAT_BATCH_THEN_REORDER runs a batch, then a mat-vec, then the batch again,
+on one weight. On SYCL XMX devices, the first batch makes the XMX copy from the
+loaded layout. The mat-vec then reorders the weight, and the second batch must
+still read a correct copy.
+
+At 16 and 64 columns, the MUL_MAT_REORDER_THEN_BATCH cases now make the XMX
+copy from the reordered layout. A 12-column case keeps the dequantize of a
+reordered weight covered below GGML_SYCL_XMX_MIN_ROWS.
+---
+ tests/test-backend-ops.cpp | 30 +++++++++++++++++++++++-------
+ 1 file changed, 23 insertions(+), 7 deletions(-)
+
+diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
+index 9c6a865b2..23a684647 100644
+--- a/tests/test-backend-ops.cpp
++++ b/tests/test-backend-ops.cpp
+@@ -6529,11 +6529,15 @@ struct test_topk_moe : public test_case {
+ };
+ 
+ // A weight used by one token and then by a batch, in that order: on backends that reorder a
+-// weight on its first mat-vec, the batch then reads the reordered layout.
++// weight on its first mat-vec, the batch then reads the reordered layout. With batch_first a batch
++// comes before the mat-vec as well: on backends that give batches a separate copy of the weight
++// (SYCL PTQ1_0 on XMX devices), the copy is then made from the loaded layout, and the weight is
++// reordered under it.
+ struct test_mul_mat_reorder_then_batch : public test_case {
+     const ggml_type type;
+     const int64_t   m, k, n;
+     const bool      prec_f32;
++    const bool      batch_first;
+ 
+     std::string vars() override { return VARS_TO_STR5(type, m, k, n, prec_f32); }
+ 
+@@ -6541,12 +6545,12 @@ struct test_mul_mat_reorder_then_batch : public test_case {
+ 
+     std::string op_desc(ggml_tensor * t) override {
+         GGML_UNUSED(t);
+-        return "MUL_MAT_REORDER_THEN_BATCH";
++        return batch_first ? "MUL_MAT_BATCH_THEN_REORDER" : "MUL_MAT_REORDER_THEN_BATCH";
+     }
+ 
+     test_mul_mat_reorder_then_batch(ggml_type type = GGML_TYPE_Q4_0, int64_t m = 64, int64_t k = 256, int64_t n = 32,
+-                                    bool prec_f32 = false)
+-        : type(type), m(m), k(k), n(n), prec_f32(prec_f32) {}
++                                    bool prec_f32 = false, bool batch_first = false)
++        : type(type), m(m), k(k), n(n), prec_f32(prec_f32), batch_first(batch_first) {}
+ 
+     ggml_tensor * build_graph(ggml_context * ctx) override {
+         ggml_tensor * w     = ggml_new_tensor_2d(ctx, type, k, m);
+@@ -6557,7 +6561,16 @@ struct test_mul_mat_reorder_then_batch : public test_case {
+         if (prec_f32) {
+             ggml_mul_mat_set_prec(batch, GGML_PREC_F32);
+         }
+-        ggml_tensor * out   = ggml_add(ctx, ggml_repeat(ctx, one, batch), batch);
++        ggml_tensor * out   = ggml_repeat(ctx, one, batch);
++        if (batch_first) {
++            // the first operand of the first add, so the graph runs it before the mat-vec
++            ggml_tensor * first = ggml_mul_mat(ctx, w, ggml_new_tensor_2d(ctx, GGML_TYPE_F32, k, n));
++            if (prec_f32) {
++                ggml_mul_mat_set_prec(first, GGML_PREC_F32);
++            }
++            out = ggml_add(ctx, first, out);
++        }
++        out = ggml_add(ctx, out, batch);
+         ggml_set_name(out, "out");
+         return out;
+     }
+@@ -9557,12 +9570,15 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+     }
+ 
+     // prefill against a PTQ1_0 weight that a decode mat-vec already reordered, at a whole and a
+-    // partial row group, through the fp16 and the fp32 dequantize
++    // partial row group, through the fp16 and the fp32 dequantize; on SYCL XMX devices from
++    // GGML_SYCL_XMX_MIN_ROWS (16) columns through the XMX copy instead, made from the reordered
++    // layout. Then the other order: the copy made first, from the loaded layout.
+     for (int64_t m : {64, 67}) {
+-        for (int64_t n : {16, 64}) {
++        for (int64_t n : {12, 16, 64}) {
+             for (bool prec_f32 : {false, true}) {
+                 test_cases.emplace_back(new test_mul_mat_reorder_then_batch(GGML_TYPE_PTQ1_0, m, 5120, n, prec_f32));
+             }
++            test_cases.emplace_back(new test_mul_mat_reorder_then_batch(GGML_TYPE_PTQ1_0, m, 5120, n, false, true));
+         }
+     }
+ 
+-- 
+2.51.0
+

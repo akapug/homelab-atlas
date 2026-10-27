@@ -6,6 +6,16 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+### Added
+- `b70/bonsai-2-27b.md`: Ternary Bonsai 2 27B (PrismML's ternary Qwen3.8-27B, PTQ1_0, 6.5 GiB) on one B70 with
+  PrismML's llama.cpp fork. Our SYCL patches take plain decode from 26.9 to 52.8-52.9 tok/s, 71.5-71.6 with MTP 2;
+  52.9 at 49k tokens with a 907 tok/s cold prompt read. The comparison with PrismML's XMX path (PR #294, before and
+  after it merged), and a hybrid build that uses our decode kernel and that path for prompts (574-1,231 tok/s at
+  32-512 tokens, +6.02 GiB of VRAM). New model in the README's best-result table and in `atlas.json`.
+- `b70/llama.cpp-sycl-bonsai/`: the two patch sets (19 on PR #235's head, 22 on PR #294's merge), `build.sh` with
+  source-tree checks, per-patch numbers, and which PrismML changes merged since overlap them. PATCHES.md section 3
+  and the glossary (ternary, PTQ1_0, XMX) point to them.
+
 ## [2026.10.26.1]
 
 ### Changed

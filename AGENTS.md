@@ -18,6 +18,7 @@ GitHub Pages site built from `docs/`. No build step for the Markdown.
 | `3090-ti/vllm-cuda/Dockerfile` | vLLM 0.31.0 CUDA image + `draft-vocab.py` + `length-finish.py` | building the 3090 Ti server |
 | `rtx-6000/README.md` | Quadro RTX 6000 + Optane (box B): V4.1 best run with full command, tier split, 189k recall, GLM, Ornith-122B | reproducing the best V4.1 run |
 | `b70/` | Arc Pro B70 x2 (box C): `README.md` at a glance, `vllm-xpu/` patches, `llama.cpp-sycl/` patches, `bench/`, `agent-eval/`, model pages | Intel serving |
+| `b70/bonsai-2-27b.md`, `b70/llama.cpp-sycl-bonsai/` | Ternary Bonsai 2 27B (PTQ1_0) on one B70 with PrismML's llama.cpp fork: two patch sets with build.sh, PR #294 comparison, hybrid build | ternary models on Intel |
 | `b70/many-agents.md` | both B70s serving many agents (Flash-Next, batched XeStrata): real-agent replays first, then the synthetic decode ladder, switches, losers, the experimental engine fork | many agents from one box |
 | `network/README.md` | three ConnectX-3 cards as a 56 Gb/s triangle: flash, setup, per-link numbers | linking boxes |
 | `1080-ti/README.md` | GTX 1080 Ti (box D): V4.1 attention fix, Ornith-35B banks with the MI25 | Pascal + big MoE |

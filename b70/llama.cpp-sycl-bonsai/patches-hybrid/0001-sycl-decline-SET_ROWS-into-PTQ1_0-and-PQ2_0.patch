@@ -1,0 +1,33 @@
+From 561b4c589616efd865a0afbc0b30f424544a18df Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 10:01:36 +0000
+Subject: [PATCH 01/22] sycl: decline SET_ROWS into PTQ1_0 and PQ2_0
+
+supports_op checked only the source and index types of SET_ROWS, so it claimed
+float -> PTQ1_0/PQ2_0 rows and set_rows then aborted on the unsupported
+destination type. Neither type has a float -> quant row kernel (the converter
+makes them offline), so decline the pair and let the scheduler fall back, as the
+CPY check already does.
+---
+ ggml/src/ggml-sycl/ggml-sycl.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/ggml/src/ggml-sycl/ggml-sycl.cpp b/ggml/src/ggml-sycl/ggml-sycl.cpp
+index 97b5f3565..be4d2312c 100644
+--- a/ggml/src/ggml-sycl/ggml-sycl.cpp
++++ b/ggml/src/ggml-sycl/ggml-sycl.cpp
+@@ -6218,6 +6218,11 @@ static bool do_ggml_backend_sycl_device_supports_op(ggml_backend_dev_t dev, cons
+ 
+         case GGML_OP_SET_ROWS:
+             {
++                // PTQ1_0 and PQ2_0 have no float -> quant row kernel (the converter makes them
++                // offline), so set_rows would abort on them; decline as CPY does.
++                if (op->type == GGML_TYPE_PTQ1_0 || op->type == GGML_TYPE_PQ2_0) {
++                    return false;
++                }
+                 auto res = (op->src[0]->type == GGML_TYPE_F32 || op->src[0]->type == GGML_TYPE_F16 ||
+                             op->src[0]->type == GGML_TYPE_BF16) &&
+                            (op->src[1]->type == GGML_TYPE_I64 || op->src[1]->type == GGML_TYPE_I32);
+-- 
+2.51.0
+
