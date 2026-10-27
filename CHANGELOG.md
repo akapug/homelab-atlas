@@ -6,6 +6,11 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+### Changed
+- Bonsai public review: remove two private-source references from patch prose, correct the XMX block expansion
+  to 21.4 %, qualify the hybrid comparison and historical binary provenance, mark service-note-only rates
+  unverified, and clarify that device selection uses an ordinal rather than a PCI address.
+
 ### Added
 - `b70/bonsai-2-27b.md`: Ternary Bonsai 2 27B (PrismML's ternary Qwen3.8-27B, PTQ1_0, 6.5 GiB) on one B70 with
   PrismML's llama.cpp fork. Our SYCL patches take plain decode from 26.9 to 52.8-52.9 tok/s, 71.5-71.6 with MTP 2;

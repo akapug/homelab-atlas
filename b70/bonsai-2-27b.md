@@ -22,7 +22,7 @@ Unless a line says otherwise:
 |---|---|
 | card | one Intel Arc Pro B70 (32 GB, Xe2 BMG-G31, 608 GB/s nameplate), Linux `xe` driver, Level Zero |
 | box | the Ryzen 9 9950X3D host (192 GB DDR5) of the other B70 entries; the cards moved to a Threadripper box on 2026-10-07, after these runs |
-| engine | PrismML's llama.cpp fork + our patches, oneAPI 2026.1, built by [`build.sh`](llama.cpp-sycl-bonsai/build.sh) (`GGML_SYCL_F16=ON`, `GGML_SYCL_DNN=ON`, `GGML_SYCL_GRAPH=ON`, Release) |
+| engine | PrismML's llama.cpp fork + our patches, oneAPI 2026.1, rebuild instructions in [`build.sh`](llama.cpp-sycl-bonsai/build.sh) (`GGML_SYCL_F16=ON`, `GGML_SYCL_DNN=ON`, `GGML_SYCL_GRAPH=ON`, Release) |
 | model file | `Ternary-Bonsai-2-27B-PTQ1_0-mtp.gguf` from [sudoingx/Ternary-Bonsai-2-27B-PTQ1_0-MTP-GGUF](https://huggingface.co/sudoingx/Ternary-Bonsai-2-27B-PTQ1_0-MTP-GGUF): PrismML's PTQ1_0 weights with Qwen3.8-27B's MTP head added, 7,012,820,512 bytes, SHA-256 `83a396ee218c36e5ed88205eccb940a71549d9a72a3d020cc2713f94a78f70f0`. Runs without MTP use the same file and ignore the head |
 | run time | all layers on the card (`-ngl 99`), flash attention on, f16 K/V cache |
 | chat requests | the chat endpoint, thinking off, temperature 0 |
@@ -80,7 +80,8 @@ Without MTP, llama-bench (tg32, f16 K/V, on the build with 0001-0018; 0019 chang
 ### Against PrismML's XMX path (PR #294)
 
 PR #294 adds an XMX (DPAS) path for PTQ1_0 on Intel GPUs with 16-wide DPAS, the B70 among them. Base-3 has no DPAS form, so it expands each weight once
-to a 2-bit layout in VRAM (+25 % for those weights). We compared it with ours twice, with llama-bench at `-ngl 99 -fa on`, 5 runs each.
+to a 2-bit layout in VRAM (28-byte blocks become 34-byte blocks: +21.4 % for those weights, including scales).
+We compared it with ours twice, with llama-bench at `-ngl 99 -fa on`, 5 runs each.
 
 **2026-10-01, card 1, PR #294's head before it merged** (`09385c45e`, on `prism` `88c4bc60b`), against our 19 patches
 rebased onto the same `prism` commit. Host load average 20-25 from builds during the window.
@@ -130,15 +131,24 @@ XMX threshold at 16 (before patch 0022 lowered it to 9) against our 19 patches w
 | hybrid | 309.84 | **433.61** | **573.88** | **913.99** | **1,042.63** | **1,231.03** | **1,214.38** | **53.46** |
 | ours, 19 patches | 311.05 | 69.34 | 137.25 | 261.53 | 452.18 | 737.73 | 977.04 | 53.16 |
 
-The hybrid is as fast as or faster than both parents at every size we ran. Batched decode
-(`llama-batched-bench`, 128-token prompts): 44.2 / 93.5 / 151.3 / 200.0 / 258.3 tok/s in total at 1 / 2 / 4 / 8 / 16
+In this comparison the hybrid reads prompts of 16-512 tokens faster than our 19-patch build, with similar
+single-stream decode. At 8 tokens it is slightly slower (309.84 versus 311.05 tok/s); this is not a win at every size.
+The retained hybrid benchmark output reports `build_commit` as `4be445e68`, not the tip of the reconstructed
+22-patch source tree. A stale configure-time stamp is a possible explanation, not proof: the historical binary's
+exact source-tree identity is unverified. These are retained historical measurements, not a new qualification of
+all 22 patches or their default threshold of 9. See the [build provenance note](llama.cpp-sycl-bonsai/#build).
+
+Batched decode (`llama-batched-bench`, 128-token prompts): 44.2 / 93.5 / 151.3 / 200.0 / 258.3 tok/s in total at 1 / 2 / 4 / 8 / 16
 sequences (64 tokens written each; the 1-sequence figure is below llama-bench's 53.46, and we have not looked into
 why). With the threshold at 16, 12 sequences fell to 47.0 tok/s (32 tokens written
 each), because a 12-token step went to dequantize-then-GEMM; with it at 12 the same run gave 222.7. Patch 0022 sets 9.
 
-In service (card 1, 2026-10-05, read from the live server's own timing lines, not a benchmark): 196,608 tokens of f16 KV shared by 2 slots, MTP 2, thinking on with an 8,192-token budget; prompts read
-at 828-1,074 tok/s and decode ran at 75-77 tok/s. The 262,144-token window we had served before no longer fit beside
-the XMX copies: prompts then read at 70-143 tok/s.
+**Historical service note, unverified.** A contemporaneous change note reports card 1 on 2026-10-05 with
+196,608 tokens of f16 KV shared by 2 slots, MTP 2, thinking on with an 8,192-token budget: prompt reading at
+828-1,074 tok/s and decode at 75-77 tok/s, reportedly from live-server timing lines, not a benchmark. Only the
+change note remains; the raw timing lines, prompt/output lengths and repeat counts are unavailable, so these rates
+cannot be independently checked. The same note reports 70-143 tok/s prompt reading with the previous 262,144-token
+window and attributes the slowdown to memory pressure from the XMX copies; that attribution is also unverified.
 
 ### Where a decode step goes
 
@@ -187,7 +197,8 @@ decode is in the other third of the step.
 3. **Kernels.** `test-backend-ops test -b SYCL0 -o MUL_MAT -p ptq1_0`, and
    `test-backend-ops perf -b SYCL0 -o MUL_MAT -p "type_a=ptq1_0,type_b=f32,m=17408,n=(1|2|4|8),k=5120"` (L2-warm; see
    the [patch notes](llama.cpp-sycl-bonsai/#what-each-patch-does) on why our memory-read timings used another tool).
-4. **Whole model, no server.**
+4. **Whole model, no server.** For the reported threshold-16 hybrid comparison, set
+   `GGML_SYCL_XMX_MIN_ROWS=16` on both commands below; omit it to test the published build's default threshold of 9.
    `llama-bench -m Ternary-Bonsai-2-27B-PTQ1_0-mtp.gguf -ngl 99 -fa on -p 8,16,32,64,128,256,512 -n 64 -r 5`,
    and `llama-batched-bench -m ... -ngl 99 -fa on -c 4096 -b 2048 -ub 512 -npp 128 -ntg 64 -npl 1,2,4,8,16`.
 5. **Served, as we ran it** (pr235 on 2026-09-27; the hybrid later served at `-c 196608`):
@@ -209,7 +220,9 @@ decode is in the other third of the step.
   commands above are what they ran.
 - Our chat template: a copy of the model's template that maps the usual effort words. With thinking off it changes
   only the prompt text; use the model's own template (`--jinja`).
-- The raw output of each window. The figures above are copied from it, with the run count and spread where it had them.
+- The raw output of each window is not published. Benchmark figures above are transcribed from retained output,
+  with the run count and spread where available. The historical service note is an exception: its raw timing lines
+  are not retained, and its figures are unverified as explained above.
 
 ## What did not work
 
@@ -217,7 +230,8 @@ decode is in the other third of the step.
   time is flat from 1 to 8 tokens and it reads a 2-bit copy. It wins prompts instead, which is why the hybrid keeps
   both.
 - **One layout for both kernels.** Our mat-vec and PR #294 each rewrite a PTQ1_0 weight in place. The hybrid needed a
-  second copy, 6.02 GiB, which cost the 262,144-token window.
+  second copy, 6.02 GiB. The historical service note attributes the loss of the 262,144-token window to that copy,
+  but no raw log remains to verify the attribution.
 - **The XMX threshold at 16.** Steps of 9-15 tokens fell to dequantize-then-GEMM: 12 sequences at once decoded 47.0
   tok/s in total, against 222.7 with the threshold at 12. Fixed by patch 0022.
 - **MTP 3.** Slower than MTP 2 at both depths we ran (64.6 against 71.6 short; 46.5 against 52.9 at 49k): only a third
@@ -248,4 +262,4 @@ without a reply to it. What has merged since, and overlaps: [the patch notes](ll
 
 ---
 
--- Claude Opus 5.5, working in [fleet](https://github.com/akapug/fleet) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [fleet](https://github.com/akapug/fleet) for [@akapug](https://github.com/akapug)

@@ -10,8 +10,8 @@ was read 3 times (GQA 3, 5, 7: 3, 5, 7 times). Round the packing up instead (3 -
 5..7 -> 8) and index blocks by (sequence, K/V head, head group), as the stream-k fixup
 already does; the last group's columns past the ratio are not loaded or written.
 
-Ported from our llama.cpp SYCL decode series (b70-rig/patches/llama-sycl-decode 0010, against
-upstream); its eval cases at GQA 3, 5, 6, 7 come in the tests commit of this series. Qwen3.5's
+Ported from our earlier upstream-targeted llama.cpp SYCL decode series; its eval cases at
+GQA 3, 5, 6, 7 come in the tests commit of this series. Qwen3.5's
 attention layers, and so Ternary Bonsai 2 27B's, are GQA 6 with head dim 256.
 Arc Pro B70, FLASH_ATTN_EXT head dim 256, 4 K/V heads, f16, one query token, GQA 6:
 4k 84 -> 35 us, 16k 372 -> 187 us (measured on the upstream series).

@@ -10,7 +10,7 @@ Two sets, for two base commits of the fork:
 | set | base | what it is | use it for |
 |---|---|---|---|
 | [`patches/`](patches/) 0001-0019 | PR #235's head `42ce76d019` (2026-09-24), the first SYCL support for PTQ1_0 | our decode mat-vec, the rest of a decode step, long context | the long-context numbers on the model page |
-| [`patches-hybrid/`](patches-hybrid/) 0001-0022 | `prism` at `a14c7de990`, the merge of PR #294 (2026-10-02), PrismML's XMX path for PTQ1_0 | the same 19 rebased, plus three: PTQ1_0 decode stays on our mat-vec, prompt chunks of 9 tokens or more go to PR #294's XMX path | the fastest build we measured at every prompt size |
+| [`patches-hybrid/`](patches-hybrid/) 0001-0022 | `prism` at `a14c7de990`, the merge of PR #294 (2026-10-02), PrismML's XMX path for PTQ1_0 | the same 19 rebased, plus three: PTQ1_0 decode stays on our mat-vec, prompt chunks of 9 tokens or more go to PR #294's XMX path | faster prompts from 16 tokens in the reported comparison, with similar single-stream decode |
 
 Neither set applies to the fork's current `prism` branch; see [Upstream](#upstream). Kernel timings are on the B70
 (608 GB/s, 24 MiB L2). Whole-model numbers are tok/s for one request unless a line says otherwise.
@@ -74,14 +74,21 @@ Whole model: perplexity and greedy text on the [model page](../bonsai-2-27b.md#q
 ./build.sh ~/bonsai-sycl pr235 --apply-only
 ```
 
-`build.sh` checks that the patched tree hashes to the one we measured (`8964a8c0f2` for pr235, `247ee38674` for
-hybrid), then builds `llama-server`, `llama-bench`, `llama-batched-bench`, `llama-perplexity` and `test-backend-ops`
-with the cmake flags we ran (`GGML_SYCL=ON`, `GGML_SYCL_TARGET=INTEL`, `GGML_SYCL_F16=ON`, `GGML_SYCL_DNN=ON`,
-`GGML_SYCL_GRAPH=ON`, Release). Both trees were verified from a fresh clone of the fork on 2026-10-27. We built with
-oneAPI 2026.1.
+`build.sh` checks that the patched tree hashes to the retained source tree (`8964a8c0f2` for pr235,
+`247ee38674` for hybrid), then builds `llama-server`, `llama-bench`, `llama-batched-bench`, `llama-perplexity` and
+`test-backend-ops` with the cmake flags we ran (`GGML_SYCL=ON`, `GGML_SYCL_TARGET=INTEL`, `GGML_SYCL_F16=ON`,
+`GGML_SYCL_DNN=ON`, `GGML_SYCL_GRAPH=ON`, Release). Both source trees were verified from a fresh clone of the fork
+on 2026-10-27. The historical builds used oneAPI 2026.1; source-tree verification is not a new GPU benchmark.
 
-With two cards in one box, pin the server to its card by PCI address:
-`ZE_ENABLE_PCI_ID_DEVICE_ORDER=1 ONEAPI_DEVICE_SELECTOR=level_zero:<n>`.
+**Historical binary provenance.** The retained 2026-10-04 hybrid llama-bench output reports `build_commit`
+`4be445e68`; the reconstructed 22-patch source corresponds to a later tip. The stamp is captured at configure time,
+so it may be stale, but neither the stamp nor retained file timestamps proves which exact source tree produced
+that binary. The table is a historical observation with this attribution gap. It used threshold 16; patch 0022
+later changed the default to 9. A verified rebuild of the published source does not close the historical gap.
+
+With two cards in one box, use PCI-ordered enumeration and select the intended device's **ordinal** `<n>`, not its
+PCI address: `ZE_ENABLE_PCI_ID_DEVICE_ORDER=1 ONEAPI_DEVICE_SELECTOR=level_zero:<n>`.
+Check the enumerated devices on your own host before selecting the ordinal.
 
 ## Check and undo
 
@@ -106,10 +113,10 @@ patches would need more than a rebase:
 | [#356](https://github.com/PrismML-Eng/llama.cpp/pull/356): a port of the `arc-b580` branch of Torchit1/llama.cpp (TernSYCL XMX kernels, fused ops, XMX decode attention from a q4_0 KV cache, an MMVQ reorder layout) | 2026-10-14 | `0002`, `0004`, `0018`, `0019` in purpose; we have not compared the code |
 
 Open there as of 2026-10-27: [#327](https://github.com/PrismML-Eng/llama.cpp/pull/327) keeps PTQ1_0 at 1.75 bits in
-the XMX path (PR #294 expands it to 2 bits in VRAM, +25 %), and [#326](https://github.com/PrismML-Eng/llama.cpp/pull/326)
+the XMX path (PR #294 expands 28-byte blocks to 34 bytes in VRAM, +21.4 % including scales), and [#326](https://github.com/PrismML-Eng/llama.cpp/pull/326)
 covers concat, get_rows and few-row f16/bf16 mat-vecs (the purpose of `0006`-`0008`). We have not built or measured
 the current `prism` branch on the B70.
 
 ---
 
--- Claude Opus 5.5, working in [fleet](https://github.com/akapug/fleet) for [@akapug](https://github.com/akapug)
+-- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [fleet](https://github.com/akapug/fleet) for [@akapug](https://github.com/akapug)
