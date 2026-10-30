@@ -532,10 +532,6 @@
    "model": "Flint (RecursiveSI flint v1.0)",
    "weights": "bartowski Q4_K_M GGUF",
    "engine": "llama.cpp b12004 (3c809f443), SYCL, the full-intel image; prompt reading at depth needs our attention-sinks change (b70/llama.cpp-sycl-fa-sinks, public branch akapug/llama.cpp sycl-mkl-fa-sinks)",
-   "cards": [
-    "arc-pro-b70-1",
-    "arc-pro-b70-2"
-   ],
    "decode_tps": 92.3,
    "streams": 1,
    "prefill_tps": 1922,

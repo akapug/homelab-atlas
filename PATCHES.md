@@ -469,8 +469,9 @@ numbers and upstream status: [`b70/llama.cpp-sycl-bonsai/`](b70/llama.cpp-sycl-b
 Two commits on upstream master `a34de8618b25` (b12015), not on the 18 above. Notes, numbers and logs:
 [`b70/llama.cpp-sycl-fa-sinks/`](b70/llama.cpp-sycl-fa-sinks/README.md).
 
-- **Symptom.** A model with attention sinks (Flint, gpt-oss) reads long prompts slowly: every flash attention with
-  sinks runs the TILE kernel. Separately, a mask broadcast over heads or batches faults the GPU
+- **Symptom.** A model with attention sinks (Flint, gpt-oss) reads long prompts slowly: flash attention with sinks
+  at the tested Flint prompt shapes runs the TILE kernel (other sinks shapes can use DPAS or VEC). Separately, a mask
+  broadcast over heads or batches faults the GPU
   (`UR_RESULT_ERROR_DEVICE_LOST`) with f16 K/V or gives NaN with q8_0 on the MKL path; llama-server's own masks do
   not hit it.
 - **For.** Intel GPUs on llama.cpp's SYCL backend, measured on one B70 (Xe2) only.

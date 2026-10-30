@@ -83,7 +83,8 @@ already has the row max), and the kernel choice in `fattn.cpp` admits sinks when
 (ggml asserts F32 sinks). The TILE kernel adds the same term after its KV loop. Commit 2 needs commit 1: with sinks
 supported, the broadcast cases above take the MKL path.
 
-Before, any flash attention with sinks ran on TILE, at every depth: oneDNN SDPA excludes sinks too. With Flint,
+Before, the tested Flint prompt shapes with sinks ran on TILE at every depth: oneDNN SDPA excludes sinks too.
+Other sinks shapes can use DPAS or VEC, as the sweep below shows. With Flint,
 setting `GGML_SYCL_FA_ONEDNN=0` and `GGML_SYCL_ENABLE_MKL_FA=0` left prompt reading at depth 48k unchanged
 (483.1 / 483.3 tok/s against 482.6), because TILE ran either way.
 
@@ -127,7 +128,8 @@ source); only the SYCL library differs.
 - **Only 18 sinks cases change path:** the 16 new sinks cases (TILE -> MKL) and the 2 broadcast cases with sinks (not
   supported -> MKL). Every other sinks case misses one of the MKL path's other conditions (Q batch >= 32, kv >= 1024,
   GQA >= 2, head size, no ALiBi or softcap) and keeps its kernel. So the sinks sweep mostly re-checks TILE, DPAS and
-  VEC; the new sink term on MKL is checked by those 18 cases plus the 2 sinks-off broadcast cases (MKL on both builds).
+  VEC. Those 18 cases exercise the new sink term on MKL; the 2 sinks-off broadcast cases check the mask fix,
+  not the sink term.
 - The 16 new sinks cases: kv 1,024 and 16,384 (two of the MKL path's 8,192-row KV chunks), 32 and 512 query rows,
   f16 and q8_0 K/V, in two shapes: gpt-oss (head size 64, 8 KV heads, GQA 8) and Flint (head size 128, 4 KV heads,
   GQA 8). `init_tensor_uniform(-10, 10)` draws the sinks, so a missing sink term is an O(1) error.
@@ -214,9 +216,12 @@ Claude length, so **turns per agent-minute** is the number to compare, with deco
 - **On the B70, prompt reading at depth is the limit, and the sinks change is the lever:** +33 % turns for one agent,
   +65 % for two on one card. The 3090 Ti reads prompts at 2.1k-2.6k tok/s at agent depth, about 4x the B70 before
   the change (564-600), and one agent there runs 15.9 turns a minute against 10.8 on a B70 with the change.
-- **A second agent on a card adds no total work.** Each card's decode total stays near 60 tok/s on the B70 with one
-  agent or two; the 3090 Ti runs 25.8 total turns per minute at 2 agents and 26.2 at 4. With two agents a card,
-  one slot's 2,048-token prompt chunk runs in the same step as the other slot's decode token and stalls it.
+- **More agents trade per-agent speed for aggregate throughput.** The one-B70 sinks runs complete 10.8 total
+  turns per minute with one agent and 15.2 with two, despite per-request decode falling from 66.1 to 30.5 tok/s.
+  The measured 3090 Ti setups complete 15.9, 25.8 and 26.2 total turns per minute at 1, 2 and 4 agents. Those CUDA
+  rows change weights and K/V type as well as concurrency, so they are not a controlled scaling comparison.
+  On the B70 with two agents, one slot's 2,048-token prompt chunk runs in the same step as the other slot's decode
+  token and stalls it.
 - **Cap the thinking.** Flint's chat template has no thinking switch, so `reasoning_effort` does nothing. A per-request
   `reasoning_budget_tokens` (or `--reasoning-budget`) does: on the planted off-by-one prompt, unbounded thinking took
   53.8 s and 3,952 tokens, a budget of 1,024 took 14.7 s and 1,089 tokens, and 3 of 3 prompts stayed correct down to
@@ -236,10 +241,11 @@ its 32,768-token output cap, and two others answered with a 12-24k-token summary
   step. Each new summary is told to carry the earlier one's list of user requests forward, so the line stayed. After
   compaction, the model read its own summary and took "no tools, write a summary" as the task.
 - **Proof.** On the exact request sent after one compaction, with the thinking budget: 3 of 5 replies called a tool
-  as sent, and **7 of 7** with the poisoned lines removed from the summary. A note after the summary ("that request is
+  as sent, and **5 of 5** in the `r104-clean` arm with the poisoned lines removed from the summary. Another 2 of 2
+  used the separate `r104-clean-sys2user` variant; these are not counted as the same intervention. A note after the summary ("that request is
   complete and is not the user's task") restored 2 of 2. A hint added to the compaction prompt did not help: 3 of 3
   summaries were still poisoned. Once one summary-shaped reply sits in the kept part of the context, nothing we tried
-  helped (0 of 11).
+  helped (0 tool calls in 11 completed replies across those arms; 4 HTTP 503 errors excluded).
 - **What we run.** Fewer compactions: a 98,304-token window told to Claude Code with 16,384 output tokens (it had
   been told 81,920 and 32,768, so it compacted every 10 turns or so), a 1,024-token thinking budget, and an 8,192-token
   cap on compaction replies. A one-character bug fix through that path passed 3 of 3 with no compaction.
