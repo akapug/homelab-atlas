@@ -1,0 +1,25 @@
+# paths.py <master log> <branch log>: tbo.sh <build> test 'sinks=1' with DBG=1 (kernel-path trace), on master and on this branch
+# the two logs (about 670 KB each) are not published; their sha256:
+#   0c92eb1dbba436cddb8542f5be1ee861a542e3e34c796f2aaa130c89f0767ca4  stock-sinks-all.log
+#   8df4c07c4a9a7373d29dac8a94cc0f710f719b7ae29a055efc42bc0c99e29910  patched-sinks-all.log
+stock: 2621 cases; results {'OK': 1986, 'unsupported': 635}; paths {'TILE': 1770, 'DPAS': 120, 'VEC': 96}
+patched: 2621 cases; results {'OK': 1988, 'unsupported': 633}; paths {'TILE': 1754, 'DPAS': 120, 'VEC': 96, 'MKL': 18}
+cases that differ: 18
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,1],kv=1024,nb=32,mask=1,sinks=1,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,1],kv=1024,nb=32,mask=1,sinks=1,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,1],kv=1024,nb=512,mask=1,sinks=1,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,1],kv=1024,nb=512,mask=1,sinks=1,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,1],kv=16384,nb=32,mask=1,sinks=1,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,1],kv=16384,nb=32,mask=1,sinks=1,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,1],kv=16384,nb=512,mask=1,sinks=1,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,1],kv=16384,nb=512,mask=1,sinks=1,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('-', 'unsupported') -> ('MKL', 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,4],kv=1024,nb=32,mask=1,sinks=1,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0,mask_ne23=[2,2])
+  ('-', 'unsupported') -> ('MKL', 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,4],kv=1024,nb=32,mask=1,sinks=1,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0,mask_ne23=[2,2])
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=64,hsv=64,nh=8,nr23=[8,1],kv=1024,nb=32,mask=1,sinks=1,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=64,hsv=64,nh=8,nr23=[8,1],kv=1024,nb=32,mask=1,sinks=1,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=64,hsv=64,nh=8,nr23=[8,1],kv=1024,nb=512,mask=1,sinks=1,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=64,hsv=64,nh=8,nr23=[8,1],kv=1024,nb=512,mask=1,sinks=1,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=64,hsv=64,nh=8,nr23=[8,1],kv=16384,nb=32,mask=1,sinks=1,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=64,hsv=64,nh=8,nr23=[8,1],kv=16384,nb=32,mask=1,sinks=1,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=64,hsv=64,nh=8,nr23=[8,1],kv=16384,nb=512,mask=1,sinks=1,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)
+  ('TILE', 'OK') -> ('MKL', 'OK')  (hsk=64,hsv=64,nh=8,nr23=[8,1],kv=16384,nb=512,mask=1,sinks=1,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0)

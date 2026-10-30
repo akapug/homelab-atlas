@@ -1,0 +1,17 @@
+# whole FLASH_ATTN_EXT op: test-backend-ops test -b SYCL0 -o FLASH_ATTN_EXT, one Intel Arc Pro B70, no path trace
+# master: tbo.sh <master build> test '^(?!.*mask_ne23)' (the 4 broadcast cases left out: the first aborts the process); 360.8 s
+# this branch: tbo.sh <branch build> test '' ; 359.3 s
+# the two full logs (over 1 MiB each) are not published; their sha256:
+#   1e73f4abf7c90c7c572265f1becd132ac709f49c06ab1f00194985cf1089e3ab  logs-full-stock.log
+#   e02587989c10fc989419dd5d979663884982d8e782db10d203dc27e32f18121a  logs-full-patched.log
+master:  4120/4120 tests passed, 1275 not supported, rc=0
+this PR: 4124/4124 tests passed, 1275 not supported, rc=0
+
+stock: 5394 cases; results {'OK': 4119, 'unsupported': 1275}; paths {None: 4119}
+patched: 5398 cases; results {'OK': 4123, 'unsupported': 1275}; paths {None: 4123}
+cases that differ: 4
+  None -> (None, 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,4],kv=1024,nb=32,mask=1,sinks=0,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0,mask_ne23=[2,2])
+  None -> (None, 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,4],kv=1024,nb=32,mask=1,sinks=0,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0,mask_ne23=[2,2])
+  None -> (None, 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,4],kv=1024,nb=32,mask=1,sinks=1,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0,mask_ne23=[2,2])
+  None -> (None, 'OK')  (hsk=128,hsv=128,nh=4,nr23=[8,4],kv=1024,nb=32,mask=1,sinks=1,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0,mask_ne23=[2,2])
+# note: upstream's list has one case name twice (hsk=576,hsv=512,nh=1,nr23=[20,1],kv=512,nb=1,...,v_is_view_of_k=1), so paths.py, which keys by name, counts one OK fewer than the runner

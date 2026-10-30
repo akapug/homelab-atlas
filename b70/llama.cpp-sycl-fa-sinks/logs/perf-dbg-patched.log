@@ -1,0 +1,167 @@
+Build with Macros:
+  GGML_SYCL_DNNL: yes
+  GGML_SYCL_F16: yes
+  GGML_SYCL_FORCE_MMQ: no
+  GGML_SYCL_SUPPORT_XMX: yes
+  GGML_SYCL_GRAPH: yes
+  GGML_SYCL_SUPPORT_LEVEL_ZERO_API: yes
+  GGML_SYCL_SUPPORT_VMM: yes
+Running with Environment Variables:
+  GGML_SYCL_DEBUG: 0
+  GGML_SYCL_DEV_DEBUG: 0
+  GGML_SYCL_DEV2DEV_MEMCPY: 0 (SYCL API)
+  GGML_SYCL_GET_MEM_API: 0 (Level Zero API)
+  GGML_SYCL_ENABLE_DNN: 1
+  GGML_SYCL_FA_ONEDNN: 1
+  GGML_SYCL_FA_ONEDNN_MAX_KV: 0
+  GGML_SYCL_ENABLE_MKL_FA: 1
+  GGML_SYCL_FA_DPAS: 1
+  GGML_SYCL_MEMTRACE: 0
+  GGML_SYCL_MEMTRACE_STEP: 64
+  GGML_SYCL_ENABLE_FLASH_ATTN: 1
+  GGML_SYCL_ENABLE_GRAPH: 0
+  GGML_SYCL_GRAPH_EVICTION_TIMEOUT: 10
+  GGML_SYCL_ENABLE_OPT: 1
+  GGML_SYCL_XMX_GATHER_TYPES: -1
+  GGML_SYCL_XMX_GATHER_SHAPES: 255
+  GGML_SYCL_DYNAMIC_PRECISION: F16
+  GGML_SYCL_DYNAMIC_REQUIRED_PRECISION: F32
+  GGML_SYCL_ENABLE_VMM: 1
+  GGML_SYCL_ENABLE_FUSION: 1
+  GGML_SYCL_UPLOAD_STAGING_SLOTS: 4
+  GGML_SYCL_ENABLE_ESIMD: 1
+  GGML_SYCL_MMVQ_WIDE: 1
+  GGML_SYCL_ENABLE_XMX_ESIMD: 1
+  GGML_SYCL_XMX_MAX_COLS: 80
+  GGML_SYCL_XMX_GLU_MAX_COLS: 16
+  GGML_SYCL_PRIORITIZE_DMMV: 0
+  GGML_SYCL_USE_ASYNC_MEM_OP: 1
+  GGML_SYCL_USE_LEVEL_ZERO_API: 1
+  GGML_SYCL_USM_SYSTEM: 0
+  GGML_SYCL_ENABLE_HOST_PINNED_MEM: 1
+  GGML_SYCL_HOST_PINNED_MEM_2G: 0
+  GGML_SYCL_SPARSE_FA: 0
+  GGML_SYCL_SPARSE_FA_DEBUG: 0
+  GGML_SYCL_SPARSE_FA_MARGIN: 256
+Found 1 SYCL devices:
+|  |                   |                                       |       |Max    |        |Max  |Global |                     |
+|  |                   |                                       |       |compute|Max work|sub  |mem    |                     |
+|ID|        Device Type|                                   Name|Version|units  |group   |group|size   |       Driver version|
+|--|-------------------|---------------------------------------|-------|-------|--------|-----|-------|---------------------|
+| 0| [level_zero:gpu:0]|             Intel Arc Pro B70 Graphics|   20.2|    256|    1024|   32| 34242M|         1.15.38308+1|
+SYCL Optimization Feature:
+|ID|        Device Type|Reorder|
+|--|-------------------|-------|
+| 0| [level_zero:gpu:0]|      Y|
+load_backend: loaded SYCL backend from /t/libggml-sycl.so
+load_backend: loaded CPU backend from /t/libggml-cpu.so
+[FA-DISP] #1 MKL D=64 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #1 D=64 DV=64 n_q=1024 n_kv=50176 n_qh=64 n_kvh=8 gqa=8 batch=1 K=f16 V=f16 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #1 Q-nb1=256 Q-nb2=262144 q_rs=64 q_hs=65536 dst_rs=64 dst_hs=4096
+[MKL-FA] #1 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=565 GEMM_KQ=16021 softmax=336 GEMM_VKQ=11090 buf_mb=391.1
+[FA-DISP] #2 MKL D=64 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #2 D=64 DV=64 n_q=1024 n_kv=50176 n_qh=64 n_kvh=8 gqa=8 batch=1 K=f16 V=f16 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #2 Q-nb1=256 Q-nb2=262144 q_rs=64 q_hs=65536 dst_rs=64 dst_hs=4096
+[MKL-FA] #2 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=536 GEMM_KQ=956 softmax=283 GEMM_VKQ=890 buf_mb=391.1
+[FA-DISP] #3 MKL D=64 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #3 D=64 DV=64 n_q=1024 n_kv=50176 n_qh=64 n_kvh=8 gqa=8 batch=1 K=f16 V=f16 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #3 Q-nb1=256 Q-nb2=262144 q_rs=64 q_hs=65536 dst_rs=64 dst_hs=4096
+[MKL-FA] #3 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=459 GEMM_KQ=824 softmax=241 GEMM_VKQ=759 buf_mb=391.1
+[FA-DISP] #4 MKL D=64 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #4 D=64 DV=64 n_q=1024 n_kv=50176 n_qh=64 n_kvh=8 gqa=8 batch=1 K=f16 V=f16 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #4 Q-nb1=256 Q-nb2=262144 q_rs=64 q_hs=65536 dst_rs=64 dst_hs=4096
+[MKL-FA] #4 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=811 GEMM_KQ=835 softmax=232 GEMM_VKQ=739 buf_mb=391.1
+[FA-DISP] #5 MKL D=64 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #5 D=64 DV=64 n_q=1024 n_kv=50176 n_qh=64 n_kvh=8 gqa=8 batch=1 K=f16 V=f16 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #5 Q-nb1=256 Q-nb2=262144 q_rs=64 q_hs=65536 dst_rs=64 dst_hs=4096
+[MKL-FA] #5 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=516 GEMM_KQ=849 softmax=253 GEMM_VKQ=793 buf_mb=391.1
+[FA-DISP] #6 MKL D=64 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #6 D=64 DV=64 n_q=1024 n_kv=50176 n_qh=64 n_kvh=8 gqa=8 batch=1 K=f16 V=f16 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #6 Q-nb1=256 Q-nb2=262144 q_rs=64 q_hs=65536 dst_rs=64 dst_hs=4096
+[MKL-FA] #6 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=490 GEMM_KQ=802 softmax=230 GEMM_VKQ=740 buf_mb=391.1
+[FA-DISP] #7 MKL D=64 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #7 D=64 DV=64 n_q=1024 n_kv=50176 n_qh=64 n_kvh=8 gqa=8 batch=1 K=f16 V=f16 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #7 Q-nb1=256 Q-nb2=262144 q_rs=64 q_hs=65536 dst_rs=64 dst_hs=4096
+[MKL-FA] #7 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=460 GEMM_KQ=828 softmax=230 GEMM_VKQ=754 buf_mb=391.1
+[FA-DISP] #8 MKL D=64 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #8 D=64 DV=64 n_q=1024 n_kv=50176 n_qh=64 n_kvh=8 gqa=8 batch=1 K=f16 V=f16 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #8 Q-nb1=256 Q-nb2=262144 q_rs=64 q_hs=65536 dst_rs=64 dst_hs=4096
+[MKL-FA] #8 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=459 GEMM_KQ=807 softmax=259 GEMM_VKQ=757 buf_mb=391.1
+[FA-DISP] #9 MKL D=64 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #9 D=64 DV=64 n_q=1024 n_kv=50176 n_qh=64 n_kvh=8 gqa=8 batch=1 K=f16 V=f16 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #9 Q-nb1=256 Q-nb2=262144 q_rs=64 q_hs=65536 dst_rs=64 dst_hs=4096
+[MKL-FA] #9 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=548 GEMM_KQ=888 softmax=286 GEMM_VKQ=753 buf_mb=391.1
+Testing 2 devices
+
+Backend 1/2: SYCL0
+  Device description: Intel(R) Arc(TM) Pro B70 Graphics
+  Device memory: 32656 MB (2993 MB free)
+
+  FLASH_ATTN_EXT(hsk=64,hsv=64,nh=8,nr23=[8,1],kv=50176,nb=1024,mask=1,sinks=1,max_bias=0.000000,logit_softcap=0.000000,prec=f32,type_K=f16,type_V=f16,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0):                   8 runs - 128906.50 us/run - 841.81 GFLOP/run -   6.53 TFLOPS
+[FA-DISP] #10 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #10 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #10 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #10 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=657270 GEMM_KQ=12349 softmax=126 GEMM_VKQ=28127 buf_mb=398.1
+[FA-DISP] #11 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #11 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #11 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #11 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=229 GEMM_KQ=412 softmax=117 GEMM_VKQ=389 buf_mb=398.1
+[FA-DISP] #12 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #12 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #12 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #12 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=205 GEMM_KQ=399 softmax=118 GEMM_VKQ=375 buf_mb=398.1
+[FA-DISP] #13 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #13 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #13 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #13 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=204 GEMM_KQ=410 softmax=116 GEMM_VKQ=384 buf_mb=398.1
+[FA-DISP] #14 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #14 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #14 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #14 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=202 GEMM_KQ=426 softmax=120 GEMM_VKQ=383 buf_mb=398.1
+[FA-DISP] #15 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #15 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #15 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #15 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=440 GEMM_KQ=474 softmax=120 GEMM_VKQ=375 buf_mb=398.1
+[FA-DISP] #16 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #16 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #16 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #16 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=202 GEMM_KQ=432 softmax=121 GEMM_VKQ=383 buf_mb=398.1
+[FA-DISP] #17 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #17 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #17 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #17 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=200 GEMM_KQ=419 softmax=116 GEMM_VKQ=372 buf_mb=398.1
+[FA-DISP] #18 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #18 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #18 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #18 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=222 GEMM_KQ=394 softmax=130 GEMM_VKQ=371 buf_mb=398.1
+[FA-DISP] #19 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #19 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #19 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #19 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=199 GEMM_KQ=392 softmax=119 GEMM_VKQ=370 buf_mb=398.1
+[FA-DISP] #20 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #20 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #20 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #20 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=237 GEMM_KQ=409 softmax=118 GEMM_VKQ=373 buf_mb=398.1
+[FA-DISP] #21 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #21 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #21 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #21 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=216 GEMM_KQ=411 softmax=118 GEMM_VKQ=370 buf_mb=398.1
+[FA-DISP] #22 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #22 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #22 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #22 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=219 GEMM_KQ=405 softmax=115 GEMM_VKQ=365 buf_mb=398.1
+[FA-DISP] #23 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #23 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #23 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #23 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=458 GEMM_KQ=405 softmax=131 GEMM_VKQ=406 buf_mb=398.1
+[FA-DISP] #24 MKL D=128 n_kv=50176 delta=0 V_ne1=50176
+[MKL-FA] #24 D=128 DV=128 n_q=1024 n_kv=50176 n_qh=32 n_kvh=4 gqa=8 batch=1 K=q8_0 V=q8_0 chunk=8192 buf=256.0MB K_ILV V_ILV
+[MKL-FA] #24 Q-nb1=512 Q-nb2=524288 q_rs=128 q_hs=131072 dst_rs=128 dst_hs=4096
+[MKL-FA] #24 n_kv=50176 n_q=1024 q_tile=8192 time_us: dequant=205 GEMM_KQ=432 softmax=127 GEMM_VKQ=398 buf_mb=398.1
+  FLASH_ATTN_EXT(hsk=128,hsv=128,nh=4,nr23=[8,1],kv=50176,nb=1024,mask=1,sinks=1,max_bias=0.000000,logit_softcap=0.000000,prec=f32,type_K=q8_0,type_V=q8_0,permute=[0,1,2,3],kv_view=1,v_is_view_of_k=0,n_kv_max=0):                      14 runs - 74652.71 us/run - 841.81 GFLOP/run -  11.28 TFLOPS
+  Backend SYCL0: OK
+Backend 2/2: CPU
+  Skipping
+2/2 backends passed
+OK
+rc=0

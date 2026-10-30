@@ -6,6 +6,15 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+### Added
+- `b70/llama.cpp-sycl-fa-sinks/`: two commits to llama.cpp's SYCL backend on master `a34de8618b25`, published as the
+  branch `sycl-mkl-fa-sinks` of akapug/llama.cpp. A fix: the MKL flash-attention path read a mask broadcast over heads
+  or batches out of bounds (GPU page fault with f16 K/V, NaN with q8_0). A feature: attention sinks on the MKL path,
+  1.87x (Flint) and 1.32x (gpt-oss) for one attention op at depth 48k; Flint prompt reading at depth 48k 483 -> 857
+  tok/s (build b12004). 4,124 of 4,124 FLASH_ATTN_EXT cases pass on one B70. The same page: Flint on two B70s and on
+  an RTX 3090 Ti (serving recipes, replayed coding-agent sessions), and how Claude Code's compaction summary can stop
+  a local model from calling tools. New model in the README's best-result table and in `atlas.json`.
+
 ### Changed
 - Bonsai public review: remove two private-source references from patch prose, correct the XMX block expansion
   to 21.4 %, qualify the hybrid comparison and historical binary provenance, mark service-note-only rates

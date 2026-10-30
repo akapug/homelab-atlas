@@ -82,6 +82,10 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
 - [`bonsai-2-27b.md`](bonsai-2-27b.md) and [`llama.cpp-sycl-bonsai/`](llama.cpp-sycl-bonsai/): Ternary Bonsai 2 27B, a
   ternary 27B in 6.5 GiB, on PrismML's llama.cpp fork: 19 SYCL patches take one B70 from 26.9 to 52.9 tok/s (71.6
   with MTP 2), three more combine our decode kernel with PrismML's XMX prompt path, and the comparison with that path.
+- [`llama.cpp-sycl-fa-sinks/`](llama.cpp-sycl-fa-sinks/): two commits to upstream llama.cpp's SYCL backend: models with
+  attention sinks (Flint, gpt-oss) read prompts on the MKL flash-attention path (Flint at depth 48k: 483 -> 857 tok/s),
+  and a broadcast mask no longer faults the GPU. Also Flint on both cards and on an RTX 3090 Ti, and how Claude
+  Code's compaction summary can stop a local model from calling tools.
 - [`many-agents.md`](many-agents.md): both cards serving many agents at once with Qwen3.8 Flash-Next: 80-86 tok/s in
   total over 16 replayed real agent sessions, against 377.9 decode over 32 agents on a synthetic load, with every
   switch we tried on each, the losers, and the engine code as an experimental fork.

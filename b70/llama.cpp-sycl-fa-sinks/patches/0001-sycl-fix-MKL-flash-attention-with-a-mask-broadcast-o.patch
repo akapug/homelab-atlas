@@ -1,0 +1,89 @@
+From 22dc55aa866b2f016c3f3d6cdaa07fd2e8945cd5 Mon Sep 17 00:00:00 2001
+From: akapug <akapug@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 16:03:55 +0000
+Subject: [PATCH 1/2] sycl : fix MKL flash attention with a mask broadcast over
+ heads or batches
+
+ggml_flash_attn_ext accepts a mask whose ne[2] and ne[3] only divide the
+number of Q heads and batches. The MKL path used the Q head and batch
+index directly, so it read such a mask out of bounds. Take both indices
+modulo the mask dims, as the CPU backend does, and add test cases.
+---
+ ggml/src/ggml-sycl/fattn-mkl.cpp |  4 ++--
+ tests/test-backend-ops.cpp       | 31 +++++++++++++++++++++++++++++++
+ 2 files changed, 33 insertions(+), 2 deletions(-)
+
+diff --git a/ggml/src/ggml-sycl/fattn-mkl.cpp b/ggml/src/ggml-sycl/fattn-mkl.cpp
+index e3b3553de..09b184cbb 100644
+--- a/ggml/src/ggml-sycl/fattn-mkl.cpp
++++ b/ggml/src/ggml-sycl/fattn-mkl.cpp
+@@ -160,7 +160,7 @@ static void mkl_fa_online_softmax_chunk(
+                 int64_t m_stride = 0;
+                 if (mask_data) {
+                     int m_head = (mask_n_heads > 1)
+-                        ? (kvh_head + gqa_group) : 0;
++                        ? (kvh_head + gqa_group) % mask_n_heads : 0;
+                     mask_h   = mask_data + (int64_t)m_head * mask_head_stride;
+                     m_stride = mask_row_stride;
+                 }
+@@ -537,7 +537,7 @@ void ggml_sycl_flash_attn_ext_mkl(ggml_backend_sycl_context & ctx, ggml_tensor *
+ 
+         const sycl::half * mask_batch = nullptr;
+         if (mask) {
+-            int m_batch = (mask->ne[3] > 1) ? ib : 0;
++            int m_batch = ib % (int)mask->ne[3];
+             mask_batch = (const sycl::half *)mask->data
+                 + m_batch * (mask->nb[3] / 2);  // 2 = actual fp16 device size
+         }
+diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
+index f75ff11b9..e95bde032 100644
+--- a/tests/test-backend-ops.cpp
++++ b/tests/test-backend-ops.cpp
+@@ -8781,6 +8781,30 @@ struct test_flash_attn_ext_large_logits : public test_flash_attn_ext {
+     }
+ };
+ 
++// mask with 2 heads and 2 batches, broadcast over the Q heads and batches
++struct test_flash_attn_ext_mask_bcast : public test_flash_attn_ext {
++    using test_flash_attn_ext::test_flash_attn_ext;
++
++    std::string vars() override {
++        return test_flash_attn_ext::vars() + ",mask_ne23=[2,2]";
++    }
++
++    ggml_tensor * build_graph(ggml_context * ctx) override {
++        ggml_tensor * ref = test_flash_attn_ext::build_graph(ctx);
++        ggml_set_name(ref, "ref");
++
++        ggml_tensor * m = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, kv, nb, 2, 2);
++        ggml_set_name(m, "m");
++
++        ggml_tensor * out = ggml_flash_attn_ext(ctx, ref->src[0], ref->src[1], ref->src[2], m, 1.0f/sqrtf(hsk), max_bias, logit_softcap);
++        ggml_flash_attn_ext_add_sinks(out, ref->src[4]);
++        ggml_prec_set_acc(out, prec);
++        ggml_set_name(out, "out");
++
++        return out;
++    }
++};
++
+ // GGML_OP_CROSS_ENTROPY_LOSS
+ struct test_cross_entropy_loss : public test_case {
+     const ggml_type type;
+@@ -12335,6 +12359,13 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+                                                         GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+     }
+ 
++    // mask broadcast over Q heads and batches
++    for (bool sinks : { false, true }) {
++        for (ggml_type type : { GGML_TYPE_F16, GGML_TYPE_Q8_0 }) {
++            test_cases.emplace_back(new test_flash_attn_ext_mask_bcast(128, 128, 4, {8, 4}, 1024, 32, true, sinks, 0, 0, GGML_PREC_F32, type, type));
++        }
++    }
++
+     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1},   512, 512, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1},  4096,  64, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1},  4096,  16, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+-- 
+2.51.0
+

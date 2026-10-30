@@ -54,6 +54,7 @@ the rest of the repo, are in the [GLOSSARY](GLOSSARY.md).
 | [`gdn-mixed-batch/`](b70/vllm-xpu/gdn-mixed-batch/) | Intel only | llm-scaler 0.26.0-b2's kernels, a DeltaNet model with MTP | B70 | [section 2](#gdn-mixed-batch-a-check-for-the-deltanet-kernel-bug) |
 | llama.cpp [`0001`-`0014`, `0017`, `0018`](b70/llama.cpp-sycl/patches/) (`0009` adds tests only) | Intel only | llama.cpp `94256114c2` with SYCL, a GGUF model | B70 | [section 3](#3-intel-arc-pro-b70-with-llamacpp) |
 | llama.cpp SYCL for ternary Bonsai: [`patches/`](b70/llama.cpp-sycl-bonsai/patches/) 0001-0019 or [`patches-hybrid/`](b70/llama.cpp-sycl-bonsai/patches-hybrid/) 0001-0022 | Intel only | PrismML's llama.cpp fork at PR #235's head or at PR #294's merge, a PTQ1_0 GGUF | B70 | [section 3](#ternary-bonsai-on-prismmls-fork) |
+| llama.cpp SYCL attention sinks and broadcast-mask fix: [`patches/`](b70/llama.cpp-sycl-fa-sinks/patches/) 0001-0002, branch [akapug/llama.cpp `sycl-mkl-fa-sinks`](https://github.com/akapug/llama.cpp/tree/sycl-mkl-fa-sinks) | Intel only | upstream llama.cpp `a34de8618b25` with SYCL; a model with attention sinks (Flint, gpt-oss) for the speed-up | B70 | [section 3](#attention-sinks-on-upstream-llamacpp) |
 | [`serving-cpu-guard.sh`](b70/vllm-xpu/serving-cpu-guard.sh) | host CPU | a CPU with two CCDs, vLLM in Docker, systemd | Ryzen 9 9950X3D | [section 4](#serving-cpu-guard-keep-other-work-off-the-servers-ccd) |
 | [`agent-eval/`](b70/agent-eval/) | no GPU needed | an OpenAI-compatible server, a proxy, Docker | two B70s | [section 6](#agent-eval-can-a-local-model-finish-real-repository-work) |
 | [`bench/`](b70/bench/) | no GPU needed | llama-server or an OpenAI-compatible server | B70 | [section 6](#bench-the-measurements-behind-the-numbers) |
@@ -462,6 +463,23 @@ numbers and upstream status: [`b70/llama.cpp-sycl-bonsai/`](b70/llama.cpp-sycl-b
 - **Check.** It prints `patched (...): ... (tree verified)`; `test-backend-ops test -b SYCL0 -o MUL_MAT -p ptq1_0`
   passes; `llama-bench` gives your own before and after (`GGML_SYCL_ENABLE_OPT=0` runs PR #235's own kernel).
 - **Undo.** Build the fork without the patches. In the hybrid, `GGML_SYCL_DISABLE_XMX=1` keeps PTQ1_0 off XMX.
+
+### Attention sinks on upstream llama.cpp
+
+Two commits on upstream master `a34de8618b25` (b12015), not on the 18 above. Notes, numbers and logs:
+[`b70/llama.cpp-sycl-fa-sinks/`](b70/llama.cpp-sycl-fa-sinks/README.md).
+
+- **Symptom.** A model with attention sinks (Flint, gpt-oss) reads long prompts slowly: every flash attention with
+  sinks runs the TILE kernel. Separately, a mask broadcast over heads or batches faults the GPU
+  (`UR_RESULT_ERROR_DEVICE_LOST`) with f16 K/V or gives NaN with q8_0 on the MKL path; llama-server's own masks do
+  not hit it.
+- **For.** Intel GPUs on llama.cpp's SYCL backend, measured on one B70 (Xe2) only.
+- **Apply.** `git am` the two files in [`patches/`](b70/llama.cpp-sycl-fa-sinks/patches/) on `a34de8618b25`, or
+  check out the branch. [`build.sh`](b70/llama.cpp-sycl-fa-sinks/build.sh) builds the SYCL library and
+  test-backend-ops in llama.cpp's own `full-intel` image.
+- **Check.** `test-backend-ops test -b SYCL0 -o FLASH_ATTN_EXT` passes (4,124 of 4,124 on our card);
+  with `GGML_SYCL_MKL_FA_DEBUG=1`, the new sinks cases print `MKL`.
+- **Undo.** Build without the commits, or set `GGML_SYCL_ENABLE_MKL_FA=0` (sinks then take the kernels they took before).
 
 ## 4. The host CPU: a Ryzen with two CCDs
 

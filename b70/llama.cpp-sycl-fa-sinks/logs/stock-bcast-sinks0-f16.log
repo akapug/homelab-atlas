@@ -1,0 +1,85 @@
+Build with Macros:
+  GGML_SYCL_DNNL: yes
+  GGML_SYCL_F16: yes
+  GGML_SYCL_FORCE_MMQ: no
+  GGML_SYCL_SUPPORT_XMX: yes
+  GGML_SYCL_GRAPH: yes
+  GGML_SYCL_SUPPORT_LEVEL_ZERO_API: yes
+  GGML_SYCL_SUPPORT_VMM: yes
+Running with Environment Variables:
+  GGML_SYCL_DEBUG: 0
+  GGML_SYCL_DEV_DEBUG: 0
+  GGML_SYCL_DEV2DEV_MEMCPY: 0 (SYCL API)
+  GGML_SYCL_GET_MEM_API: 0 (Level Zero API)
+  GGML_SYCL_ENABLE_DNN: 1
+  GGML_SYCL_FA_ONEDNN: 1
+  GGML_SYCL_FA_ONEDNN_MAX_KV: 0
+  GGML_SYCL_ENABLE_MKL_FA: 1
+  GGML_SYCL_FA_DPAS: 1
+  GGML_SYCL_MEMTRACE: 0
+  GGML_SYCL_MEMTRACE_STEP: 64
+  GGML_SYCL_ENABLE_FLASH_ATTN: 1
+  GGML_SYCL_ENABLE_GRAPH: 0
+  GGML_SYCL_GRAPH_EVICTION_TIMEOUT: 10
+  GGML_SYCL_ENABLE_OPT: 1
+  GGML_SYCL_XMX_GATHER_TYPES: -1
+  GGML_SYCL_XMX_GATHER_SHAPES: 255
+  GGML_SYCL_DYNAMIC_PRECISION: F16
+  GGML_SYCL_DYNAMIC_REQUIRED_PRECISION: F32
+  GGML_SYCL_ENABLE_VMM: 1
+  GGML_SYCL_ENABLE_FUSION: 1
+  GGML_SYCL_UPLOAD_STAGING_SLOTS: 4
+  GGML_SYCL_ENABLE_ESIMD: 1
+  GGML_SYCL_MMVQ_WIDE: 1
+  GGML_SYCL_ENABLE_XMX_ESIMD: 1
+  GGML_SYCL_XMX_MAX_COLS: 80
+  GGML_SYCL_XMX_GLU_MAX_COLS: 16
+  GGML_SYCL_PRIORITIZE_DMMV: 0
+  GGML_SYCL_USE_ASYNC_MEM_OP: 1
+  GGML_SYCL_USE_LEVEL_ZERO_API: 1
+  GGML_SYCL_USM_SYSTEM: 0
+  GGML_SYCL_ENABLE_HOST_PINNED_MEM: 1
+  GGML_SYCL_HOST_PINNED_MEM_2G: 0
+  GGML_SYCL_SPARSE_FA: 0
+  GGML_SYCL_SPARSE_FA_DEBUG: 0
+  GGML_SYCL_SPARSE_FA_MARGIN: 256
+Found 1 SYCL devices:
+|  |                   |                                       |       |Max    |        |Max  |Global |                     |
+|  |                   |                                       |       |compute|Max work|sub  |mem    |                     |
+|ID|        Device Type|                                   Name|Version|units  |group   |group|size   |       Driver version|
+|--|-------------------|---------------------------------------|-------|-------|--------|-----|-------|---------------------|
+| 0| [level_zero:gpu:0]|             Intel Arc Pro B70 Graphics|   20.2|    256|    1024|   32| 34242M|         1.15.38308+1|
+SYCL Optimization Feature:
+|ID|        Device Type|Reorder|
+|--|-------------------|-------|
+| 0| [level_zero:gpu:0]|      Y|
+load_backend: loaded SYCL backend from /t/libggml-sycl.so
+load_backend: loaded CPU backend from /t/libggml-cpu.so
+[FA-DISP] #1 MKL D=128 n_kv=1024 delta=0 V_ne1=1024
+[MKL-FA] #1 D=128 DV=128 n_q=32 n_kv=1024 n_qh=32 n_kvh=4 gqa=8 batch=4 K=f16 V=f16 chunk=1024 buf=1.0MB K_ILV V_ILV
+[MKL-FA] #1 Q-nb1=512 Q-nb2=16384 q_rs=128 q_hs=4096 dst_rs=128 dst_hs=4096
+[MKL-FA] #1 n_kv=1024 n_q=32 q_tile=256 time_us: dequant=209 GEMM_KQ=3981 softmax=104 GEMM_VKQ=2745 buf_mb=2.3
+Testing 2 devices
+
+Backend 1/2: SYCL0
+  Device description: Intel(R) Arc(TM) Pro B70 Graphics
+  Device memory: 32656 MB (2993 MB free)
+
+level_zero backend failed with error: 20 (UR_RESULT_ERROR_DEVICE_LOST)
+Exception caught at file:/src/ggml/src/ggml-sycl/ggml-sycl.cpp, line:6604, func:operator()
+SYCL error: CHECK_TRY_ERROR((stream)->wait()): Exception caught in this line of code.
+  in function ggml_backend_sycl_synchronize at /src/ggml/src/ggml-sycl/ggml-sycl.cpp:6604
+/src/ggml/src/ggml-sycl/../ggml-sycl/common.hpp:206: SYCL error
+libggml-base.so.0(+0x136d8)[0x76131b29b6d8]
+libggml-base.so.0(+0x136b5)[0x76131b29b6b5]
+libggml-base.so.0(ggml_abort+0x109)[0x76131b29a729]
+/t/libggml-sycl.so(+0x275998)[0x761314675998]
+/t/libggml-sycl.so(+0x28d19d)[0x76131468d19d]
+libggml-base.so.0(ggml_backend_compare_graph_backend+0x32a)[0x76131b2c904a]
+/t/test-backend-ops[0x56d340]
+/t/test-backend-ops[0x488bdd]
+/t/test-backend-ops[0x40db07]
+/lib/x86_64-linux-gnu/libc.so.6(+0x2a1ca)[0x76131ad011ca]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x8b)[0x76131ad0128b]
+/t/test-backend-ops[0x40b9a5]
+rc=134

@@ -1,6 +1,6 @@
 {
  "schema": "homelab-atlas/1",
- "updated": "2026-10-27",
+ "updated": "2026-10-30",
  "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). quality_on_this_build: false marks a result whose quality check ran on another build, card or configuration than the speed figure (its conditions and quality text say which); absent means the check ran on the configuration the result names. A result that needs several cards lists them all in cards; card is the one whose page it cites. workload: bench (fixed prompts, one request at a time), agent-served (per-request decode measured while serving a coding agent; the agent's wall time also holds prompt reading and tool time), synthetic-many-agents (every agent reads one prompt once, then writes: decode capacity, not what agents doing real work get), agent-replay (recorded coding-agent sessions replayed with their own prompts, outputs and tool time; agent_useful_tps is output tokens over the measured window, summed over agents). agent_useful_tps: what agents got, prompt reading and tool time included.",
  "boxes": [
   {
@@ -510,6 +510,40 @@
    "date": "2026-09-27",
    "status": "measured",
    "source": "b70/bonsai-2-27b.md#speed",
+   "workload": "bench"
+  },
+  {
+   "card": "rtx-3090-ti",
+   "model": "Flint (RecursiveSI flint v1.0)",
+   "weights": "unsloth UD-Q3_K_XL GGUF",
+   "engine": "llama.cpp b12004 (3c809f443), CUDA, the server-cuda image",
+   "decode_tps": 148.9,
+   "streams": 1,
+   "prefill_tps": 4052,
+   "conditions": "llama-bench tg128 and pp4096, FA on, f16 K/V, 3 runs; IQ4_XS 146.1 and 4,398; on replayed coding-agent sessions one agent ran 15.9 turns a minute at 87.3 tok/s median decode a request (IQ4_XS, q8_0 K/V), two agents 12.9 at 89.2 (UD-Q3_K_XL, f16 K/V)",
+   "quality": "2 short prompts answered correctly; a third carried a false premise by mistake, which IQ4_XS named; coding quality not measured",
+   "date": "2026-10-30",
+   "status": "measured",
+   "source": "b70/llama.cpp-sycl-fa-sinks/#flint-on-two-b70s-and-on-an-rtx-3090-ti",
+   "workload": "bench"
+  },
+  {
+   "card": "arc-pro-b70-1",
+   "model": "Flint (RecursiveSI flint v1.0)",
+   "weights": "bartowski Q4_K_M GGUF",
+   "engine": "llama.cpp b12004 (3c809f443), SYCL, the full-intel image; prompt reading at depth needs our attention-sinks change (b70/llama.cpp-sycl-fa-sinks, public branch akapug/llama.cpp sycl-mkl-fa-sinks)",
+   "cards": [
+    "arc-pro-b70-1",
+    "arc-pro-b70-2"
+   ],
+   "decode_tps": 92.3,
+   "streams": 1,
+   "prefill_tps": 1922,
+   "conditions": "llama-bench on one card: tg128 and pp4096, FA on, ubatch 2,048, f16 K/V; with the sinks change and q8_0 K/V pp4096 2,087, and 857 against 483 at depth 48k; served as one llama-server per card; on replayed coding-agent sessions one agent ran 10.8 turns a minute at 66.1 tok/s median decode a request (8.1 at 65.0 without the change)",
+   "quality": "3 short prompts answered correctly; coding quality not measured",
+   "date": "2026-10-30",
+   "status": "measured",
+   "source": "b70/llama.cpp-sycl-fa-sinks/#flint-on-two-b70s-and-on-an-rtx-3090-ti",
    "workload": "bench"
   }
  ]
