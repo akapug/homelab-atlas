@@ -536,19 +536,73 @@ Limits:
   and 8 agents per group, so a two-point fit through n = 2 and n = 32 smooths over it.
 - Counts past the largest measured one are projections and are drawn dashed.
 - Context length, prompt mix and thinking level are whatever the runs used, and they move the window.
-- The totals are decode capacity, not agent throughput: `--workload` adds prompt reading (below).
+- The totals are decode capacity, not agent throughput. `--workload` adds prompt reads, tool gaps and server prefix re-read.
 
 ## Agent workload: `--workload`
 
 ```
-node report.js --workload [RUN_ID | all] [--profile NAME] [--fresh F] [--prefill P] [--n 16,32,64] [--json]
+node report.js --workload [RUN_ID | all] [--profile NAME] [--n 1,16] [--json]
+node report.js --workload --trace agent-long-16 --warmup-s 300 --window-s 600 --gap-scale 1
+# Optional: --server NAME --decode-one D1 --prefill P --fresh F --stagger-scale X
 ```
 
-The agents-vs-speed curves come from runs that give each agent one short prompt and then time only the writing. That
-measures **decode capacity** D: how many tokens per second the agents can write together. Real coding agents do more.
-Every turn they send the whole conversation back, and the engine has to read the new part: tool results, file contents,
-and any part it dropped from its prompt cache. Call F the fresh prompt tokens read for each token written, and P the
-rate the engine reads prompts at (prefill). Then useful output is at most
+The CLI and the Agents tab both call `agentPlan`, which uses the existing `agentTurnPredict` replay model.
+The primary output is **turns per agent-minute**. Useful tok/s is secondary because models write different answer lengths.
+A turn alone takes `out / D1 + fresh / P` seconds. The agent then waits its recorded tool gap plus client overhead.
+Here `fresh = trace growth x tokenizer ratio + server prefix re-read`. The trace includes each agent's cold first prompt.
+`out = recorded answer length x model replay ratio`. The model uses observed ratios when available, else the recording's lengths.
+**Answer length and server prefix re-read are inputs, not predictions.**
+
+Each active turn costs `out / Dn + fresh / P` server-seconds when reads stall decode.
+Otherwise it costs the larger term. The simulator slows active turns together when demand exceeds one server-second per second.
+It counts only turns sent after warm-up and completed inside the window. Time shares show solo decode, prefill and tool-gap time, not server utilization.
+
+The default trace comes from `profiles.coding-agent.turn_trace`. Default warm-up and window are 600 seconds each, from `turn_model.settings.plan_*`.
+Use `--warmup-s`, `--window-s`, `--gap-scale` or `--stagger-scale` to change them.
+`--decode-one` uses decode tok/s. `--prefill` uses prompt tok/s.
+`--fresh F` replaces total fresh tokens per output, including prefix re-read. This is an explicit sensitivity assumption.
+`synthetic-short` has no agent-turn model. It retains its decode-only diagnostics.
+
+`agentPlan` takes Dn from the fitted synthetic curve, or a measured point when no curve fits.
+D1 uses a measured solo point, including a separate single-stream path that the batch fit excludes.
+Otherwise it uses the curve at one agent and labels the extrapolation.
+P comes from the same build's replay with the highest useful output, else the existing `prefillPass` model.
+A unique engine match selects a server prior as an assumption, not build-verified cache behavior.
+Use `--server NAME` for an explicit selection. Unknown, ambiguous or cross-engine selections remain `UNMODELLED`.
+Each result lists the exact query, input tags, sources and source run IDs. Unknown re-read uses zero and marks a conditional upper bound.
+This bound holds only with the other inputs fixed. Unknown answer length can still cause a large error.
+
+### Post-hoc rescore is not prediction accuracy
+
+The CLI and UI show all retained entries, without changing their frozen original predictions.
+Configured-input (`mode: all`) uses each entry's declared mixture, not all measured inputs.
+Chunk rows retain advance predicted P values of 913/921/922 prompt tok/s, not later measured 813.7/843.6/857.7.
+Some configured-input results use measurements from the run they score. In particular, the GLM configured-input result is a calibration.
+The GLM held-out result removes that run's answer-length ratio, tokenizer ratio and inferred prefix re-read.
+It falls back to recorded answer lengths and unknown re-read. Held-out turns error remains **-30%**, with useful output about **+291%** high.
+Its older frozen prediction got 39 turns versus 40 measured. That older success is separate from the new simulator's miss.
+
+| entry | configured-input turns error | held-out turns error |
+|---|---:|---:|
+| R8, one agent | -1.4% | +4.2% |
+| R8, 16 agents | -9.1% | -25.8% |
+| R8, chunk 4096 | -4.9% | -4.9% |
+| R8, chunk 8192 | -9.0% | -9.0% |
+| R8, chunk 16384 | +1.2% | +1.2% |
+| GLM seat, one agent | 0.0% | -30.0% |
+| Ornith vLLM, one agent | -5.2% | +2.6% |
+
+These are the stored base-model rescores, rounded to one decimal place. `--workload` computes them again from the retained sources.
+They are not a blanket five-percent accuracy result. The model does not predict answer length or prefix re-read for an unmeasured model/server.
+The retained lever rows also do not establish prediction-first validation of this new simulator. Do not relabel post-hoc inputs as prediction-first evidence.
+
+### Legacy server-bound diagnostic
+
+The JSON keeps `prefill_cap`, `ceiling`, `serial`, `expect`, `binding` and `busy` for compatibility.
+The same values appear under `legacy_server`. These fields omit tool gaps and are not the per-turn estimate in `rows[].turn`.
+The CLI labels them as legacy diagnostics. Existing many-agent recipe checks retain their fluid diagnostic and real-build warning.
+
+With F fresh prompt tokens per output token, P prompt tok/s and D total decode tok/s, the legacy ceiling is
 
     min(D, P / F)
 
@@ -583,11 +637,10 @@ raises D but not the output, and only a faster prefill (or a smaller F) helps.
 traffic) into `data.workload.measured`, keyed by agent count like the curve rows: `agent_tps`, `prefill_tps`,
 `fresh_per_output`, `prefill_busy_pct`. These rows never feed the decode curves.
 
-For each curve config, the report takes D from its fitted curve, P from the real-agent row of the same build with the
-highest output (rows of other builds are listed but never borrowed), and F from the profile. Per agent count it prints
-D, P / F, the ceiling, the expected output, the binding term, the predicted prefill busy share and the `cpu_pool_rows`
-window check. Every real-agent row at that count is judged again with its own P and F, so a miss is the model's
-error, not a workload difference. A miss over `real_err_warn_pct` is marked.
+The legacy diagnostic takes D from the curve, P from the same build's highest-output replay, and F from the profile.
+It shows D, P / F, the ceiling, serial output and the CPU-pool window check.
+Each real-agent comparison uses its own P and F. This checks the old server-bound formula, not the new per-turn model.
+A miss over `real_err_warn_pct` receives a marker.
 
 When the build has no real-agent row yet, P is **predicted** from the box and the recipe (`prefillPass`, tag MODEL)
 instead of left unknown, so a many-agent recipe names its binding term before its first real-agent run. The
@@ -615,7 +668,7 @@ predicted at 424-674 tok/s for an 11,565-token prompt over its CPU-share range 0
 per-token term is 2.6x the pass term at 2048 tokens, so a bigger chunk buys little (predictions written before the
 chunk arms ran: `data/predictions-prefill-chunk-1026.json`). Left out: attention and DeltaNet costs that grow with depth.
 
-Example, Flash-Next on odie's two B70 cards (layer split, 2 groups), the build served on 2026-10-25:
+Historical legacy diagnostic, Flash-Next on two B70 cards, build served on 2026-10-25. These are not the current per-turn estimates.
 
 | agents | D (decode capacity) | P / F | expected (reads stall decode) | binding | window rows |
 |---|---|---|---|---|---|
@@ -639,11 +692,8 @@ Limits:
 - P is measured at one agent count. It moves with the read sizes, the cache and the engine settings: on the build
   served on 2026-10-26, two settings read prompts 25-35 % faster (1,085 and 1,170 tok/s against 866) but wrote no
   faster (72.5 and 69.3 tok/s against 83.4 at 16 agents), because they read more per token written (F 6.5 and 8.0).
-- No tool-time term. The formula assumes every agent is always waiting on the server, reading or decoding. Real agents
-  spend time in their tools between turns, and a lone agent leaves the server idle then. On a one-agent replay
-  (`odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026`, 32.6 tok/s) the formula read 33 % high; with the replay's
-  recorded tool time added by hand, 4.5 % high. At 16 agents other agents' work fills part of that time, and the formula
-  reads 24.5-36.3 % high on the example build above.
+- The legacy formula has no tool-time term. It read 33% high on the one-agent R8 replay and 24.5-36.3% high on this historical example.
+  The new replay model includes tool gaps. It still assumes fluid server sharing and cannot predict new answer lengths or prefix re-read.
 
 ## Blind spots we hit and the checks that now catch them
 
@@ -774,6 +824,13 @@ then scans every file name and line, gzip files decompressed, for:
 Any hit refuses the export with exit 1 and marks the copy `status=REFUSED` in `.fitviz-export`. A new kind of note
 pointer needs a rewrite rule in the manifest. A public URL that a shipped file must cite and that trips a rule gets an
 `admit` line in the manifest; the copy carries it as `.scan-admit`. Run `tools/export_atlas.sh --scan-only DIR` again before you publish.
+
+Every change that goes live on master goes public in the same pass. `tools/public-lag.sh` checks that: it fetches
+the Atlas, reads `source_commit` from the pushed `recipe-maker/.fitviz-export`, and compares it with master. It exits
+0 when they match, and 1 with one line ("Recipe Maker live at X, public at Y: N commits not public; run
+tools/export_atlas.sh") when the public copy is behind or its export is not CLEAN. It exits 2 when it cannot tell.
+`tools/install-hooks.sh` makes git run it after every commit and merge on master (`--check` says whether the hooks
+are in place); the Atlas checkout is `--atlas DIR`, `$FITVIZ_ATLAS` or `git config fitviz.atlas`. Neither script ships.
 
 ## Tests
 

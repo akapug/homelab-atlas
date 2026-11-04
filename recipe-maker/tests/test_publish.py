@@ -444,8 +444,25 @@ class Curate(unittest.TestCase):
         self.assertEqual(self.C.rewrite('package (ik ' + 'hl' + '332-stack 0123abcd)', R), 'package (ik stack 0123abcd)')
         self.assertEqual(self.C.rewrite('stopped (' + agent + ' GO 10-20 23:12Z); x', R), 'stopped (approved); x')
         self.assertEqual(self.C.rewrite('asked by gpu-box-' + 'cla' + 'ude', R), 'asked by an agent')
+        fam = 'co' + 'dex'   # an agent family named as the reviewer behind a prediction note (835d051, 10-28)
+        for raw, want in (('NOTE (' + fam + '): k is a ratio', 'NOTE (review): k is a ratio'),
+                          ('B stays PARKED (' + fam + '). Tool caveat', 'B stays PARKED (review). Tool caveat'),
+                          ('CONDITIONAL (' + fam + ': k reduces)', 'CONDITIONAL (review: k reduces)'),
+                          (fam + "'s selection rule applied", "the reviewer's selection rule applied"),
+                          ('the ' + fam + ' three-way split', "the reviewer's three-way split"),
+                          ('until ' + fam + ' confirms the path', 'until a reviewer confirms the path')):
+            self.assertEqual(self.C.rewrite(raw, R), want, raw)
         private = 'desktop logg' + 'ed out via desktop-' + 'sleep want; battery 12 + 3 real ' + 'he' + 'lm lanes'
         self.assertEqual(self.C.rewrite(private, R), 'dedicated GPU allocation; battery 12 + 3 real coding tasks')
+        hl, seat = 'h' + 'l', 'lab-' + 'cla' + 'ude'   # task-ledger ids and seat names in prediction notes (11-04)
+        for raw, want in (('src: homelab seat ' + seat + ' b70-rig/bench/results/' + hl + '356/c/b1', 'src: b70-rig/bench/results/c/b1'),
+                          ('MEASURED slopes (' + hl + '353) + share', 'MEASURED slopes + share'),
+                          ('lab notes B70 #2 row, ' + hl.upper() + '283)', 'lab notes B70 #2 row)'),
+                          (hl.upper() + '336 ts3: matched', 'ts3: matched'),
+                          ('cured after the ' + seat + ' meld: control', 'cured after a review: control'),
+                          ('the map (PLAN-MAP-2026-01-01) pulls', 'the map (lab notes) pulls')):
+            self.assertEqual(self.C.rewrite(raw, R), want, raw)
+        self.assertNotRegex(self.C.rewrite('tags ["' + hl + '356", "n1"]', R), r'(?i)\bhl\d')
         with open(os.path.join(ROOT, 'publish', 'manifest.json')) as f:
             man = json.load(f)
         fixtures = ['tests/test_expert_residency.js', 'tests/test_research_memory.js']
@@ -455,6 +472,14 @@ class Curate(unittest.TestCase):
         R = self.C.rules({'rewrite': []}, '/home/' + 'someone')
         for raw in ('/home/' + 'someone/m.gguf', '/home/' + 'user/m.gguf', '/Users/' + 'x/m.gguf'):
             self.assertEqual(self.C.rewrite(raw, R), '~/m.gguf', raw)
+
+    def test_run_keeps_all_output_of_a_node_that_exits(self):
+        # node writes a full pipe asynchronously and process.exit() cuts it; curate's run must get every line
+        js = "for (let i = 0; i < 20000; i++) console.log('line ' + i + ' ' + 'x'.repeat(40)); process.exit(0);"
+        out = self.C.run(['node', '-e', js], ROOT)
+        lines = out.splitlines()
+        self.assertEqual(len(lines), 20000)
+        self.assertTrue(lines[-1].startswith('line 19999 '))
 
     def test_degraded_class_without_a_label(self):
         self.assertEqual(self.C.degraded_class('CUDA OOM at chunk 8192', []), 'out of memory')

@@ -1,0 +1,159 @@
+{
+ "id": "odie-flint-q4km-1perCard-fit1030",
+ "label": "Flint Q4_K_M, one llama-server per B70 (the flint-1030 seat recipe), every resident_plan input FIT or MEASURED on the lane's own bench and replay rows: the baseline that the bottleneck map (lab notes) pulls levers from with report.js --resident --set",
+ "box": "odie",
+ "model": "flint",
+ "engine": "sycl",
+ "engine_build": "mainline llama.cpp SYCL >= b11803 (F16-overflow expert-activation scaling workaround)",
+ "files": [
+  {
+   "path": "/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf",
+   "holds": "experts + non-experts",
+   "access": "loaded",
+   "note": "bartowski Q4_K_M, 25,346,651,360 bytes; header read into data/models/flint.json"
+  }
+ ],
+ "conditions": {
+  "engine_flags": "llama-server -ngl 99 -fa on -c 262144 -np 2 --cache-type-k q8_0 --cache-type-v q8_0 -ub 2048 -b 2048 --jinja --metrics --cache-reuse 256, one container per card (:8101, :8102), dp-affinity-proxy :8090",
+  "workload": {
+   "trace": "agent-long-16",
+   "agents": [
+    1,
+    2,
+    4
+   ]
+  }
+ },
+ "src": "lab notes: llama-bench depth rows and the agent-long-16 replay rows n1/n2/n4b; refit 2026-10-30 after the run, so this is a calibration, not a prediction",
+ "note": "Not a frozen prediction. The before-run prediction stays recipes/odie-flint-q4km-1perCard.json + data/predictions-flint-1030.json. Inputs changed from that recipe carry FIT or MEASURED with their source",
+ "resident_plan": {
+  "trace": "agent-long-16",
+  "server": "llamacpp-sycl-slots-swa",
+  "stall_src": "READ: llama-server batches prompt chunks and decode tokens into one step (continuous batching), so a read delays the decode of the other slot",
+  "inputs": {
+   "instances": {
+    "v": 2,
+    "tag": "READ",
+    "src": "one llama-server per B70 (:8101, :8102) behind dp-affinity-proxy :8090: a conversation sticks to one card, new conversations split evenly"
+   },
+   "slots": {
+    "v": 2,
+    "tag": "READ",
+    "src": "-np 2 per server: at most two turns decode together on a card; with -c 262144 each slot holds 131,072 tokens"
+   },
+   "warmup_s": {
+    "v": 120,
+    "tag": "READ",
+    "src": "READ: the lane replays ran --warmup-s 120 --duration-s 600 (flint-1030 README)"
+   },
+   "window_s": {
+    "v": 600,
+    "tag": "READ",
+    "src": "READ: --duration-s 600 (flint-1030 README)"
+   },
+   "layers": {
+    "v": 49,
+    "tag": "READ",
+    "src": "config.json num_hidden_layers 49 (2 dense + 47 MoE); GGUF block_count"
+   },
+   "experts": {
+    "v": 256,
+    "tag": "READ",
+    "src": "GGUF header expert_count 256"
+   },
+   "experts_used": {
+    "v": 6,
+    "tag": "READ",
+    "src": "GGUF header expert_used_count 6 (+ 1 shared, counted in dense_read_gb)"
+   },
+   "dense_read_gb": {
+    "v": 1.8032,
+    "tag": "READ",
+    "src": "data/models/flint.json intake: all tensors read each token except routed experts and the token_embd lookup: attention 0.983 + output 0.327 + shared experts 0.314 + router 0.099 + dense FFN of layers 0-1 0.080 GB"
+   },
+   "experts_all_gb": {
+    "v": 23.2113,
+    "tag": "READ",
+    "src": "data/models/flint.json intake: routed expert tensors (q4_K / q5_K / q6_K / q8_0 mix), all 256 x 47 layers; one token reads 6/256 of them = 0.544 GB"
+   },
+   "file_gb": {
+    "v": 25.3467,
+    "tag": "READ",
+    "src": "GGUF file size; a 2048-token prompt chunk touches every expert, so each chunk reads the whole file once"
+   },
+   "kv_bytes_per_token": {
+    "v": 15232,
+    "tag": "INFERRED",
+    "src": "config.json: 14 full-attention layers x 4 KV heads x (K 128 + V 128) x 1.0625 B (q8_0) = 15,232 B per context token read per decoded token. The 35 sliding-window layers read 513 cells each (~19.5 MB a token, < 2 % at 80k depth): left out"
+   },
+   "kv_read_eff": {
+    "v": 0.25,
+    "tag": "FIT",
+    "src": "FIT: llama-bench tg128 at depth 16,384 = 80.4 (model 79.7) and 65,536 = 52.3 (model 56.0); replay decode per request 65.0 at depth 48,750 (model 62.3) (flint-1030 README). Below the before-run range 0.3-1.0"
+   },
+   "depth_tokens": {
+    "v": 50000,
+    "tag": "MEASURED",
+    "src": "MEASURED: replay prompt depth median 48,750 / 50,857 / 49,222 at n1 / n2 / n4b (flint-1030 README). The trace-wide median 81,724 is in recorded tokens: Flint reads the trace at 0.55-0.6x the recorded count (flint-1030-cuda README, MEASURED: agent 0 deepest turn 64k Flint tokens against 118k recorded), so ~50k is about the trace median in Flint tokens, not a window that ends early (INFERRED)"
+   },
+   "read_tokens": {
+    "v": 2000,
+    "tag": "INFERRED",
+    "src": "a read's fresh tokens incl. re-read: R8's measured mean per read 2,187 at 1 agent and 1,202 at 16 (data/predictions-fit-in-vram-1027.json inputs.read_mix); P barely moves with it (one chunk either way)"
+   },
+   "chunk": {
+    "v": 2048,
+    "tag": "READ",
+    "src": "-ub 2048 -b 2048"
+   },
+   "decode_anchors": {
+    "v": [
+     {
+      "id": "odie-sycl-qwen3-30b-a3b-q4_k_s-r1-0903",
+      "read_gb": 1.8452,
+      "layers": 48,
+      "tps": 114.792
+     },
+     {
+      "id": "odie-sycl-gpt-oss-20b-mxfp4-r1-0903",
+      "read_gb": 2.5747,
+      "layers": 24,
+      "tps": 137.135
+     }
+    ],
+    "tag": "MEASURED",
+    "src": "MEASURED: runs/bench.jsonl, mainline llama.cpp SYCL b11706 (f74e2fa6a), one B70 (4c:00.0), llama-bench tg128 short prompt, every weight resident: two MoE models fit t = read_gb x a + layers x c, giving ~563 GB/s effective and ~0.113 ms a layer of launch cost. Older build than b11803 (INFERRED: same kernels apart from the overflow workaround)"
+   },
+   "engine_slowdown": {
+    "v": 1.109,
+    "tag": "FIT",
+    "src": "FIT: decode at depth 0 = llama-bench tg128 92.8 (1 card, FA on, ub 512; flint-1030 README) on the two decode anchors"
+   },
+   "batch_layer_mult": {
+    "v": 1.25,
+    "tag": "INFERRED",
+    "src": "ASSUMPTION: two tokens in one step (two slots) cost 1.25x the single-token launch time per layer (SYCL mmvq/MUL_MAT_ID handle up to 8 columns with their small-batch kernels: lab notes). Range 1.0-1.6"
+   },
+   "linear_ms_per_token": {
+    "v": 0.4493,
+    "tag": "FIT",
+    "src": "FIT: llama-bench pp4096 at depth 0 = 1,922 (FA on, ub 2048; flint-1030 README) = 2 chunks x tpass + 4,096 x slowdown x linear. The before-run 0.21 was half"
+   },
+   "attn_ms_per_token_per_ctx": {
+    "v": 0.0000247,
+    "tag": "FIT",
+    "src": "FIT: replay server prefill 587 tok/s at n1 (depth median 48,750, ~2,000 fresh tokens a read; flint-1030 README). The fixed-depth bench rows fit 3.3e-5 (pp512 at 16k 839 / 64k 370, pp1024 at 48k 483): replay reads span shallower depths. Before-run assumption 8.1e-6 was 3-4x low"
+   },
+   "out_ratio": {
+    "v": 0.25,
+    "tag": "MEASURED",
+    "src": "MEASURED: out_vs_recorded 0.247 / 0.249 at n1 / n2 (0.325 at n4b) (flint-1030 README): Flint ends a turn at a quarter of the recorded Claude output"
+   },
+   "reread_per_turn": {
+    "v": 300,
+    "tag": "MEASURED",
+    "src": "MEASURED: F_reread 2.69 x 103 mean output tokens a turn at n2 = ~280 re-read tokens a turn (flint-1030 README); n1 1,187 a turn carries one 48,121-token whole re-read (agent 0 tool list change at turn 29), n4b ~600"
+   }
+  }
+ }
+}

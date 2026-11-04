@@ -54,7 +54,10 @@ CAVEATS = 'run_caveats.json'   # beside the ledger: dated caveats and correction
 
 def caveats(path):
     p = os.path.join(os.path.dirname(path), CAVEATS)
-    return {k: v for k, v in json.load(open(p, encoding='utf-8')).items() if k != '_doc'} if os.path.exists(p) else {}
+    if not os.path.exists(p):
+        return {}
+    with open(p, encoding='utf-8') as f:
+        return {k: v for k, v in json.load(f).items() if k != '_doc'}
 
 
 def overlay(row, cv):

@@ -1,0 +1,49 @@
+{
+ "id": "odie-flint-q4km-1perCard",
+ "label": "Flint 39.8B-A2.5B Q4_K_M, one llama-server per B70, every weight in VRAM, q8_0 KV, -np 2 per card, conversation-affinity proxy; replay agent-long-16",
+ "box": "odie",
+ "model": "flint",
+ "engine": "sycl",
+ "engine_build": "mainline llama.cpp SYCL >= b11803 (F16-overflow expert-activation scaling workaround)",
+ "files": [
+  {"path": "/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf", "holds": "experts + non-experts", "access": "loaded", "note": "bartowski Q4_K_M, 25,346,651,360 bytes; header read into data/models/flint.json"}
+ ],
+ "conditions": {
+  "engine_flags": "llama-server -ngl 99 -fa on -c 262144 -np 2 --cache-type-k q8_0 --cache-type-v q8_0 -ub 2048 -b 2048 --jinja --metrics --cache-reuse 256, one container per card (:8101, :8102), dp-affinity-proxy :8090",
+  "workload": {"trace": "agent-long-16", "agents": [1, 4, 8]}
+ },
+ "src": "lane flint-1030 launch line, read from odie's process table (read-only) 2026-10-30; spec from the GGUF header and config.json",
+ "note": "Prediction written before any replay of this build; see data/predictions-flint-1030.json. Every input not READ or MEASURED is an ASSUMPTION and says so.",
+ "resident_plan": {
+  "trace": "agent-long-16",
+  "server": "llamacpp-sycl-slots-swa",
+  "stall_src": "READ: llama-server batches prompt chunks and decode tokens into one step (continuous batching), so a read delays the decode of the other slot",
+  "inputs": {
+   "instances": {"v": 2, "tag": "READ", "src": "one llama-server per B70 (:8101, :8102) behind dp-affinity-proxy :8090: a conversation sticks to one card, new conversations split evenly"},
+   "slots": {"v": 2, "tag": "READ", "src": "-np 2 per server: at most two turns decode together on a card; with -c 262144 each slot holds 131,072 tokens"},
+   "warmup_s": {"v": 600, "tag": "INFERRED", "src": "ASSUMPTION: the lane replays as the rows did (agent-replay --warmup-s 600 --duration-s 600)"},
+   "window_s": {"v": 600, "tag": "INFERRED", "src": "ASSUMPTION: as warmup_s"},
+   "layers": {"v": 49, "tag": "READ", "src": "config.json num_hidden_layers 49 (2 dense + 47 MoE); GGUF block_count"},
+   "experts": {"v": 256, "tag": "READ", "src": "GGUF header expert_count 256"},
+   "experts_used": {"v": 6, "tag": "READ", "src": "GGUF header expert_used_count 6 (+ 1 shared, counted in dense_read_gb)"},
+   "dense_read_gb": {"v": 1.8032, "tag": "READ", "src": "data/models/flint.json intake: all tensors read each token except routed experts and the token_embd lookup: attention 0.983 + output 0.327 + shared experts 0.314 + router 0.099 + dense FFN of layers 0-1 0.080 GB"},
+   "experts_all_gb": {"v": 23.2113, "tag": "READ", "src": "data/models/flint.json intake: routed expert tensors (q4_K / q5_K / q6_K / q8_0 mix), all 256 x 47 layers; one token reads 6/256 of them = 0.544 GB"},
+   "file_gb": {"v": 25.3467, "tag": "READ", "src": "GGUF file size; a 2048-token prompt chunk touches every expert, so each chunk reads the whole file once"},
+   "kv_bytes_per_token": {"v": 15232, "tag": "INFERRED", "src": "config.json: 14 full-attention layers x 4 KV heads x (K 128 + V 128) x 1.0625 B (q8_0) = 15,232 B per context token read per decoded token. The 35 sliding-window layers read 513 cells each (~19.5 MB a token, < 2 % at 80k depth): left out"},
+   "kv_read_eff": {"v": 0.5, "tag": "INFERRED", "src": "ASSUMPTION (high leverage at depth): SYCL flash-attention decode reads q8_0 KV at half the effective weight-read bandwidth. Range 0.3-1.0. No llama.cpp SYCL depth sweep of a GQA model on the B70 in the ledger"},
+   "depth_tokens": {"v": 80000, "tag": "READ", "src": "agent-long-16 prompt_tokens median 81,724 (agent-replay stats, as data/predictions-fit-in-vram-1027.json inputs.agent_depth_tokens)"},
+   "read_tokens": {"v": 2000, "tag": "INFERRED", "src": "a read's fresh tokens incl. re-read: R8's measured mean per read 2,187 at 1 agent and 1,202 at 16 (data/predictions-fit-in-vram-1027.json inputs.read_mix); P barely moves with it (one chunk either way)"},
+   "chunk": {"v": 2048, "tag": "READ", "src": "-ub 2048 -b 2048"},
+   "out_ratio": {"v": 1.0, "tag": "INFERRED", "src": "ASSUMPTION (before any run): the recording's own output lengths, as the turn model's table gave it at 10:52Z (no Flint replay, models.flint.out_vs_recorded empty). Pinned in the recipe when data/workload.json took the measured flint-1030 rows, so the frozen prediction reproduces"},
+   "reread_per_turn": {"v": 1500, "tag": "INFERRED", "src": "ASSUMPTION (before any run): about one -ub 2048 chunk a turn back to the last context checkpoint, between strata's measured 708 (R8 n1) and vLLM align mode's measured 2,396 (Ornith n1); range 300-6,000. The turn model's llamacpp-sycl-slots-swa row held it at 10:52Z; pinned in the recipe when that row took the measured flint-1030 values, so the frozen prediction reproduces"},
+   "decode_anchors": {"v": [
+     {"id": "odie-sycl-qwen3-30b-a3b-q4_k_s-r1-0903", "read_gb": 1.8452, "layers": 48, "tps": 114.792},
+     {"id": "odie-sycl-gpt-oss-20b-mxfp4-r1-0903", "read_gb": 2.5747, "layers": 24, "tps": 137.135}],
+    "tag": "MEASURED", "src": "MEASURED: runs/bench.jsonl, mainline llama.cpp SYCL b11706 (f74e2fa6a), one B70 (4c:00.0), llama-bench tg128 short prompt, every weight resident: two MoE models fit t = read_gb x a + layers x c, giving ~563 GB/s effective and ~0.113 ms a layer of launch cost. Older build than b11803 (INFERRED: same kernels apart from the overflow workaround)"},
+   "engine_slowdown": {"v": 1.2, "tag": "INFERRED", "src": "ASSUMPTION: the b11803 F16-overflow expert-activation scaling workaround's stated 10-30 % slowdown, midpoint, applied to every weight-read and launch term (decode) and to the linear prefill term. Range 1.1-1.3"},
+   "batch_layer_mult": {"v": 1.25, "tag": "INFERRED", "src": "ASSUMPTION: two tokens in one step (two slots) cost 1.25x the single-token launch time per layer (SYCL mmvq/MUL_MAT_ID handle up to 8 columns with their small-batch kernels: lab notes). Range 1.0-1.6"},
+   "linear_ms_per_token": {"v": 0.21, "tag": "INFERRED", "src": "ASSUMPTION (high leverage): prefill weight math per token. vLLM XPU measured 0.128 ms on a 3B-active MoE with every weight resident (data/predictions-fit-in-vram-1027.json inputs.m_ms_per_token); x 2.5/3 active, x 2 for llama.cpp SYCL MUL_MAT_ID against vLLM's kernels (no Flint or llama.cpp-SYCL resident-MoE prefill ubench yet). Range 0.10-0.40"},
+   "attn_ms_per_token_per_ctx": {"v": 8.1e-06, "tag": "INFERRED", "src": "ASSUMPTION (highest leverage at 80k depth): vLLM XPU's 2.9e-6 ms per token per context token on a model with 10 full-attention layers of 4,096 query width (data/predictions-fit-in-vram-1027.json inputs.attn_s_per_token_per_ctx_token), x 1.4 for Flint's 14 such layers, x 2 for llama.cpp SYCL flash attention against vLLM's. At 80k this is 0.65 ms a token, about 70 % of a read. Range 4e-6 to 1.6e-5"}
+  }
+ }
+}

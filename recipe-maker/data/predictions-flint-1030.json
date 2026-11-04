@@ -1,0 +1,316 @@
+{
+ "about": "Falsifiable predictions for Flint (RecursiveSI/flint, 39.8B total / ~2.5B active MoE) on odie, written by Recipe Maker BEFORE any replay of lane flint-1030 returned numbers (the two servers had been up ~3 min; no replay result existed). Do not edit the predicted numbers after the measurements land; add a measured block beside them.",
+ "written_utc": "2026-10-30T10:52Z",
+ "recipe": "recipes/odie-flint-q4km-1perCard.json (every input tagged; ASSUMPTION marks each that rests on no Flint or llama.cpp-SYCL measurement)",
+ "command": "python3 build.py && node report.js --resident recipes/odie-flint-q4km-1perCard.json --n 1,4,8 [--json]",
+ "model": "src/model.js residentTerms + residentAgentPlan: decode t = engine_slowdown x (bytes x a + layers x c x batch mult) + KV(depth) x a / kv_read_eff, with a and c fitted on two measured llama.cpp-SYCL B70 decode anchors; prefill per read = chunks x (file bytes x a) + T x (slowdown x linear + attn x depth); agents split over the two instances by conversation affinity, each share replayed by agentTurnPredict (the per-turn model of the rescores) with Dn at min(agents on the card, slots)",
+ "terms": {
+  "bw_eff_gbs": 562.6,
+  "layer_ms": 0.1132,
+  "tpass_ms": 45.1,
+  "prefill_tps": 1084,
+  "decode_short_1": 85.8,
+  "decode_80k_1": 62.5,
+  "decode_80k_2slots_card": 86.5
+ },
+ "predictions": {
+  "1": {
+   "turns_per_agent_min": 5.2,
+   "useful_tps_per_agent": 39.3,
+   "useful_tps_total": 39.3,
+   "decode_per_request": 62.5,
+   "card_decode_at_slots": [
+    62.5
+   ],
+   "prefill_tps": 1084,
+   "fresh_per_output": 6.56,
+   "out_per_turn": 453,
+   "binding": [
+    "agents"
+   ],
+   "solo_shares": {
+    "decode": 0.638,
+    "prefill": 0.241,
+    "gap": 0.121
+   },
+   "band_all_low_all_high": {
+    "turns": [
+     2.2,
+     7.1
+    ],
+    "useful": [
+     20.2,
+     55.7
+    ]
+   }
+  },
+  "4": {
+   "turns_per_agent_min": 3.75,
+   "useful_tps_per_agent": 23.2,
+   "useful_tps_total": 92.9,
+   "decode_per_request": 62.5,
+   "card_decode_at_slots": [
+    86.5,
+    86.5
+   ],
+   "prefill_tps": 1084,
+   "fresh_per_output": 8.59,
+   "out_per_turn": 372,
+   "binding": [
+    "decode",
+    "decode"
+   ],
+   "solo_shares": {
+    "decode": 0.577,
+    "prefill": 0.286,
+    "gap": 0.138
+   },
+   "band_all_low_all_high": {
+    "turns": [
+     1.45,
+     6.35
+    ],
+    "useful": [
+     9.0,
+     45.2
+    ]
+   }
+  },
+  "8": {
+   "turns_per_agent_min": 2.02,
+   "useful_tps_per_agent": 14.1,
+   "useful_tps_total": 112.7,
+   "decode_per_request": 62.5,
+   "card_decode_at_slots": [
+    86.5,
+    86.5
+   ],
+   "prefill_tps": 1084,
+   "fresh_per_output": 5.85,
+   "out_per_turn": 417,
+   "binding": [
+    "decode",
+    "decode"
+   ],
+   "solo_shares": {
+    "decode": 0.62,
+    "prefill": 0.209,
+    "gap": 0.17
+   },
+   "band_all_low_all_high": {
+    "turns": [
+     0.7,
+     3.5
+    ],
+    "useful": [
+     3.5,
+     24.1
+    ]
+   }
+  }
+ },
+ "binding_note": "n=1: the agent alone cycles (binding agents); its turn is 64 % decode, 24 % prefill, 12 % tool gap, so decode dominates. n=4 and n=8: each card is decode-bound at its two slots (server busy 100 %); at n=8 two conversations per card wait for a slot",
+ "leverage": "one-at-a-time sensitivity on turns/agent-min at n=4 (base 3.75): prefix re-read 300 / 6,000 tokens a turn -> 4.60 / 2.20; attention at depth 4e-6 / 1.6e-5 ms -> 4.50 / 2.75 (P 1,682 / 643); kv_read_eff 1.0 / 0.3 -> 4.20 / 3.20; answer length 0.5x recorded -> 5.50 turns but 17.8 useful tok/s. A llama-server that misses its SWA context checkpoint re-reads the whole ~80k prompt each turn: 0.3 turns/agent-min at n=4 (not the base case)",
+ "gaps": [
+  "no slot queue in agentReplaySim: at n=8 four conversations share a card with two slots; modelled as processor sharing at the two-slot decode rate (work-conserving, so turns/s holds; per-turn latency spread does not), with no slot-restore cost from --cache-ram",
+  "each instance replays recorded agents 0..k-1 (both cards replay the same agents), not the proxy's actual assignment",
+  "answer length: no Flint replay, so the recording's own lengths (out_vs_recorded 1.0); Flash-Next wrote 0.4x, Ornith 0.7x",
+  "tokenizer: Flint's own vocabulary assumed equal to qwen's token count",
+  "decode at depth has no SYCL depth anchor; prefill has no llama.cpp-SYCL resident-MoE anchor (both from vLLM XPU and the bandwidth fit)"
+ ],
+ "falsifiers": [
+  "turns/agent-min outside the all-low..all-high band at any agent count falsifies the resident model",
+  "decode/request at n=1 outside 50-78 tok/s",
+  "server prefill outside 550-2,200 tok/s"
+ ],
+ "seen_after_commit": {
+  "tag": "MEASURED",
+  "note": "Read AFTER the prediction commit 5be2126 (10:52Z). The lane's llama-bench files (odie ~/flint-1030/bench-1card-q4km.md 10:32Z, bench-2card-q4km.md 10:41Z) existed before that commit but were not read for it: the prediction used none of them. Synthetic short-prompt numbers only; the replay is still running",
+  "build": "llama.cpp 3c809f443 (12004), SYCL, ngl 99",
+  "tg128_fa1_ub2048": {
+   "one_card": 92.31,
+   "two_card": 88.66,
+   "rm_short_decode": 85.8,
+   "err": "-7 % (RM low)"
+  },
+  "pp4096_fa1_ub2048": {
+   "one_card": 1921.8,
+   "rm_depth0": 3650,
+   "err": "+90 % (RM high): the linear prefill term ASSUMED 0.21 ms (0.252 with the slowdown) a token reads ~0.47 ms from this row"
+  },
+  "expectation_not_a_prediction": "with the linear term this row implies and the assumed depth term unchanged, P at 80k ~870 tok/s and n=1/4/8 turns/agent-min ~5.1 / 3.5 / 1.75 (the lin 0.40 sensitivity row). The frozen predictions above stay as written and are what gets scored"
+ },
+ "measured": {
+  "tag": "MEASURED",
+  "recorded_utc": "2026-10-30T20:48Z",
+  "note": "Added after the runs; the predictions above stay as written. v1 = the predicted config (stock image build 12004, q8_0 KV, -np 2 a card, dp-affinity-proxy :8090), agent-long-16, 120 s warm-up then a 600 s window, gap scale 1. out_per_turn_mean_inferred = useful tok/s x 600 s / turns (the prediction's out_per_turn is a mean)",
+  "src": "lab notes",
+  "rows": [
+   {
+    "run": "flint-q4km-n1",
+    "agents": 1,
+    "turns_per_agent_min": 8.1,
+    "useful_tps_per_agent": 15.41,
+    "decode_per_request_median": 64.97,
+    "prefill_tps_server": 586.6,
+    "fresh_per_output": 20.08,
+    "F_split": {
+     "cold": 1.5,
+     "growth": 8.17,
+     "reread": 10.41
+    },
+    "out_per_turn_median": 83,
+    "out_per_turn_mean_inferred": 114,
+    "out_vs_recorded": 0.247,
+    "prompt_depth_median": 48750,
+    "ttft_s_median": 2.2,
+    "stall_pct": 0.0,
+    "errors": 0,
+    "note": "one agent on one card"
+   },
+   {
+    "run": "flint-q4km-n2",
+    "agents": 2,
+    "turns_per_agent_min": 9.2,
+    "useful_tps_per_agent": 15.85,
+    "decode_per_request_median": 63.41,
+    "prefill_tps_server": 564.0,
+    "fresh_per_output": 15.09,
+    "F_split": {
+     "cold": 1.46,
+     "growth": 10.94,
+     "reread": 2.69
+    },
+    "out_per_turn_median": 78.5,
+    "out_per_turn_mean_inferred": 103,
+    "out_vs_recorded": 0.249,
+    "prompt_depth_median": 50857.0,
+    "ttft_s_median": 2.1,
+    "stall_pct": 2.6,
+    "errors": 0,
+    "note": "one agent per card; not a predicted agent count"
+   },
+   {
+    "run": "flint-q4km-n4b",
+    "agents": 4,
+    "turns_per_agent_min": 4.625,
+    "useful_tps_per_agent": 10.79,
+    "decode_per_request_median": 31.0,
+    "prefill_tps_server": 600.4,
+    "fresh_per_output": 12.51,
+    "F_split": {
+     "cold": 1.21,
+     "growth": 7.0,
+     "reread": 4.3
+    },
+    "out_per_turn_median": 88,
+    "out_per_turn_mean_inferred": 140,
+    "out_vs_recorded": 0.325,
+    "prompt_depth_median": 49222,
+    "ttft_s_median": 3.4,
+    "stall_pct": 22.1,
+    "errors": 0,
+    "note": "two agents per card, after a fresh proxy restart (2+2 split); the n4 run before it was a routing fault (3+1, 38 evictions) and is not scored"
+   }
+  ],
+  "scores": {
+   "1": {
+    "turns_per_agent_min": {
+     "predicted": 5.2,
+     "measured": 8.1,
+     "err": "+56 %",
+     "verdict": "FALSIFIED: above the all-high band 2.2-7.1"
+    },
+    "useful_tps_per_agent": {
+     "predicted": 39.3,
+     "measured": 15.41,
+     "err": "-61 %",
+     "verdict": "FALSIFIED: below the all-low band 20.2-55.7"
+    },
+    "decode_per_request": {
+     "predicted": 62.5,
+     "measured": 64.97,
+     "err": "+4 %",
+     "verdict": "HIT: inside the falsifier range 50-78 (at ~49k depth, not 80k)"
+    },
+    "prefill_tps": {
+     "predicted": 1084,
+     "measured": 586.6,
+     "err": "-46 %",
+     "verdict": "inside the falsifier range 550-2,200, at its low edge"
+    },
+    "fresh_per_output": {
+     "predicted": 6.56,
+     "measured": 20.08
+    },
+    "out_per_turn": {
+     "predicted": 453,
+     "measured_mean_inferred": 114,
+     "measured_median": 83
+    }
+   },
+   "4": {
+    "turns_per_agent_min": {
+     "predicted": 3.75,
+     "measured": 4.625,
+     "err": "+23 %",
+     "verdict": "inside the band 1.45-6.35"
+    },
+    "useful_tps_per_agent": {
+     "predicted": 23.2,
+     "measured": 10.79,
+     "err": "-53 %",
+     "verdict": "inside the band 9.0-45.2"
+    },
+    "decode_per_request": {
+     "predicted": 62.5,
+     "measured": 31.0,
+     "err": "-50 %",
+     "verdict": "MISS: a slot's prefill chunk runs in the same batch step as the other slot's decode token (22 % stall)"
+    },
+    "prefill_tps": {
+     "predicted": 1084,
+     "measured": 600.4,
+     "err": "-45 %",
+     "verdict": "inside the falsifier range 550-2,200"
+    },
+    "fresh_per_output": {
+     "predicted": 8.59,
+     "measured": 12.51
+    },
+    "out_per_turn": {
+     "predicted": 372,
+     "measured_mean_inferred": 140,
+     "measured_median": 88
+    }
+   },
+   "8": {
+    "verdict": "NOT RUN: the lane runs 8 agents only if 4 clear 40 useful tok/s each, and they did not"
+   }
+  },
+  "why_it_missed": [
+   "MEASURED: Flint ends a turn at about a quarter of the recorded length (out_vs_recorded 0.247 / 0.249 / 0.325) where the prediction used the recording's own lengths (1.0): useful tok/s falls with it, and turns rise because a turn is shorter",
+   "MEASURED: prefill at agent depth is about half the predicted 1,084 (server 564-600); README: build 12004 runs every Flint prefill on the TILE kernel because both XMX paths refuse attention sinks",
+   "MEASURED: the prefix re-read the prediction assumed (1,500 a turn) is not the server's: 182 of 184 n2 turns read only their growth; what re-read there is comes from agent 0's tool-list change in the trace (data/workload.json turn_model.servers.llamacpp-sycl-slots-swa)",
+   "MEASURED: at two agents a card decode halves (31.0 a request) instead of batching up to the predicted 86.5 a card"
+  ],
+  "v2_after": {
+   "note": "not the predicted config: build 12004 with the patched SYCL flash-attention library (sinks), q8_0 KV, systemd units, proxy in-flight fix; context only, never scored against the frozen numbers",
+   "src": "lab notes",
+   "n2_one_per_card": {
+    "turns_per_agent_min": 10.45,
+    "decode_per_request_median": 60.8,
+    "ttft_s_median": 1.8,
+    "stall_pct": 8.4,
+    "v1": 9.2
+   },
+   "n4b_two_per_card": {
+    "turns_per_agent_min": 5.75,
+    "decode_per_request_median": 31.5,
+    "ttft_s_median": 2.05,
+    "stall_pct": 10.6,
+    "v1": 4.6
+   }
+  }
+ }
+}

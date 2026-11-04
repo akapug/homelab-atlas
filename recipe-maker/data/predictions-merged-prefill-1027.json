@@ -1,0 +1,2308 @@
+{
+ "about": "Falsifiable prediction for lab notes merged multi-slot prefill (STRATA_BATCH_PREFILL_MERGED=1), written BEFORE any GPU run of the candidate (and first stated in the lab's design note, lab notes section 7, before the code). Do not edit the predicted numbers after the measurements land; add a 'measured' block beside them.",
+ "written_utc": "2026-10-27T17:15Z (image aa37f7e7 built on droopy and CPU-proven; no odie run of it yet)",
+ "recipe": "odie 2x Arc Pro B70, Qwen3.8-Flash-Next GSQ-RCO IQ3_XXS, layer split 25, --batch 32 --batch-groups 2 --kv k8v4 --kv-resident 4096, MAX_CONTEXT 131072, the served lever env real-comp1-no-gdn. Arms on the one new image (engine 6d5c0b8 = comp1 8c783ac + merged prefill): mp-off (control) and mp-on (STRATA_BATCH_PREFILL_MERGED=1), 16 agents, agent-replay --trace agent-long-16 --warmup-s 600, 600 s windows, 2 runs per arm, alternating.",
+ "equation": "useful = 1 / (1 / D + F / P) (src/model.js agentThroughput). The lever changes P only: reads longer than the window path's 512 tokens share one expert pass per prompt chunk (prefill.cpp stream_all from 2048 rows; a routed read of 300+ tokens touches nearly every one of the 512 experts a layer anyway), instead of one pass per agent read. Read as a ratio against the same-booking control (the model reads ~1.5x high in absolute terms, replay noise ~11 %).",
+ "inputs": {
+  "served_useful_16": {
+   "v": 83.4,
+   "tag": "MEASURED",
+   "src": "runs odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026 (86.0), -r2 (84.6), -r3 (79.6)"
+  },
+  "served_turns_per_agent_min": {
+   "v": 1.12,
+   "tag": "MEASURED",
+   "src": "handoff section 4 (comp1 set, 3 runs)"
+  },
+  "served_P": {
+   "v": 866,
+   "tag": "MEASURED",
+   "src": "fresh prompt tokens / server prompt time on those rows"
+  },
+  "served_F": {
+   "v": 4.8,
+   "tag": "MEASURED",
+   "src": "server fresh / output on those rows (4.78-4.98); 4.4 used in the model as in predictions-comp1-xe022-1027"
+  },
+  "served_D_model": {
+   "v": 279,
+   "tag": "MEASURED",
+   "src": "synthetic 16-agent decode capacity (handoff section 2)"
+  },
+  "single_card_prefill_by_read": {
+   "v": "1K 1,173 / 4K 1,639 / 32K 2,487 tok/s",
+   "tag": "MEASURED-BY-THEM",
+   "src": "XeStrata xe0.2.2-1 release notes, one B70: a fixed per-pass cost amortized over longer reads"
+  },
+  "expert_pass_per_chunk": {
+   "v": "every non-resident expert of every layer from 2048 rows (STREAM_ALL_MIN); routed ring below",
+   "tag": "READ",
+   "src": "XeStrata prefill.cpp 1872 / 138 at 8c783ac"
+  },
+  "reader_overlap": {
+   "v": "unknown; the serial path queues reads, so a queue forms whenever P limits",
+   "tag": "UNMEASURED"
+  }
+ },
+ "predictions": {
+  "P": {
+   "v": 1800,
+   "range": [
+    1400,
+    2400
+   ],
+   "tag": "MODEL",
+   "src": "2-3 reads a chunk sharing one pass, against the per-read curve 1.2k (1K) -> 2.5k (32K)"
+  },
+  "useful_16": {
+   "v": 125,
+   "range": [
+    110,
+    165
+   ],
+   "tag": "MODEL",
+   "src": "agentThroughput at D 279, F 4.4: P 866 -> 115.4, P 1400 -> 148.7 (x1.29), P 2400 -> 184.6 (x1.60); applied to the served 83.4 gives 107-133; the design note's 110-165 (written first) is kept as the stated band"
+  },
+  "useful_16_ratio": {
+   "v": 1.45,
+   "range": [
+    1.3,
+    1.98
+   ],
+   "tag": "MODEL",
+   "src": "useful_16 / the served 83.4"
+  },
+  "turns_per_agent_min": {
+   "v": 1.5,
+   "range": [
+    1.3,
+    1.8
+   ],
+   "tag": "INFERRED",
+   "src": "scales with useful output at a fixed reply length (served 1.12)"
+  },
+  "parts_per_merged_chunk": {
+   "v": 2.5,
+   "range": [
+    1.5,
+    4
+   ],
+   "tag": "INFERRED",
+   "src": "16 agents, about two-thirds of the time reading (prefill_busy ~65 % on the served rows)"
+  },
+  "greedy_agreement": {
+   "v": ">= 0.90 mean prefix fraction over 16 long-prompt greedy outputs against mp-off",
+   "tag": "GATE"
+  },
+  "headline": "merging the agents' long reads into shared prompt chunks lifts prefill from ~0.9k to 1.4-2.4k tok/s and useful output from 83 to 110-165 tok/s at 16 real agents",
+  "falsified_if": "the mp-on mean over 2 runs is under 92 tok/s useful (inside the replay noise of 83), or the merged chunks average under 1.5 parts (the reads do not overlap, nothing to merge), or the greedy-agreement gate fails"
+ },
+ "turn_prediction": {
+  "about": "Turns per agent-minute prediction from the per-turn replay model (src/model.js agentTurnPredict, the r8-n16 query of data/predictions-prefill-chunk-1026.json rescore_turn_model, mode all), with only prefill P changed. Written before any GPU run of the merged image; the earlier useful tok/s band above stays as written.",
+  "written_utc": "2026-10-27T18:3xZ (cured after a review: control from the server receipt, raw band kept apart from the bias, paired comparison added)",
+  "control": {
+   "turns_per_agent_min_measured": 1.121,
+   "useful_tps_measured": 83.41,
+   "server_receipt": "731,958 fresh prompt tokens / 1,800 s = 406.64 fresh tok/s; prompt busy 844.8 / 1,800 s = 46.93 % (three-run comp1 no-GDN control, server counters); committed control F 4.88",
+   "model_turns": 1.0188,
+   "model_useful_tps": 72.405,
+   "decode_n_note": "Dn 185.2 is INFERRED from the control after excluding prompt time; it is not a measured decode-only ceiling"
+  },
+  "what_if_P": [
+   {
+    "P": 866.4,
+    "turns": 1.019,
+    "useful_tps": 72.4,
+    "share": {
+     "decode": 0.4,
+     "prefill": 0.17,
+     "gap": 0.43
+    }
+   },
+   {
+    "P": 1400,
+    "turns": 1.281,
+    "useful_tps": 107.4,
+    "share": {
+     "decode": 0.49,
+     "prefill": 0.09,
+     "gap": 0.42
+    }
+   },
+   {
+    "P": 1900,
+    "turns": 1.4,
+    "useful_tps": 122.1,
+    "share": {
+     "decode": 0.4,
+     "prefill": 0.05,
+     "gap": 0.55
+    }
+   },
+   {
+    "P": 2400,
+    "turns": 1.5,
+    "useful_tps": 140.5,
+    "share": {
+     "decode": 0.38,
+     "prefill": 0.03,
+     "gap": 0.59
+    }
+   },
+   {
+    "P": 3500,
+    "turns": 1.663,
+    "useful_tps": 148.1,
+    "share": {
+     "decode": 0.39,
+     "prefill": 0.02,
+     "gap": 0.58
+    },
+    "note": "resident-like prefill: the ceiling of a prefill-only lever, decode (Dn 185.2 INFERRED) and tool gaps then bind"
+   }
+  ],
+  "band": {
+   "turns_per_agent_min_raw": [
+    1.28,
+    1.5
+   ],
+   "basis": "raw model outputs at P 1400-2400 (P-sensitivity only)",
+   "retrospective_bias": "the model read 9 % low on this exact control; that is a retrospective bias on one control, not a calibrated forecast interval, so it is not added to the band"
+  },
+  "falsified_if": [
+   "greedy-agreement gate fails (mean shared-prefix under 0.90): stop, no replay arms",
+   "paired: mean(mp-on) / mean(mp-off) turns/agent-min under 1.12 (raw model predicts 1.26-1.47 x)",
+   "absolute: two-run mp-on mean under 1.25 turns/agent-min",
+   "merged chunks average under 1.5 parts"
+  ],
+  "next_rung": "Even at P 3500 the gain flattens near 1.66 turns/min (~148 tok/s); the effective decode capacity at 16 agents (185 inferred vs 279 synthetic) is the next cost to predict and attack",
+  "arms": "mp-off-r1, mp-on-r1, mp-off-r2, mp-on-r2 in one booking (b70-rig/bench/arms-merged-1027.json): two treatment arms, two contemporaneous control arms; the greedy gate runs first in each arm and a failure stops before the replay arms"
+ },
+ "measured": {
+  "written_utc": "2026-10-27T18:55Z",
+  "booking": "odie b1793124465-3903711, 18:07-18:47Z (ended early); qual 18:08-18:20Z, A/B 18:21-18:46Z",
+  "qualification": {
+   "v": "PASS: 14 native helpers on card1 + card0, prefill_merge_parity 129 checks 0 failures on a B70, merged_prefill_test all ok; 8 comp1-lever helpers not in this image (engine code unchanged from comp1 8c783ac, which passed them)",
+   "tag": "MEASURED",
+   "src": "odie lab notes, receipt qual/aa37f7e7....json"
+  },
+  "greedy_agreement": {
+   "v": 0.7716,
+   "identical": "8 of 16",
+   "gate": 0.9,
+   "pass": false,
+   "tag": "MEASURED",
+   "src": "lab notes against mp-off-r1-greedy-long.json (16 reads of ~0.9-3.7k tokens at once, temp 0, 64 tokens)"
+  },
+  "greedy_within_arm": {
+   "v": {
+    "mp-off-r1": "0.990 (7 of 8 copies identical)",
+    "mp-on-r1": "0.710 (4 of 8)"
+   },
+   "tag": "MEASURED",
+   "src": "the same files, outputs against their own copies"
+  },
+  "greedy_divergence_shape": {
+   "v": "every mp-on output fluent and on-task; divergences are rewordings after 35-234 shared characters",
+   "tag": "MEASURED (read)",
+   "note": "near-tie drift shape, not corruption; the cause is not isolated (INFERRED candidates: expert-product mode and GEMM tiling at the merged chunk's larger M, or a merged-path state difference)"
+  },
+  "arms": {
+   "mp-off-r1": {
+    "turns_per_agent_min": 1.05,
+    "useful_tps": 76.23,
+    "P": 862,
+    "F": 4.56,
+    "prefill_busy_pct": 45.7,
+    "errors": 0,
+    "tag": "MEASURED",
+    "src": "mp-off-r1-replay-n16.json; P = 236,569 fresh / 274.46 s server prompt time"
+   },
+   "mp-on-r1": {
+    "v": "not run: greedy gate failed, A/B stopped by plan",
+    "tag": "MEASURED"
+   },
+   "mp-off-r2": {
+    "v": "not run (stopped)"
+   },
+   "mp-on-r2": {
+    "v": "not run (stopped)"
+   }
+  },
+  "parts_per_merged_chunk": {
+   "v": 5.67,
+   "detail": "16 admissions, 3 chunks, 17 parts, 55,156 rows in 36,153 ms (1,525.6 rows/s)",
+   "tag": "MEASURED",
+   "src": "the engine's own log on odie's state mount (xestrata-iq3_xxs.log; docker logs does not hold it), mp-on-r1 greedy; homelab results/merged-1027/mp-on-r1-engine.log",
+   "note": "replaces the earlier UNMEASURED: the line was in the engine log file, not the kept container log"
+  },
+  "score": {
+   "useful_16": "UNSCORED (no mp-on replay)",
+   "turns_paired_ratio": "UNSCORED (no mp-on replay)",
+   "turns_absolute": "UNSCORED (no mp-on replay)",
+   "parts_per_chunk": "PASS: 5.67 parts a chunk against the falsifier floor 1.5 (greedy batch, 16 admissions)",
+   "verdict": "FALSIFIED on the first falsifier: greedy agreement 0.77 under 0.90. The throughput prediction is untested, not refuted.",
+   "verdict_revised_1915Z": "The stop rule was miscalibrated: the lever-off control misses the same 0.90 bit-agreement gate against itself across a restart (mp-off-r2 0.787, off-det-b 0.740 against their references). The greedy gate result is therefore no verdict on the merged path; the throughput prediction stays untested (no mp-on replay ran). The earlier verdict line is kept as written."
+  },
+  "diagnostic_1027": {
+   "written_utc": "2026-10-27T19:20Z",
+   "booking": "odie b1793127161-736861, 18:52-19:10Z (ended early); 9 arms of greedy only, no replay; R8 restored 19:09:57Z (inspect = ref, canary answer + tool OK)",
+   "question": "drift from size-dependent arithmetic (large merged M) or a merged-path state bug?",
+   "concurrent_vs_off": {
+    "tag": "MEASURED",
+    "v": {
+     "off_vs_off_distinct_runs": "0.740-0.799 (mean 0.775; one pair 1.000)",
+     "on_vs_off_18_pairs": "mean 0.731, 0.577-0.905",
+     "rows2048": 0.823,
+     "rows8192": "0.654 / 0.698 (two runs)",
+     "rows32768": "0.707-0.757 (three runs)"
+    },
+    "note": "16 reads at once: batch-decode timing adds noise even with the lever off"
+   },
+   "serial_kv_probe": {
+    "tag": "MEASURED",
+    "v": {
+     "off_vs_off": "0.974-1.000 (3 runs)",
+     "on32768_vs_on32768": "1.000, 16 of 16 (across a restart, CPU share on and off)",
+     "on32768_vs_off": "0.782-0.797",
+     "on2048_vs_off": "0.790-0.816",
+     "on8192_vs_off": "0.708-0.724",
+     "between_chunk_sizes": "0.673-0.764"
+    },
+    "note": "each prompt decoded alone on the prompt KV the arm's concurrent batch cached (1268 of 1273 reused), so the batch-decode noise is gone"
+   },
+   "parts_per_chunk": {
+    "tag": "MEASURED",
+    "v": {
+     "rows32768": "3 chunks, 17 parts, 5.67 a chunk, ~36 s, 1,518-1,531 rows/s",
+     "rows8192": "8 chunks, 22 parts, 2.75, 41.3 s, 1,334 rows/s",
+     "rows2048": "28 chunks, 42 parts, 1.50, 50.3 s, 1,096 rows/s"
+    }
+   },
+   "divergence_read": {
+    "tag": "MEASURED (read)",
+    "v": "every differing serial answer is correct and about its own question; no content from another prompt; flips at a near-tie token"
+   },
+   "verdict": {
+    "tag": "INFERRED, CL ~80%",
+    "v": "arithmetic, not a state bug: the merged KV is bit-reproducible at a fixed chunk layout and differs from the plain prompt path by a stable amount at every chunk size, with no size threshold (2048 rows is not cleaner than 32768; 8192 is the furthest), and no cross-prompt leak. Shape = chunk-composition-dependent rounding (which rows share an expert product and an attention chunk), not a large-M mode switch. A subtle state error that only perturbs rounding is not excluded (the on-card parity test 129/0 bounds it)."
+   },
+   "stop_rule": {
+    "tag": "MEASURED",
+    "v": "bit agreement against one off run is no gate: off fails it against itself (0.740-0.799). A usable gate = the serial KV probe against an off-vs-off floor, or answer correctness at a longer max_tokens"
+   },
+   "src": "lab notes (greedy JSONs, engine logs, console logs) + merged-diag-2026-10-27.md"
+  },
+  "diagnostic_1027_corrections": {
+   "written_utc": "2026-10-27T20:10Z",
+   "after": "an agent's read; diagnostic_1027 is kept as written",
+   "c1_serial_identity": "agreement() in strata-sustained.py compares the leading characters of 64-token text: serial 16/16 = identical observed text, not bit-identical KV and not the absence of a state bug. diagnostic_1027.verdict over-claimed: arithmetic (chunk-layout-dependent rounding) stays the plausible cause, not an isolated one; a state error that perturbs numbers without visible damage is not excluded.",
+   "c2_gate_withdrawn": "diagnostic_1027.stop_rule's proposed gate (serial on-vs-off against the concurrent off-vs-off floor) mixed two different measurements and is WITHDRAWN, as is '0.731 is within the off-vs-off band'. Quality is decided by gate Q (lab notes q_plan, qcode.py): 164 HumanEval tasks at full answer length, paired per task, margin 5 pp, one-sided 95 %.",
+   "history": "the forecast (d927a77, ff8da1e) and the original failed stop (greedy_agreement 0.7716 < 0.90) stand unchanged",
+   "tag": "CORRECTION"
+  }
+ },
+ "measured_t_1027": {
+  "label": "EXPLORATORY, quality UNKNOWN (gate Q held; no quality gate passed on this build)",
+  "written_utc": "2026-10-27T22:0xZ",
+  "against": "turn_prediction as committed in ff8da1e (paired falsifier mean(on)/mean(off) turns/agent-min under 1.12)",
+  "booking": "odie b1793129896-1494341, 19:38-21:42Z; replay arms 20:16-21:41Z, order rp-off-1, rp-on-1, rp-off-2, rp-on-2; R8 restored 21:42Z (image 0de528f72871, inspect = ref on every key, canary answer + tool OK, units active)",
+  "image": "cand-merged-6d5c0b8 (sha256:aa37f7e7...), merged prompt chunks up to 32768 rows",
+  "arms": {
+   "rp-off-1": {
+    "turns": 193,
+    "turns_per_agent_min": 1.206,
+    "useful_tps": 88.45,
+    "ttft_median_s": 2.95,
+    "F": 4.2,
+    "F_reread": 0.02,
+    "server_fresh": 251993,
+    "prefill_busy_pct": 48.6,
+    "errors": 0,
+    "tag": "MEASURED"
+   },
+   "rp-on-1": {
+    "turns": 169,
+    "turns_per_agent_min": 1.056,
+    "useful_tps": 79.83,
+    "ttft_median_s": 4.05,
+    "F": 6.62,
+    "F_reread": 2.53,
+    "server_fresh": 353615,
+    "prefill_busy_pct": null,
+    "errors": 0,
+    "tag": "MEASURED",
+    "note": "prefill busy None: the merged path reports prompt_ms 0 to /metrics (instrumentation gap)"
+   },
+   "rp-off-2": {
+    "turns": 184,
+    "turns_per_agent_min": 1.15,
+    "useful_tps": 89.35,
+    "ttft_median_s": 2.8,
+    "F": 3.83,
+    "F_reread": 0.02,
+    "server_fresh": 231145,
+    "prefill_busy_pct": 46.5,
+    "errors": 0,
+    "tag": "MEASURED"
+   },
+   "rp-on-2": {
+    "turns": 20,
+    "turns_per_agent_min": 0.125,
+    "useful_tps": 0.72,
+    "ttft_median_s": 54.5,
+    "F": 77.96,
+    "server_fresh": 936651,
+    "prefill_busy_pct": 13.7,
+    "errors": 0,
+    "tag": "MEASURED",
+    "note": "HUNG: the engine stalled 4 times at 'reading the prompt (batched): finishing the chunk from token 0' (0 layers served for 60 s, expert pool idle, VRAM free 1879 MiB at request start); the watchdog restarted it each time. No off arm stalled. Kept in the record."
+   }
+  },
+  "paired_turns": {
+   "on1_alone": {
+    "v": 0.9,
+    "detail": "rp-on-1 169 turns / mean(rp-off-1 193, rp-off-2 184) = 169 / 188.5 = 0.897x (one treatment run only)",
+    "tag": "MEASURED"
+   },
+   "predeclared_two_run": {
+    "v": 0.5,
+    "detail": "mean(rp-on-1 169, rp-on-2 20) = 94.5 vs mean off 188.5 turns: the predeclared two-run paired ratio (floor 1.12x) was NOT met",
+    "tag": "MEASURED"
+   },
+   "rp_on_2": "failed-timing evidence: 20 turns, 4 engine hangs at 'finishing the chunk from token 0'; kept in the record, not a throughput sample"
+  },
+  "parts_per_merged_chunk": {
+   "v": 1.6,
+   "detail": "rp-on-1: 209 admissions, 137 chunks, 219 parts, 831,008 rows in 600,581 ms (1,383.7 rows/s) at 16 agents",
+   "tag": "MEASURED",
+   "src": "lab notes"
+  },
+  "rereads": {
+   "v": "189 of 209 merged reads restart 'from its checkpoint' (20 'from token 0') and read ~121k fresh tokens the off path reuses from cache (server fresh 353,615 vs 231-252k; F reread 2.53 vs 0.02)",
+   "tag": "MEASURED"
+  },
+  "score": {
+   "turns_paired_ratio": "NOT MET: the predeclared two-run ratio is 94.5 / 188.5 turns (rp-on-2 hung); rp-on-1 alone is 0.90x against the floor 1.12x (raw model 1.26-1.47x)",
+   "turns_absolute": "FALSIFIED: 1.056 (one finished run) under 1.25",
+   "useful_16": "FALSIFIED: 79.83 under 92",
+   "parts_per_chunk": "PASS at the floor: 1.60 against 1.5 (predicted 2.5, range 1.5-4)",
+   "verdict": "The lever as built loses ~10 % of turns and hangs intermittently. Its premise (one expert pass amortised across agents' reads) was NOT tested cleanly: the implementation re-read ~121k tokens that the off path reuses from its prefix cache, so the extra prefill work can hide any amortisation gain. Next: fix the merged path's cache reuse, the hang and the prompt-time counter, then re-run T; Q (quality) after that.",
+   "label_note": "per an agent (agreed): no 0.90x headline; on-1 alone is reported as such and on-2 stays as failed timing evidence",
+   "next_quality_gate": "the scorer is agreed in lab notes; a new engine image needs a NEW preregistered q plan; the q1 answers are never re-pinned"
+  }
+ },
+ "measured_hang_probe_1027": {
+  "label": "STABILITY EXPLORATION, not causal isolation; EXPLORATORY, quality UNKNOWN; no T run",
+  "image": "sha256:3aeaac2ffec26379360763e9ff5c667a3240d867130a33c8ba5c6b482e4aedcb",
+  "engine": "0b8af85c760315491e52ac65f2516f4c6934ddb2",
+  "qualification": "PASS 26/26 native helpers, both cards",
+  "arms": [
+   {
+    "name": "rp-hang16k-1",
+    "merged_rows": 16384,
+    "vram_reserve_mib": 2048,
+    "stall_reports": 1,
+    "turns_completed": 26,
+    "turns_per_agent_min": 0.542,
+    "agg_out_tok_s": 8.48,
+    "stall_pct": 34.3,
+    "merged_parts": 69,
+    "parts_from_token_0": 16,
+    "cross_slot_starts": 0
+   },
+   {
+    "name": "rp-hang16k-vr4096",
+    "merged_rows": 16384,
+    "vram_reserve_mib": 4096,
+    "vram_free_at_request_mib": 3818,
+    "stall_reports": 2,
+    "turns_completed": 3,
+    "turns_per_agent_min": 0.062,
+    "agg_out_tok_s": 0.0,
+    "stall_pct": 78.8,
+    "merged_parts": 44,
+    "parts_from_token_0": 32,
+    "cross_slot_starts": 0
+   }
+  ],
+  "result": "hang persists at 16384-row chunks and with 3.8 GiB VRAM free; the hung chunk in rp-hang16k-1 held ~8.1k warm rows (slots 22/16/18 from their checkpoints), so chunk size and VRAM headroom are ruled out; host idle (all expert jobs done, workers parked), waiting on a completion that never arrives",
+  "falsifiers_ff8da1e": "not scored: T not run (no hang-free setting)",
+  "source": "lab notes"
+ },
+ "measured_t_1028": {
+  "label": "EXPLORATORY, quality UNKNOWN (gate Q held; no quality gate passed on this build)",
+  "written_utc": "2026-10-28T04:3xZ",
+  "against": "turn_prediction as committed in ff8da1e",
+  "image": "cand-merged-b084e69 (sha256:8016526b...), engine b084e69 = the hang fix (timeline clock calibration skips a stage with a window in flight)",
+  "booking": "odie b1793156264-183435, 02:57-04:24Z; order rp-off-1, rp-on-1, rp-off-2, rp-on-2; same image + common_env on all arms, on adds only STRATA_BATCH_PREFILL_MERGED=1; R8 restored 04:23Z (inspect = ref, canary OK, units active)",
+  "arms": {
+   "rp-off-1": {
+    "turns": 182,
+    "turns_per_agent_min": 1.137,
+    "useful_tps": 94.44,
+    "ttft_median_s": 3.0,
+    "prefill_busy_pct": 45.4,
+    "server_fresh_prompt_tok_s": 841,
+    "F_reread": 0.02,
+    "stall_reports": 0,
+    "engine_restarts": 0,
+    "errors": 0,
+    "tag": "MEASURED"
+   },
+   "rp-on-1": {
+    "turns": 198,
+    "turns_per_agent_min": 1.238,
+    "useful_tps": 99.97,
+    "ttft_median_s": 3.25,
+    "prefill_busy_pct": 36.2,
+    "server_fresh_prompt_tok_s": 1177,
+    "F_reread": 0.02,
+    "stall_reports": 0,
+    "engine_restarts": 0,
+    "errors": 0,
+    "tag": "MEASURED",
+    "parts_per_chunk": 1.41,
+    "merged_rows_s": 1313.9,
+    "slot_moves": 6
+   },
+   "rp-off-2": {
+    "turns": 182,
+    "turns_per_agent_min": 1.137,
+    "useful_tps": 77.08,
+    "ttft_median_s": 2.9,
+    "prefill_busy_pct": 56.1,
+    "server_fresh_prompt_tok_s": 885,
+    "F_reread": 1.18,
+    "stall_reports": 0,
+    "engine_restarts": 0,
+    "errors": 0,
+    "tag": "MEASURED"
+   },
+   "rp-on-2": {
+    "turns": 197,
+    "turns_per_agent_min": 1.231,
+    "useful_tps": 93.76,
+    "ttft_median_s": 3.3,
+    "prefill_busy_pct": 36.8,
+    "server_fresh_prompt_tok_s": 1159,
+    "F_reread": 0.02,
+    "stall_reports": 0,
+    "engine_restarts": 0,
+    "errors": 0,
+    "tag": "MEASURED",
+    "parts_per_chunk": 1.42,
+    "merged_rows_s": 1317.0,
+    "slot_moves": 5
+   }
+  },
+  "falsifiers": {
+   "paired_ratio": {
+    "threshold": "under 1.12",
+    "measured": 1.085,
+    "pairs": [
+     1.088,
+     1.082
+    ],
+    "verdict": "FALSIFIED"
+   },
+   "on_mean": {
+    "threshold": "under 1.25",
+    "measured": 1.234,
+    "verdict": "FALSIFIED"
+   },
+   "parts_per_chunk": {
+    "threshold": "under 1.5",
+    "measured": 1.42,
+    "verdict": "FALSIFIED"
+   },
+   "greedy_gate": "not run (Q held)"
+  },
+  "reading": "Two misses. (1) Prefill rate: the band assumed P 1400-2400; measured P about 1170 (+35 % over off ~860). Thin merging (1.42 parts a chunk, 1314 merged rows/s) is a CANDIDATE explanation, not established. (2) Turn model: the committed what-if curve at P 1170 gives ~1.17 raw; carrying the control's low read (1.019 raw vs 1.1375 measured) gives 1.29 additive or 1.30-1.31 multiplicative against 1.234 measured, so the model OVER-predicts by ~4-6 % at the P reached. That residual is unexplained (candidates: per-chunk work outside the prompt run, the decode share between chunks, stall 43.8 % vs prefill busy 36.5 %).",
+  "hang": "0 stall reports and 0 restarts in both on arms (20 min merged load each); hang fixed in b084e69, see lab notes",
+  "source": "lab notes (df62d8c2c); raw logs lab notes with sha256s there",
+  "counts": {
+   "agent_min_per_arm": 160,
+   "turns": {
+    "rp-off-1": 182,
+    "rp-on-1": 198,
+    "rp-off-2": 182,
+    "rp-on-2": 197
+   },
+   "off_mean": 1.1375,
+   "on_mean": 1.234375,
+   "paired_ratio": 1.085165,
+   "s_per_turn": {
+    "off": 52.75,
+    "on": 48.61,
+    "saved": 4.14
+   },
+   "src": "MEASURED: turns completed in the 600 s window x 16 agents; s_per_turn = 9600 agent-s / mean turns"
+  },
+  "corrected_utc": "2026-10-28T05:xxZ after the an agent read of df62d8c2c (counts headline, turn-model residual)"
+ },
+ "turn_prediction_next_rung_1028": {
+  "label": "PREDICTION, before any run; EXPLORATORY, quality UNKNOWN (Q held). RELABELLED 2026-10-28 after the an agent counter check: the stall attribution is withdrawn, every net-time gain and ranking below is CONDITIONAL until aligned phase evidence exists (see discriminator_1028)",
+  "written_utc": "2026-10-28T05:xxZ",
+  "source": "tools/hl356_merged_budget.py over the T results (measured_t_1028; raw logs outside git); every figure tagged",
+  "anchor": {
+   "s_per_turn_off": {
+    "v": 52.75,
+    "tag": "MEASURED",
+    "src": "9600 agent-s / 182 turns"
+   },
+   "s_per_turn_on": {
+    "v": 48.61,
+    "tag": "MEASURED",
+    "src": "9600 / 197.5"
+   },
+   "saved": {
+    "v": 4.14,
+    "tag": "MEASURED"
+   },
+   "turns_on": {
+    "v": 1.234,
+    "tag": "MEASURED"
+   }
+  },
+  "budget_per_turn_s": {
+   "about": "PARTITION of the window's 9600 agent-seconds (16 agents x 600 s, exact replay boundary t0 = warmup_s) by client SSE state, divided by the completed turns of the sent-after-warmup cohort (182, 198, 182, 197). Not mean phase durations of completed turns. Sums are exact (9600.0 in each arm); usage coverage 100 %; completed turns without a first token: 0, 4, 1, 0 (their send->end time is a separate 'no_first_token' state, 0.08 s a turn in rp-on-1)",
+   "on": {
+    "tool_gap": {
+     "v": 3.82,
+     "tag": "MEASURED",
+     "src": "partition: response end -> next send (the recorded gaps x1.0)"
+    },
+    "ttft": {
+     "v": 4.06,
+     "tag": "MEASURED",
+     "src": "partition: send -> first token (4.10 before the no-first-token state was split out: 0.04)",
+     "split": {
+      "own_prefill_compute": {
+       "v": 1.0,
+       "tag": "INFERRED",
+       "src": "turn fresh tokens / server P (1168)"
+      },
+      "wait_and_handover": {
+       "v": 3.1,
+       "tag": "INFERRED",
+       "src": "TTFT - own compute"
+      }
+     }
+    },
+    "decode_wall": {
+     "v": 40.7,
+     "tag": "MEASURED",
+     "src": "partition: first token -> end",
+     "split": {
+      "WITHDRAWN": "the running / stalled-behind-prefill / stalled-other split came from subtracting stall_pct (client inter-chunk gaps over 1 s) and prompt_ms/window (a per-request marginal summed at completion). Neither is an exclusive engine timeline, so the subtraction identifies nothing. See discriminator_1028 for what does survive."
+     }
+    },
+    "sum": 48.61,
+    "no_first_token": {
+     "v": 0.04,
+     "tag": "MEASURED"
+    }
+   },
+   "off": {
+    "tool_gap": {
+     "v": 4.13,
+     "tag": "MEASURED"
+    },
+    "ttft": {
+     "v": 3.91,
+     "tag": "MEASURED"
+    },
+    "decode_wall": {
+     "v": 44.7,
+     "tag": "MEASURED",
+     "split": {
+      "WITHDRAWN": "as above"
+     }
+    },
+    "sum": 52.75
+   },
+   "saved_by_merged": {
+    "total": {
+     "v": 4.14,
+     "tag": "MEASURED"
+    },
+    "decode_wall": {
+     "v": 4.0,
+     "tag": "MEASURED"
+    },
+    "tool_gap": {
+     "v": 0.31,
+     "tag": "MEASURED",
+     "src": "trace position, not a lever effect"
+    },
+    "ttft_and_no_token": {
+     "v": -0.17,
+     "tag": "MEASURED"
+    },
+    "running_vs_stalled": "WITHDRAWN (same reason)"
+   },
+   "reading": "84 % of the window's agent-seconds are in the decode phase (first token -> end). How much of that phase is blocked by prefill is not identified by these counters; see discriminator_1028."
+  },
+  "merge_width_model": {
+   "about": "Why 1.42 parts a chunk (T, whole engine life) against 1.96-2.25 (hang-free checks): the summary line counts the engine's whole life, and the first ~600 s hold the 16 agents' cold first reads (15-20k tokens each, many per chunk), while steady state brings one merged-eligible read (fresh > 512) every ~4.7 s.",
+   "inputs": {
+    "arrival_rate_window": {
+     "v": 0.214,
+     "tag": "MEASURED",
+     "src": "131 and 126 reads with fresh > 512 in the 600 s window"
+    },
+    "rows_per_read_window": {
+     "v": 1636,
+     "tag": "MEASURED"
+    },
+    "reads_over_8192_window": {
+     "v": 0,
+     "tag": "MEASURED"
+    },
+    "C0_s": {
+     "v": 0.654,
+     "tag": "INFERRED",
+     "src": "two-point fit of run ms per chunk: fix arms (first ~600 s) and T minus fix (second 600 s); no residual"
+    },
+    "R_rows_s": {
+     "v": 1636,
+     "tag": "INFERRED",
+     "src": "same fit"
+    },
+    "O_s": {
+     "v": 0.39,
+     "tag": "INFERRED",
+     "src": "(stall share - prefill busy) x 600 s / ~118 chunks; per-chunk work outside sp.run"
+    },
+    "decode_share": {
+     "v": 0.5,
+     "tag": "READ",
+     "src": "STRATA_BATCH_DECODE_SHARE default (generate.cpp)"
+    },
+    "wait_ms": {
+     "v": 0,
+     "tag": "READ",
+     "src": "STRATA_BATCH_PREFILL_MERGED_WAIT_MS default (merged_prefill.hpp go_now)"
+    }
+   },
+   "check": {
+    "whole_life_parts_per_chunk": {
+     "sim": [
+      1.345,
+      1.376
+     ],
+     "measured": [
+      1.41,
+      1.42
+     ],
+     "note": "sim ~4.5 % low"
+    },
+    "whole_life_chunks": {
+     "sim": [
+      177,
+      170
+     ],
+     "measured": [
+      170,
+      166
+     ]
+    },
+    "whole_life_parts": {
+     "sim": [
+      238,
+      234
+     ],
+     "measured": [
+      240,
+      236
+     ]
+    },
+    "first_600s_parts_per_chunk": {
+     "sim": [
+      1.911,
+      2.038
+     ],
+     "measured_fix_arms": [
+      2.25,
+      2.12,
+      1.96
+     ]
+    },
+    "window_parts_per_chunk": {
+     "sim": [
+      1.083,
+      1.077
+     ],
+     "inferred": 1.12,
+     "src": "T minus fix-arm means: 132 parts / 118 chunks"
+    },
+    "window_stall_s": {
+     "sim": [
+      257.1,
+      248.4
+     ],
+     "measured": [
+      262.8,
+      262.2
+     ],
+     "note": "O was set from this gap: in-sample"
+    },
+    "in_sample": "C0, R and O are fitted on these runs; the checks are consistency, not out-of-sample"
+   },
+   "reading": "Steady-state merging is ~1.1 parts a chunk because arrivals are sparse (~0.4 per chunk run, ~0.7 per run + decode share + O), not because of chunk rows or the join point. Each chunk pays ~1.04 s fixed (C0 + O) for ~1.15 s of rows.",
+   "label": "CONDITIONAL: the steady ~1.1 parts a chunk is SIMULATED (open loop, C0/R/O fitted on these runs) and cross-run (T minus the fix arms), not measured in the same run: the engine's merged counters print once a life (the timing line printed once in each T log) and the T logs carry no timestamps"
+  },
+  "levers": {
+   "a_chunk_rows": {
+    "8192": {
+     "window_parts_per_chunk": 1.08,
+     "whole_life_parts_per_chunk_sim": 1.45,
+     "whole_life_parts_per_chunk_expected": 1.52,
+     "whole_life_rows_s_sim": 1274.8,
+     "turns": 1.234,
+     "band": [
+      1.2,
+      1.27
+     ],
+     "s_saved_per_turn": 0.0
+    },
+    "16384": {
+     "window_parts_per_chunk": 1.08,
+     "whole_life_parts_per_chunk_sim": 1.373,
+     "whole_life_parts_per_chunk_expected": 1.43,
+     "whole_life_rows_s_sim": 1294.8,
+     "turns": 1.234,
+     "band": [
+      1.2,
+      1.27
+     ],
+     "s_saved_per_turn": 0.0
+    },
+    "why": "no merged read in the window exceeds 8192 rows; only the warm-up's cold reads split (more chunks, more parts)",
+    "falsified_if": [
+     "window turns/agent-min outside 1.20-1.27 (paired ratio to merged-only outside 0.97-1.03)",
+     "8192: whole-life parts/chunk under 1.40 or over 1.62",
+     "16384: whole-life parts/chunk under 1.35 or over 1.50"
+    ],
+    "build_days": 0,
+    "note": "env only (STRATA_BATCH_PREFILL_MERGED_ROWS)",
+    "label": "CONDITIONAL"
+   },
+   "b_sub_chunk_join": {
+    "turns": {
+     "v": 1.232,
+     "band": [
+      1.2,
+      1.26
+     ],
+     "tag": "INFERRED"
+    },
+    "s_saved_per_turn": {
+     "v": -0.1,
+     "band": [
+      -0.5,
+      0.2
+     ]
+    },
+    "why": "sp.run is one synchronous, layer-major pass over a segment list fixed by set_segments before the run, and the serve loop (admission, lending, setups) is blocked inside it. A reader arriving mid-chunk cannot share the layers already passed; joining at a sub-step means its own pass for those layers, so the shared expert pass (C0) is not saved. The nearest buildable form, starting the next chunk without the decode share, simulates as no gain (share 0: window parts/chunk 1.05, -0.11 s a turn).",
+    "build_days": {
+     "v": [
+      4,
+      6
+     ],
+     "tag": "INFERRED",
+     "src": "mutable segments between layer sub-steps on both stages, admission and setups off the serve thread, checkpoint saves per sub-step"
+    },
+    "falsified_if": [
+     "a build of it gains over 3 % paired turns at 16 agents on this trace"
+    ],
+    "label": "CONDITIONAL"
+   },
+   "c_coalesce_hold": {
+    "50": {
+     "window_parts_per_chunk": 1.089,
+     "whole_life_parts_per_chunk_expected": 1.43,
+     "stall_saved_s_per_600": 1.1,
+     "hold_delay_s_per_turn": 0.007,
+     "turns": 1.236,
+     "ratio": 1.0016,
+     "s_saved_per_turn": 0.08
+    },
+    "150": {
+     "window_parts_per_chunk": 1.103,
+     "whole_life_parts_per_chunk_expected": 1.44,
+     "stall_saved_s_per_600": 2.6,
+     "hold_delay_s_per_turn": 0.026,
+     "turns": 1.239,
+     "ratio": 1.0038,
+     "s_saved_per_turn": 0.18
+    },
+    "300": {
+     "window_parts_per_chunk": 1.123,
+     "whole_life_parts_per_chunk_expected": 1.47,
+     "stall_saved_s_per_600": 4.7,
+     "hold_delay_s_per_turn": 0.076,
+     "turns": 1.242,
+     "ratio": 1.0063,
+     "s_saved_per_turn": 0.3
+    },
+    "1000": {
+     "window_parts_per_chunk": 1.196,
+     "whole_life_parts_per_chunk_expected": 1.56,
+     "stall_saved_s_per_600": 13.1,
+     "hold_delay_s_per_turn": 0.298,
+     "turns": 1.254,
+     "ratio": 1.0159,
+     "s_saved_per_turn": 0.76
+    },
+    "3000": {
+     "window_parts_per_chunk": 1.375,
+     "whole_life_parts_per_chunk_expected": 1.78,
+     "stall_saved_s_per_600": 26.6,
+     "hold_delay_s_per_turn": 1.056,
+     "turns": 1.263,
+     "ratio": 1.0232,
+     "s_saved_per_turn": 1.1
+    },
+    "label": "CONDITIONAL"
+   },
+   "c_note": {
+    "zero": "0 ms = T as measured",
+    "band": "every hold's paired ratio is predicted inside 0.97-1.04: below what two pairs resolve (pair ratios 1.088 vs 1.082)",
+    "build_days": 0,
+    "falsified_if": [
+     "300 ms: window parts/chunk outside 1.08-1.20 (needs STRATA_MERGED_TRACE chunk lines or a split summary)",
+     "any hold: paired ratio to merged-only outside 0.97-1.04"
+    ],
+    "env": "STRATA_BATCH_PREFILL_MERGED_WAIT_MS (exists; applies only to a planned chunk under 2048 rows while slots decode)",
+    "label": "CONDITIONAL"
+   },
+   "d_per_chunk_overhead_O": {
+    "remove_all": {
+     "turns": 1.339,
+     "ratio": 1.0848,
+     "s_saved_per_turn": 3.8
+    },
+    "halve": {
+     "turns": 1.284,
+     "ratio": 1.0402,
+     "s_saved_per_turn": 1.88
+    },
+    "tag": "INFERRED",
+    "why": "O is inferred from the stall share above prefill busy; it is a candidate cause, not measured. Step 1 is to time drain, adaptive round, lend/relayout, setups and refill per chunk.",
+    "build_days": {
+     "v": [
+      1.5,
+      2.5
+     ],
+     "tag": "INFERRED",
+     "src": "0.5 d timing lines; 1-2 d cut (relayout only when the size changes, refill deferred while a reader is queued or made async)"
+    },
+    "falsified_if": [
+     "timed per-chunk work outside the run under 0.2 s (then the 7 % stall gap has another cause and this lever shrinks to < 2 %)"
+    ],
+    "label": "CONDITIONAL"
+   },
+   "e_per_chunk_pass_C0_halved": {
+    "turns": 1.32,
+    "ratio": 1.0694,
+    "s_saved_per_turn": 3.15,
+    "tag": "INFERRED",
+    "build_days": {
+     "v": [
+      2,
+      4
+     ],
+     "tag": "UNKNOWN"
+    },
+    "note": "C0 is a fitted intercept (the expert pass a chunk pays whatever its rows); halving it is a what-if, no design yet",
+    "label": "CONDITIONAL"
+   }
+  },
+  "decode_rung": {
+   "about": "Server-bound closed form: turns/s r = a / (1 + a X), a = k Dn / out; X = stall server-seconds per turn (1.329, the on arms), out = 294.2 tokens a turn, Dn = running aggregate decode = server out tok/s / (1 - stall share) (195.2 on; 187.5 / 166.7 off), k = window-edge factor fitted per arm (on 0.882, off 0.879: one k fits both sides within 0.3 %). Merged on throughout. NOTE (review): with these definitions k reduces to client cohort output / server-delta output, so 'one k fits both sides' is not an independent decode-capacity check. CONDITIONAL.",
+   "points": {
+    "195": {
+     "turns": 1.234,
+     "ratio": 0.999,
+     "s_per_turn": 48.63
+    },
+    "210": {
+     "turns": 1.285,
+     "ratio": 1.041,
+     "s_per_turn": 46.68
+    },
+    "230": {
+     "turns": 1.349,
+     "ratio": 1.093,
+     "s_per_turn": 44.47
+    },
+    "250": {
+     "turns": 1.408,
+     "ratio": 1.141,
+     "s_per_turn": 42.61
+    },
+    "279": {
+     "turns": 1.485,
+     "ratio": 1.203,
+     "s_per_turn": 40.39
+    }
+   },
+   "band": "+-4 % on turns (k spread 0.856-0.908 across the four arms)",
+   "caveat": "279 is a synthetic short-prompt n16 figure; these agents decode at 20-40k context, so the long-context attention / KV reads (not measured apart here) are part of the 195 vs 279 gap. Treat 279 as a ceiling, not a target.",
+   "build_days": {
+    "v": [
+     3,
+     10
+    ],
+    "tag": "UNKNOWN"
+   },
+   "falsified_if": [
+    "a decode lever that raises Dn (as defined) by x % moves paired turns by a different amount than this curve, outside +-4 %"
+   ]
+  },
+  "ranking": {
+   "by": "net seconds saved per agent turn on the critical path (coalescing delay, decode interference and tool gaps included), per build-day",
+   "rows": [
+    {
+     "lever": "d per-chunk overhead O: time it, then cut it",
+     "s_per_turn": [
+      1.9,
+      3.8
+     ],
+     "build_days": [
+      1.5,
+      2.5
+     ],
+     "s_per_turn_per_day": [
+      0.8,
+      2.5
+     ],
+     "confidence": "low-moderate: O is inferred"
+    },
+    {
+     "lever": "decode capacity at long context",
+     "s_per_turn": [
+      2.0,
+      8.2
+     ],
+     "build_days": [
+      3,
+      10
+     ],
+     "s_per_turn_per_day": [
+      0.2,
+      2.7
+     ],
+     "confidence": "model moderate (one k fits both sides), build path unknown"
+    },
+    {
+     "lever": "e cheaper per-chunk expert pass",
+     "s_per_turn": [
+      1.5,
+      3.2
+     ],
+     "build_days": [
+      2,
+      4
+     ],
+     "s_per_turn_per_day": [
+      0.4,
+      1.6
+     ],
+     "confidence": "low: what-if"
+    },
+    {
+     "lever": "c coalesce hold 50-300 ms",
+     "s_per_turn": [
+      0.08,
+      0.3
+     ],
+     "build_days": 0,
+     "s_per_turn_per_day": "free, but below what a 2-pair T resolves",
+     "confidence": "moderate"
+    },
+    {
+     "lever": "a chunk rows 8192 / 16384",
+     "s_per_turn": [
+      0,
+      0
+     ],
+     "build_days": 0,
+     "confidence": "high: no window read is that long"
+    },
+    {
+     "lever": "b sub-chunk join",
+     "s_per_turn": [
+      -0.5,
+      0.2
+     ],
+     "build_days": [
+      4,
+      6
+     ],
+     "confidence": "moderate"
+    }
+   ],
+   "advice": "Do not book a lever arm for a, b or c. First rung: time O (a measurement, trace-level, could ride any odie booking), then build the O cut and/or a decode lever; Q then runs once on the combined stack.",
+   "label": "CONDITIONAL: superseded by turn_prediction_overlap_1028; net-time figures rest on the withdrawn stall split"
+  }
+ },
+ "discriminator_1028": {
+  "label": "MEASURED unless tagged; no new run (an agent discriminator, 2026-10-28)",
+  "1_hashes": {
+   "result": "all 10 archived files match the sha256s in the T README (driver.log, run.log, 4 engine logs, 4 replay JSONs)",
+   "tag": "MEASURED"
+  },
+  "2_recount": {
+   "boundary": "t0 = warmup_s = 600.000 s after the agents start, t1 = t0 + window_s (600.0); in_window = sent >= t0 holds for every record",
+   "arms": {
+    "rp-off-1": {
+     "sent": 184,
+     "completed": 182,
+     "usage": 182,
+     "no_first_token": 0
+    },
+    "rp-on-1": {
+     "sent": 199,
+     "completed": 198,
+     "usage": 198,
+     "no_first_token": 4
+    },
+    "rp-off-2": {
+     "sent": 187,
+     "completed": 182,
+     "usage": 182,
+     "no_first_token": 1
+    },
+    "rp-on-2": {
+     "sent": 199,
+     "completed": 197,
+     "usage": 197,
+     "no_first_token": 0
+    }
+   },
+   "headline": "off 182 + 182, on 198 + 197 completed: 1.1375 and 1.234 turns/agent-min, paired 1.0852"
+  },
+  "3_occupancy": {
+   "result": "9600.0 agent-s in every arm (exact); an earlier draft dropped the 4 no-first-token turns of rp-on-1 (9595.7): fixed in tools/hl356_merged_budget.py"
+  },
+  "4_same_run_chunk_counters": {
+   "result": "NONE: the merged summary (admissions, chunks, parts, rows, ms) resets at the batch timing line, which printed once (at the end) in each T log; no window-bounded chunk or part count exists. Window parts/chunk is UNKNOWN as a measurement"
+  },
+  "5a_code": {
+   "tag": "READ (code, b084e69)",
+   "result": "no decode window runs while a merged or a request-path prefill chunk is in flight, on either stage",
+   "lines": [
+    "generate.cpp:10818-10838 serve loop: windows launch only from pump(true) on the serve thread; a due merged chunk calls merged_step instead",
+    "generate.cpp:10642 + 10234-10238 merged_step drains: pump(false) until nothing is in flight (completes, launches no new token step)",
+    "generate.cpp:10712 sp.run(...) on the serve thread; prefill.cpp:1739-1745 NextWait joins every later stage before run returns",
+    "generate.cpp:10760-10769 refill and the decode share run after the chunk, still on the serve thread",
+    "generate.cpp:10851 the request path drains before any command line but BSTOP; generate.cpp:12411 read_part runs inside the command; decode runs only between chunks of a multi-chunk read (decode share, 12113-12197)",
+    "ee11000 -> b084e69 changes only the timeline calibration (generate.cpp, 10 lines) and its test: merged_step is unchanged"
+   ]
+  },
+  "5b_aligned": {
+   "tag": "MEASURED (2 trace runs, pre-fix engines 7c68675/ee11000, trace ring with ms stamps)",
+   "result": "18 merged chunk runs (357.8 s of run, 19.9 s mean: the warm-up's 32k-row cold chunks, 13-15 readers queued): 0 decode windows launched or completed inside any run, against 3,823 completed outside them (19.7-28.6 a second)",
+   "out_of_run_work_per_chunk_ms": {
+    "mean": 288,
+    "median": 302,
+    "range": [
+     141,
+     484
+    ],
+    "plan_to_run_mean": 86,
+    "ran_to_done_mean": 202,
+    "note": "also serialized (all on the serve thread); measured on warm-up chunks only"
+   },
+   "limits": [
+    "the ring exists only at a stall dump, so it covers the first ~3 minutes of those runs, not T's steady state",
+    "T's own artifacts have no timestamps on chunks or decode steps: no aligned steady-state intervals exist"
+   ]
+  },
+  "what_survives": {
+   "serialization": {
+    "tag": "MEASURED",
+    "v": "decode stops for every merged chunk run and its out-of-run work (code + 18 aligned chunks)"
+   },
+   "merged_run_wall_in_window": {
+    "tag": "MEASURED counter",
+    "v": [
+     217.1,
+     221.1
+    ],
+    "src": "on-arm server prompt_ms delta: the merged readers' read_ms (their parts' share of chunk run wall, serve/server.py:1482-1496, summed at completion 4769); window-row reads add none. Credited at completion, so the window edges shift it by a few chunks (INFERRED +-5 s)"
+   },
+   "blocked_agent_s_per_turn": {
+    "tag": "CONDITIONAL",
+    "v": 14.3,
+    "band": [
+     13.2,
+     15.5
+    ],
+    "src": "219 s x agents in the decode phase during runs (12-14: the partition's 13.4 average, minus the readers; not aligned) / 197.5 turns"
+   },
+   "stall_other_2_95": {
+    "tag": "WITHDRAWN",
+    "v": "not identifiable from these counters"
+   },
+   "out_of_run_work": {
+    "tag": "CONDITIONAL",
+    "v": "0.14-0.48 s a chunk on warm-up chunks; the steady-state chunk count in the window is UNKNOWN (simulated 117-121)"
+   }
+  },
+  "next_evidence": "one aligned record: STRATA_MERGED_TRACE (or a timestamped per-chunk line) left on through a T window and dumped at the end, plus the replay's per-chunk SSE stamps; then 'decode tokens during prefill intervals vs outside' is MEASURED for steady state"
+ },
+ "turn_prediction_overlap_1028": {
+  "label": "PREDICTION before any run (no odie); EXPLORATORY, quality UNKNOWN (Q held). Every net-time figure is CONDITIONAL until an aligned steady-state record exists (discriminator_1028.next_evidence). Supersedes the ranking in turn_prediction_next_rung_1028.",
+  "written_utc": "2026-10-28T07:xxZ",
+  "basis": {
+   "partition_on_s_per_turn": {
+    "v": 48.61,
+    "tag": "MEASURED",
+    "parts": {
+     "ttft": 4.06,
+     "no_first_token": 0.04,
+     "decode_phase": 40.7,
+     "tool_gap": 3.82
+    }
+   },
+   "blocked_by_merged_runs": {
+    "v": 14.3,
+    "band": [
+     13.2,
+     15.5
+    ],
+    "tag": "CONDITIONAL",
+    "src": "discriminator_1028: serialization MEASURED (code + 18 aligned chunks); run wall 217-221 s a window MEASURED counter; agents in the decode phase during runs (12-14) not aligned"
+   },
+   "out_of_run_work": {
+    "v": 2.26,
+    "band": [
+     1.1,
+     3.6
+    ],
+    "tag": "CONDITIONAL",
+    "src": "0.288 s a chunk MEASURED mean on warm-up chunks (0.14-0.48) x 119 chunks a window (SIMULATED) x 13 agents / 197.5 turns"
+   },
+   "decode_phase_rest": {
+    "v": 24.1,
+    "tag": "CONDITIONAL",
+    "src": "decode phase minus the two above: running decode plus anything else"
+   },
+   "turns": "1.234 x 48.61 / (48.61 - saved): per-stream speed outside the blocked time held fixed",
+   "upper_bound": {
+    "blocked_runs_to_zero": {
+     "s_per_turn": 34.31,
+     "turns": 1.748
+    },
+    "plus_out_of_run_to_zero": {
+     "s_per_turn": 32.05,
+     "turns": 1.872
+    }
+   }
+  },
+  "engine_facts": {
+   "tag": "READ (an engine read at b084e69, CL95-98, plus this lane's)",
+   "src": "generate.cpp, prefill.cpp, verify.cpp at b084e69",
+   "shared": [
+    "independent-position, session-local state and attention exist for segments (prefill.hpp:185-204; prefill.cpp:2261-2307, 2464-2478)",
+    "merged runs suppress output callbacks today (generate.cpp:10571-10576, 10678-10691; prefill.cpp:3477-3503); the prompt path has no LM head, sampler or token emission",
+    "the merged entry drains the windows, runs one chunk and joins the downstream stages (generate.cpp:9946-9964, 10100-10169, 10640-10712; prefill.cpp:3431-3437, 3490-3493)"
+   ],
+   "hard_invariants": [
+    "one window per verifier",
+    "host polling must serve the missing CPU experts; a blocked serve thread stalls its CPU windows, so separate pollers need separate or exclusive pools",
+    "compute completion is not outbound consumption (verify.cpp:3087-3094, 3151-3200, 3245-3253)",
+    "prompt scratch borrows expert-cache slots: a refill waits for all device work, trailing copies included (generate.cpp:10474-10555)",
+    "the calibration skip (b084e69) fixed one deadlock; it does not make overlap safe in general"
+   ]
+  },
+  "levers": {
+   "A_mixed_batches": {
+    "label": "CONDITIONAL",
+    "what": "each decoding slot's next token rides the merged chunk's pass as a one-row segment",
+    "feasible": "not ruled out by the CPU-served windows: during the pass every non-resident expert is streamed to the GPU, so decode rows need no CPU expert; a known decode token can be a one-row segment",
+    "needs": [
+     "the chosen decoders' residuals through the final norm, LM head and sampler on the last stage",
+     "normal token, EOS, accounting and history handling (merged runs suppress output callbacks today)",
+     "MTP: skip or resync drafts for those rows"
+    ],
+    "limit": "one pass gives each decoder ONE new token; successive tokens cannot be prebatched. A pass costs >= the expert stream, so this recovers a token per ~2 s pass against one per 70-100 ms outside (19.7-28.6 windows a second, 2 groups, MEASURED in the trace rings)",
+    "s_saved_per_turn": {
+     "v": 0.5,
+     "band": [
+      0.2,
+      0.9
+     ],
+     "tag": "CONDITIONAL",
+     "src": "119 chunks (SIMULATED) x 13 decoding agents x 70-100 ms / 197.5, minus one-row segments + head (~20-40 ms a chunk x 8 agent-s a turn per s a chunk)"
+    },
+    "turns": {
+     "v": 1.247,
+     "band": [
+      1.239,
+      1.257
+     ]
+    },
+    "build_days": {
+     "v": [
+      6,
+      9
+     ],
+     "tag": "INFERRED",
+     "src": "head + sampler on selected rows, token/EOS/accounting/history paths, MTP resync, parity: prefill_merge_parity.cpp:509-558 covers neither expert-product parity nor decode completion, so a new parity test too"
+    },
+    "falsified_if": [
+     "a build gains over 3 % paired turns",
+     "decode tokens a pass a decoding slot != 1"
+    ]
+   },
+   "B_stage_overlap": {
+    "label": "CONDITIONAL",
+    "what_blocks": "the merged entry drains every window and runs one chunk on the serve thread, joining the later stages before it returns; nothing else runs meanwhile (discriminator_1028.5a). A decode token needs stage 0 then stage 1, so overlap means decode kernels share the card that is prefilling",
+    "needs": [
+     "stage-local admission and release of the prompt pass and the windows",
+     "per-flight completion and lifetime ownership (asynchronous submission alone is not enough)",
+     "a separate poller with its own or an exclusive CPU expert pool, or the serve thread kept free to serve host flags",
+     "refill only after all device work incl. trailing copies; windows tolerate lent slots (their experts go to the CPU)"
+    ],
+    "bound": "each card idles while the other runs its half of a one-chunk pass (stages serial within a chunk: prefill.cpp NextWait; trace lines 'done on this GPU; waiting for the next stage's last'): at most about half the blocked time is reclaimable",
+    "s_saved_per_turn": {
+     "v": 4.3,
+     "band": [
+      2.9,
+      7.2
+     ],
+     "tag": "CONDITIONAL",
+     "src": "bound = 14.3 / 2 = 7.15; 40-70 % of it once slower CPU-expert windows and interleave granularity are paid"
+    },
+    "turns": {
+     "v": 1.354,
+     "band": [
+      1.312,
+      1.449
+     ]
+    },
+    "build_days": {
+     "v": [
+      7,
+      11
+     ],
+     "tag": "INFERRED",
+     "src": "1 d CPU discriminator first, then stage-local admission/release, per-flight ownership, a second poller/pool, queue separation, GPU queue-safety checks"
+    },
+    "first_step": "extend batch_groups_test.cpp:114-170 with a deterministic two-stage prompt/decode ownership model, a delayed outbound acknowledgement and trailing-copy completion; assert host-service progress and no early reuse of scratch or refill; include failing negative controls. A CPU proof cannot show GPU queue safety or the mixed path's numerics",
+    "falsified_if": [
+     "measured per-card busy during a merged run over 60 % (less idle card to reclaim)",
+     "a build gains under 2.5 s or over 7.2 s a turn (paired)"
+    ]
+   },
+   "C_decode_priority_split": {
+    "label": "CONDITIONAL",
+    "what": "split a read into pieces with decode steps between them",
+    "break_even": "none in this regime: a split creates no overlap, it only moves blocked time and adds per-piece fixed work (the expert pass, C0 0.65 s fitted, plus 0.29 s out-of-run MEASURED on warm-up chunks): ~0.94 s x ~8 agent-s a turn per second a chunk per extra piece. It breaks even only at zero fixed per-piece cost; the open-loop simulator goes unstable at 2048 rows and below",
+    "s_saved_per_turn": {
+     "v": -7.0,
+     "band": [
+      -10.0,
+      -3.0
+     ],
+     "tag": "CONDITIONAL",
+     "src": "one extra piece on every merged read at steady state"
+    },
+    "build_days": 0,
+    "note": "env-reachable (STRATA_BATCH_PREFILL_MERGED_ROWS); do not run it"
+   },
+   "D_cut_out_of_run_work": {
+    "label": "CONDITIONAL",
+    "measured": "0.288 s a chunk mean (0.141-0.484): plan->run 86 ms (drain, adaptive round, lend, setups), ran->done 202 ms (checkpoint saves, handover, refill) on 18 warm-up chunks; steady-state chunks lend smaller layouts, so their refill may be shorter",
+    "stall_s_per_turn": {
+     "v": 2.26,
+     "band": [
+      1.1,
+      3.6
+     ],
+     "tag": "CONDITIONAL"
+    },
+    "s_saved_per_turn": {
+     "v": 1.7,
+     "band": [
+      1.1,
+      2.3
+     ],
+     "tag": "CONDITIONAL",
+     "src": "cut 50-100 % of it (+ the reader's own share of TTFT, ~0.2 s a turn)"
+    },
+    "turns": {
+     "v": 1.279,
+     "band": [
+      1.263,
+      1.295
+     ]
+    },
+    "build_days": {
+     "v": [
+      1.5,
+      2.5
+     ],
+     "tag": "INFERRED",
+     "src": "0.5 d steady-state per-chunk timing (the next_evidence record gives it); 1-2 d: refill pinned/queued or lazy while a reader is queued (must still wait for trailing copies), checkpoint save off the blocked path, relayout only on a size change"
+    },
+    "falsified_if": [
+     "steady-state out-of-run work under 0.1 s a chunk",
+     "after a cut, turns move by a different amount than the timed seconds x 8 agent-s per chunk-second, outside +-40 %"
+    ]
+   },
+   "decode_capacity": {
+    "label": "CONDITIONAL",
+    "s_saved_per_turn": {
+     "plus_18_pct": {
+      "v": 4.0
+     },
+     "plus_43_pct": {
+      "v": 7.9
+     },
+     "tag": "CONDITIONAL",
+     "src": "decode-phase rest (~24 s, CONDITIONAL) x x/(1+x); 279 synthetic = +43 % is a ceiling (short context)"
+    },
+    "turns": {
+     "plus_18_pct": 1.345,
+     "plus_43_pct": 1.473
+    },
+    "build_days": {
+     "v": [
+      3,
+      10
+     ],
+     "tag": "UNKNOWN",
+     "src": "no build path named"
+    }
+   }
+  },
+  "ranking": {
+   "label": "CONDITIONAL",
+   "by": "net critical-path seconds a turn per build-day",
+   "rows": [
+    {
+     "rank": 1,
+     "lever": "D cut the out-of-run per-chunk work",
+     "s_per_turn": [
+      1.1,
+      2.3
+     ],
+     "build_days": [
+      1.5,
+      2.5
+     ],
+     "per_day": [
+      0.44,
+      1.53
+     ]
+    },
+    {
+     "rank": 2,
+     "lever": "B prefill/decode overlap across the two cards",
+     "s_per_turn": [
+      2.9,
+      7.2
+     ],
+     "build_days": [
+      7,
+      11
+     ],
+     "per_day": [
+      0.26,
+      1.03
+     ],
+     "note": "largest gain with a known path; 1-day CPU discriminator first"
+    },
+    {
+     "rank": 3,
+     "lever": "decode capacity at long context",
+     "s_per_turn": [
+      4.0,
+      7.9
+     ],
+     "build_days": [
+      3,
+      10
+     ],
+     "per_day": [
+      0.4,
+      2.6
+     ],
+     "note": "no named build path; ranked below B for that"
+    },
+    {
+     "rank": 4,
+     "lever": "A mixed batches",
+     "s_per_turn": [
+      0.2,
+      0.9
+     ],
+     "build_days": [
+      6,
+      9
+     ],
+     "per_day": [
+      0.02,
+      0.15
+     ]
+    },
+    {
+     "rank": 5,
+     "lever": "C split reads",
+     "s_per_turn": [
+      -10,
+      -3
+     ],
+     "build_days": 0,
+     "per_day": "negative"
+    }
+   ],
+   "stack": "D + B: ~4.0-9.5 s a turn, turns ~1.34-1.53 (CONDITIONAL)",
+   "before_any_build": "the aligned steady-state record (discriminator_1028.next_evidence) turns the blocked-time basis from CONDITIONAL to MEASURED and times D; B's CPU ownership test runs on fab"
+  }
+ },
+ "turn_prediction_d_events_1028": {
+  "label": "PREDICTION before any run (written before the odie booking); EXPLORATORY, performance only, quality UNKNOWN (gate Q held). Engine 1cee4f4 (b084e69 + STRATA_BATCH_CKPT_PINNED + STRATA_BATCH_EVENTS).",
+  "written_utc": "2026-10-28T05:10Z",
+  "plan": {
+   "arms": "rp-off, rp-on, rp-on-d in that order, one run each; same image, same env except STRATA_BATCH_PREFILL_MERGED=1 (rp-on, rp-on-d) and STRATA_BATCH_CKPT_PINNED=1 (rp-on-d only); STRATA_BATCH_TIMELINE=500 and STRATA_BATCH_EVENTS=1 in every arm; agent-long-16, 16 agents, 600 s warm-up + 600 s window",
+   "evidence": "the engine event log (wall-clock ns, dumped on a trigger right after each arm's window) lined up with the replay's per-turn stamps (agent-replay t_start_epoch); both clocks are NTP-synced hosts (thinkpad, odie)"
+  },
+  "what_D_is": {
+   "tag": "READ (engine 1cee4f4)",
+   "v": "D1 = the turn-checkpoint save only: pinned per-stage staging kept across saves, both stages' copies queued before one wait apiece. It does NOT touch plan->run (86 ms a chunk: drain, adaptive round, lend, setups) or the refill (already staged). So it addresses ~140 ms of each save, not the whole 0.288 s a chunk the overlap ranking counted for D"
+  },
+  "inputs": {
+   "save_ms_now": {
+    "v": [
+     134,
+     143
+    ],
+    "tag": "MEASURED",
+    "src": "trace rings, chunks with one save: ran->done 134-143 ms; two saves 273-311 ms"
+   },
+   "saves_per_window": {
+    "v": [
+     100,
+     140
+    ],
+    "tag": "INFERRED",
+    "src": "T whole-run merged summaries: 227-231 admissions, 166-170 chunks over warm-up + window; each admission saves one turn checkpoint (prompt cache on); the window's share is not counted (the summary resets once)"
+   },
+   "agents_decoding_during_a_save": {
+    "v": [
+     12,
+     14
+    ],
+    "tag": "CONDITIONAL",
+    "src": "as discriminator_1028 (not aligned)"
+   },
+   "save_ms_after_D": {
+    "v": [
+     15,
+     45
+    ],
+    "tag": "INFERRED",
+    "src": "~57 MB a stage; pinned host copy at PCIe 4.0 rates ~5 ms, plus unstage memcpy into the checkpoint vectors ~10-25 ms, both stages in parallel"
+   }
+  },
+  "predictions": {
+   "rp-on_blocked_agent_s_per_turn": {
+    "v": 14.3,
+    "band": [
+     13.2,
+     15.5
+    ],
+    "tag": "CONDITIONAL -> this run MEASURES it",
+    "def": "sum over merged runs (mp_run->mp_ran) clipped to the window of run seconds x slots decoding at the chunk's plan (mp_plan d), / completed turns; reported with the client-side count (agents between first token and end) beside it"
+   },
+   "rp-on_out_of_run_s_per_chunk": {
+    "v": 0.25,
+    "band": [
+     0.12,
+     0.4
+    ],
+    "tag": "PREDICTION",
+    "def": "mp_plan->mp_run + mp_ran->mp_done, window chunks"
+   },
+   "rp-on_chunks_in_window": {
+    "v": 110,
+    "band": [
+     80,
+     140
+    ],
+    "tag": "PREDICTION (simulated 117-121 earlier)"
+   },
+   "rp-on_save_ms": {
+    "v": 135,
+    "band": [
+     100,
+     180
+    ],
+    "tag": "PREDICTION",
+    "def": "(mp_ran->mp_saved) / saves, chunks with >= 1 save"
+   },
+   "rp-on-d_save_ms": {
+    "v": 30,
+    "band": [
+     15,
+     45
+    ],
+    "tag": "PREDICTION"
+   },
+   "rp-on-d_saved_agent_s_per_turn": {
+    "v": 0.86,
+    "band": [
+     0.54,
+     1.23
+    ],
+    "tag": "PREDICTION",
+    "src": "0.5-0.7 saves a turn x 90-125 ms cut x 12-14 decoding agents"
+   },
+   "turns_per_agent_min": {
+    "rp-off": {
+     "v": 1.137,
+     "band": [
+      1.09,
+      1.19
+     ],
+     "src": "T off 1.1375 (two runs, 182 + 182), +-4 % run-to-run"
+    },
+    "rp-on": {
+     "v": 1.234,
+     "band": [
+      1.185,
+      1.285
+     ],
+     "src": "T on 1.234 (198 + 197); the events cost under 1 %"
+    },
+    "rp-on-d": {
+     "v": 1.256,
+     "band": [
+      1.248,
+      1.266
+     ],
+     "src": "1.234 x 48.61 / (48.61 - 0.86); per-stream speed outside the blocked time held fixed"
+    }
+   },
+   "resolution": "the turn gain of D (~+1.8 %, ~3.5 turns a window) is below one-run noise: the turn count is a WEAK test of D here; the engine's per-save time and the measured blocked seconds are the tests"
+  },
+  "falsified_if": [
+   "rp-on-d median save under the pinned path over 60 ms (D1 did not cut the save), or rp-on median save outside 100-180 ms (the save basis is wrong)",
+   "rp-on measured blocked agent-s a turn outside 11-17.5 (the 14.3 basis is wrong)",
+   "rp-on turns/agent-min under 1.185 (the events or the image cost turns, or the day drifted: then no D comparison is drawn)",
+   "rp-on-d minus rp-on turns over +6 % or under -3 % (a change the save cut cannot explain)",
+   "any arm's event dump dropped records, or no dump arrived (the record is incomplete: D untimed)"
+  ],
+  "combined_booking": {
+   "label": "PREDICTION before the booking (coordinator's combined-build brief, 2026-10-28 ~05:20Z): arms 3-6 on the same image 71cb4042 (engine 1cee4f4), only the named switches different. EXPLORATORY, performance only, quality UNKNOWN (Q held)",
+   "written_utc": "2026-10-28T05:30Z",
+   "source_checks": {
+    "tag": "READ (engine 1cee4f4)",
+    "v": [
+     "STRATA_BATCH_OUTBOUND_ASYNC: include/strata/core/batch_outbound.hpp:20 kEnabledDefault = false, read at :32",
+     "STRATA_BATCH_PLE_SLOTS: src/core/verify.cpp:227 kBatchPleSlotsDefault = false, read at :229",
+     "STRATA_VERIFY_PROFILE: src/core/verify.cpp:619; its batch-window stamps are a blocking copy (:3229), so it rides synthetic arms only"
+    ]
+   },
+   "arms": {
+    "rp-on-d": "as turn_prediction_d_events_1028.predictions (1.256, 1.248-1.266; save 30 ms, 15-45)",
+    "rp-on-dc": {
+     "what": "rp-on-d + C (STRATA_BATCH_OUTBOUND_ASYNC=1 + STRATA_BATCH_PLE_SLOTS=1)",
+     "turns_per_agent_min": {
+      "v": 1.271,
+      "band": [
+       1.257,
+       1.287
+      ],
+      "src": "rp-on-d 1.256 x the C lever ratio 1.249/1.234 (predictions-decode-longctx-1028 levers.C, 1.244-1.257), stacked multiplicatively: C acts on the decode windows, D on the merged chunk's saves"
+     },
+     "stage1_idle_ms_per_window": {
+      "v": "rp-on-d's median minus 0.5-1.0",
+      "tag": "PREDICTION",
+      "src": "levers.C saves_ms_per_window; read from the timeline lines (STRATA_BATCH_TIMELINE=500)"
+     },
+     "resolution": "rp-on-dc vs rp-on-d is +1.2 % (~2.4 turns): below one-run noise; the stage-1 idle drop in the timeline is the test",
+     "falsified_if": [
+      "stage-1 idle median does not fall by >= 0.4 ms a window against rp-on-d",
+      "rp-on-dc minus rp-on-d turns outside -3 % .. +5 %"
+     ]
+    },
+    "sy-prof-c32-40k": {
+     "what": "strata-sustained n16, fillers 32-40k spread, max_tokens 1000 (no wrap), prewarmed (every prompt read once, then all 16 decode together), merged on, D off, STRATA_VERIFY_PROFILE=1",
+     "agg_tok_s": {
+      "v": 235,
+      "band": [
+       215,
+       265
+      ],
+      "src": "predictions-decode-longctx-1028 next_measurement"
+     },
+     "stage1_window_ms": {
+      "v": 34.0,
+      "band": [
+       30.2,
+       37.2
+      ]
+     },
+     "qsa_scores_topk_resolve_append_s1_ms": {
+      "v": 7.0,
+      "band": [
+       4.0,
+       9.0
+      ]
+     },
+     "dense_s1_ms": {
+      "v": 12.0,
+      "band": [
+       10.0,
+       12.6
+      ]
+     },
+     "wall_min": {
+      "v": 10,
+      "band": [
+       8,
+       13
+      ],
+      "src": "~590k prompt tokens at 1.2-1.3k tok/s merged (7.6-8.2 min) + ~70 s of decode + load"
+     },
+     "decides": "as next_measurement.decides: agg >= 265 or QSA phases <= 4.5 ms -> lever A drops below C/B/D; agg <= 215 or QSA >= 9 ms -> A ranks first",
+     "caveat": "the profile's blocking copy a window costs host time, so agg is a floor on the unprofiled rate; the phase ms are the measurement"
+    },
+    "sy-prof-c8k": {
+     "what": "same at 8k fillers (optional, last; skipped if the deadline is near)",
+     "agg_tok_s": {
+      "v": 275,
+      "band": [
+       250,
+       310
+      ],
+      "src": "279.6 unprofiled 8-row 8.4k reference (profiled build, --batch 16, all experts resident) + engine delta 0 to -8 ms a step (faster), - the host-served experts at --batch 32 (~1.5 ms) and the profile's blocking copy"
+     },
+     "stage_window_ms": {
+      "v": 27.6,
+      "band": [
+       24.0,
+       29.5
+      ],
+      "src": "55.3 ms profiled device a step / 2 at 8k; the engine-delta row is this minus 27.65"
+     },
+     "decides": "the engine-delta row of the decomposition (UNATTRIBUTED -3.7, band -8..0) becomes MEASURED; the 32-40k minus 8k phase difference is the long-context term directly"
+    }
+   },
+   "not_run": "lever B (--batch 16) read, not run: it caps R8 at 16 slots",
+   "falsified_if": [
+    "sy-prof-c32-40k agg outside 215-265 or its stage-1 QSA phases outside 4-9 ms (the long-context basis is wrong)",
+    "sy-prof-c32-40k never reaches full occupancy (prewarm failed to put all 16 prompts in the cache): no rate is drawn"
+   ]
+  }
+ },
+ "measured_combined_1028": {
+  "label": "MEASURED unless tagged; EXPLORATORY, quality UNKNOWN (Q held)",
+  "written_utc": "2026-10-28T07:45Z",
+  "against": "turn_prediction_d_events_1028 (067b0b4) + its combined_booking block (d08aeed)",
+  "image": "cand-merged-1cee4f4 sha256:71cb4042..., qualified merged6 26/26",
+  "booking": "odie b1793165572 05:32-07:23Z; R8 restored 07:22Z (inspect = ref, canary OK, units active)",
+  "readme": "lab notes",
+  "arms": {
+   "rp-off": {
+    "turns": 188,
+    "turns_per_agent_min": 1.175,
+    "agg_tok_s": 96.61,
+    "blocked_s_per_turn_engine": 14.17,
+    "blocked_s_per_turn_client": 14.09,
+    "blocked_by": "request-path reads",
+    "stage1_gpu_idle_ms": [
+     29.12,
+     1.5
+    ]
+   },
+   "rp-on": {
+    "turns": 187,
+    "turns_per_agent_min": 1.169,
+    "agg_tok_s": 91.3,
+    "blocked_s_per_turn_engine": 14.34,
+    "blocked_s_per_turn_client": 13.94,
+    "chunks": 116,
+    "save_ms_median": 88.9,
+    "refill_ms_mean": 222,
+    "plan_to_run_ms_mean": 78,
+    "run_s_mean": 1.76,
+    "out_of_run_s_per_turn": 3.25,
+    "stage1_gpu_idle_ms": [
+     30.76,
+     2.9
+    ]
+   },
+   "rp-on-d": {
+    "turns": 190,
+    "turns_per_agent_min": 1.188,
+    "agg_tok_s": 91.72,
+    "blocked_s_per_turn_engine": 14.23,
+    "blocked_s_per_turn_client": 14.05,
+    "chunks": 117,
+    "save_ms_median": 83.5,
+    "refill_ms_mean": 224,
+    "out_of_run_s_per_turn": 3.17,
+    "stage1_gpu_idle_ms": [
+     31.56,
+     3.21
+    ]
+   },
+   "rp-on-dc": {
+    "turns": 197,
+    "turns_per_agent_min": 1.231,
+    "agg_tok_s": 90.61,
+    "blocked_s_per_turn_engine": 13.82,
+    "blocked_s_per_turn_client": 13.52,
+    "chunks": 122,
+    "save_ms_median": 83.0,
+    "refill_ms_mean": 218,
+    "out_of_run_s_per_turn": 3.11,
+    "stage1_gpu_idle_ms": [
+     31.3,
+     1.63
+    ],
+    "stage0_gpu_ms": 28.05
+   },
+   "sy-prof-c8k": {
+    "agg_tok_s": 274.09,
+    "full_occupancy_s": 57.84,
+    "stage1_profile_ms_per_window": 27.15,
+    "qsa_scores_topk_resolve_ms": 0.0,
+    "qsa_append_ms": 0.65,
+    "attention_ms": 1.1
+   },
+   "sy-prof-c32-40k": {
+    "result": "ENGINE STALL: prewarm read 607k tokens in 412 s; the measured requests stalled at their first window (no progress 60 s, idle -1, GPU never rang, 0 flags served), SIGABRT; no rate",
+    "cause": "INFERRED, not verified: STRATA_VERIFY_PROFILE's blocking copy on the serve thread deadlocks a window needing host service (KV streaming at 42k), the b084e69 class"
+   }
+  },
+  "scored": {
+   "rp-on_blocked_agent_s_per_turn": {
+    "predicted": 14.3,
+    "measured": 14.34,
+    "verdict": "HOLDS (engine and client counts agree within 3 %); rp-off loses the same 14.17 to request-path reads"
+   },
+   "rp-on_out_of_run_s_per_chunk": {
+    "predicted": 0.25,
+    "band": [
+     0.12,
+     0.4
+    ],
+    "measured": 0.398,
+    "verdict": "at the band top; refill 222 ms is the largest part"
+   },
+   "rp-on_chunks_in_window": {
+    "predicted": 110,
+    "band": [
+     80,
+     140
+    ],
+    "measured": 116,
+    "verdict": "HOLDS"
+   },
+   "rp-on_save_ms": {
+    "predicted": 135,
+    "band": [
+     100,
+     180
+    ],
+    "measured": 88.9,
+    "verdict": "FALSIFIED (below the band): the warm-up trace rings overstated the steady save"
+   },
+   "rp-on-d_save_ms": {
+    "predicted": 30,
+    "band": [
+     15,
+     45
+    ],
+    "measured": 83.5,
+    "verdict": "FALSIFIED: D1 cuts nothing; whether its pinned path ran is UNKNOWN (no fallback log)"
+   },
+   "rp-on_turns_floor_1.185": {
+    "measured": 1.169,
+    "verdict": "FIRES: no turn comparison between single arms is drawn; on is not above off today (187 vs 188)"
+   },
+   "rp-on-dc_stage1_idle_drop_ge_0.4ms": {
+    "measured": 1.58,
+    "verdict": "HOLDS (3.21 -> 1.63); cycle unchanged 33.8 -> 33.2 ms, stage-1 gpu the bottleneck"
+   },
+   "rp-on-dc_minus_rp-on-d_turns": {
+    "measured_pct": 3.7,
+    "falsifier": [
+     -3,
+     5
+    ],
+    "verdict": "not fired; inside one-run noise"
+   },
+   "sy-prof-c8k": {
+    "predicted_agg": 275,
+    "measured": 274.09,
+    "predicted_stage_ms": 27.6,
+    "measured_stage_ms": 27.15,
+    "verdict": "HOLDS"
+   },
+   "sy-prof-c32-40k": {
+    "verdict": "NO MEASUREMENT (engine stall); lever A's size stays UNMEASURED"
+   }
+  },
+  "next": [
+   "refill (222 ms a chunk) is the measured out-of-run target",
+   "log the pinned save's fallback before any D rerun",
+   "a non-blocking profile mode or a KV ring sized to depth before a 32-40k profile",
+   "paired repeats for turn A/Bs (single arms cannot resolve < ~5 %)"
+  ]
+ },
+ "plan_1028_noise_d2_b_events": {
+  "label": "PREDICTION before code (engine 1cee4f4 -> next); EXPLORATORY, performance only, quality UNKNOWN (Q held). Inputs re-read from the combined-1028 engine event logs (rp-on 162 chunks, rp-on-d 164; whole log, warm-up included unless noted)",
+  "written_utc": "2026-10-28T09:10Z",
+  "noise_design": {
+   "what_differs_today_vs_T": {
+    "tag": "READ (image + arms json)",
+    "v": "T (merged-T-1028b, engine b084e69) vs today (1cee4f4): STRATA_BATCH_EVENTS=1 in every arm (records into a preallocated array; one relaxed load when off), the trigger poll once a second at the loop top (and line_within(1 s) only when idle), D1 code present but inactive without STRATA_BATCH_CKPT_PINNED, the merged6 qualification the same; prewarm only in the sy-* arms. No setting of the merged path differs"
+   },
+   "engine_metrics_vs_T": {
+    "tag": "MEASURED",
+    "v": "parts/chunk 1.44 (T 1.41/1.42); merged rows/s 1320 (T 1314/1317); prefill busy % 36.1 (T 36.2/36.8); decode cycle 32.9 ms (T 32.6/31.8): the engine did the same work at the same rates"
+   },
+   "workload_realization": {
+    "tag": "MEASURED",
+    "v": "output tokens a turn 293 today vs 303/286 in T; 89 of 187 turns end early (EOS before the recorded length; out/recorded 0.72-0.75): sampling decides turn lengths, so two arms run different workloads"
+   },
+   "sigma": {
+    "within_booking_aa_pct": {
+     "v": [
+      0.0,
+      0.5,
+      1.6
+     ],
+     "tag": "MEASURED",
+     "src": "T off/off 182/182, T on/on 198/197, today on vs on-d 187/190 (D1 measured as no change: an A/A)"
+    },
+    "sigma_diff_pct": {
+     "v": 0.97,
+     "band": [
+      0.6,
+      3.6
+     ],
+     "tag": "COMPUTED",
+     "src": "RMS of the 3 A/A differences; the band is the 95 % chi-square interval on 3 df: the estimate is weak"
+    },
+    "across_bookings_pct": {
+     "v": [
+      3.3,
+      -5.3
+     ],
+     "tag": "MEASURED",
+     "src": "off 182 -> 188, on 198 -> 187: never compare arms across bookings"
+    }
+   },
+   "design": {
+    "tag": "DESIGN",
+    "v": "every later A/B: ABBA blocks inside one booking (A B B A cancels a linear drift; its A/A and B/B pairs measure sigma for free), agent-replay --seed (a fixed per-request seed from base, agent, turn, pass: both arms sample the same streams where their states agree = common random numbers), 600 s warm-up + 600 s window per arm (unchanged; the warm-up fills the cache and the slots), the engine-side metrics (blocked agent-s a turn, out-of-run ms a chunk, cycle ms) as the primary readouts; turns only as the headline"
+   },
+   "pairs_for_3pct": {
+    "rule": "n >= (2 sigma_diff / 3 %)^2 for a 2-sigma call of a 3 % difference",
+    "sigma_1pct": 1,
+    "sigma_2pct": 2,
+    "sigma_2_5pct": 3,
+    "sigma_3_6pct": 6,
+    "pick": "one ABBA block (2 pairs) per lever; a second block only when the first one's A/A spread exceeds 1.5 %",
+    "tag": "COMPUTED"
+   },
+   "falsifier": "the first ABBA block's A/A difference (with --seed) > 2 % -> sigma_diff is above 1.5 % and every lever needs >= 2 blocks; < 0.5 % -> one block per lever is enough"
+  },
+  "d2_refill": {
+   "read": {
+    "tag": "READ (generate.cpp refill/refill_staged/lend, merged_step)",
+    "v": "a merged chunk refills only when its readers are all through; in rp-on that is 153 of 162 chunks, and every one of them also saved turn checkpoints first (saves 89 ms, then refill 201 ms median, serially on the serve thread, every window stopped). The refill drains each device (device_sync), then queues the lent slots' copies on the compute queue (stream 0) through 8 pinned bounce buffers / 4 host threads per GPU, then res_upload. The saves stage on wp_q (their own streams, device->host)"
+   },
+   "rejected_async_during_windows": {
+    "tag": "MEASURED + COMPUTED",
+    "v": "windows run with the loan's experts missing take 145 ms (stage 0 median 150, stage 1 144; 584 windows) vs 27-30 ms resident: decoding while the copies run gains ~20 % of 200 ms = ~40 ms a refill, less one land drain (~30-50 ms, plan->drained median 50 ms): about zero. Not built"
+   },
+   "chosen": {
+    "tag": "DESIGN",
+    "v": "STRATA_BATCH_REFILL_OVERLAP=1 (default off; the staged refill only): when the chunk's refill is due, drain every device on the serve thread (the contract: all device work, trailing copies included, done before a lent slot is written), start the lent slots' copies on a helper thread, run the turn-checkpoint saves on the serve thread meanwhile (session state -> staging on wp_q: disjoint memory, device->host vs host->device), join, then host_res + res_upload. The handover moves before the saves (it only flips flags) so that the refill condition is known first"
+   },
+   "prediction": {
+    "refill_plus_save_ms_per_chunk": {
+     "now": 290,
+     "v": 205,
+     "band": [
+      200,
+      260
+     ],
+     "tag": "PREDICTED",
+     "src": "max(save 89, refill 201) + the drain and upload (~5 ms); the band top allows host memory bandwidth contention between the bounce copies and the save staging"
+    },
+    "out_of_run_ms_per_chunk": {
+     "now": 398,
+     "v": 315,
+     "band": [
+      300,
+      370
+     ]
+    },
+    "blocked_s_per_turn": {
+     "now": 14.3,
+     "v": 13.6,
+     "band": [
+      13.3,
+      14.1
+     ],
+     "src": "0.085 s a chunk x 12.4 decoding slots x 116 chunks / 187 turns = 0.65 s"
+    },
+    "turns": {
+     "v": "+1.3 %",
+     "band": [
+      "+0.5 %",
+      "+2 %"
+     ],
+     "note": "below the 3 % resolution: the per-chunk event times are the test"
+    }
+   },
+   "split_events": {
+    "tag": "DESIGN",
+    "v": "rf_drain / rf_copies / rf_upload per GPU (a = GPU part, c = slots) so the next booking says whether the copies are bandwidth-bound"
+   },
+   "falsifier": "refill+save above 260 ms a chunk -> the copies and the saves contend (host bandwidth or the copy engine) and overlap does not pay"
+  },
+  "d1_fallback_counter": {
+   "tag": "DESIGN + PREDICTED",
+   "v": "MpSaved c = stage parts saved through the pinned path, d = through wp_save (fallback); the batch summary line prints both. Prediction: c = 2 x saves, d = 0 (alloc_host of ~1-10 MB per stage succeeds), CL 75 %. If so, D1's flat 84-89 ms is the copies themselves (the queued copies of many small regions per QSA layer: tails, dead, block_pos per owned layer), not the staging"
+  },
+  "b_events_and_model": {
+   "events": {
+    "tag": "DESIGN",
+    "v": "pf_enter / pf_hand / pf_through / pf_exit per stage of every prompt pass (a = layer begin): stage-0 time = enter0..hand0 (its GPU's work for the chunk synced), its local release = through0 (its own stream through: scratch and trailing hand-off copies), stage-1 tail = through0..exit1 (stage 0 idle), final drain = rf_drain per GPU; pf_exit b/c/d = expert groups resident / streamed / computed on the CPU or helper during the pass (misses = streamed + CPU); mp_run b = ready decode groups at the pass (all windows drained, so the count at stage 0's release is the same); out_ack per outbound transfer (b = start->ready us, c = start->ack us); win_host per window (a = stage, b = host pool us, c = summed poll lag bound us, d = max lag us). A few records a pass and one a window: stays on in the arms"
+   },
+   "measured_now": {
+    "tag": "MEASURED (rp-on events)",
+    "pass_ms_median": 1619,
+    "decoding_slots_at_plan_mean": 12.4,
+    "plan_to_drained_ms_median": 50,
+    "pass_end_to_first_stage1_launch_ms": {
+     "median": 48.7,
+     "p90": 105.5
+    },
+    "pass_end_to_first_stage0_launch_ms_median": 2.0
+   },
+   "model": {
+    "tag": "COMPUTED (correction folded)",
+    "v": "one-way overlap: after stage 0's safe release it may run at most ONE window per ready group (the next step needs stage 1's token, and the outbound rows stay held until stage 1 acknowledges them). Stage 1 owns the prompt until exit1, so no turn completes earlier; the gain is that stage 1 finds its groups ready at exit1 instead of waiting for stage 0's first window: today that wait is 48.7 ms a pass (median). Ceiling per pass = min(stage-1 tail, ready groups x stage-0 window) on stage 0, realized on stage 1 only as the removed fill bubble"
+   },
+   "prediction": {
+    "gain_ms_per_pass": {
+     "v": 45,
+     "band": [
+      25,
+      70
+     ],
+     "tag": "PREDICTED"
+    },
+    "blocked_s_per_turn_cut": {
+     "v": 0.35,
+     "band": [
+      0.2,
+      0.55
+     ],
+     "src": "45 ms x 12.4 decoding slots x 116 passes / 187 turns"
+    },
+    "turns": {
+     "v": "+0.7 %",
+     "band": [
+      "+0.4 %",
+      "+1.2 %"
+     ]
+    },
+    "stage0_share_of_pass": {
+     "v": 0.53,
+     "band": [
+      0.45,
+      0.62
+     ],
+     "src": "25 of 48 layers on stage 0, the CPU share and hand-off unknown"
+    },
+    "note": "NOT half of the 14.3 s: exposure is agent time, not a per-card service split; decode upstream gains no completed turn while stage 1 is saturated"
+   },
+   "falsifier": "pass_end_to_first_stage1_launch already ~0 with B, yet turns flat -> B is spent; stage-1 tail < one stage-0 window (pf events) -> no head start at all; ready groups < 1 at most passes -> nothing to start"
+  }
+ },
+ "plan_1028b_measurement_booking": {
+  "label": "PREDICTION before booking (engine d41880b, image cand-merged-d41880b sha256:da95bba3); EXPLORATORY, performance only, quality UNKNOWN (Q held). Adds what c22d236 did not predict: the 32-40k profile rerun (stall or not, profile on vs off) and long-context attention's share of the step. The ABBA block (merged vs merged + STRATA_BATCH_REFILL_OVERLAP=1) is scored against c22d236 plan_1028_noise_d2_b_events (noise_design, d2_refill, d1_fallback_counter, b_events_and_model), unchanged",
+  "written_utc": "2026-10-28T09:40Z",
+  "arms": {
+   "tag": "DESIGN",
+   "v": "order sy-off-c32-40k, sy-prof-c32-40k, sy-prof-c8k, rp-on, rp-on-ov, rp-on-ov2, rp-on2 (A B B A; the second A/B carry the same env, names differ only for the harness), one image, common_env STRATA_BATCH_TIMELINE=500 + STRATA_BATCH_EVENTS=1 + STRATA_MERGED_TRACE=1 (a 2048-line ring, one relaxed load a call when off; on in every arm so both sides of each pair carry it), REPLAY_SEED fixed for all rp arms. sy-* = strata-sustained n16 prewarmed, max_tokens 1000; sy-prof-* add STRATA_VERIFY_PROFILE=1 (now an async copy into pinned memory, read at the poll)"
+  },
+  "stall_rerun": {
+   "read": {
+    "tag": "MEASURED (combined-1028 sy-prof-c32-40k, image 71cb4042)",
+    "v": "after prewarm a request-path GEN restored slot 23 from its checkpoint (42246 tokens reused), new batch graphs were captured for group 1 on both stages, then stage 1's first window (16 tokens at position 42250) never rang at layer 25: pool idle, host idle 60 s, watchdog SIGABRT. Old image: VERIFY_PROFILE copied the profile buffer with a blocking wait once a window. d41880b: that copy is async; the may_block_on rule covers the pump; the stall report prints every thread's stack under STRATA_MERGED_TRACE=1"
+   },
+   "outcomes": [
+    {
+     "outcome": "neither arm stalls",
+     "p": 0.55,
+     "means": "not reproduced: with one run of each (and 1 stall in 1 earlier run) this is INCONCLUSIVE, not a proof that d41880b fixed it; the old blocking profile copy stays the lead suspect (a host wait on a queue behind a window that spins on a host flag is the b084e69 class). Next step if needed: the old image's profile arm with TRACE, only if the owner of the next booking wants the cause"
+    },
+    {
+     "outcome": "both arms stall",
+     "p": 0.25,
+     "means": "a long-context class independent of the profile: the request-path restore + first-window graph capture at ~42k, or KV streaming at 59 % VRAM hits. The stacks name the waiting thread and the queue; R8 runs the same request path, so this is a production question, not a lever question"
+    },
+    {
+     "outcome": "only the profile arm stalls",
+     "p": 0.12,
+     "means": "the profile path still blocks (the async copy's event or the poll's read on the same queue as a waiting window); default off, so production is unaffected; fix the profile before any further profile arm"
+    },
+    {
+     "outcome": "only the control (profile off) stalls",
+     "p": 0.05,
+     "means": "a rare long-context stall the profile does not cause (same meaning as both, lower rate)"
+    },
+    {
+     "outcome": "other (engine error, no stall)",
+     "p": 0.03,
+     "means": "read the log; not this class"
+    }
+   ],
+   "falsifier": "a stall whose stacks show no thread waiting on a GPU queue or a host flag (all idle, no lock held) -> neither the deadlock class nor the profile: a lost wake-up in the request path"
+  },
+  "long_context_attention": {
+   "definition": {
+    "tag": "DESIGN",
+    "v": "stage 1 profile, QSA layers: q+q-idx + kv+idx append + scores+topk + kv-resolve + attention (the phases whose cost grows with context; at 8k 0.86+0.65+0+0+1.10 = 2.61 ms a window, scores+topk and kv-resolve 0.00: the sparse top-k path is idle at 8k)"
+   },
+   "predicted": {
+    "s1_attention_ms_per_window": {
+     "v": 7.0,
+     "band": [
+      4.0,
+      9.0
+     ],
+     "vs_8k": 2.61,
+     "src": "predictions-decode-longctx-1028 next_measurement (e503a72), unchanged"
+    },
+    "s1_window_ms": {
+     "v": 34.0,
+     "band": [
+      30.2,
+      37.2
+     ],
+     "vs_8k": 27.15
+    },
+    "share_of_s1_window": {
+     "v": 0.21,
+     "band": [
+      0.12,
+      0.28
+     ],
+     "tag": "COMPUTED",
+     "src": "7.0/34.0; band 4/34 .. 9/32"
+    },
+    "long_context_increment_ms_per_s1_window": {
+     "v": 4.4,
+     "band": [
+      1.4,
+      6.4
+     ],
+     "tag": "COMPUTED",
+     "src": "7.0 - 2.61"
+    },
+    "share_of_step": {
+     "v": 0.19,
+     "band": [
+      0.11,
+      0.27
+     ],
+     "tag": "COMPUTED",
+     "src": "both stages carry the same QSA layer count within one (s0 at 8k 2.67 ms vs s1 2.61): step = 2 x (s1 window + idle 2.25) = 72.5 ms; attention 2 x 7.0 = 14 ms a step -> 0.19"
+    },
+    "agg_tok_s_profile_off": {
+     "v": 235,
+     "band": [
+      215,
+      265
+     ]
+    },
+    "profile_cost_pct": {
+     "v": 2,
+     "band": [
+      0,
+      5
+     ],
+     "tag": "PREDICTED",
+     "src": "the async copy removes the once-a-window host wait; the remaining cost is the timestamp writes"
+    }
+   },
+   "decides": "as e503a72: attention >= 9 ms a s1 window or agg <= 215 -> lever A first; <= 4.5 ms or agg >= 265 -> A drops below dense fusion / MTP",
+   "falsifier": "scores+topk + kv-resolve still 0.00 at 32-40k -> the sparse path never engages at this context and the long-context cost is attention + append only (A's design target moves)"
+  },
+  "booking_size": {
+   "tag": "COMPUTED",
+   "expected_min": 115,
+   "worst_min": 215,
+   "src": "expected: sy arms ~12 min each (start 0.6 + prefill 7-9 + decode ~2), c8k 3.5, rp arms 21 each, restore 1; worst: every arm to EVAL_S 1680 s + load, restore wall 600 s",
+   "book_h": 4
+  },
+  "stall_vram_arm": {
+   "label": "PREDICTION before the extra arm (written 2026-10-28T10:30Z, after the stall reproduced in sy-prof-c32-40k and not in sy-off-c32-40k)",
+   "read": {
+    "tag": "MEASURED (sy-prof-c32-40k TRACE stacks)",
+    "v": "serve thread 17: Verifier::batch_launch_rows -> gpu::graph_launch -> sycl submit_graph_direct -> urEnqueueCommandBufferExp -> libze_intel_gpu sched_yield loop; every other thread parked (pool workers sleeping, IO workers in cond waits). Stage 0 recaptured group 0's layout (1724 nodes vs 2024 at prewarm: the all-resident key), stage 1 reused its prewarm graph (no capture line). VRAM free 1482 MiB when the request began; the 4- and 1-token windows captured with every expert resident"
+   },
+   "arm": "sy-prof-vr4g-c32-40k: the same profile arm with --vram-reserve-mib 4096",
+   "outcomes": [
+    {
+     "outcome": "no stall",
+     "p": 0.45,
+     "means": "VRAM pressure while the driver makes the stage-1 command buffer resident is the lead (one run: suggestive, not proof); the profile's larger graphs (~+40 % nodes) push it over the edge; R8 at 2048 MiB carries the same risk only if its graphs grow"
+    },
+    {
+     "outcome": "stall, same stack",
+     "p": 0.45,
+     "means": "not VRAM: the enqueue waits on something on card 1's queue (a prior submission or a copy behind it); next = the driver's own debug output (NEO PrintDebugMessages) or the stage-0/stage-1 key mismatch (resident vs ringing graph) read in code"
+    },
+    {
+     "outcome": "stall, another stack",
+     "p": 0.1,
+     "means": "read it"
+    }
+   ],
+   "bonus": "no stall -> the 32-40k stage-1 profile (lever A's phases) at a slightly larger CPU-expert share; its attention column still holds scores+topk+resolve+attention together (the batched branch writes no stamps 11/12)",
+   "amended_1140Z": "the 4096 arm never reached the test: the odie memguard killed it in its first 32k chunk (GPUActive 56.3 > 56.0 GiB; each reserved GiB moves experts to host pins). Rerun at --vram-reserve-mib 3072 (+1 GiB free a card, 1.4 -> ~2.4 GiB); same outcomes, the 'no stall' meaning weaker for the smaller step (p no stall 0.40)"
+  }
+ },
+ "measured_1028b": {
+  "label": "MEASURED on odie (booking 09:39-13:39Z, used to 11:50Z), image cand-merged-d41880b (da95bba3), EXPLORATORY, performance only, quality UNKNOWN (Q held). Raw logs outside git (sha256 in the homelab results README b70-rig/bench/results/measure-1028b). R8 0de528f7 restored and verified after each run (health loaded, docker inspect same-as-ref, canary answer+tool OK, the 3 units active; last 11:50:13Z)",
+  "arms": "run 1: sy-off-c32-40k, sy-prof-c32-40k, sy-prof-c8k, rp-on, rp-on-ov, rp-on-ov2, rp-on2 (REPLAY_SEED 1028, STRATA_MERGED_TRACE=1 in all). run 2: sy-prof-vr4g-c32-40k (killed by the odie memguard, GPUActive 56.3 > 56.0 GiB, before the test). run 3: sy-prof-vr3g-c32-40k, sy-pin-c8k (profile off, STRATA_BATCH_CKPT_PINNED=1)",
+  "score": {
+   "stall_rerun": {
+    "predicted": "neither stalls 0.55; both 0.25; profile only 0.12; control only 0.05",
+    "measured": "profile only: profile ON stalled 3 of 3 (sy-prof-c32-40k here, the vr3g rerun, and combined-1028), profile OFF 0 of 1 (it ran the same request-path restore of a 42944-token checkpoint)",
+    "verdict": "FALSIFIED as to the mode (0.12 outcome)",
+    "stacks": "serve thread inside Verifier::batch_launch_rows -> gpu::graph_launch -> sycl submit_graph_direct_with_event_impl -> urEnqueueCommandBufferExp -> libze_intel_gpu sched_yield loop (the enqueue itself spins); stage 1 in one stall, stage 0 in the other; every other thread parked. Always the first batch launch after the request path's solo windows (4- and 1-token, captured with every expert resident) for a restored slot. Profile-only ops in that path: prof_mark's event_record of the reused prof_ev_ pair around each graph launch and the copy_async into prof_pin_ (solo and batch). Cause NOT proven; lead (CL 55 %): the reused profile events or copy left on cs_ by the solo windows hold the next command-buffer enqueue",
+    "evidence_label": "3 of 3 on vs 0 of 1 off strongly implicates the profile path; it does NOT prove profile-off serving safe in general. The event-reuse mechanism stays INFERRED (CL 55 %), untested"
+   },
+   "stall_vram_arm": {
+    "predicted": "no stall 0.40 (amended for 3072)",
+    "measured": "stall, same stack, at 2396 MiB VRAM free (vs 1482)",
+    "verdict": "FALSIFIED: rules out a simple low-free-VRAM cause (same stack at 2.4 GiB free), not every memory-related cause"
+   },
+   "agg_tok_s_profile_off": {
+    "predicted": [
+     235,
+     215,
+     265
+    ],
+    "measured": 275.8,
+    "verdict": "FALSIFIED (above the band)"
+   },
+   "s1_window_ms": {
+    "predicted": [
+     34.0,
+     30.2,
+     37.2
+    ],
+    "measured": "stage-1 GPU mean 27.4-28.4 ms a window (timeline, profile off), cycle ~29 ms",
+    "verdict": "FALSIFIED (below)"
+   },
+   "long_context_increment_ms_per_s1_window": {
+    "predicted": [
+     4.4,
+     1.4,
+     6.4
+    ],
+    "measured": "~1.0 (stage-1 GPU 26.5-27.2 at 8.4k vs 27.4-28.4 at 32-40k, both profile off, 16 rows a window); agg 284.4 -> 275.8 (-3.0 %)",
+    "verdict": "FALSIFIED (below the band)"
+   },
+   "s1_attention_ms_per_window": {
+    "predicted": [
+     7.0,
+     4.0,
+     9.0
+    ],
+    "measured": "NOT MEASURED directly (the profile arms stalled before decode); INFERRED 3.6 = the 8k phases (q+q-idx 0.85, append 0.65, attention 1.10) + the whole ~1.0 ms increment",
+    "verdict": "FALSIFIED (inferred, below the band)"
+   },
+   "share_of_step": {
+    "predicted": [
+     0.19,
+     0.11,
+     0.27
+    ],
+    "measured": "0.13 (inferred: 3.6 / 28)",
+    "verdict": "HOLDS (inferred, low end)"
+   },
+   "profile_cost_pct": {
+    "predicted": [
+     2,
+     0,
+     5
+    ],
+    "measured": "4.1 (8k: profile on 272.7 vs off 284.4 tok/s)",
+    "verdict": "HOLDS"
+   },
+   "a_falsifier_e503a72": "FIRES: the long-context term at 32-40k is ~1 ms a stage window, under the 2 ms threshold: lever A drops",
+   "noise_design": {
+    "predicted": "A/A diff > 2 % -> every lever needs >= 2 blocks",
+    "measured": "turns/agent-min A1 1.231, B1 1.206, B2 1.181, A2 1.156: a straight line (-0.025 an arm, -2.1 % per 21 min), A/A 6.3 %, B/B 2.1 %; ABBA cancels it: lever 0.0 %",
+    "verdict": "FALSIFIER FIRED (A/A 6.3 %), but the spread is a linear drift, not scatter; out tokens 53669/57062/54874/53073. A second block was not run: D2's primary engine readout already decides (below)"
+   },
+   "d2_refill_plus_save_ms": {
+    "predicted": [
+     205,
+     200,
+     260
+    ],
+    "measured": "ran->done median 284/285 (B) vs 274/276 (A); refill 284/285 vs 180/178; save 258/257 vs 89/89; copies gpu0 283/285 vs 176/174, gpu1 230/222 vs 160/158; overlap engaged on 117/116 chunks",
+    "verdict": "FALSIFIED: its falsifier fired (> 260 ms): the copies and the saves contend; overlapped ~= serial sum (89 + 180 = 269)"
+   },
+   "d2_out_of_run_ms": {
+    "predicted": [
+     315,
+     300,
+     370
+    ],
+    "measured": "B 362/360 vs A 352/347",
+    "verdict": "FALSIFIED (no gain; A itself was 350, not 398)"
+   },
+   "d2_blocked_s_per_turn": {
+    "predicted": [
+     13.6,
+     13.3,
+     14.1
+    ],
+    "measured": "B 13.68/14.49 (mean 14.09) vs A 13.99/14.22 (14.10)",
+    "verdict": "FALSIFIED (no change)"
+   },
+   "d2_turns": {
+    "predicted": "+1.3 % (+0.5..+2)",
+    "measured": "0.0 % (ABBA)",
+    "verdict": "FALSIFIED"
+   },
+   "d1_counter": {
+    "predicted": "pinned = 2 x saves, wp_save 0 (CL 75 %)",
+    "measured": "sy-pin-c8k: 34 stage parts pinned, 0 wp_save; every arm without D1: 0 pinned, all wp_save (264/248/254/252 in the rp arms)",
+    "verdict": "HOLDS: D1's flat 84-89 ms is the copies themselves, not a fallback"
+   },
+   "b_inputs": {
+    "predicted": "stage-0 share 0.53 (0.45-0.62); fill bubble 48.7 ms; ready groups >= 1",
+    "measured": "stage-0 share 0.509; fill bubble after pass median 49.1/50.2 (A), 43.3/42.7 (B); ready groups mean 2; stage 0's GPU idle after its hand-off 685/671 ms a pass (it waits for stage 1's exit); expert-group misses in passes s0 5 %, s1 19 %",
+    "verdict": "HOLDS (inputs); B stays PARKED (review). Tool caveat: hl356_events.py's head-start bound reads 0 because pf_through on stage 0 is stamped after its thread waits for stage 1; the safe release is pf_hand, and the bound is then one window a ready group, i.e. the ~49 ms bubble"
+   },
+   "events_other": "outbound hold: no records (C's async outbound off in these arms, as designed); window host service: stage 0 none (no host-served experts), stage 1 pool 3.2-3.5 ms, poll lag 1.0 ms median a window"
+  },
+  "agent_traffic_windows": "rp A arms: stage-1 launch->done median 31.7/33.0 ms, mean 36.3/37.5, idle mean 4.9/5.4; stage 0 mean 33.5/34.8, idle 7.9/8.2; ~13 slots decoding (2 groups of ~6.5 rows) vs 16 rows a group in the synthetic arms at 27-28 ms"
+ }
+}

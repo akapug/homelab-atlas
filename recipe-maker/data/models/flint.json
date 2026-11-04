@@ -1,0 +1,213 @@
+{
+ "name": "Flint",
+ "L": 47,
+ "layer_ids": [
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+  32,
+  33,
+  34,
+  35,
+  36,
+  37,
+  38,
+  39,
+  40,
+  41,
+  42,
+  43,
+  44,
+  45,
+  46,
+  47,
+  48
+ ],
+ "E": 256,
+ "k": 6,
+ "P": 3145728,
+ "P_src": "GGUF headers odie:/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf: 3 x hidden 2048 x expert_ff 512",
+ "tensor_names": [
+  "blk.{L}.ffn_down_exps.weight",
+  "blk.{L}.ffn_gate_exps.weight",
+  "blk.{L}.ffn_up_exps.weight"
+ ],
+ "arch": {
+  "v": "flint",
+  "tag": "READ",
+  "src": "GGUF headers odie:/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf"
+ },
+ "hidden": {
+  "v": 2048,
+  "tag": "READ",
+  "src": "GGUF headers odie:/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf"
+ },
+ "expert_ff": {
+  "v": 512,
+  "tag": "READ",
+  "src": "GGUF headers odie:/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf"
+ },
+ "n_shared": {
+  "v": 2,
+  "tag": "READ",
+  "src": "GGUF headers odie:/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf"
+ },
+ "layers": {
+  "v": {
+   "main": 49,
+   "moe": 47,
+   "dense": [
+    0,
+    1
+   ],
+   "linear_attention": []
+  },
+  "tag": "READ",
+  "src": "GGUF headers odie:/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf"
+ },
+ "kv_bytes_per_token": {
+  "v": 100352,
+  "tag": "ESTIMATE",
+  "src": "49 attention layers x 4 KV heads x (K 128 + V 128) x 2 B (f16); NOT applied: sliding window 513 (the engine may store less)"
+ },
+ "mtp": {
+  "v": {
+   "layers_config": null,
+   "in_this_source": false,
+   "gib": 0.0
+  },
+  "tag": "READ",
+  "src": "GGUF headers odie:/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf"
+ },
+ "intake": {
+  "source": "GGUF headers odie:/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf",
+  "tag": "READ",
+  "files": [
+   [
+    "RecursiveSI_flint-Q4_K_M.gguf",
+    25346651360,
+    779
+   ]
+  ],
+  "total_gib": 23.601,
+  "gib_by_class": {
+   "attention": 0.916,
+   "embedding": 0.304,
+   "expert_down": 7.504,
+   "expert_gate": 6.734,
+   "expert_up": 7.379,
+   "norm": 0.0,
+   "other": 0.075,
+   "output": 0.304,
+   "router": 0.092,
+   "shared_expert": 0.293
+  },
+  "bytes_by_class": {
+   "attention": {
+    "f32": 457856,
+    "q8_0": 982646784
+   },
+   "embedding": {
+    "q8_0": 326713344
+   },
+   "expert_down": {
+    "q4_K": 4831838208,
+    "q5_K": 738197504,
+    "q6_K": 2202009600,
+    "q8_0": 285212672
+   },
+   "expert_gate": {
+    "q4_K": 6945767424,
+    "q8_0": 285212672
+   },
+   "expert_up": {
+    "q4_K": 5435817984,
+    "q6_K": 2202009600,
+    "q8_0": 285212672
+   },
+   "norm": {
+    "f32": 409600
+   },
+   "other": {
+    "q8_0": 80216064
+   },
+   "output": {
+    "q8_0": 326713344
+   },
+   "router": {
+    "f32": 98566144
+   },
+   "shared_expert": {
+    "q8_0": 314179584
+   }
+  },
+  "experts_gib": 21.617,
+  "dense_gib": 1.679,
+  "lookup_gib": {
+   "embedding": 0.304
+  },
+  "expert_types": {
+   "expert_down": {
+    "q6_K": 2.051,
+    "q4_K": 4.5,
+    "q5_K": 0.688,
+    "q8_0": 0.266
+   },
+   "expert_gate": {
+    "q4_K": 6.469,
+    "q8_0": 0.266
+   },
+   "expert_up": {
+    "q6_K": 2.051,
+    "q4_K": 5.062,
+    "q8_0": 0.266
+   }
+  },
+  "unclassified": [
+   "blk.0.ffn_down.weight",
+   "blk.0.ffn_gate.weight",
+   "blk.0.ffn_up.weight",
+   "blk.1.ffn_down.weight",
+   "blk.1.ffn_gate.weight",
+   "blk.1.ffn_up.weight"
+  ],
+  "expert_bpw": 4.906
+ },
+ "experts_gib": {
+  "v": 21.617,
+  "tag": "READ",
+  "src": "GGUF headers odie:/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf: routed expert tensors"
+ },
+ "dense_gib": {
+  "v": 1.679,
+  "tag": "READ",
+  "src": "GGUF headers odie:/mnt/bulk/models/flint-bartowski-GGUF/RecursiveSI_flint-Q4_K_M.gguf: all tensors except routed experts, lookup tables, MTP and vision"
+ }
+}

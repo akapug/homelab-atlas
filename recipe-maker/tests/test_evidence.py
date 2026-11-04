@@ -93,7 +93,12 @@ class BuiltData(unittest.TestCase):
         ids = {r['id'] for r in rows}
         cited = [v for v in walk(self.data, []) if v.get('runs')]
         self.assertGreater(len(cited), 10)
-        self.assertTrue(all(v['evidence'] == 'seen' and set(v['runs']) <= ids for v in cited))
+        # every run a value names is a ledger row: the runs build.py stamps on a seen value, and the runs a turn-model input
+        # names by hand (data/workload.json turn_model.about: an input of any tag keeps the runs it came from, so a held-out
+        # score can skip them). An unknown value comes from no run
+        self.assertEqual([(v['src'][:80], sorted(set(v['runs']) - ids)) for v in cited if not set(v['runs']) <= ids], [])
+        self.assertEqual([v['src'][:80] for v in cited if v['evidence'] == 'unknown'], [])
+        self.assertGreater(sum(v['evidence'] == 'seen' for v in cited), 10)
 
     def test_external_rows_are_inferred_with_their_url(self):
         X = self.data['external']

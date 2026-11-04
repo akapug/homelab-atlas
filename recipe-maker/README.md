@@ -49,7 +49,7 @@ the two-B70 box, 16 replayed real agents got 79.6 to 86.0 tok/s in total on the 
 experimental XeStrata fork, branch [`homelab-batched`](https://github.com/akapug/XeStrata/tree/homelab-batched); mean 83.4
 over three runs; 77.8 to 89.7 with the prompt chunk size changed), and one agent alone got 32.6. The
 [B70 many-agent page](../b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with) has those runs;
-`node report.js --workload` shows which of the two limits a setup.
+`node report.js --workload` models whole turns, including tool gaps and each server's prefix re-read. It leads with turns per agent-minute.
 Batch rows above come from the rate probe and real serving; the planner does not yet predict batch tok/s per watt or
 the slowest agent's speed (see below), so it cannot score them.
 
@@ -135,7 +135,8 @@ node report.js --external            # our physics on published community measur
 node report.js --screen              # your quality rounds against card conditions (no screen ledger ships here)
 node report.js --window              # batched decode from its kernels: which kernel to write first (lever table)
 node report.js --curve               # agents vs decode speed on a synthetic load (not real agent traffic: see --workload)
-node report.js --workload            # real agents: decode capacity vs prompt reading, which one limits the output
+node report.js --workload            # real agents: turns/agent-minute, useful tok/s, tool gaps and server prefix re-read
+node report.js --workload --n 1,16 --warmup-s 300 --window-s 600 # explicit agent counts and window seconds
 ```
 
 Open `index.html` after the build. It shows our boxes, models and runs. The same page, built from this folder, is at
@@ -215,13 +216,26 @@ prompt tokens per token written (the recorded sessions need 4.33 with a perfect 
 speed. On the two-B70 box, whose synthetic load decodes up to 377.9 tok/s over 32 agents (build served on 2026-10-24),
 16 replayed real agents got 79.6 to 86.0 tok/s in total and one agent alone 32.6 (build served on 2026-10-26; see the
 [B70 many-agent page](../b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with)).
-`node report.js --workload` adds this: with F new prompt tokens read per token written and a prompt reading rate P,
-agents write at most min(decode capacity, P / F) tokens per second in total. It takes P from runs that replayed
-recorded agent sessions on the same engine build (or, with none, predicts it from the cards, link and expert
-placement), says which term limits each setup (prefill-bound or decode-bound), and checks that each batch window fits
-the engine's CPU expert pool. F and the shape of a turn are a workload profile in `data/workload.json`; the default is
-measured coding-agent traffic. A recipe for many agents with no real-agent run of its build is flagged by `--check`.
-[How it works](docs/how-it-works.md#agent-workload---workload) has the model and its limits.
+`node report.js --workload` and the Agents tab use the same per-turn replay model. The primary unit is **turns per agent-minute**.
+Useful tok/s is secondary. Each turn reads its new prompt text plus the server's prefix re-read, writes an answer, then waits its recorded tool gap.
+The model uses each serving model's measured or inferred answer-length ratio, else the recording's lengths. It does not predict answer length or prefix re-read.
+It takes prefill from the same build's replay, or predicts prefill from the cards, link and expert placement.
+A measured solo decode point sets solo speed when available. Otherwise the synthetic curve supplies it, which can extrapolate.
+
+These are **post-hoc planning inputs, not new prediction accuracy**. The complete seven-entry rescore table stays visible in the CLI and UI.
+Configured-input turns errors range from about -9.1% to +1.2%. Each entry declares its own mixture, not all measured inputs.
+Chunk rows retain their advance predicted prefill rates, not later measurements. Some rows use measurements from the run they score.
+GLM held-out turns error remains about **-30%**, with useful output about +291% high. Its older frozen prediction got 39 turns versus 40 measured.
+That older success is separate from the new simulator's held-out miss. Original prediction files remain unchanged.
+
+Use `--trace`, `--server`, `--decode-one` (tok/s), `--prefill` (prompt tok/s), `--gap-scale`, and `--stagger-scale` for explicit inputs.
+`--warmup-s` and `--window-s` use seconds. Defaults are 600 seconds each, from `data/workload.json`.
+A unique engine match selects a server prior as an assumption, not build-verified cache behavior. Missing or ambiguous mappings stay `UNMODELLED`.
+An unknown re-read assumes zero and marks a conditional upper bound. Other unknown inputs can still make that result inaccurate.
+`--fresh F` explicitly replaces total fresh tokens per output, including prefix re-read, for a sensitivity check.
+The JSON keeps the old fluid fields under `legacy_server` and as compatible aliases. They omit tool gaps and are not the per-turn estimate.
+A recipe with no real-agent run of its build still receives the existing `--check` warning.
+[How it works](docs/how-it-works.md#agent-workload---workload) gives the model, source tags and limits.
 
 ### Hot-expert maps
 
@@ -235,7 +249,7 @@ capture one for your model with `tools/heat-capture/` and convert it with `tools
 | --- | --- |
 | `build.py`, `families/` | the planner's tables: boxes, models, quant types, fitted terms; one file per extra model family |
 | `src/model.js`, `src/app.js` | the solver and the gate (shared by the page and `report.js`), and the page |
-| `report.js` | the command line: report, `--check`, `--accuracy`, `--external`, `--advice`, `--batch`, `--window`, `--curve`, `--workload` |
+| `report.js` | the command line: report, `--check`, `--accuracy`, `--external`, `--advice`, `--batch`, `--window`, `--curve`, `--workload`, `--resident` |
 | `probe/` | the box probe, the model intake, and the batch-window spec and microbenchmark readers |
 | `data/` | probed boxes, model layouts, hot-expert maps, layer maps, the upgrade catalog, batch-window configs (`data/window/`) |
 | `runs/` | the run ledger (`runs.jsonl`, older rows in numbered segments), bench terms, cause labels, community measurements |

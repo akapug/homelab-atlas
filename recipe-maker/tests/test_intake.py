@@ -263,6 +263,13 @@ class Intake(unittest.TestCase):
         self.assertAlmostEqual(m['intake']['expert_bpw'], 8.5, places=2)
         self.assertEqual(m['intake']['unclassified'], [])
 
+    def test_kv_per_layer_head_counts(self):
+        # a hybrid GGUF stores head_count_kv as a per-layer array (0 = conv layer): harvest crashed on it (10-28)
+        k = mi.kv_estimate(4, [0, 0, 8, 0, 8, 0], 64, 64, None, None, '', 'fixture')
+        self.assertEqual(k['v'], 16 * (64 + 64) * 2)
+        self.assertNotEqual(k['tag'], 'UNKNOWN')
+        self.assertEqual(mi.kv_estimate(4, [0, 0], 64, 64, None, None, '', 'f')['tag'], 'UNKNOWN')
+
     def test_hf(self):
         d = json.loads(Path(os.path.join(FX, 'hf-qfn.json')).read_text())
         rows, shape = mi.from_hf(d['config'], d['rows'], 'fixture', 131)

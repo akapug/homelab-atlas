@@ -251,6 +251,13 @@ def kv_estimate(layers_attn, n_kv, head_dim, v_dim=None, kv_lora=None, rope=None
     if kv_lora:
         b = layers_attn * (kv_lora + (rope or 0)) * 2
         how = '%d layers x (kv_lora_rank %d + rope %d) x 2 B (MLA latent, f16)' % (layers_attn, kv_lora, rope or 0)
+    elif isinstance(n_kv, list):
+        # per-layer KV head counts (hybrid conv/attention GGUFs, e.g. LFM): layers with 0 heads hold no KV
+        heads = [x for x in n_kv if x]
+        if not heads or not head_dim:
+            return n(None, U, 'no KV head shape in the source')
+        b = sum(heads) * (head_dim + (v_dim or head_dim)) * 2
+        how = '%d attention layers (per-layer KV heads, %d total) x (K %d + V %d) x 2 B (f16)' % (len(heads), sum(heads), head_dim, v_dim or head_dim)
     elif n_kv and head_dim:
         b = layers_attn * n_kv * (head_dim + (v_dim or head_dim)) * 2
         how = '%d attention layers x %d KV heads x (K %d + V %d) x 2 B (f16)' % (layers_attn, n_kv, head_dim, v_dim or head_dim)

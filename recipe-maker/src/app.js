@@ -526,15 +526,29 @@
     const notes = [r.measured.length ? 'measured ' + r.measured.map(m => f1(m.tps) + (m.used ? '' : ' (not fitted)')).join(', ') + ' tok/s total' : '', r.extrapolated ? 'past the largest measured count (' + R.fit.n_max + '): extrapolated' : '', r.beyond_slots ? 'needs the engine started with --batch ' + n + ' or more' : '', r.fits_host === false ? 'more slots than host memory safely holds (' + R.host.ceiling + ')' : ''].filter(Boolean);
     return `<b>${n} agent${n > 1 ? 's' : ''} at once</b><br>${f1(r.total)} tok/s in total, ${f1(r.each)} tok/s each${notes.length ? '<br><span class="muted">' + esc(notes.join('; ')) + '</span>' : ''}`;
   }
-  // the curve's totals are decode capacity (short synthetic prompts); real agents also read fresh prompt tokens, and the
-  // prefill rate measured on replayed agent traffic of the same build caps useful output at P / F (src/model.js agentPlan)
+  // The CLI and UI use agentPlan's replay result. Synthetic decode capacity stays a separate diagnostic.
   function workloadHTML(R) {
     if (!data.workload) return '';
-    const n = R.headline.n >= 1 ? R.headline.n : v(data.workload.settings.table_n)[0], P = FM.agentPlan(data, R.cfg, { n: [n] }), r = P.rows[0], F = v(P.fresh);
-    let h = `<div class="callout" id="workload-head"><p class="small" style="margin:0 0 4px"><b>These totals are decoding speed, not agent throughput.</b> The runs behind the curve give each agent one short prompt and then time the writing only. A real coding agent also reads new prompt text every turn: about ${F} fresh prompt tokens for every token it writes ${chip(P.fresh)} (new tool results and file contents, plus text read again after the engine drops it from its cache).</p>`;
-    if (!P.prefill) return h + `<p class="small" style="margin:0">No run replayed real agent traffic on this build, so how much useful text ${n} agents get here is not known yet.</p>` + groundingHTML(R.cfg, n, P) + '</div>';
-    h += `<p class="small" style="margin:0">${P.prefill_basis === 'model' ? 'No run replayed real agent traffic on this build yet; from its cards, link and expert placement it is predicted to read' : 'On real agent traffic this build reads'} prompts at ${f1(v(P.prefill))} tok/s ${chip(P.prefill)}, so agents can write at most ${f1(r.prefill_cap)} tok/s in total however many there are. At ${n} agents decoding alone could give ${f1(r.decode)} tok/s, so <b>${r.binding === 'prefill' ? 'reading prompts is the limit (prefill-bound)' : 'decoding is the limit (decode-bound)'}</b>${P.stall && r.expect ? `; because a long read pauses every agent's decoding, expect about ${f1(r.expect)} tok/s` : ''}.${r.real.length ? ' Measured on replayed agent traffic: ' + r.real.map(x => f1(x.tps) + ' tok/s').join(', ') + '.' : ''}</p>`;
-    return h + groundingHTML(R.cfg, n, P) + '</div>';
+    const n = R.headline.n >= 1 ? R.headline.n : v(data.workload.settings.table_n)[0], P = FM.agentPlan(data, R.cfg, { n: [n] }), r = P.rows[0], t = r.turn;
+    let h = `<div class="callout" id="workload-head"><p class="small"><b>Agent turns include prompt reads and tool gaps.</b> The curves below show synthetic decode capacity only.</p>`;
+    if (t.status !== 'MODEL') h += `<p class="small"><b>UNMODELLED:</b> ${esc(t.why)}. Agent throughput is unknown.</p>`;
+    else {
+      h += `<p class="small"><b>${f2(t.turns_per_agent_min)} turns/agent-minute at ${n} agent${n === 1 ? '' : 's'}</b>. Secondary output: ${f1(t.useful_tps)} useful tok/s in total, with ${f1(t.out_per_turn)} output tokens per turn.</p>`;
+      h += `<p class="small">Trace ${esc(t.trace)}, ${t.warmup_s} s warm-up, ${t.window_s} s window. Server ${esc(t.server)}: ${esc(t.server_basis)}. ${t.bound ? '<b>Conditional upper bound: unknown prefix re-read assumes zero.</b>' : ''}</p>`;
+      h += `<p class="small"><b>POST-HOC inputs, not new prediction accuracy.</b> Answer length uses a measured or inferred model replay ratio, else recorded lengths. Prefix re-read uses a server prior. Neither is predicted.</p>`;
+      if (t.share) h += `<p class="small">Solo time shares: decode ${(100 * t.share.decode).toFixed(1)}%, prefill ${(100 * t.share.prefill).toFixed(1)}%, tool gap ${(100 * t.share.gap).toFixed(1)}%. These are not measured server utilization.</p>`;
+      h += `<details><summary class="small">Per-turn inputs and sources</summary><ul class="small">${t.inputs.map(x => `<li>${esc(x.name)}: ${esc(Array.isArray(x.v) ? JSON.stringify(x.v) : x.v)} ${chip(x)}. ${esc(x.src)}${x.runs.length ? ' Runs: ' + esc(x.runs.join(', ')) : ''}</li>`).join('')}</ul></details>`;
+    }
+    h += `<p class="small">Legacy server-bound diagnostic without tool gaps: ${f1(r.legacy_server.expect)} tok/s. This is not the per-turn estimate.${r.real.length ? ' Measured useful output on this build: ' + r.real.map(x => f1(x.tps) + ' tok/s').join(', ') + '.' : ''}</p>`;
+    return h + turnRescoreHTML() + groundingHTML(R.cfg, n, P) + '</div>';
+  }
+  function turnRescoreHTML() {
+    const rows = FM.agentTurnRescore(data), pct = x => x === null || x === undefined ? '?' : (x >= 0 ? '+' : '') + (100 * x).toFixed(1) + '%';
+    const score = x => x.status === 'MODEL' ? f2(x.turns) + ' (' + pct(x.err_turns) + ')' : esc(x.status + ': ' + x.why);
+    if (!rows.length) return '<p class="small">No retained per-turn validation rows.</p>';
+    return `<p class="small"><b>Held-out limits remain visible.</b> GLM held-out turns error is about -30%. Its older frozen prediction got 39 turns versus 40 measured. That is a separate result. Configured-input means each entry's declared mixture, not all measured inputs. Chunk rows retain advance predicted P, not later measured P. Some rows reuse their own measurements. The full table includes larger misses, not a blanket five-percent accuracy claim.</p>` +
+      `<div style="overflow-x:auto"><table class="small"><caption>POST-HOC rescore. Turns per agent-minute and error versus measured. Frozen predictions are unchanged.</caption><thead><tr><th>entry</th><th>measured</th><th>frozen original (error)</th><th>configured-input post-hoc (error)</th><th>held-out (error)</th><th>useful tok/s error, configured / held-out</th></tr></thead><tbody>` +
+      rows.map(x => `<tr><th scope="row">${esc(x.id)}</th><td>${f2(x.measured.turns)}</td><td>${f2(x.before.turns)} (${pct(x.before.err_turns)})</td><td>${score(x.after)}</td><td>${score(x.held_out)}${x.held_out.bound ? ' conditional upper bound: unknown re-read' : ''}</td><td>${pct(x.after.err_useful)} / ${pct(x.held_out.err_useful)}</td></tr>`).join('') + '</tbody></table></div>';
   }
   // what the replays of this build are worth (checks replay_artifact, steady_state) and what published work and our own logs
   // expect at this agent count (data.priors whose applies_when the config's facts satisfy: src/model.js priorsFor)

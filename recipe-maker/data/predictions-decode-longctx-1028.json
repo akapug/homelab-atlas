@@ -1,0 +1,1691 @@
+{
+ "about": "lab notes decode step at long context with 16 real agents on odie 2x B70 (xestrata, QFN IQ3_XXS, layer split 25, 2 pipelined slot groups): why running batched decode is ~195-207 tok/s under the agent-long-16 replay against 279.6 in the synthetic 8k run, and the decode-only levers with predicted gains. Written BEFORE any run of these levers. Prefill scheduling (levers D, B in predictions-merged-prefill-1027.json) is out of scope; where prefill work lands inside decode windows it is named, not ranked. Do not edit the predicted numbers after measurements land; add a measured block beside them.",
+ "label": "PREDICTION, before any run; EXPLORATORY, quality UNKNOWN (Q held). Decomposition partly MEASURED (timeline, engine summaries, server counters), partly INFERRED (profile phases scaled; every inferred figure shows its arithmetic)",
+ "written_utc": "2026-10-28T08:xxZ",
+ "unit": "ms per decode STEP = one token for every decoding agent = two group windows on the bottleneck stage (stage 1, layers 25-47 + head). Stage 0 runs the other group's window at the same time (pipelined), so the step is set by stage 1",
+ "sources": {
+  "synthetic_279": {
+   "v": 279.6,
+   "tag": "MEASURED",
+   "src": "lab notes (agg 279.64, live 280.3) and cand-ab/base-nowrap (279.11), dfix-n16/dfix-nowrap (279.91): n16, ctx 8192 (prompt median ~8.4k), max_tokens 1000 (no wrap), batch_slots 16, engine 9df5bce / densefix, all 24576 experts resident"
+  },
+  "synthetic_profile": {
+   "tag": "MEASURED",
+   "src": "lab notes table (STRATA_VERIFY_PROFILE=1, engine 6655dc0, --batch 16, 8 rows a window, 271 tok/s profiled): stage-1 window 27.66 ms"
+  },
+  "agent_timeline": {
+   "tag": "MEASURED",
+   "src": "STRATA_BATCH_TIMELINE=500 lines in lab notes{on,off}-{1,2}-engine.log; 18 prints (9000 windows) fall in the replay window of each on arm by the timeline's own clock (sum of 500 x mean cycle)",
+   "on_arms_stage1": {
+    "gpu_median_ms": [
+     30.71,
+     29.28
+    ],
+    "gpu_mean_ms": [
+     34.14,
+     33.48
+    ],
+    "idle_median_ms": [
+     2.49,
+     2.02
+    ]
+   },
+   "off_arms_stage1": {
+    "gpu_median_ms": [
+     28.68,
+     30.07
+    ],
+    "gpu_mean_ms": [
+     32.81,
+     33.59
+    ],
+    "idle_median_ms": [
+     1.46,
+     2.81
+    ]
+   },
+   "on_arms_stage0_gpu_median_ms": [
+    29.8,
+    27.74
+   ]
+  },
+  "agent_tokens": {
+   "tag": "MEASURED",
+   "src": "server_delta.output_tokens 66,089 (rp-on-1), 65,727 (rp-on-2) in the 600 s window; mean prompt 42,276 / 41,673 tokens a request (prompt_tokens / requests)"
+  },
+  "engine_summaries": {
+   "tag": "MEASURED",
+   "src": "rp-on-1-engine.log:1188-1194: 13,844 group-steps, 87,845 decode rows over the 1,217 s life; window-row prefill 26,537 prompt rows; CPU experts per stage 35,946 / 92,026 ms; stage 1 run 37.50 ms a window. rp-off-1-engine.log:2082-2087: CPU experts 0 / 9,949 ms over 12,959 windows (stage 0 has no host-served experts)"
+  },
+  "residency": {
+   "tag": "MEASURED",
+   "src": "lab notes:2864 (KV ring 20480 of 131072 cells a QSA layer), :2874 (32 slot sessions, 0.26 GiB each), :2897 (22,434 of 24,576 experts resident), :2940 (PCIe share 0.75 of misses, CPU 0.25), :2943 (expert-complement 3.88 GiB = 2,142 experts on host)"
+  },
+  "dn_fitviz": {
+   "v": 195.2,
+   "tag": "INFERRED",
+   "src": "predictions-merged-prefill-1027.json turn_prediction_next_rung_1028.decode_rung: server out tok/s / (1 - stall share), on arms"
+  },
+  "long_ctx_synthetic": {
+   "tag": "MEASURED, occupancy-confounded",
+   "src": "lab notes: candidate engine (240.6 tok/s at 8k), 126k prompts, agg 159.2 over 33 s of full occupancy, server live median 226.9; 7 of 16 streams finished early"
+  }
+ },
+ "reconciliation": {
+  "dn_from_timeline": {
+   "v": [
+    200.5,
+    207.4
+   ],
+   "tag": "INFERRED",
+   "src": "on arms: tokens / running seconds; running = sum over window prints of 500 x (stage-1 gpu mean + idle median) = 329.7 / 319.6 s, scaled to 600 s of the 613.5 / 605.1 s the prints cover: 66,089 / 322 and 65,727 / 317"
+  },
+  "dn_fitviz": 195.2,
+  "agree": "within 3-6 %: the print-to-window alignment is +-1 print (+-500 windows)",
+  "rows_a_window": {
+   "v": 7.32,
+   "band": [
+    7.3,
+    7.6
+   ],
+   "tag": "INFERRED",
+   "src": "66,089 tokens / ~9,000 windows (rp-on-1); the synthetic has 8 (16 agents in two groups of 8). So ~14.6 of 16 agents decode while the windows run; TTFT waits and tool gaps sit mostly in the prefill stalls"
+  },
+  "step_ms": {
+   "synthetic": {
+    "v": 57.2,
+    "tag": "MEASURED",
+    "src": "16 tokens / 279.6 tok/s"
+   },
+   "agent": {
+    "v": 72.1,
+    "band": [
+     71.0,
+     73.2
+    ],
+    "tag": "MEASURED parts",
+    "src": "2 x (stage-1 gpu mean 33.8 + idle median 2.25), mean of the on arms"
+   }
+  },
+  "closure": "279.6 x (7.32 / 8) x (57.2 / 72.1) = 203 tok/s, against 200-207 (timeline) and 195.2 (fit-viz). Rows cost 8.5 %, step time 20.7 %"
+ },
+ "decomposition_per_step_ms": {
+  "note": "Synthetic column: profile phases x 2 (profiled 55.3 ms device) + host 1.9 = the unprofiled 57.2. Agent column: MEASURED total and three MEASURED parts (device median, heavy-window tail, host idle); the split of the device median is INFERRED from the 8k profile scaled to 7.32 rows (n16 -> n32 profile slopes) plus a long-context term",
+  "rows": [
+   {
+    "part": "attention + KV: QSA K/V+indexer append, block scores, top-k, KV-stream resolve, attention; GDN recurrence",
+    "synthetic": 7.76,
+    "agent": 16.2,
+    "agent_band": [
+     12.2,
+     20.2
+    ],
+    "tag": "synthetic MEASURED; agent INFERRED",
+    "src": "synthetic (0.60 + 1.90 + 1.38) x 2. Agent: 7.2 at 8.4k scaled to 7.32 rows, plus a long-context term of 5-13 ms a step (mid 9): (a) the drift of the stage-1 median from ~28.5 to ~31 ms a window over the window as contexts grew ~28k -> ~39k = 0.15-0.2 ms a window per 1k tokens; (b) stage 0, with no host-served experts, grew from 24.4 to ~28.6 ms a window at fewer rows; (c) the 126k synthetic agg (159 vs 241 at 8k, same engine) = 0.18 ms a window per 1k; at ~42k vs 8.4k that is 5-6.4 ms a window. The 126k server-live median (227) says only ~1 ms: the low end. What scales with depth: block scores read ctx/4 fp32 pooled keys (128 B a cell a row a layer: ~5.4 MB a row a layer at 42k, ~0.4 ms a stage window at the 608 GB/s floor), the block top-k over ctx/4 scores per row, and KV-stream misses once depth passes the 20480-cell ring (worst case 8 rows x 6 layers x 512 blocks x 3264 B = 80 MB = 2.9-3.2 ms a window at the measured 25-28 GB/s fetch)"
+   },
+   {
+    "part": "GPU-resident routed experts",
+    "synthetic": 15.62,
+    "agent": 15.0,
+    "tag": "synthetic MEASURED; agent INFERRED",
+    "src": "7.81 x 2; slope 0.48 ms a row a window (7.81 -> 11.65 from 8 to 16 rows): 7.81 - 0.68 x 0.48 = 7.5 a window"
+   },
+   {
+    "part": "CPU-served + PCIe-streamed experts (stage 1 only; 2,142 experts = 3.88 GiB on the host)",
+    "synthetic": 0.0,
+    "agent": 1.5,
+    "agent_band": [
+     1.0,
+     3.0
+    ],
+    "tag": "synthetic MEASURED (all resident at --batch 16); agent INFERRED",
+    "src": "host pool time a stage-1 window MEASURED over each engine life: off 0.77 / 1.24 ms, on 6.65 / 7.05 ms (the on arms' excess sits mostly in the warm-up's lent slots). Device-visible part in the window: on - off stage-1 median ~+0.6 ms a window; the PCIe share runs on a side branch beside the VRAM hits (verify.cpp:1819-1830), so most of its link time is hidden"
+   },
+   {
+    "part": "dense: GDN qkv/z/out-proj, hyper-connection reads + router, shared expert, QSA projections",
+    "synthetic": 25.2,
+    "agent": 24.4,
+    "tag": "synthetic MEASURED; agent INFERRED",
+    "src": "12.6 a window x 2; slope 0.55 ms a row a window (12.6 -> 16.98 from 8 to 16 rows)"
+   },
+   {
+    "part": "LM head + output hc",
+    "synthetic": 6.26,
+    "agent": 6.1,
+    "tag": "synthetic MEASURED; agent INFERRED",
+    "src": "3.13 x 2; slope 0.11 ms a row"
+   },
+   {
+    "part": "copies, waits",
+    "synthetic": 0.48,
+    "agent": 0.5,
+    "tag": "MEASURED / INFERRED"
+   },
+   {
+    "part": "engine/recipe delta against the profiled build (comp1 levers, b084e69, --batch 32)",
+    "synthetic": 0.0,
+    "agent": -3.7,
+    "agent_band": [
+     -8.0,
+     0.0
+    ],
+    "tag": "UNATTRIBUTED residual",
+    "src": "closes the device median: 60.0 MEASURED (2 x 30.0) - the rows above. Near 0 if the long-context term is at its low end (5 ms a step), near -8 at its high end. No 8k synthetic of the comp1/b084e69 image at --batch 32 exists to settle it"
+   },
+   {
+    "part": "= device median (MEASURED)",
+    "synthetic": 55.32,
+    "agent": 60.0,
+    "agent_band": [
+     58.6,
+     61.4
+    ],
+    "tag": "MEASURED"
+   },
+   {
+    "part": "heavy-window tail (mean - median): window-row prefill rows riding the windows (STRATA_BATCH_PREFILL, MAX_T 32: 26.5k prompt rows a life, ~1,000 windows), first windows after a merged chunk (lent slots, refill)",
+    "synthetic": 0.0,
+    "agent": 7.6,
+    "agent_band": [
+     6.8,
+     8.4
+    ],
+    "tag": "MEASURED total; split INFERRED",
+    "src": "2 x (gpu mean - gpu median) of the on arms (3.43, 4.20); off arms 4.13, 3.52. Prefill-lane territory: named, not ranked here"
+   },
+   {
+    "part": "host turnaround + pipeline bubble between windows (notice, pump, submit)",
+    "synthetic": 1.9,
+    "agent": 4.5,
+    "agent_band": [
+     4.0,
+     5.0
+    ],
+    "tag": "agent MEASURED (2 x stage-1 idle median); synthetic INFERRED (57.2 - 55.3)"
+   },
+   {
+    "part": "= step",
+    "synthetic": 57.2,
+    "agent": 72.1,
+    "tag": "MEASURED",
+    "tokens": {
+     "synthetic": 16,
+     "agent": 14.64
+    },
+    "tok_s": {
+     "synthetic": 279.6,
+     "agent": 203
+    }
+   }
+  ],
+  "reading": "Of the 279.6 -> ~200 gap: fewer decoding rows -8.5 %; the long-context attention/KV term ~12 % of the step (band 7-18 %); the heavy-window tail (prompt rows and post-chunk windows inside decode) ~10.5 %; host turnaround +2.6 ms a step (~3.6 %); host-served experts ~2 %; offset by an unattributed engine delta (0 to -8 ms). Routed-expert and dense time per step did NOT grow: they shrank with the rows. 279 is an 8-row 8.4k reference, not a ceiling for 42k contexts"
+ },
+ "turn_model": {
+  "primary": "fit-viz turn_prediction_next_rung_1028.decode_rung closed form, anchored on the measured on mean: turns/agent-min = (60 / 16) a / (1 + a X), a = 0.882 Dn / 294.2, X = 1.329; Dn 195.2 -> 1.234. CONDITIONAL (review: k reduces to an output ratio, so the rung is an extrapolation)",
+  "cross_check": "src/model.js agentTurnPredict, the r8-n16 query of predictions-prefill-chunk-1026.json with P 1168 (merged on) and Dn varied, ratio to its own Dn 195 point (1.2875) times 1.234. The two agree within 1 % at every lever below",
+  "points": {
+   "195.2": 1.234,
+   "210": 1.29,
+   "230": 1.349,
+   "250": 1.408,
+   "279": 1.485
+  }
+ },
+ "levers": {
+  "C_exact_turnaround_env": {
+   "what": "STRATA_BATCH_OUTBOUND_ASYNC=1 + STRATA_BATCH_PLE_SLOTS=1 on the current image (both exact; both in the b084e69 source). Cuts stage-0 outbound copy out of its run and layer 1's per-row PLE loop; aims at the 2.0-2.5 ms stage idle a window",
+   "evidence": "comb2-pleout +1.5 % at 32 agents x 8k (comb2-levers-2026-10-26.md); async moved stage 0's outbound out of its run 26.94 -> 24.45 ms (kvresident-analysis)",
+   "saves_ms_per_window": [
+    0.5,
+    1.0
+   ],
+   "dn": {
+    "v": 199.3,
+    "band": [
+     197.9,
+     200.8
+    ]
+   },
+   "turns_per_agent_min": {
+    "v": 1.249,
+    "band": [
+     1.244,
+     1.257
+    ]
+   },
+   "build_days": 0,
+   "risk": "low: exact, env only; stage 1 is the bottleneck, so stage-0-only savings may show as 0",
+   "falsified_if": [
+    "stage-1 idle median does not fall by >= 0.4 ms a window",
+    "paired Dn change outside -1 % .. +4 %"
+   ],
+   "label": "CONDITIONAL"
+  },
+  "B_slots_sized_to_load": {
+   "what": "--batch 16 (or 20) instead of 32 at 16 agents: frees 16 x 0.26 GiB = 2.08 GiB a card (MEASURED slot size), which the expert cache takes (~1,145 more experts on card 1 at 1.86 MiB each), leaving ~1,000 of the 2,142 host-served experts; optionally STRATA_KV_RESIDENT_MIN 32768 with the rest (16 slots x 12,288 cells x 816 B x 6 layers = 0.90 GiB a card) to cut KV-stream misses at 30-40k",
+   "vram": "all 2,142 resident needs 3.88 GiB on card 1; slots give 2.08, a vram-reserve cut 2048 -> 1024 MiB gives ~1.0, LAYER_SPLIT 26 moves ~0.95 GiB of experts to card 0 (split 26 failed at N=32/131k before)",
+   "saves_ms_per_window": [
+    0.3,
+    1.5
+   ],
+   "dn": {
+    "v": 199.1,
+    "band": [
+     196.8,
+     203.7
+    ]
+   },
+   "turns_per_agent_min": {
+    "v": 1.248,
+    "band": [
+     1.24,
+     1.269
+    ]
+   },
+   "build_days": 0,
+   "risk": "medium: caps R8 at 16 slots (production serves more seats; slot moves used slots 24-26 in T); fewer spare slots for parks; an arm-only change unless the fleet's seat count stays <= 16",
+   "falsified_if": [
+    "stage-1 'CPU experts per stage' ms a window does not fall by >= 50 %",
+    "paired Dn gain under 1 %"
+   ],
+   "label": "CONDITIONAL"
+  },
+  "A_long_context_qsa_path": {
+   "what": "make the decode QSA path flat in depth: (1) fp16/bf16 pooled indexer keys (halve the ctx/4 score read), (2) a multi-work-group block top-k a row (today one launch for the window's rows, STRATA_BATCH_TOPK_ONCE, scanning ctx/4 scores), (3) a KV ring that covers the agents' depth (STRATA_KV_RESIDENT_MIN; needs the VRAM from B) so resolve fetches nothing over PCIe",
+   "saves_ms_per_window": {
+    "v": 3.0,
+    "band": [
+     2.0,
+     4.0
+    ],
+    "src": "2-4 ms of a long-context term of 2.5-6.5 ms a window (mid 4.5; decomposition row 1); under 1.5 ms if the term is at its low end"
+   },
+   "dn": {
+    "v": 212.9,
+    "band": [
+     206.7,
+     219.6
+    ]
+   },
+   "turns_per_agent_min": {
+    "v": 1.295,
+    "band": [
+     1.274,
+     1.317
+    ]
+   },
+   "build_days": {
+    "v": [
+     3,
+     6
+    ],
+    "tag": "INFERRED",
+    "src": "0 d env probe of the ring first; 2-3 d top-k + score kernels with qsa_parity/qsa_slots_parity; 1-2 d greedy-agreement and selection-drift check for the fp16 keys (a quality question: selections may change)"
+   },
+   "risk": "medium-high: the size of the term is the least certain number here (5-13 ms a step); fp16 keys are not bit-exact",
+   "falsified_if": [
+    "a 32-40k no-wrap synthetic with STRATA_VERIFY_PROFILE=1 shows scores + top-k + resolve + append under 2 ms a stage window above the 8k profile (then the lever caps under +5 %; drop it)",
+    "after a build, Dn moves by less than half the profiled saving"
+   ],
+   "label": "CONDITIONAL"
+  },
+  "D_dense_fusion": {
+   "what": "fuse the per-layer dense products for ~7-row windows (GDN qkv + z + ab as one product, out-proj into the next hc read, an 8-row XMX tile): dense is ~12 ms a window and 5-28x its weight-read floor (phase-floors), latency- and launch-bound",
+   "saves_ms_per_window": {
+    "v": 3.0,
+    "band": [
+     2.0,
+     4.0
+    ],
+    "src": "25-35 % of ~12 ms; discounted because hcx delivered +1.9 % against +8 % predicted and XMX experts lost 29 %"
+   },
+   "dn": {
+    "v": 212.9,
+    "band": [
+     206.7,
+     219.6
+    ]
+   },
+   "turns_per_agent_min": {
+    "v": 1.295,
+    "band": [
+     1.274,
+     1.317
+    ]
+   },
+   "build_days": {
+    "v": [
+     6,
+     10
+    ],
+    "tag": "INFERRED"
+   },
+   "risk": "high: the lineage's dense kernel levers under-delivered (densefix only restored the served form; hcx +1.9 %); not bit-exact unless the fused order matches",
+   "falsified_if": [
+    "the profiled dense phases fall by < 1.5 ms a stage window",
+    "paired Dn gain under 4 %"
+   ],
+   "label": "CONDITIONAL"
+  },
+  "E_batch_mtp_in_pipelined_groups": {
+   "what": "one MTP draft a slot a window inside the two pipelined groups (today the engine turns --batch-mtp off with pipelined groups on a layer split: generate.cpp:4795-4836; R8 runs --no-batch-mtp). Rows a window double to ~14.6; verification is exact (same text as without, generate.cpp:4795-4798)",
+   "model": "step = 36.05 + 7.32 x c + 1.0 (draft head) ms a window, tokens = 7.32 x (1 + a); c = 2.2-2.6 ms a row (dense + expert + head slopes 1.74 plus the long-context term a row ~0.7)",
+   "dn": {
+    "v": 204.8,
+    "band": [
+     188.2,
+     231.7
+    ],
+    "src": "a 0.5 / c 2.6 -> 188 (a loss); a 0.6 / c 2.45 -> 205; a 0.75 / c 2.2 -> 232"
+   },
+   "turns_per_agent_min": {
+    "v": 1.268,
+    "band": [
+     1.209,
+     1.354
+    ]
+   },
+   "vram": "49 MiB a slot (generate.cpp:4798): 1.5 GiB at 32 slots on the last stage = ~840 experts more on the host, 0.8 GiB at 16 slots",
+   "build_days": {
+    "v": [
+     8,
+     14
+    ],
+    "tag": "INFERRED",
+    "src": "drafters on the last stage per group, draft token hop to stage 0 for the group's next window, per-slot GDN state and KV rollback on a reject, parity; upstream chose not to combine them (a0116b27)"
+   },
+   "risk": "high: no measured acceptance on this trace; break-even near a = 0.55",
+   "falsified_if": [
+    "first-draft acceptance under 0.55 on agent-long-16 (measure on the solo path first: 'drafts accepted' in the serve line, 0 d)",
+    "window time at 2 rows a slot over 1.6x"
+   ],
+   "label": "CONDITIONAL"
+  },
+  "F_kv_value_quant": {
+   "what": "k8v4 -> k4v4 K/V. Attention reads only the 2,048 selected cells (8 rows x 6 layers x 2,048 x 816 B ~ 80 MB = 0.13 ms a window at floor), so the gain is tiny; the depth-scaled bytes are the indexer keys (lever A)",
+   "dn": {
+    "v": 196.0,
+    "band": [
+     195.2,
+     196.8
+    ]
+   },
+   "turns_per_agent_min": {
+    "v": 1.237,
+    "band": [
+     1.234,
+     1.24
+    ]
+   },
+   "build_days": {
+    "v": [
+     1,
+     2
+    ]
+   },
+   "risk": "quality for ~0 speed: do not build",
+   "falsified_if": [
+    "profiled attention phase falls by > 0.5 ms a window"
+   ],
+   "label": "CONDITIONAL"
+  },
+  "G_bigger_batch": {
+   "what": "at 16 agents the rows are the decoding agents: 7.32 of 8 a window already (92 %). --batch-groups 1 (16 rows, stages serial) loses: at 8k the n32 profile gives 37.2 + 41.6 = 78.8 ms for 16 tokens = 203 tok/s against 279.6 pipelined (-27 %). More agents raise total tok/s (356-362 at 32 synthetic) but lower turns per agent-minute while prefill binds",
+   "dn": {
+    "v": 195.2
+   },
+   "turns_per_agent_min": {
+    "v": 1.234
+   },
+   "build_days": 0,
+   "risk": "n/a",
+   "falsified_if": [],
+   "label": "NOT A LEVER at 16 agents"
+  }
+ },
+ "ranking": {
+  "label": "CONDITIONAL",
+  "by": "expected Dn gain per build-day, risk-weighted; measurement first",
+  "rows": [
+   {
+    "rank": 0,
+    "lever": "measure: one 32-40k no-wrap synthetic arm with STRATA_VERIFY_PROFILE=1 (next_measurement)",
+    "build_days": 0,
+    "why": "settles the 5-13 ms long-context term, which decides whether A outranks D"
+   },
+   {
+    "rank": 1,
+    "lever": "C exact turnaround env",
+    "dn": [
+     197.9,
+     200.8
+    ],
+    "build_days": 0
+   },
+   {
+    "rank": 2,
+    "lever": "B slots sized to load (+ ring)",
+    "dn": [
+     196.8,
+     203.7
+    ],
+    "build_days": 0,
+    "note": "arm-only unless the fleet stays at <= 16 seats"
+   },
+   {
+    "rank": 3,
+    "lever": "A long-context QSA path",
+    "dn": [
+     206.7,
+     219.6
+    ],
+    "build_days": [
+     3,
+     6
+    ]
+   },
+   {
+    "rank": 4,
+    "lever": "D dense fusion",
+    "dn": [
+     206.7,
+     219.6
+    ],
+    "build_days": [
+     6,
+     10
+    ]
+   },
+   {
+    "rank": 5,
+    "lever": "E batch MTP in pipelined groups",
+    "dn": [
+     188.2,
+     231.7
+    ],
+    "build_days": [
+     8,
+     14
+    ],
+    "note": "measure solo acceptance first (0 d)"
+   },
+   {
+    "rank": 6,
+    "lever": "F KV value quant",
+    "dn": [
+     195.2,
+     196.8
+    ],
+    "note": "do not build"
+   }
+  ],
+  "stack": {
+   "levers": "C + B + A + D",
+   "saves_ms_per_window": [
+    4.8,
+    10.5
+   ],
+   "dn": {
+    "v": 246.0,
+    "band": [
+     225.2,
+     275.4
+    ]
+   },
+   "turns_per_agent_min": {
+    "v": 1.397,
+    "band": [
+     1.334,
+     1.476
+    ]
+   },
+   "note": "independent savings summed on the 36.05 ms window; prefill-lane levers D/B of predictions-merged-prefill-1027.json stack on top through the stall share"
+  }
+ },
+ "next_measurement": {
+  "arm": "one synthetic arm on the T image + the comp1 env, --batch 32: strata-sustained n16, ctx 32768-40960, max_tokens 1000 (no wrap), STRATA_BATCH_TIMELINE=500 + STRATA_VERIFY_PROFILE=1",
+  "cost": "~7-9 min of cold prefill (16 distinct prompts x 33-41k at ~1.2-1.3k tok/s merged) + ~1 min of decode; no restart beyond the arm's own",
+  "predicted": {
+   "agg_tok_s": {
+    "v": 235,
+    "band": [
+     215,
+     265
+    ]
+   },
+   "stage1_window_ms": {
+    "v": 34.0,
+    "band": [
+     30.2,
+     37.2
+    ]
+   },
+   "qsa_scores_topk_resolve_append_s1_ms": {
+    "v": 7.0,
+    "band": [
+     4.0,
+     9.0
+    ],
+    "vs_8k": 2.5
+   },
+   "cpu_experts_s1_host_ms_per_window": {
+    "v": 1.0,
+    "band": [
+     0.5,
+     1.5
+    ]
+   },
+   "dense_s1_ms": {
+    "v": 12.0,
+    "band": [
+     10.0,
+     12.6
+    ]
+   }
+  },
+  "decides": "agg >= 265 or QSA phases <= 4.5 ms: the long-context term is small; the replay gap is the heavy-window tail + turnaround, and A drops below C/B/D. agg <= 215 or QSA phases >= 9 ms: A ranks first. A second arm at ctx 8192 on the same image (5 min) would also measure the engine delta row directly",
+  "zero_cost_alternative": "none that is clean: STRATA_VERIFY_PROFILE blocks once a window, so it must not ride a replay A/B arm"
+ },
+ "could_not_verify": [
+  "the long-context term's size (5-13 ms a step): no profile at depth > 8.4k on any image",
+  "the engine delta between the profiled 6655dc0 / 9df5bce --batch 16 builds and comp1 b084e69 --batch 32: no 8k synthetic of the current image",
+  "rows a window during the replay window: derived from server tokens / windows counted by the timeline clock (+-1 print)",
+  "how much of the PCIe-streamed expert link time is hidden by the side branch",
+  "the split of the heavy-window tail between window-row prompt rows and post-chunk windows",
+  "MTP first-draft acceptance on this trace"
+ ],
+ "measured_1028b_and_ranking": {
+  "label": "MEASURED (booking 1028b, image d41880b) + RANKING + PREDICTION for the top lever, written 2026-10-28T12:05Z before any build. EXPLORATORY, performance only, quality UNKNOWN (Q held). Nothing built",
+  "next_measurement_scored": {
+   "agg_tok_s": {
+    "predicted": [
+     235,
+     215,
+     265
+    ],
+    "measured": "275.8 (32-40k, profile off); 284.4 at 8.4k profile off",
+    "verdict": "FALSIFIED (above)"
+   },
+   "stage1_window_ms": {
+    "predicted": [
+     34.0,
+     30.2,
+     37.2
+    ],
+    "measured": "27.4-28.4 GPU (timeline) at 32-40k; 26.5-27.2 at 8.4k",
+    "verdict": "FALSIFIED (below)"
+   },
+   "qsa_scores_topk_resolve_append_s1_ms": {
+    "predicted": [
+     7.0,
+     4.0,
+     9.0
+    ],
+    "measured": "not profiled at 32-40k (every profile arm there stalls, 3 of 3); bounded: the whole stage-1 window grows ~1.0 ms 8.4k -> 32-40k, so these phases are <= 2.6 + 1.0 = 3.6",
+    "verdict": "FALSIFIED (bound below the band)"
+   },
+   "dense_s1_ms": {
+    "predicted": [
+     12.0,
+     10.0,
+     12.6
+    ],
+    "measured": "11.2 (8.4k profile: GDN qkv 1.71, z 0.87, out-proj 1.35, shared 0.83, hc0 0.95; QSA q8+kv-idx 0.07, k/v 0.29, q 0.85, out-proj 0.43, shared 0.28, hc0 0.34; head 3.26)",
+    "verdict": "HOLDS"
+   },
+   "a_falsifier": "FIRES: the long-context term is ~1 ms a stage window at 32-40k (< 2 ms): A drops",
+   "caveat": "16 rows a window synthetic at 32-40k; agent depth runs to ~54k (beyond the 20480-cell VRAM ring the KV stream reads more); the 126k synthetic (159 vs 241) says the term grows past this range"
+  },
+  "profile_split_feasibility": "the reviewer's three-way split (scores+top-k / KV resolve / split-K attention+merge) is NOT available at no cost: the batched QSA branch (image defaults STRATA_BATCH_QSA_ROWS=1, STRATA_BATCH_TOPK_ONCE=1, STRATA_BATCH_QSA_STREAMED=1) writes no stamps 11/12, so 'attention' holds all four (the 0.00 scores/resolve columns are that gap). Path that ran: FAST (online softmax; STRATA_QSA_ATTN_FAST=1 in the image env, --kv k8v4 = mode 3, 24/2 heads of 256, 16 rows a call >= 4): eligible and taken ahead of LANES (STRATA_QSA_ATTN_LANES=1 inert). Gate 0.03 ms a stage-1 window; q8_1 is inside 'out-proj' 0.43 (not split); launches 1 gate + 1 q8_1 a QSA layer = 12 a stage window. MTP: --no-batch-mtp; the draft layer is loaded (835 MiB, card 1) and unused in batch mode",
+  "stage1_window_breakdown_ms": {
+   "tag": "MEASURED (8.4k profile, 16 rows) + the measured 32-40k increment",
+   "dense": 11.2,
+   "gpu_routed_experts": 7.6,
+   "hc_read1_router": 2.3,
+   "attention_kv": 2.6,
+   "long_context_increment_32_40k": 1.0,
+   "gdn_rec_conv": 1.7,
+   "waits": 2.3,
+   "other": 0.4,
+   "total_8k": 27.4,
+   "total_32_40k": 28.4,
+   "agent_traffic": "rp arms: stage-1 median 31.7-33.0, mean 36.3-37.5 ms at ~6.5 rows a group; host pool 3.2-3.5 ms a window; stage-1 expert-group misses 19 % in passes; the mean-median gap (~4.6 ms) is the heavy-window tail after refills (merged-prefill side, not a decode lever)"
+  },
+  "ranking": {
+   "rule": "measured cost a lever could remove, per output token at agent traffic (window 36.05 ms at 7.32 rows = 4.92 ms a token, e503a72); the reviewer's selection rule applied: attention does not dominate, gate+quantizer do not dominate (narrow fusion ceiling ~0.1-0.2 ms a window), MTP's accepted-token economics are measured",
+   "rows": [
+    {
+     "rank": 1,
+     "lever": "E batch MTP in pipelined groups",
+     "removes_ms_per_token": {
+      "v": 0.65,
+      "band": [
+       0.45,
+       0.8
+      ]
+     },
+     "src": "acceptance 0.758 MEASURED (R8 odie log, prompts >= 32k: 6052 requests, 1,085,580 of 1,432,224 drafts; mean over up to 4 drafts, so the first draft accepts at least this; 1.96 tokens a draft window) vs break-even 0.55; e503a72 model window 36.05 + 7.32 c + 1.0, c 2.2-2.6 ms a row -> 4.27 ms a token",
+     "build_days": [
+      8,
+      14
+     ],
+     "risk": "the largest correctness seam (draft rows in both pipelined stages, verification exact); CONDITIONAL on the solo acceptance holding in batched windows"
+    },
+    {
+     "rank": 2,
+     "lever": "D dense fusion",
+     "removes_ms_per_token": {
+      "v": 0.41,
+      "band": [
+       0.27,
+       0.55
+      ]
+     },
+     "src": "dense 11.2 ms a stage window MEASURED; 2-4 ms removable (e503a72, lineage-discounted)",
+     "build_days": [
+      6,
+      10
+     ],
+     "risk": "lineage under-delivered (hcx +1.9 % vs +8 %)"
+    },
+    {
+     "rank": 3,
+     "lever": "A long-context attention",
+     "removes_ms_per_token": {
+      "v": 0.07,
+      "band": [
+       0.0,
+       0.14
+      ]
+     },
+     "src": "the whole 32-40k increment ~1.0 ms a window, of which a lever removes half at most",
+     "build_days": [
+      3,
+      6
+     ],
+     "risk": "falsifier fired; revisit only if deeper contexts (>= 54k, past the ring) show a term"
+    }
+   ],
+   "zero_build_aside": "if E is not built: the 835 MiB draft layer on card 1 sits unused under --no-batch-mtp; ~450 more experts (1.86 MiB each) of the 2,142 host-served on card 1 would fit. Not ranked (needs an arm; drops the solo path's MTP)",
+   "row_count_dependence": "ranked at the measured traffic (16 agents). At full windows E turns negative (prediction_E.row_count_caveat), and D is first"
+  },
+  "prediction_E": {
+   "label": "PREDICTION before any build (Recipe Maker), CONDITIONAL",
+   "recipe": "the served build's env + --batch-mtp with pipelined groups (one draft a slot a window, 2 groups of 16, layer split 25), draft layer already resident (no new VRAM), greedy-exact verification",
+   "inputs": {
+    "a": {
+     "v": 0.76,
+     "band": [
+      0.72,
+      0.85
+     ],
+     "tag": "MEASURED (solo, >= 32k)"
+    },
+    "c_ms_per_row": {
+     "v": 2.45,
+     "band": [
+      2.2,
+      2.6
+     ],
+     "tag": "MEASURED slopes + inferred long-context share"
+    },
+    "window_ms": {
+     "v": 36.05,
+     "tag": "MEASURED agent traffic, 7.32 rows"
+    },
+    "draft_head_ms": 1.0
+   },
+   "predicted": {
+    "stage1_window_ms_agent": {
+     "v": 55.0,
+     "band": [
+      52.2,
+      57.1
+     ]
+    },
+    "tokens_per_window": {
+     "v": 12.9,
+     "band": [
+      12.6,
+      13.5
+     ]
+    },
+    "dn": {
+     "v": 230,
+     "band": [
+      220,
+      238
+     ],
+     "vs": 199
+    },
+    "turns_per_agent_min": {
+     "v": "+8 %",
+     "band": [
+      "+5.5 %",
+      "+11 %"
+     ],
+     "src": "turns move ~0.54 x Dn (e503a72's mapping)"
+    },
+    "synthetic_32_40k_agg": {
+     "v": 241,
+     "band": [
+      225,
+      262
+     ],
+     "src": "275.8 x (1 + a) x 28.4 / (28.4 + 16 x 1.74 + 1.0) = 241: a LOSS (-13 %) when windows are already full (16 rows a group); corrects the 320 written at 12:05Z (arithmetic slip)"
+    }
+   },
+   "falsified_if": [
+    "first-draft acceptance on the batched path < 0.6 (a 0-build probe: the solo path's per-position acceptance on an agent replay)",
+    "added rows cost > 3.0 ms each a window",
+    "any greedy-output difference vs --no-batch-mtp (exactness)",
+    "Dn gain < +8 % after the build"
+   ],
+   "runner_up": "D: e503a72 levers.D_dense_fusion (Dn 212.9, 206.7-219.6) stands, its dense input now MEASURED at 11.2 ms",
+   "row_count_caveat": "E pays only while windows run part-full: at the measured 16-agent traffic (~6.5 rows a group) the model gives +15 % Dn; at full groups (16 rows, the synthetic arm, and the 64-agent objective) the same model gives -13 %. D removes cost at any row count. If the target stays many agents, D ranks first"
+  }
+ },
+ "rm_freeze_1028_stage_balance": {
+  "label": "RM freeze before any build (2026-10-28, analysis of the 1028b logs, no booking): stage balance, split 25 -> 26, head, two fusion seams. EXPLORATORY, performance only; quality UNKNOWN (Q held). CONDITIONAL",
+  "measured": {
+   "critical_stage": "stage 1. Demand per window (GPU busy + own turnaround): 8k 27.11 (s0) vs 28.09 (s1); 32-40k 27.68 vs 28.28. Stage 1 waitgrp median 0 (it never waits for stage 0); stage 0 waits 1.2-1.6 ms a window for stage 1. Agent traffic launch->done medians s0 29.5 vs s1 31.7-33.0 (gap ~2.3-2.8)",
+   "stage1_host": "pool 6.9 (8k) / 7.7 (32-40k) ms a window beside the GPU; exposed in the graph as waitA 1.16 + waitCPU 1.17 (8k profile); own turnaround 0.93 (notice 0.69, submit 0.45, pump 0.51 overlap)",
+   "vram": "card 0 holds all 12,800 of its experts (18.62 GiB), 1880 MiB free beside the 2048 reserve; card 1 holds 9,634 of 11,776 (17.47 GiB) + head + MTP draft 835 MiB, 2,142 host-served (3.88 GiB), 1862 MiB free",
+   "head": "Q5_K 2560 x 248,320 (~437 MB, 0.72 ms read floor) -> native_mmvq(Q5_K), no row rewrite; 3.26 ms phase = mix + q8_1 + projection + greedy sample over all logits + NaN guard; the batch-dense head (iq_mmq_decode) is shape-eligible but off (STRATA_BATCH_DENSE_EXTRA unset); sampled rows are sampled again after the graph (sample_rows: one launch a row + a blocking stream_sync on stage 1)"
+  },
+  "predictions": {
+   "split_26": {
+    "delta_ms": {
+     "v": 0.89,
+     "band": [
+      0.6,
+      1.2
+     ],
+     "tag": "INFERRED (the stage-1 GDN average of total service; layer 25's own cost is not resolved)"
+    },
+    "cycle_change_8k_synthetic_ms": {
+     "v": -0.09,
+     "band": [
+      -0.5,
+      0.3
+     ]
+    },
+    "cycle_change_32_40k_synthetic_ms": {
+     "v": 0.29,
+     "band": [
+      -0.2,
+      0.6
+     ]
+    },
+    "cycle_change_agent_ms": {
+     "v": -0.9,
+     "band": [
+      -1.4,
+      -0.3
+     ]
+    },
+    "turns_agent": {
+     "v": "+1.5 %",
+     "band": [
+      "+0.5 %",
+      "+2.5 %"
+     ],
+     "src": "cycle -2.5 to -3 % on decode; turns ~0.54 x"
+    },
+    "falsified_if": [
+     "layer 25's own profiled cost (per-layer hook) < 0.5 ms (then the move buys < 0.5 ms at agent traffic)",
+     "stage-0 expert misses > 0 after the move",
+     "agent-traffic stage-1 launch->done median does not fall by >= 0.5 ms"
+    ],
+    "blocker_as_frozen_d313636": "card 0 VRAM at R8's N=32/131k: split 26 failed there on 10-25 (native abort); ~0.9 GiB more on card 0 against 1.88 GiB free; any expert shortfall on card 0 becomes PCIe misses on stage 0 (not modelled)",
+    "status_corrected_1028": "PARKED, not blocked (an agent correction 2026-10-28): about 0 on full windows, -0.9 ms at agent traffic; card-0 expert residency and the ~+7 ms refill on card 0 unproven. ~0.9 GiB more on card 0 against 1.88 GiB free fits by these numbers. The 10-25 split-26 failure at N=32/131k does not settle today's feasibility: another image (comb8 44f91, native 1e5ad828), --kv-resident 4096 instead of d41880b's streamed KV ring, a no-progress native abort (SIGABRT after 60 s, 32 SSE errors) rather than an allocation error, and no VRAM logged. No named constraint (reserve, GDN state per slot, expert residency, the failed arm's difference) is measured to block it"
+   },
+   "head_batch_dense_env": {
+    "what": "STRATA_BATCH_DENSE_EXTRA=1 (env only): the head (and the other extra dense calls) on the XMX decode product",
+    "head_ms": {
+     "v": 2.3,
+     "band": [
+      1.6,
+      3.2
+     ],
+     "tag": "INFERRED: the projection is most of 3.26; XMX decode products ran 1.3-2x the MMVQ GEMV at 16 rows elsewhere in this lineage; the sample + mix + guard (~0.4-0.8) stay"
+    },
+    "cycle_change_synthetic_ms": {
+     "v": -0.9,
+     "band": [
+      -1.5,
+      0.0
+     ],
+     "src": "stage 1 saves ~1 ms; stage 0 becomes critical at the 1.0 ms gap (8k)"
+    },
+    "falsified_if": [
+     "head phase not below 2.9 ms",
+     "greedy outputs differ beyond the qualification's tolerance"
+    ],
+    "scope_note_1028": "an agent: STRATA_BATCH_DENSE_EXTRA is not head-only; it also moves the QSA K and V projections (verify.cpp:1344-1347). plan_1028c predicts the switch, not the head alone"
+   },
+   "sample_rows_in_graph": {
+    "ceiling_ms": {
+     "v": 0.5,
+     "band": [
+      0.2,
+      0.8
+     ]
+    },
+    "tag": "INFERRED: part of stage 1's 0.93 ms own turnaround; needs the win_host hook to measure"
+   },
+   "fusion_q8_requantize": {
+    "what": "drop the planar re-quantize (or the unused native q8_1) per XMX dense call",
+    "ceiling_ms_per_s1_window": {
+     "v": 0.6,
+     "band": [
+      0.3,
+      1.2
+     ]
+    },
+    "tag": "INFERRED: ~25-35 XMX dense calls a stage window x ~15-35 us a quantize at 16 rows; not separable in the profile"
+   },
+   "fusion_qsa_kv_pair": {
+    "ceiling_ms_per_s1_window": {
+     "v": 0.1,
+     "band": [
+      0.05,
+      0.2
+     ]
+    },
+    "tag": "MEASURED ceiling 0.29 (the whole k/v+norm-rope phase); the pair saves one launch and one input read a QSA layer"
+   }
+  },
+  "ranking_for_stage1_as_frozen_d313636": "head (batch-dense env, 0 build) and the q8 re-quantize seam first; the split move only after card 0 VRAM is freed; the K/V pair is too small to lead",
+  "ranking_for_stage1_corrected_1028": "the two env switches first (batch-dense extra + native q8_1: plan_1028c); the split move is parked (above), not blocked; the K/V pair is too small to lead"
+ },
+ "plan_1028c_dense_extra_native_q8_1": {
+  "label": "lab notes booking 1028c: STRATA_BATCH_DENSE_EXTRA=1 and STRATA_DMMQ_NATIVE_Q8_1=1 on d41880b (env only, no build). EXPLORATORY, performance only; quality UNKNOWN. Committed before any run. CONDITIONAL",
+  "rules": {
+   "smoke_not_a_gate": "the gr-* greedy identity runs are an exploratory smoke test: a PASS does not discharge Q, a divergence alone is not a quality failure, and the frozen package Q is required before any quality or serving claim. The smoke prompts stay apart from Q evidence. A divergent switch is labelled and routed to Q; it never stops the speed arms",
+   "speed_validity": "speed evidence counts only from arms with no crash, no nonfinite or error output and no incomplete required work",
+   "attribution": "a single-off (bisect) arm attributes a SWITCH, not an operator. DENSE_EXTRA moves QSA K, QSA V and the native head (verify.cpp:1344-1347, 1981-1985); NATIVE_Q8_1 changes every eligible decode-XMX dense call plus the shared expert's gate/up and down inputs (shared_expert.cpp:188-228; STRATA_SHEXP_XMX=7 is in R8's env). No head-only saving is headlined; the head phase is a profile reading inside the both-on arm only",
+   "fresh_process": "both switches are cached in statics: every arm is a fresh container",
+   "numerics": "flag on vs off and XMX vs MMVQ are not assumed numerically equivalent"
+  },
+  "baselines_measured": {
+   "stage1_gpu_ms_timeline_mean": {
+    "8k": 27.16,
+    "32-40k": 27.35,
+    "src": "1028b sy-pin-c8k / sy-off-c32-40k, profile off"
+   },
+   "stage0_gpu_ms_timeline_mean": {
+    "8k": 25.59,
+    "32-40k": 26.13
+   },
+   "demand_ms": {
+    "8k": {
+     "s0": 27.11,
+     "s1": 28.09
+    },
+    "32-40k": {
+     "s0": 27.68,
+     "s1": 28.28
+    },
+    "note": "GPU busy + own turnaround; cycle 28.74 / 28.92"
+   },
+   "head_phase_ms_8k_profile": 3.26,
+   "dense_total_ms_8k_profile": {
+    "s0": 8.88,
+    "s1": 11.23,
+    "note": "stage 1 includes the head"
+   },
+   "kv_phase_ms_8k_profile": {
+    "s0": 0.28,
+    "s1": 0.29
+   },
+   "decode_tok_s": {
+    "8k": 284.36,
+    "32-40k": 275.8,
+    "note": "8k from sy-pin-c8k (D1 pinned, profile off); the booking's own sy-off arms are the controls"
+   },
+   "agent": {
+    "turns_per_agent_min_A_arms": [
+     1.231,
+     1.156
+    ],
+    "A_over_A_spread": "6.3 % linear drift (ABBA cancels a linear drift)",
+    "stage1_launch_to_done_median_ms": [
+     31.7,
+     33.0
+    ],
+    "rows_per_group": "~6.5"
+   }
+  },
+  "mechanism": {
+   "dense_extra": "at >= 7 rows (the head: the window's T rows; K/V: each group's rows) the head's Q5_K projection runs iq_mmq_decode instead of native_mmvq (projection most of 3.26 ms); K and V each add an activation quantize (or a q8_1 conversion) + XMX product in place of one MMVQ on the existing q8_1 (2560 -> 512, small: about +0.03-0.1 ms a stage). At 4-6 rows the calls take the generic MMQ product (STRATA_BATCH_DENSE_MMQ_MIN=4), at 1-3 the GEMV: agent traffic (~6.5 rows a group) moves only part of its windows",
+   "native_q8_1": "each XMX dense call converts the caller's native q8_1 to planar (reads ~1.1 B an element) instead of re-quantizing fp32 (4 B an element + a block max); it drops the LEAN z reuse (z then pays one conversion launch a GDN layer) and the shared expert's down input becomes native SwiGLU + conversion (two launches for one). The launch count does not fall, so the saving is below the freeze's 0.6 ms ceiling for removing the quantize",
+   "both": "the head and K/V take the conversion instead of the quantize; the effects add"
+  },
+  "predictions": {
+   "both": {
+    "stage1_gpu_ms": {
+     "8k": {
+      "delta": -1.2,
+      "band": [
+       -2.0,
+       -0.1
+      ]
+     },
+     "32-40k": {
+      "delta": -1.2,
+      "band": [
+       -2.0,
+       -0.1
+      ]
+     }
+    },
+    "stage0_gpu_ms": {
+     "8k": {
+      "delta": -0.2,
+      "band": [
+       -0.6,
+       0.3
+      ]
+     }
+    },
+    "head_phase_ms_8k": {
+     "v": 2.3,
+     "band": [
+      1.6,
+      3.2
+     ]
+    },
+    "dense_total_ms_8k": {
+     "s1": {
+      "v": 10.0,
+      "band": [
+       9.2,
+       11.1
+      ]
+     },
+     "s0": {
+      "v": 8.7,
+      "band": [
+       8.3,
+       9.3
+      ]
+     }
+    },
+    "kv_phase_ms_8k": {
+     "v": 0.33,
+     "band": [
+      0.2,
+      0.5
+     ],
+     "note": "per stage; the switch may make K/V slightly dearer"
+    },
+    "decode_tok_s_8k": {
+     "delta_pct": 4.2,
+     "band_pct": [
+      0.3,
+      5.9
+     ],
+     "src": "cycle = max(T0, T1) + 0.65: T1 28.09 -> 26.9, T0 27.11 -> 26.9; stage 0 caps the gain"
+    },
+    "decode_tok_s_32_40k": {
+     "delta_pct": 2.8,
+     "band_pct": [
+      0.3,
+      4.3
+     ],
+     "src": "T1 28.28 -> 27.08, T0 27.68 -> 27.48: stage 0 becomes critical at the 0.6 ms gap"
+    },
+    "agent_stage1_window_median_ms": {
+     "delta": -0.6,
+     "band": [
+      -1.5,
+      0.5
+     ],
+     "src": "part of the windows reach 7 rows; stage 1 stays critical at agent traffic (2.3-2.8 ms gap)"
+    },
+    "agent_turns_per_agent_min": {
+     "delta_pct": 1.0,
+     "band_pct": [
+      -1.5,
+      2.5
+     ],
+     "note": "under this design's noise (one ABBA block): unresolved unless |delta| >= ~3 %; the engine stage-1 window is the primary agent readout"
+    },
+    "agent_decode_tok_s_median": {
+     "delta_pct": 1.9,
+     "band_pct": [
+      -1.5,
+      4.5
+     ]
+    }
+   },
+   "dense_extra_alone": {
+    "stage1_gpu_ms": {
+     "8k": {
+      "delta": -0.9,
+      "band": [
+       -1.6,
+       0.1
+      ]
+     }
+    },
+    "stage0_gpu_ms": {
+     "8k": {
+      "delta": 0.06,
+      "band": [
+       -0.1,
+       0.2
+      ]
+     }
+    },
+    "decode_tok_s_8k": {
+     "delta_pct": 3.2,
+     "band_pct": [
+      0.0,
+      3.9
+     ],
+     "booked": false
+    },
+    "decode_tok_s_32_40k": {
+     "delta_pct": 1.9,
+     "band_pct": [
+      0.0,
+      2.5
+     ],
+     "booked": false
+    },
+    "agent_stage1_window_median_ms": {
+     "delta": -0.45,
+     "band": [
+      -1.2,
+      0.5
+     ]
+    },
+    "agent_turns_per_agent_min": {
+     "delta_pct": 0.7,
+     "band_pct": [
+      -1.5,
+      2.0
+     ]
+    }
+   },
+   "native_q8_1_alone": {
+    "stage1_gpu_ms": {
+     "8k": {
+      "delta": -0.25,
+      "band": [
+       -0.6,
+       0.2
+      ]
+     }
+    },
+    "stage0_gpu_ms": {
+     "8k": {
+      "delta": -0.25,
+      "band": [
+       -0.6,
+       0.2
+      ]
+     }
+    },
+    "decode_tok_s_8k": {
+     "delta_pct": 0.9,
+     "band_pct": [
+      -0.7,
+      2.1
+     ],
+     "booked": false
+    },
+    "decode_tok_s_32_40k": {
+     "delta_pct": 0.9,
+     "band_pct": [
+      -0.7,
+      2.1
+     ],
+     "booked": false
+    },
+    "agent_stage1_window_median_ms": {
+     "delta": -0.15,
+     "band": [
+      -0.4,
+      0.2
+     ]
+    },
+    "agent_turns_per_agent_min": {
+     "delta_pct": 0.2,
+     "band_pct": [
+      -1.0,
+      1.0
+     ]
+    }
+   },
+   "smoke": {
+    "gr_off2_vs_off": {
+     "identical": 32,
+     "band": [
+      30,
+      32
+     ],
+     "p_all_identical": 0.75,
+     "src": "fixed-tile kernels; slot assignment can differ between fresh processes"
+    },
+    "gr_dx_vs_off": {
+     "identical": 22,
+     "band": [
+      8,
+      32
+     ],
+     "p_any_divergence": 0.75
+    },
+    "gr_q8_vs_off": {
+     "identical": 24,
+     "band": [
+      10,
+      32
+     ],
+     "p_any_divergence": 0.7
+    },
+    "gr_both_vs_off": {
+     "identical": 20,
+     "band": [
+      6,
+      32
+     ],
+     "p_any_divergence": 0.8
+    },
+    "self_consistent_copies": "16 of 16 pairs in every arm (p 0.85)",
+    "errors_nonfinite": 0,
+    "readout": "first divergent CHARACTER offset per request (the served API returns no token ids in --batch mode); no 32-prompt token-id harness from 10-25 was found in homelab, the XeStrata fork or a search of our session logs, so strata-sustained --greedy (8 questions x 2 copies, short + ~2400-token reads) stands in"
+   },
+   "head_dispatch": {
+    "mmq0_vs_deployed_profile": "stage-1 graph nodes equal at equal slot patterns and head phase within 0.2 ms (both < 2.9): the head ran iq_mmq_decode (p 0.8)",
+    "flags_live": "rp-dx and rp-q8 each change graph-node counts at equal slot patterns against rp-off (p 0.9)"
+   }
+  },
+  "falsified_if": [
+   "both: 8k stage-1 GPU window not at least 0.3 ms lower than sy-off-c8k",
+   "both: head phase not below 2.9 ms in sy-prof-both-c8k",
+   "both: 8k decode tok/s gain under +0.3 % or above +7 %",
+   "dense_extra: the head falls back (mmq0 arm: head phase back near 3.26 ms or stage-1 nodes change)",
+   "native_q8_1 alone: stage-1 window falls by more than 0.6 ms (the freeze's ceiling for removing the quantize outright)",
+   "agent: ABBA stage-1 median not lower by >= 0.2 ms"
+  ],
+  "sizing": "see the arms file; expected ~3.0 h, worst case ~6.6 h, booked 7 whole hours (end early when done)"
+ },
+ "measured_1028c": {
+  "label": "lab notes booking 1028c (odie 12:18-15:07Z, d41880b, env only): MEASURED readouts and scores against plan_1028c_dense_extra_native_q8_1 (d7a9cff). EXPLORATORY, performance only; quality UNKNOWN; README b70-rig/bench/results/booking-1028c",
+  "validity": "17 arms rc=0, every speed arm 0 errors, full windows, fresh containers; R8 0de528f7 restored + verified",
+  "measured": {
+   "sy_8k": {
+    "off": {
+     "tok_s": 282.71,
+     "s1_gpu": 27.065,
+     "s0_gpu": 25.472,
+     "cycle": 28.546,
+     "demand": [
+      27.08,
+      28.03
+     ]
+    },
+    "both": {
+     "tok_s": 287.53,
+     "s1_gpu": 26.18,
+     "s0_gpu": 25.833,
+     "cycle": 28.07,
+     "demand": [
+      27.24,
+      27.09
+     ]
+    }
+   },
+   "sy_32_40k": {
+    "off": {
+     "tok_s": 276.23,
+     "s1_gpu": 27.835,
+     "s0_gpu": 25.981,
+     "cycle": 29.265
+    },
+    "both": {
+     "tok_s": 281.11,
+     "s1_gpu": 26.535,
+     "s0_gpu": 26.317,
+     "cycle": 28.696
+    }
+   },
+   "profile_8k_both": {
+    "head": 1.95,
+    "dense_s1": 10.25,
+    "dense_s0": 9.24,
+    "kv_s1": 0.24,
+    "kv_s0": 0.24,
+    "total_s1": 26.02,
+    "vs_1028b": {
+     "head": 3.26,
+     "dense_s1": 11.23,
+     "dense_s0": 8.88,
+     "kv": [
+      0.28,
+      0.29
+     ],
+     "total_s1": 27.38
+    }
+   },
+   "mmq0_profile": {
+    "head": 1.95,
+    "dense_s1": 10.22,
+    "dense_s0": 9.24,
+    "nodes_equal": "28 of 30 common slot patterns (the 2 others: one low-row pattern a stage, generic MMQ -> GEMV as expected)"
+   },
+   "agent": {
+    "rp-off": [
+     1.244,
+     30.21,
+     27.652
+    ],
+    "rp-both": [
+     1.256,
+     29.852,
+     29.149
+    ],
+    "rp-both2": [
+     1.181,
+     30.311,
+     29.717
+    ],
+    "rp-off2": [
+     1.194,
+     31.646,
+     29.102
+    ],
+    "rp-dx": [
+     1.206,
+     29.353,
+     28.43
+    ],
+    "rp-q8": [
+     1.175,
+     31.179,
+     28.387
+    ],
+    "cols": "turns/agent-min, s1 launch->done median ms, s0 median ms",
+    "abba_both_vs_off": {
+     "turns_pct": 0.0,
+     "s1_median_ms": -0.85,
+     "s1_mean_ms": -1.86,
+     "s0_median_ms": 1.05,
+     "decode_median_pct": 2.6
+    }
+   },
+   "nodes_vs_rp_off": {
+    "rp-q8": {
+     "s0": 67,
+     "s1": 60
+    },
+    "rp-dx": {
+     "s0": [
+      12,
+      0
+     ],
+     "s1": [
+      12,
+      13,
+      -1,
+      -2
+     ]
+    },
+    "rp-both": {
+     "s0": [
+      67,
+      79
+     ],
+     "s1": [
+      59,
+      72
+     ]
+    },
+    "rp-off2": 0
+   },
+   "smoke_identical_vs_gr_off": {
+    "gr-off2": 15,
+    "gr-dx": 12,
+    "gr-q8": 13,
+    "gr-both": 19,
+    "of": 32,
+    "copies_self_consistent_gr_off": "5/8 short, 7/8 long",
+    "garbled": "gr-off2 long question 0 and its copy (both switches OFF): mixed-script noise, no engine error line; correctness defect of the candidate, mechanism UNKNOWN"
+   }
+  },
+  "scores": {
+   "both.stage1_gpu_8k": [
+    -1.2,
+    -0.89,
+    "HOLDS"
+   ],
+   "both.stage1_gpu_32_40k": [
+    -1.2,
+    -1.3,
+    "HOLDS"
+   ],
+   "both.stage0_gpu_8k": [
+    -0.2,
+    0.36,
+    "FALSIFIED"
+   ],
+   "both.head_phase": [
+    2.3,
+    1.95,
+    "HOLDS"
+   ],
+   "both.dense_s1": [
+    10.0,
+    10.25,
+    "HOLDS"
+   ],
+   "both.dense_s0": [
+    8.7,
+    9.24,
+    "HOLDS (band edge, wrong direction)"
+   ],
+   "both.kv": [
+    0.33,
+    0.24,
+    "HOLDS (wrong direction)"
+   ],
+   "both.decode_8k_pct": [
+    4.2,
+    1.7,
+    "HOLDS (low)"
+   ],
+   "both.decode_32_40k_pct": [
+    2.8,
+    1.8,
+    "HOLDS"
+   ],
+   "both.agent_s1_median": [
+    -0.6,
+    -0.85,
+    "HOLDS"
+   ],
+   "both.agent_turns_pct": [
+    1.0,
+    0.0,
+    "HOLDS (unresolved)"
+   ],
+   "both.agent_decode_pct": [
+    1.9,
+    2.6,
+    "HOLDS"
+   ],
+   "dense_extra.agent_s1_median": [
+    -0.45,
+    -1.58,
+    "FALSIFIED (better than band; drift-uncorrected position 5)"
+   ],
+   "dense_extra.agent_turns_pct": [
+    0.7,
+    -1.1,
+    "HOLDS"
+   ],
+   "native_q8_1.agent_s1_median": [
+    -0.15,
+    0.25,
+    "FALSIFIED (a cost)"
+   ],
+   "native_q8_1.agent_turns_pct": [
+    0.2,
+    -3.6,
+    "FALSIFIED (inside the 4 % drift; unresolved)"
+   ],
+   "smoke.off2_identical": [
+    32,
+    15,
+    "FALSIFIED"
+   ],
+   "smoke.self_consistent": [
+    "16/16",
+    "3-8 of 8",
+    "FALSIFIED"
+   ],
+   "head_dispatch.mmq0": [
+    "equal",
+    "equal",
+    "HOLDS"
+   ],
+   "flags_live": [
+    "changes",
+    "changes",
+    "HOLDS"
+   ]
+  },
+  "lesson": "NATIVE_Q8_1 does not remove a launch (the conversion is one), loses the LEAN z reuse and splits the shared down input: +60-67 graph nodes and ~+0.35 ms dense a stage at 16 rows. The model credited it with the quantize's bytes and missed the launch count. DENSE_EXTRA carries the gain; with both on, stage 0 turns critical (+0.36 ms) and caps the full-window gain at +1.7-1.8 %",
+  "next_prediction_dense_extra_alone": {
+   "sy_8k_decode_pct": {
+    "v": 3.0,
+    "band": [
+     1.5,
+     4.0
+    ]
+   },
+   "sy_8k_stage0_gpu": {
+    "delta": 0.06,
+    "band": [
+     -0.1,
+     0.2
+    ]
+   },
+   "sy_32_40k_decode_pct": {
+    "v": 2.3,
+    "band": [
+     1.0,
+     3.0
+    ]
+   },
+   "note": "not booked; arms sy-off-c8k, sy-dx-c8k, sy-dx-c32-40k, sy-prof-dx-c8k (~20 min)"
+  }
+ },
+ "plan_1028d_garble_bisect": {
+  "label": "lab notes booking 1028d: the candidate garble (1028c gr-off2) bisect + image/concurrency controls. Committed before any run. EXPLORATORY; garble is an unresolved correctness failure, kept apart from near-tie flips. Switches isolate code paths, not neural layers. INFERRED, low CL (one event observed)",
+  "observed": {
+   "candidate_1028c": "1 garbled batch (question 0 + copy) in 5 fresh-process salt-0 long batches, both switches off, merged prefill ON; 0 in 5 short batches; 2 of 160 outputs",
+   "r8_live_1028": "0 of 64 recorded outputs garbled (long reads likely cached, 16 wide, live traffic unknown); near-tie flips 25/32 pass-to-pass"
+  },
+  "trial_unit": "one 16-request long batch (the garble hit question 0 and its copy together)",
+  "n": {
+   "v": 36,
+   "why": "P(>=1 | 1-in-16 a batch) = 1-(15/16)^36 = 0.902; a clean cell bounds the rate below ~8 % a batch (95 %, 3/N), not below 1-in-16"
+  },
+  "predictions": {
+   "gr-r8": {
+    "garbled_outputs": 0,
+    "p_any_garble": 0.1,
+    "near_tie_identical_copies": "5-8 of 8 a form",
+    "src": "R8 has no merged prefill path"
+   },
+   "gr-off-if8": {
+    "p_any_garble": 0.15,
+    "note": "one fresh batch per form only; low power by design: it pairs with gr-r8 for image vs concurrency, it does not rate the garble"
+   },
+   "gb-merged-fresh": {
+    "garbled_batches": {
+     "v": 5,
+     "band": [
+      0,
+      15
+     ]
+    },
+    "p_any": 0.75,
+    "src": "the 1028c condition; per-batch rate posterior ~Beta(2,5) mean ~0.29 tempered for a single event"
+   },
+   "gb-nomerged-fresh": {
+    "garbled_batches": {
+     "v": 0,
+     "band": [
+      0,
+      2
+     ]
+    },
+    "p_any": 0.15,
+    "src": "hypothesis H1: the garble lives in the merged prefill path (15 admissions for 16 reads: one copy pair shares a prefix)"
+   },
+   "gb-merged-nockpt": {
+    "garbled_batches": {
+     "v": 2,
+     "band": [
+      0,
+      12
+     ]
+    },
+    "p_any": 0.5,
+    "src": "undecided between the merged read and its turn-checkpoint saves (30 through wp_save in gr-off2)"
+   },
+   "gb-merged-repeat": {
+    "garbled_batches": {
+     "v": 1,
+     "band": [
+      0,
+      6
+     ]
+    },
+    "p_any": 0.3,
+    "src": "only batch 0 is a fresh read; later batches restore cached prompts"
+   },
+   "decision_rule": "merged-fresh garbles and nomerged-fresh does not (Fisher p < 0.05 needs about >= 5 vs 0): the merged path is implicated; nockpt clean while merged-fresh garbles: the checkpoint save is implicated; repeat garbling after batch 0: restore is implicated. A clean merged-fresh cell leaves the garble unreproduced (rate < ~8 % a batch at 95 %), not resolved"
+  },
+  "dense_extra_abba": "scored against measured_1028c.next_prediction_dense_extra_alone (frozen 863edce): 8k decode +3.0 % (1.5-4.0), stage-0 GPU +0.06 ms (-0.1-0.2); the 32-40k figure stays unbooked",
+  "sizing": "expected ~2.3 h, worst ~6.2 h, booked 7 whole hours (end early)",
+  "superseded_by": "plan_1028d_v2_garble_bisect (an agent harness review, before any run)"
+ },
+ "plan_1028d_v2_garble_bisect": {
+  "label": "lab notes booking 1028d v2: the candidate garble, ORIGINAL two-wave workload (short wave joined, then long wave; 16 concurrent each on 32 slots; salt 0), fixed harness (categories, finish/usage/ids, exactly 16 a wave). Only merged prefill varies, fresh vs reused processes; the checkpoint follow-up waits for its runtime contract. Committed before any run. EXPLORATORY; observed bad response != proven engine defect; text-only comparison. INFERRED, low CL (one event observed)",
+  "observed": "1028c: 1 garbled trial (long question 0 in slot 8 + its copy in slot 24, which reused slot 8's turn checkpoint) in 5 fresh-process trials, merged ON; R8 live: 0 of 64 recorded (long reads cached, 16 wide, live traffic unknown, pre-review harness)",
+  "trial_unit": "one two-wave smoke (32 requests); the 1028c event hit one prompt pair",
+  "n": {
+   "v": 36,
+   "why": "P(>=1 | 1-in-16 a trial) = 1-(15/16)^36 = 0.902; a clean cell bounds the rate below ~8 % a trial (95 %, 3/N)"
+  },
+  "predictions": {
+   "gr-r8": {
+    "garbled": 0,
+    "p_any": 0.1,
+    "wave_ok": "both waves",
+    "near_tie_copies": "4-8 of 8 a wave"
+   },
+   "gr-off-if8": {
+    "p_any": 0.15,
+    "note": "one trial: pairs with gr-r8 to separate image from concurrency, not a rate"
+   },
+   "gr-mon-fresh": {
+    "garbled_trials": {
+     "v": 4,
+     "band": [
+      0,
+      12
+     ]
+    },
+    "p_any": 0.7
+   },
+   "gr-moff-fresh": {
+    "garbled_trials": {
+     "v": 0,
+     "band": [
+      0,
+      2
+     ]
+    },
+    "p_any": 0.15,
+    "src": "H1: the garble lives in the merged read (slot 8) or the merged path's turn checkpoint"
+   },
+   "gb-mon-reused": {
+    "garbled_trials": {
+     "v": 2,
+     "band": [
+      0,
+      10
+     ]
+    },
+    "p_any": 0.5,
+    "src": "later trials meet cached/parked history: another state than a fresh long wave"
+   },
+   "gb-moff-reused": {
+    "garbled_trials": {
+     "v": 0,
+     "band": [
+      0,
+      2
+     ]
+    },
+    "p_any": 0.1
+   },
+   "transport_eof_or_sse_error": {
+    "v": 0,
+    "p_none": 0.9
+   },
+   "decision_rule": "merged ON fresh >= 5 garbled vs OFF fresh 0 (one-sided Fisher p = C(36,5)/C(72,5) = 0.027; 4 vs 0 gives 0.057): the merged path is implicated; ON clean leaves the garble unreproduced (< ~8 % a trial at 95 %), not resolved; a garble with merged OFF clears the merged path as sole cause. gr-r8 vs gr-off-if8 separates image from concurrency only for what reproduces in one trial each"
+  },
+  "dense_extra_abba": "scored against measured_1028c.next_prediction_dense_extra_alone (863edce)",
+  "sizing": "expected 3.9-4.7 h (merged-off long waves may read slower); the per-wave caps would allow far more if waves hung, so the 6 h booking's DEADLINE is the hard bound and unreached arms are skipped and named"
+ },
+ "plan_1028d_v3_garble_bisect": {
+  "label": "lab notes booking 1028d v3 (trimmed; supersedes plan_1028d_v2_garble_bisect): committed before any run and before the launch acknowledgement. EXPLORATORY; observed bad response != proven engine defect; text-only comparison; garble kept apart from near-tie flips. INFERRED priors, low CL (one garbled smoke observed)",
+  "observed": "1028c: 1 garbled smoke (long question 0 in slot 8, which came off the solo path with 1 generated token, and its copy in slot 24, which inherited slot 8's turn checkpoint) in 5 fresh merged-ON smokes; D1/D2 off (CL 99). CPU seam (fd03d77, synthetic schedule): the save/restore primitives are clean; this does not show production admission/publication or GPU scheduling clean. The two garbled slots were the only long-wave slots decoding while merged chunks 2-3 were pending (the expert loan between chunks)",
+  "trial_unit": "one complete ORIGINAL two-wave smoke in a fresh engine process: 32 requests, 256 max tokens each, ~56.3k prompt tokens",
+  "predictions": {
+   "gr-r8": {
+    "trials": 8,
+    "garble_rate_prior_per_trial": 0.02,
+    "expected_garbled_trials": 0.16,
+    "p_any": 0.149,
+    "src": "the R8 image runs no merged prefill in its own unit config; live R8 showed 0 of 64 recorded (cached long reads); an image + config control, not a rate"
+   },
+   "gr-off-if8": {
+    "trials": 8,
+    "garble_rate_prior_per_trial": 0.08,
+    "expected_garbled_trials": 0.64,
+    "p_any": 0.487,
+    "src": "merged ON at 8 in flight: fewer merged readers at once, but slots still decode between merged chunks"
+   },
+   "gr-mon": {
+    "trials": 36,
+    "garble_rate_prior_per_trial": 0.12,
+    "expected_garbled_trials": 4.32,
+    "p_any": 0.99,
+    "src": "1028c: 1 garbled smoke in 5 fresh merged-ON smokes (point 0.2), shrunk toward a skeptical prior",
+    "p_ge5": 0.437,
+    "p_ge5_if_rate_0.2": 0.873
+   },
+   "gr-moff": {
+    "trials": 36,
+    "garble_rate_prior_per_trial": 0.051,
+    "expected_garbled_trials": 1.84,
+    "p_any": 0.848,
+    "src": "mixture: H_merged (garble needs the merged path, CL 60) -> 0.005; else as merged ON (0.12)"
+   },
+   "gr-mrr": {
+    "trials": 36,
+    "garble_rate_prior_per_trial": 0.076,
+    "expected_garbled_trials": 2.74,
+    "p_any": 0.942,
+    "src": "PROBE mixture: H_loan (the garble rides the expert loan between merged chunks, CL 40 given merged) -> 0.01; else as merged ON. READ_REFILL may also change scheduling and state: a drop is a probe result, not a causal removal, until an agent confirms the path"
+   }
+  },
+  "transport": {
+   "complete_all_trials_p": 0.85,
+   "note": "transport_eof / sse_error / finish_no_done counted apart, never as garble"
+  },
+  "decision_rules": {
+   "merged_implicated": "gr-mon >= 5 garbled trials vs gr-moff 0 (one-sided Fisher p = C(36,5)/C(72,5) = 0.027); power at a 12 % rate is P(mon >= 5) = 0.437, at 20 % 0.873",
+   "merged_cleared_as_sole_cause": "any garbled gr-moff trial",
+   "loan_probe": "gr-mrr 0 with gr-mon >= 5: the READ_REFILL probe removes it (a probe, not a causal removal, until a reviewer confirms the path); gr-mrr >= gr-mon: the loan is not implicated",
+   "unreproduced": "gr-mon 0 of 36: not reproduced (< ~8 % a trial at 95 %), not resolved",
+   "image": "gr-r8 vs gr-off-if8 separates image + config from concurrency only for what reproduces at N=8",
+   "dense_extra": "cell 5 timing is scored against measured_1028c.next_prediction_dense_extra_alone (863edce) and counted as valid only if cells 2-4 show no candidate garble"
+  },
+  "duration": {
+   "expected_h": 4.5,
+   "expected_detail": "per trial from 1028c: up 3 s + load 25-35 s + two waves 75 s ~ 104 s (gr-mon); R8 ~110 s; 8-in-flight ~145 s; merged OFF ~150 s (its long wave reads in the windows: UNMEASURED, prior 120-180 s); READ_REFILL ~115 s; 4 sy arms ~3.2 min each. 8 x 110 + 8 x 145 + 36 x (104 + 150 + 115) + 4 x 192 = 16,090 s = 4.47 h, + restore ~5 min",
+   "max_h": 6.0,
+   "max_detail": "the booking (6 h; DEADLINE = start + 5 h 45 min, restore within 10 min) is the hard bound; one arm's worst case is 660 s load + 1020 s eval = 28 min; arms with under ARM_BUDGET_S (2280 s) left are skipped and named; the rotation keeps cells 3-4 balanced if cut; cell 5 (last) is the first dropped"
+  }
+ }
+}

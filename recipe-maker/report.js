@@ -3,10 +3,12 @@
 // owner's droopy layout, and a knob-combination search. Usage: node report.js [--json out.json] [--quick]
 // Pre-launch check: node report.js --check recipe.json [--json] [--strict]. Run ledger accuracy: node report.js --accuracy [runs.jsonl] [--json] [--bucket day|week]
 // External validation (community rows, runs/external.jsonl): node report.js --external [--json]
+// Dense model with no planner entry (spec from tools/harvest.py): node report.js --dense SPEC.json [--knobs '{"freeDesktop":true}'] [--kv-read-eff X] [--json]
+// Dense-path calibration (data/dense-cal.json: fitted terms, predicted vs measured before and after per point): node report.js --dense-cal [--json]
 // Screening rounds against the card conditions (runs/screen.jsonl, data/cards): node report.js --screen [--json]
 // Batched decode (N concurrent streams, data.batch): node report.js --batch [--json]
 // Batch window (bottom-up kernel cost per pipeline stage, data.window; lever table): node report.js --window [CONFIG] [--agents N] [--xfloor K] [--bw GBS] [--stages S] [--anchor ID | --no-anchor] [--source ubench] [--propose LEVER] [--json]
-// Agent workload (useful output = min(decode capacity, prefill / fresh prompt tokens per output), data.workload): node report.js --workload [RUN_ID | all] [--profile NAME] [--fresh F] [--prefill P] [--n 16,32,64] [--json]
+// Agent turns (data.workload.turn_model): node report.js --workload [RUN_ID | all] [--profile NAME] [--trace NAME] [--server NAME] [--n 1,16] [--prefill P] [--decode-one D1] [--fresh F] [--warmup-s S] [--window-s S] [--gap-scale X] [--stagger-scale X] [--json]
 // Serving priors (data/priors-serving.json; the ones that apply to a recipe): node report.js --priors [recipe.json] [--json]
 // Layer map + trim proposals + upgrade advisor only (src/advisor.js; also part of the full and --quick reports): node report.js --advice [--json]
 'use strict';
@@ -109,6 +111,34 @@ if (args.includes('--external')) {
   console.log('per hardware class:'); L.by_class.forEach(x => console.log('  ' + x));
   console.log('per class and placement:'); L.by_class_placement.forEach(x => console.log('  ' + x));
   console.log('rows with undeclared fields: ' + miss.length + ' of ' + data.external.rows.length + ' (' + miss.map(r => r.id + ' [' + r.missing.join(' ') + ']').slice(0, 5).join('; ') + (miss.length > 5 ? '; ...' : '') + ')');
+  process.exit(0);
+}
+
+// ---------- dense model with no planner entry: node report.js --dense SPEC.json [--knobs JSON] [--kv-read-eff X] [--json] ----------
+// FM.predictDense per quant x box (placement over the cards, then DRAM; decode at each spec depth); harvest renders the rows
+const dni = args.indexOf('--dense');
+if (dni >= 0) {
+  const spec = JSON.parse(fs.readFileSync(args[dni + 1], 'utf8')), ki = args.indexOf('--knobs'), ei = args.indexOf('--kv-read-eff');
+  const rows = FM.predictDenseAll(data, spec, { knobs: ki >= 0 ? JSON.parse(args[ki + 1]) : {}, kvReadEff: ei >= 0 ? Number(args[ei + 1]) : undefined });
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(rows, null, 1) + '\n'); process.exit(0); }
+  console.log('dense plan: ' + spec.model + ' (' + spec.arch + '), ctx ' + spec.ctx + ', KV ' + (spec.kv_type || 'f16'));
+  rows.forEach(r => console.log('  ' + r.quant + ' ' + r.box + ': ' + (r.status === 'PREDICTED' ? r.decode.map(x => x.tps.toFixed(1) + ' at ' + x.depth).join(', ') + ' tok/s; GPU layers ' + r.layers_gpu + ', CPU ' + r.layers_cpu + (r.displaces || []).map(d => '; displaces ' + d.what + ' on ' + d.card).join('') : r.why)));
+  process.exit(0);
+}
+
+// ---------- dense-path calibration: node report.js --dense-cal [--json] ----------
+// FM.denseCalReport: the terms fitted from data/dense-cal.json, then every point predicted on the plain line (before) and with them (after)
+if (args.includes('--dense-cal')) {
+  const R = FM.denseCalReport(data);
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(R, null, 1) + '\n'); process.exit(0); }
+  const pct = x => x === null || x === undefined ? '-' : (x >= 0 ? '+' : '') + (100 * x).toFixed(0) + ' %';
+  console.log('dense-path calibration (data/dense-cal.json)');
+  R.terms.forEach(t => console.log('  ' + t.id + ' = ' + (t.v === null ? 'UNKNOWN' : +t.v.toFixed(4)) + ' [' + t.tag + ']'));
+  console.log('  stated error base (largest holdout miss): ' + Object.keys(R.base_err).map(b => b + ' ' + (100 * R.base_err[b]).toFixed(1) + ' %').join(', '));
+  console.log('| point | use | card | depth | measured tok/s | before | err | after | err |');
+  console.log('|---|---|---|---:|---:|---:|---:|---:|---:|');
+  R.rows.forEach(r => console.log('| ' + r.id + ' | ' + r.use + ' | ' + r.card + ' | ' + r.depth + ' | ' + r.measured + (r.measured_scaled ? ' (x power: ' + r.measured_scaled.map(x => x.toFixed(1)).join('-') + ')' : '') +
+    ' | ' + (r.before ? r.before.toFixed(1) : '-') + ' | ' + pct(r.err_before) + ' | ' + (r.after ? r.after.toFixed(1) : '-') + ' | ' + pct(r.err_after) + ' |'));
   process.exit(0);
 }
 
@@ -272,39 +302,134 @@ if (cvi >= 0) {
   process.exit(0);
 }
 
-// ---------- agent workload: node report.js --workload [RUN_ID | all] [--profile NAME] [--fresh F] [--prefill P] [--n 16,32,64] [--json] ----------
-// Per curve config: decode capacity D at each agent count (the fitted curve, from synthetic short-prompt runs), the prefill rate P
-// of the build's best real-agent replay, the profile's fresh prompt tokens per output F; the ceiling min(D, P / F), what an engine
-// whose reads stall decode gets (1 / (F / P + 1 / D)), which term binds, the window-row check, and every real-agent row of the
-// build at that count judged with its own P and F. No RUN_ID: the curve's default config. all: one line per config with a P
+// ---------- every weight resident, one server per card: node report.js --resident RECIPE.json [--n 1,4,8] [--json] ----------
+// a recipe with a resident_plan block (no synthetic curve, no real-agent row needed): decode and prefill from the card and
+// measured decode anchors, the agents split over the instances, each instance's share replayed by the per-turn model
+const rsi = args.indexOf('--resident');
+if (rsi >= 0) {
+  const rec = JSON.parse(fs.readFileSync(args[rsi + 1], 'utf8')), ni = args.indexOf('--n'), ns = ni >= 0 ? args[ni + 1].split(',').map(Number) : [1, 4, 8];
+  if (!rec.resident_plan) { console.log(args[rsi + 1] + ': no resident_plan block'); process.exit(2); }
+  // --set k=v[,k=v]: a lever scenario: each value replaces (or adds, for FM.RESIDENT_LEVERS) one resident_plan input, tagged LEVER
+  const si = args.indexOf('--set'), sets = si >= 0 ? args[si + 1].split(',').map(x => x.split('=')) : [];
+  sets.forEach(([k, x]) => {
+    if (!rec.resident_plan.inputs[k] && !FM.RESIDENT_LEVERS.includes(k)) { console.log('--set ' + k + ': not a resident_plan input or lever (' + FM.RESIDENT_LEVERS.join(', ') + ')'); process.exit(2); }
+    const val = x === 'true' ? true : x === 'false' ? false : x === undefined || x.trim() === '' ? NaN : Number(x);
+    if (typeof val === 'number' && !Number.isFinite(val)) { console.log('--set ' + k + '=' + x + ': not a number or true/false'); process.exit(2); }
+    rec.resident_plan.inputs[k] = { v: val, tag: 'LEVER', src: 'LEVER: --set ' + k + '=' + x };
+  });
+  const P = FM.residentAgentPlan(data, rec, ns), t1 = x => x === null || x === undefined ? '?' : x.toFixed(1);
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(Object.assign({ recipe: rec.id }, P), null, 1) + '\n'); process.exit(0); }
+  console.log(`resident plan ${rec.id}: effective read ${t1(P.terms.bw_eff_gbs)} GB/s, launch ${P.terms.layer_ms.toFixed(4)} ms a layer (fit on the decode anchors), prefill ${t1(P.prefill.v)} tok/s (${P.prefill.src})`);
+  console.log('      n  turns/agent-min  useful tok/s/agent  total  decode/request  card decode at slots  binding per instance  solo shares (decode / prefill / gap)');
+  P.rows.forEach(r => console.log(r.status !== 'MODEL' ? `  ${r.n}: UNMODELLED: ${r.why}` : `  ${String(r.n).padStart(5)} ${t1(r.turns_per_agent_min).padStart(16)} ${t1(r.useful_tps_per_agent).padStart(19)} ${t1(r.useful_tps_total).padStart(6)} ${t1(r.decode_per_request).padStart(15)} ${r.decode_card_at_slots.map(t1).join(', ').padStart(20)}  ${r.binding.join(', ').padEnd(20)}  ${[r.share.decode, r.share.prefill, r.share.gap].map(x => (100 * x).toFixed(0) + '%').join(' / ')}`));
+  console.log('  inputs: ' + Object.entries(rec.resident_plan.inputs).map(([k, x]) => k + ' [' + x.tag + (String(x.src).startsWith('ASSUMPTION') ? ', ASSUMPTION' : '') + ']').join('; '));
+  process.exit(0);
+}
+
+// ---------- agent planner: node report.js --agent MODEL --box BOX --harness PROFILE [--recipe R.json] [--endpoint URL] [--proxy-url URL] [--subagents N] [--resume-note] [--live-window N] [--config CFG.json] [--json] ----------
+// the harness layer above the serving recipe (src/agent.js; data/harnesses, data/agent-models.json, data/agent-lessons.json):
+// a ready config (server argv, harness env/files, the derived window chain) and the pre-launch checks of the known seat
+// failure classes. --config checks a given seat config instead of the planned one. Exit 0 = no FAIL, 1 = a FAIL, 2 = bad input
+const agi = args.indexOf('--agent');
+if (agi >= 0) {
+  if (!fs.existsSync(path.join(__dirname, 'src', 'agent.js'))) { console.log('--agent: the harness layer (src/agent.js) is not in this copy'); process.exit(2); }
+  const AG = require('./src/agent.js'), str = f => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : undefined; };
+  const model = args[agi + 1], box = str('--box'), hid = str('--harness'), bad = m => { console.log('--agent: ' + m); process.exit(2); };
+  const H = AG.loadHarnesses();
+  if (H.errors.length) bad('harness profile errors: ' + H.errors.join('; '));
+  const profile = H.profiles[hid];
+  if (!profile) bad('--harness ' + hid + ': no profile (' + Object.keys(H.profiles).join(', ') + ')');
+  const models = AG.loadModels(), lessons = AG.loadLessons(), mfacts = models[model] || {};
+  // the recipe: --recipe, else the box+model recipe with a resident plan and the most MEASURED/FIT inputs
+  let recipe = null, alts = [];
+  if (str('--recipe')) recipe = JSON.parse(fs.readFileSync(str('--recipe'), 'utf8'));
+  else {
+    const dir = path.join(__dirname, 'recipes'), score = r => r.resident_plan ? 1000 + Object.values(r.resident_plan.inputs).filter(x => /MEASURED|FIT/.test(x.tag)).length : 0;
+    alts = fs.readdirSync(dir).filter(f => f.endsWith('.json') && !f.endsWith('.check.json')).map(f => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (e) { return null; } })
+      .filter(r => r && !Array.isArray(r) && r.model === model && r.box === box && r.conditions && r.conditions.engine_flags).sort((a, b) => score(b) - score(a));
+    recipe = alts[0] || null;
+  }
+  if (!recipe) bad(`no recipe for model ${model} on box ${box} with conditions.engine_flags (give --recipe)`);
+  const rates = AG.ratesOf(data, FM, recipe, mfacts), growth = AG.traceGrowth(data, (recipe.resident_plan || {}).trace);
+  const serve = ((mfacts.serve || {})[box]) || {}, endpoint = str('--endpoint') || serve.endpoint || null;
+  const P = AG.planAgent({ profile, recipe, mfacts, lessons, model, endpoint, max_subagents: Number(str('--subagents') || 0), resume_note: args.includes('--resume-note'), live_window: str('--live-window') ? Number(str('--live-window')) : undefined });
+  const given = str('--config') ? JSON.parse(fs.readFileSync(str('--config'), 'utf8')) : null;
+  const cfg = given ? given.config || given : P.cfg;
+  const R = AG.checkAgent(cfg, { profile, mfacts, lessons, rates, growth, model, server: given ? AG.serverOf(recipe) : P.server });
+  const vars = { provider: box + '-' + model, endpoint, api_key: 'none', model: serve.served_name || model, reasoning: !!FM.v(mfacts.reasoning), window: cfg.window, output_cap: cfg.output_cap,
+    thinking_level: 'minimal', thinking_budget: cfg.thinking_budget ?? null, reserve: cfg.reserve ?? null, kept_tokens: FM.v((profile.compaction || {}).kept_tokens) ?? null,
+    request_budget_field: cfg.request_budget ? 'thinking_budget_tokens' : null, proxy_url: str('--proxy-url') || '<seat proxy URL>', compact_pct: cfg.compact_pct ?? null,
+    slot: P.server.slot, max_subagents: cfg.max_subagents ?? 0, summary_cap: cfg.summary_cap ?? null };
+  const harness = profile.emit ? AG.emit(profile.emit, vars) : null, verdict = AG.verdictOf(R.checks);
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify({ model, box, harness: hid, recipe: recipe.id, mode: given ? 'check given config' : 'plan', verdict, config: cfg, steps: given ? null : P.steps, server: given ? null : P.server, harness_config: given ? null : harness, rates, checks: R.checks, headroom: R.headroom }, null, 1) + '\n'); process.exit(R.checks.some(c => c.status === 'FAIL') ? 1 : 0); }
+  console.log(`agent ${given ? 'config check' : 'plan'}: ${model} on ${box} through ${profile.label} [${profile.status} profile]`);
+  console.log(`  recipe ${recipe.id}${alts.length > 1 ? ' (chosen over ' + alts.slice(1).map(r => r.id).join(', ') + ': resident plan with the most MEASURED/FIT inputs)' : ''}`);
+  console.log('  rates: ' + rates.src);
+  if (!given) {
+    console.log('  derived (launch order):'); P.steps.forEach(s => console.log('    ' + s));
+    console.log('  server argv' + (P.server.added.length ? ' (added by the plan: ' + P.server.added.join('; ') + ')' : '') + ':\n    ' + P.server.argv + (P.server.note ? '\n    (' + P.server.note + ')' : ''));
+    if (harness && harness.env) { console.log('  harness env:'); Object.entries(harness.env).forEach(([k, x]) => console.log(`    ${k}=${x}`)); }
+    if (harness && harness.files) Object.entries(harness.files).forEach(([f, x]) => console.log(`  ${f}:\n` + JSON.stringify(x, null, 1).split('\n').map(l => '    ' + l).join('\n')));
+    if (harness && harness.command) console.log('  run: ' + harness.command);
+    if (harness && harness.apply) console.log('  apply: ' + harness.apply);
+    if (!harness) console.log('  harness config: none emitted (stub profile: ' + ['window', 'output_cap', 'compaction', 'thinking'].map(k => k + ' ' + (profile.config[k].key || 'UNKNOWN')).join('; ') + ')');
+  } else console.log('  given config: ' + JSON.stringify(cfg));
+  console.log('  checks:');
+  R.checks.forEach(c => console.log(`    ${c.status.padEnd(7)} ${c.id.padEnd(19)} ${c.detail}\n            lesson ${c.lesson}: ${c.src.slice(0, 160)}${c.src.length > 160 ? '...' : ''}`));
+  const note = R.checks.find(c => c.resume_note);
+  if (note) console.log('  resume note to inject after each compaction summary:\n    ' + note.resume_note);
+  console.log('verdict: ' + verdict);
+  process.exit(R.checks.some(c => c.status === 'FAIL') ? 1 : 0);
+}
+
+// ---------- agent workload: per-turn replay, plus explicitly named legacy server-bound diagnostics ----------
+// No RUN_ID selects the default curve config. all shows every config, including UNMODELLED ones.
 const wki = args.indexOf('--workload');
 if (wki >= 0) {
   const W = data.workload, num = f => { const i = args.indexOf(f); return i >= 0 ? Number(args[i + 1]) : undefined; }, str = f => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : undefined; };
-  const opts = { profile: str('--profile'), fresh: num('--fresh'), prefill: num('--prefill'), n: str('--n') ? str('--n').split(',').map(Number) : undefined };
+  const opts = { profile: str('--profile'), fresh: num('--fresh'), prefill: num('--prefill'), n: str('--n') ? str('--n').split(',').map(Number) : undefined,
+    trace: str('--trace'), server: str('--server'), decode_one: num('--decode-one'), warmup_s: num('--warmup-s'), window_s: num('--window-s'), gap_scale: num('--gap-scale'), stagger_scale: num('--stagger-scale') };
   const want = args[wki + 1] && !args[wki + 1].startsWith('--') ? args[wki + 1] : null;
-  const t1 = x => x === null || x === undefined ? '?' : x === Infinity ? 'inf' : x.toFixed(1), pct = x => x === null ? '?' : (x >= 0 ? '+' : '') + (100 * x).toFixed(1) + ' %';
+  const t1 = x => x === null || x === undefined ? '?' : x === Infinity ? 'inf' : x.toFixed(1), pct = x => x === null || x === undefined ? '?' : (x >= 0 ? '+' : '') + (100 * x).toFixed(1) + ' %';
   const warn = v(W.settings.real_err_warn_pct) / 100;
+  const turnRescore = FM.agentTurnRescore(data), printTurnRescore = () => {
+    console.log('  POST-HOC rescore, not new prediction accuracy. Original frozen predictions remain unchanged');
+    console.log('    entry: measured turns/agent-minute | frozen original | configured-input post-hoc (turns error, useful error) | held-out (turns error, useful error)');
+    turnRescore.forEach(x => console.log(`    ${x.id}: ${t1(x.measured.turns)} | ${t1(x.before.turns)} (${pct(x.before.err_turns)}) | ${t1(x.after.turns)} (${pct(x.after.err_turns)}, ${pct(x.after.err_useful)}) | ${t1(x.held_out.turns)} (${pct(x.held_out.err_turns)}, ${pct(x.held_out.err_useful)})${x.held_out.bound ? ' conditional upper bound: unknown re-read' : ''}`));
+    console.log('    Configured-input means each entry\'s declared mixture, not all measured inputs. Chunk rows retain advance predicted P, not the later measured P. Some rows reuse the scored run. Answer length and server prefix re-read are not predicted. GLM held-out turns miss by about -30%, distinct from its older frozen turn-count success');
+  };
   if (want === 'all') {
     const all = FM.agentPlans(data, opts);
     if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(all.map(p => Object.assign({}, p, { cfg: p.cfg.id })), null, 1) + '\n'); process.exit(0); }
-    const withP = all.filter(p => p.prefill);
-    console.log(`agent workload (${withP[0] ? withP[0].profile : opts.profile || v(W.settings.default_profile)}): ${all.length} curve configs, ${withP.length} with a real-agent prefill rate of their build; per agent count: decode capacity D (synthetic) / P over F / expected, binding term`);
-    withP.forEach(p => console.log('  ' + p.rows.map(r => `n=${r.n} ${t1(r.decode)}/${t1(r.prefill_cap)}/${t1(r.expect)} ${r.binding || '?'}${r.cpu_pool && r.cpu_pool.status === 'FAIL' ? ' WINDOW-FAIL' : ''}`).join('  ') + `  ${p.cfg.id}`));
-    console.log(`  ${all.length - withP.length} configs have no real-agent row of their build: their totals are decode capacity only`);
+    console.log(`agent workload: ${all.length} curve configs. Primary: turns/agent-minute. Secondary: useful tok/s. POST-HOC inputs, not held-out validation`);
+    all.forEach(p => console.log('  ' + p.rows.map(r => `n=${r.n} ${r.turn.status === 'MODEL' ? t1(r.turn.turns_per_agent_min) + ' turns/agent-minute, ' + t1(r.turn.useful_tps) + ' useful tok/s' + (r.turn.bound ? ' (conditional upper bound: unknown re-read)' : '') : 'UNMODELLED: ' + r.turn.why}${r.cpu_pool && r.cpu_pool.status === 'FAIL' ? ' WINDOW-FAIL' : ''}`).join('  ') + `  ${p.cfg.id}`));
+    console.log('  Answer length uses measured or inferred model replay ratios, else recorded lengths. Server prefix re-read uses a prior, not a prediction. Use a config ID for sources');
+    printTurnRescore();
     process.exit(0);
   }
   const C = data.curves, c = want ? C.configs.find(x => x.runs.indexOf(want) >= 0 || x.id === want) : C.configs.find(x => x.key === C.default);
   if (!c) { console.log('agent workload: ' + (want ? 'no curve config holds run ' + want : 'no default config') + ' (node report.js --curve all lists them)'); process.exit(want ? 2 : 0); }
   const P = FM.agentPlan(data, c, opts), RX = FM.replayChecks(data), RC = new Map(RX.map(x => [x.run, x.checks]));
-  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(Object.assign({}, P, { cfg: c.id, replay_checks: RX }), null, 1) + '\n'); process.exit(0); }
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(Object.assign({}, P, { cfg: c.id, replay_checks: RX, turn_rescore: turnRescore }), null, 1) + '\n'); process.exit(0); }
   const pf = W.profiles[P.profile], cite = x => x.src.startsWith(x.tag) ? x.src : x.tag + ': ' + x.src;
   console.log(`agent workload: ${c.label}`);
   console.log(`  profile ${P.profile}: ${pf.label}; F = ${v(P.fresh)} fresh prompt tokens per output token (${cite(P.fresh)})`);
   ['delta_tokens', 'first_prompt_tokens', 'prompt_tokens', 'out_tokens'].filter(k => pf[k]).forEach(k => console.log(`    ${k}: ${Object.entries(v(pf[k])).map(([a, b]) => a + ' ' + b).join(', ')} (${pf[k].tag})`));
   console.log(`  P = ${P.prefill ? v(P.prefill) + ' prompt tok/s (' + cite(P.prefill) + ')' : 'UNKNOWN: no real-agent row of build ' + (P.evidence.key || '(none)') + (P.evidence.other.length ? ' (other builds: ' + [...new Set(P.evidence.other.map(x => x.build_key))].join(', ') + ', not borrowed)' : '') + '; give --prefill P'}`);
   console.log(`  D = decode capacity: ${P.fit_ok ? 'the fitted curve of this config (node report.js --curve ' + c.id + ')' : 'measured points only (' + P.why + ')'}; synthetic short-prompt runs measure D, never agent throughput${pf.prompt_tokens ? '; D is measured at the synthetic runs\' depth, and this profile\'s prompts run deeper (median ' + v(pf.prompt_tokens).median + ' tokens): decode at that depth is not separately measured' : ''}`);
-  console.log(`  reads ${P.stall ? 'stall every decoding slot (workload.engines.' + c.engine + '.reads_stall_decode): expected = 1 / (F / P + 1 / D)' : 'overlap decode: expected = min(D, P / F)'}`);
-  console.log('      n       D   P / F  ceiling  expected  binding  prefill busy  window rows');
+  console.log('  Primary: turns/agent-minute. Secondary: useful tok/s from measured, inferred or recorded answer lengths, not predicted answer lengths');
+  console.log('      n  turns/agent-minute  useful tok/s  out tokens/turn  solo time shares (decode / prefill / tool gap)');
+  P.rows.forEach(r => {
+    const t = r.turn;
+    if (t.status !== 'MODEL') { console.log(`  ${r.n}: UNMODELLED: ${t.why}`); return; }
+    console.log(`  ${String(r.n).padStart(5)} ${t1(t.turns_per_agent_min).padStart(18)} ${t1(t.useful_tps).padStart(13)} ${t1(t.out_per_turn).padStart(16)}  ${t.share ? [t.share.decode, t.share.prefill, t.share.gap].map(x => (100 * x).toFixed(1) + '%').join(' / ') : '?'}`);
+    console.log(`        trace ${t.trace}, warm-up ${t.warmup_s} s, window ${t.window_s} s. Server ${t.server}: ${t.server_basis}${t.bound ? '. CONDITIONAL UPPER BOUND: unknown re-read assumed zero' : ''}`);
+    console.log(`        ${t.calibration}. ${t.answer_length}. Prefix re-read: ${t.prefix_reread}`);
+    t.inputs.forEach(x => console.log(`        [${x.tag}] ${x.name}: ${Array.isArray(x.v) ? JSON.stringify(x.v) : x.v}${x.basis ? ' (' + x.basis + ')' : ''}. ${x.src}${x.runs.length ? ' [runs: ' + x.runs.join(', ') + ']' : ''}`));
+  });
+  printTurnRescore();
+  console.log(`  Legacy server-bound diagnostic WITHOUT tool gaps. Reads ${P.stall ? 'stall decode: 1 / (F / P + 1 / D)' : 'overlap decode: min(D, P / F)'}. These are not per-turn estimates`);
+  console.log('      n       D   P / F  ceiling  legacy    binding  prefill busy  window rows');
   P.rows.forEach(r => {
     console.log(`  ${String(r.n).padStart(5)} ${t1(r.decode).padStart(7)}${r.decode_tag === 'FIT' && r.extrapolated ? 'x' : ' '}${t1(r.prefill_cap).padStart(7)} ${t1(r.ceiling).padStart(8)} ${t1(r.expect).padStart(9)}  ${(r.binding || '?').padEnd(7)}  ${r.busy === null ? '    ?' : (100 * r.busy).toFixed(0).padStart(4) + ' %'}        ${r.cpu_pool ? r.cpu_pool.status + ' (' + r.cpu_pool.pred.rows + ' rows, cap ' + r.cpu_pool.pred.cap + ')' : '-'}`);
     r.real.forEach(x => console.log(`        MEASURED ${x.tps} tok/s ${x.run}: own P ${t1(x.prefill)} F ${t1(x.fresh)} gives ${t1(x.own.expect)} expected (${pct(x.err_expect)}), ceiling ${t1(x.own.ceiling)} (${pct(x.err_ceiling)})${x.busy !== null ? ', prefill busy ' + (100 * x.busy).toFixed(1) + ' % (model ' + (x.own.busy === null ? '?' : (100 * x.own.busy).toFixed(1) + ' %') + ')' : ''}${x.err_expect !== null && Math.abs(x.err_expect) > warn ? '  MISS > ' + (100 * warn) + ' %' : ''}`));
@@ -483,6 +608,17 @@ if (ai >= 0) {
   });
   console.log('per box / model / engine (all rows):');
   T.groups.forEach(g => console.log(`   ${g.metric.padEnd(19)} ${g.key.padEnd(22)} ${g.verdict}: ` + g.points.map(p => `${p.bucket} n${p.n} ${p.y.toFixed(1)}% (${(p.bias >= 0 ? '+' : '') + p.bias.toFixed(1)})`).join(' -> ')));
+  // the prediction files re-scored with the per-turn agent model (data/predictions-*.json rescore_turn_model blocks)
+  out.agent_turns = FM.agentTurnRescore(data);
+  console.log('\n-- agent turn model: prediction files re-scored (turns per agent-minute primary; err = (pred - meas) / meas) --');
+  console.log('before = the file as written; after = src/model.js agentReplaySim with every input; held-out = inputs from the scored run swapped for what existed without it');
+  const tcell = (x, k) => x.status && x.status !== 'MODEL' ? x.status : `${n2(x[k])} ${pct(x['err_' + k])}`;
+  out.agent_turns.forEach(r => {
+    console.log(`${r.label} [${r.file}]: measured ${n2(r.measured.turns)} turns/agent-min, ${n2(r.measured.useful)} tok/s`);
+    [['before', r.before], ['after', r.after], ['held-out', r.held_out]].forEach(([k, x]) => console.log(`   ${k.padEnd(9)} turns ${tcell(x, 'turns').padEnd(16)} useful ${tcell(x, 'useful').padEnd(16)}` +
+      (x.share ? ` decode/prefill/gap ${[x.share.decode, x.share.prefill, x.share.gap].map(s => (100 * s).toFixed(0)).join('/')} %` : '') + (x.bound === 'upper' ? ' (upper bound: no held-out prefix re-read)' : '') +
+      (x.in_sample && x.in_sample.length ? ' in-sample: ' + x.in_sample.join('; ') : '')));
+  });
   if (args.includes('--json')) { const j = args.indexOf('--json'); const p = args[j + 1] && !args[j + 1].startsWith('--') ? args[j + 1] : null; if (p) fs.writeFileSync(p, JSON.stringify(out, null, 1)); else fs.writeSync(1, JSON.stringify(out, null, 1) + '\n'); }
   process.exit(0);
 }

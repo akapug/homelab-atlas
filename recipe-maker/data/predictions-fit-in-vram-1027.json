@@ -1,0 +1,338 @@
+{
+ "about": "Falsifiable predictions for lab notes (fit-in-VRAM), written BEFORE any GPU run of these candidates on odie. Question: does a model whose weights and KV sit wholly in the two B70s' VRAM (vLLM XPU, no expert streaming) beat the served Flash-Next strata build (R8: 83.4 tok/s at 16 real agents, 32.6 at 1) on the real-trace replay? Do not edit the predicted numbers after the measurements land; add a 'measured' block beside them.",
+ "written_utc": "2026-10-27T16:05Z (before the GPU window; no booking yet)",
+ "recipe": "odie 2x Arc Pro B70 (32 GB each), vLLM XPU llm-scaler 0.26.0-b2 flattened rootfs (our patched copy, b70-vllm.sh launcher: eager, fp8 KV, prefix caching, chunked prefill 8192, block 64, MTP off unless stated), data-parallel: one TP1 instance per card behind one port (dp-affinity-proxy: a conversation sticks to one card, new conversations split evenly), MAX_MODEL_LEN 262144, 8 seqs per card. Replay: agent-replay.py run --trace agent-long-16 --warmup-s 600 --duration-s 600, 16 agents x2 runs and 1 agent x1.",
+ "equation": "useful = 1 / (1 / D + F / P) (src/model.js agentThroughput, stall=true: vLLM's chunked prefill shares every engine step, so a read displaces decode like a strata read stalls it). 1 agent adds the tool-gap term: useful_1 = o / (o / D1 + F x o / P1 + g), o = 272 output tokens a turn and g = 1.70 s of replayed tool gap a turn (MEASURED on R8's n1 run: 19,574 tokens and 122.3 s over 72 turns, same trace, gap_scale 1). At 16 agents the gaps are filled by other agents' work (gap share ~8 % of an agent's cycle), so no gap term there (INFERRED). Resident prefill per read of T fresh tokens at context depth d: t(T) = t_pass + (T + r) x (m + a x d).",
+ "inputs": {
+  "m_ms_per_token": {
+   "v": 0.128,
+   "tag": "MEASURED-BY-THEM",
+   "src": "vllm_cookbook_one_b70 (data/predictions-prefill-chunk-1026.json calibration_points): Qwen3.6-35B-A3B GPTQ-int4, one B70, every weight resident, p512-p8192 fit; Ornith-1.5-35B-A3B is the same architecture (INFERRED same m)"
+  },
+  "t_pass_s": {
+   "v": 0.034,
+   "tag": "MEASURED-BY-THEM",
+   "src": "same fit; matches ~18 GB of int4 experts / 608 GB/s"
+  },
+  "attn_s_per_token_per_ctx_token": {
+   "v": 2.9e-09,
+   "tag": "INFERRED",
+   "src": "the cookbook's 131K prompt at 3,144 tok/s (41.7 s) less 131,072 x 0.128 ms (16.8 s) = 24.9 s over sum of depth 131072^2 / 2"
+  },
+  "agent_depth_tokens": {
+   "v": 80000,
+   "tag": "READ",
+   "src": "agent-long-16 trace prompt_tokens median 81,724 (agent-replay.py stats)"
+  },
+  "recompute_per_read_tokens": {
+   "v": 300,
+   "tag": "INFERRED",
+   "src": "hybrid (GatedDeltaNet) prefix cache in vLLM 'align' mode recomputes part of the last block each turn; qwen27 on the same image measured ~500 recomputed tokens a turn at an 8192 chunk (atlas/drafts/qwen27-qwen38-27b-int4.md l.82); 300 at block 64 is a guess"
+  },
+  "read_mix": {
+   "v": {
+    "mean_16": 1202,
+    "mean_1": 2187
+   },
+   "tag": "MEASURED",
+   "src": "R8 replay rows' in-window fresh per read (16-agent rows; n1 row)"
+  },
+  "ornith_P_card": {
+   "v": 2090,
+   "tag": "MODEL",
+   "src": "t = 0.034 + (1202 + 300) x (0.128 + 80000 x 2.9e-6) ms = 0.575 s per 1,202-token read at depth 80k -> 2,090 fresh tok/s per card; two cards 4,180"
+  },
+  "ornith_D_card_8seq": {
+   "v": 180,
+   "tag": "INFERRED",
+   "src": "range 110-280. Seen: Ornith GPTQ 1 stream ~118 tok/s short (MTP off, eager, qwenlocal unit comment); the same card class on Qwen3.6-35B-A3B agent traffic 102 / 112 tok/s total at 1 / 2 running (load-recorder 2026-09-25/26, deep contexts). Batching 8 deep streams amortises the expert read; fp8 KV at ~80k depth is ~0.8 GB per stream per step, which caps it"
+  },
+  "ornith_kv_pool_tokens_card": {
+   "v": 450000,
+   "tag": "INFERRED",
+   "src": "the sym_int4 Ornith unit logged a 465,626-token pool; 8 agents x ~85k Qwen tokens = ~680k needed, so preemption or prefix eviction is expected: the low case carries F 6"
+  },
+  "qwen27_P_card": {
+   "v": 1000,
+   "tag": "MEASURED",
+   "src": "Qwen3.8-27B int4 on a B70, same image: delta read on a cached 32k context 1,016-1,055 tok/s; cold 17.7k 1,621 at chunk 8192 (atlas qwen27 draft l.81-82); deeper reads slower"
+  },
+  "qwen27_D": {
+   "v": {
+    "card_3seq": 90,
+    "one_stream_deep": 60
+   },
+   "tag": "MEASURED/INFERRED",
+   "src": "1 stream 74.6 short with MTP 3 + draft vocab; real agent traffic 37.5 / 46.9 / 45.1 tok/s total at 1 / 2 / 3 running, 22.5 at 4 (eviction thrash) (atlas l.77-80)"
+  },
+  "qwen27_kv_pool_tokens_card": {
+   "v": 242600,
+   "tag": "MEASURED",
+   "src": "atlas qwen27 draft: KV pool 242,600 at GPU_UTIL 0.95, window 212,992: holds ~3 of 8 agents' ~85k contexts, so admissions re-read whole contexts (F ~20, INFERRED)"
+  }
+ },
+ "predictions": {
+  "ornith": {
+   "candidate": "Ornith-1.5-35B-A3B int4 AutoRound GPTQ-XPU (wiesion, rev 15c67bd6f8bb), original tokenizer, odie /mnt/bulk/models master",
+   "P_total_16": {
+    "v": 4180,
+    "range": [
+     3000,
+     5000
+    ],
+    "tag": "MODEL"
+   },
+   "D_total_16": {
+    "v": 360,
+    "range": [
+     220,
+     560
+    ],
+    "tag": "INFERRED"
+   },
+   "useful_16": {
+    "v": 261,
+    "range": [
+     153,
+     375
+    ],
+    "tag": "MODEL",
+    "src": "agentThroughput {decode 360, prefill 4180, fresh 4.4, stall} serial 261.1, binding decode, busy 0.275; low {220, 3000, F 6} 152.8; high {560, 5000, 4.4} 375.1"
+   },
+   "vs_R8_16": "3.1x (1.8-4.5x) of 83.4",
+   "P_1": {
+    "v": 2090,
+    "range": [
+     1500,
+     3000
+    ],
+    "tag": "MODEL",
+    "src": "one card, one agent's reads"
+   },
+   "D_1": {
+    "v": 90,
+    "range": [
+     70,
+     120
+    ],
+    "tag": "INFERRED",
+    "src": "118 short, less fp8 KV reads at ~80k depth"
+   },
+   "useful_1_formula": {
+    "v": 75.7,
+    "tag": "MODEL",
+    "src": "agentThroughput {90, 2089, 4.4, stall} serial"
+   },
+   "useful_1": {
+    "v": 51.4,
+    "range": [
+     38,
+     62
+    ],
+    "tag": "MODEL",
+    "src": "with the gap term: 272 / (272/90 + 1197/2089 + 1.70) = 51.4; at R8 n1's F 8.09 and P 2354: 48.1"
+   },
+   "vs_R8_1": "1.6x of 32.6",
+   "smoke_gate": "PASS predicted: P_1 ~2.1k > 2 x R8's n1 P 852 = 1,705",
+   "status": "SUPERSEDED by owner ruling 2026-10-27 16:45Z: Ornith (3B active) is not a coding-seat candidate (Flash-Next is the coding-quality floor). Not scored as a win; the 16-agent replays were stopped before any window."
+  },
+  "qwen27": {
+   "candidate": "Qwen3.8-27B int4 AutoRound (dense, the strongest local coder measured: agent eval 22/24), odie /mnt/bulk/models master",
+   "P_1": {
+    "v": 1000,
+    "range": [
+     800,
+     1600
+    ],
+    "tag": "MEASURED-prior"
+   },
+   "smoke_gate": "FAIL predicted: P_1 ~1.0k (at most ~1.6k) < 1,705 = 2 x R8's n1 P; by the lane rule it stops at the 1-agent smoke",
+   "useful_1": {
+    "v": 36.6,
+    "range": [
+     28,
+     45
+    ],
+    "tag": "MODEL",
+    "src": "272 / (272/60 + 1197/1000 + 1.70); formula without gaps agentThroughput {60, 1000, 4.4} 47.5"
+   },
+   "useful_16_if_run": {
+    "v": 64,
+    "range": [
+     45,
+     129
+    ],
+    "tag": "MODEL",
+    "src": "agentThroughput {decode 180 (2 cards x 90 at 3 seqs), prefill 2000, fresh 20 (whole-context re-reads on admission), stall} 64.3; F 4.4 would give 128.9 (no eviction: not possible in a 242k pool)"
+   },
+   "vs_R8_16": "0.8x (0.5-1.5x): not a throughput win",
+   "status": "NOT RUN (lane stopped by the same ruling)"
+  }
+ },
+ "falsifiers": [
+  "Ornith useful_16 outside 153-375 tok/s (mean of 2 runs) falsifies the model for resident vLLM serving",
+  "Ornith useful_1 outside 38-62 tok/s",
+  "qwen27 1-agent P above 1,705 tok/s falsifies the predicted smoke FAIL"
+ ],
+ "measured": {
+  "tag": "MEASURED",
+  "recorded_utc": "2026-10-27T17:0xZ",
+  "purpose": "Recipe Maker anchor for Flash-Next (QFN) on odie: what a B70 does with zero expert streaming. Not a candidate verdict.",
+  "setup": "vLLM XPU llm-scaler 0.26.0-b2 (our patched flattened rootfs, b70-vllm.sh: eager, fp8 KV, prefix caching, block 64, max-num-batched-tokens 8192, long-prefill threshold 2048, MTP off, strict tools + think gates), one TP1 instance per B70, MAX_MODEL_LEN 262144, GPU util 0.92",
+  "kv_pool_tokens_per_card": {
+   "gptq": 612321,
+   "sym_int4": 553632
+  },
+  "rows": [
+   {
+    "run": "odie-orn35-vllm-gptq-smoke-n1-1027",
+    "quant": "GPTQ-XPU 15c67bd6f8bb",
+    "replay": "agent-replay agent-long-16 --agents 1 --warmup-s 0 --duration-s 180 (cold window)",
+    "P_fresh_over_ttft": 3924,
+    "decode_req_median": 15.7,
+    "turns_per_agent_min": 3.67,
+    "useful": 13.4,
+    "F": 19.0,
+    "note": "GPTQ decodes 17.5 tok/s at 1 stream on this image (engine log, short prompt too): a slow MoE path, so the quant was switched"
+   },
+   {
+    "run": "odie-orn35-vllm-s4-real-n1-1027",
+    "quant": "sym_int4 (online, from BF16)",
+    "replay": "agent-replay agent-long-16 --agents 1 --warmup-s 600 --duration-s 600",
+    "turns_per_agent_min": 7.7,
+    "useful": 39.83,
+    "decode_req_median": 58.42,
+    "ttft_median_s": 0.9,
+    "F": 11.9,
+    "F_split": {
+     "cold": 0.53,
+     "growth": 3.66,
+     "reread": 7.72
+    },
+    "server_fresh": 285484,
+    "prefill_busy_pct": 13.8,
+    "P_server": 3450,
+    "out_per_turn_mean": 310,
+    "turn_period_s": 7.8,
+    "src": "summary line only (the JSON was lost to a SIGPIPE from `| head -1`); P_server = 285,484 / (0.138 x 600 s); out_per_turn_mean = 39.83 x 600 / 77 turns; one agent, so vLLM's per-request prefill time is not overlapped"
+   },
+   {
+    "run": "probe-card-b",
+    "quant": "sym_int4",
+    "probe": "synthetic, ignore_eos, 512 out, beside the n1 replay on the other card",
+    "decode_1_stream_short": 36.6,
+    "decode_1_stream_64k": 39.7,
+    "decode_8_streams_short_total": 318.7,
+    "decode_8_streams_32k_per_stream_median": 24.0,
+    "decode_8_streams_32k_total_inferred": 190,
+    "cold_prefill_8x32k": 4317,
+    "cold_prefill_1x64k": 3716
+   }
+  ],
+  "anchors_for_qfn": [
+   "B70 prefill with every weight resident, 3B-active hybrid MoE: 3.4-3.9k tok/s on real agent growth reads at 15-120k depth, 3.7-4.3k cold (32k-64k). R8 Flash-Next reads 0.85-1.08k: the expert stream costs ~3.5-4x at agent read sizes (INFERRED, different model and engine).",
+   "Eager vLLM decode on a B70 is launch-overhead-bound: ~37-40 tok/s per stream from short to 64k depth, and 8 streams cost almost nothing extra at short depth (319 total); at 32k, 8 streams ~190 total.",
+   "Hybrid (GatedDeltaNet) prefix cache in vLLM 'align' mode hits only on 2,048-token boundaries here (cached tokens 14336, 18432, 20480, ... = multiples of 2048): every turn re-reads up to 2,047 tokens, F_reread 7.7 at one agent vs R8's 2.6. Cause INFERRED (state saved at chunk boundaries; block 64, long-prefill 2048).",
+   "turns_per_agent_min at 1 agent: Ornith 7.7 vs R8 7.2: a 4x faster prefill bought only +7 % turns because decode (58 vs 69 tok/s) and the larger re-read F offset it"
+  ],
+  "prediction_check_not_scored": "For the record only: the n1 1-agent useful 39.8 sits inside the predicted 38-62 band (51.4 point); P_1 3.45k vs 2.09k predicted (+65 %, model too pessimistic on resident prefill at depth); D_1 58 vs 90 predicted (-35 %, eager overhead). 16-agent: not measured."
+ },
+ "rescore_turn_model": {
+  "about": "Re-score with the per-turn agent model (src/model.js agentReplaySim; data/workload.json turn_model), added after the measurements; the predictions above stay as written. before = this file's own numbers (turns derived where the old model gave only useful tok/s: its useful / the run's measured output a turn); after = the model with every input; held_out = the same with the inputs measured on the scored run replaced by what existed without it (each input's held_out value, else the fallbacks turn_model states). after_at_commit = the model's numbers when this block was written (tests/test_workload.js checks they still hold). node report.js --accuracy prints the table",
+  "written_utc": "2026-10-27T17:3xZ",
+  "model": "src/model.js agentTurnPredict (fluid replay of the trace: turn = out / D1 + fresh / P alone, then the recorded tool gap; shared server w = out / Dn + fresh / P)",
+  "entries": [
+   {
+    "id": "ornith-s4-n1",
+    "label": "Ornith-1.5-35B-A3B sym_int4, vLLM, one B70, 1 agent (an anchor, not a candidate)",
+    "run": "odie-orn35-vllm-s4-real-n1-1027",
+    "query": {
+     "trace": "agent-long-16",
+     "gap_scale": 1.0,
+     "stagger_scale": 0.02,
+     "n": 1,
+     "model": "orn35",
+     "server": "vllm-hybrid-block2048",
+     "warmup_s": 600,
+     "window_s": 600,
+     "stall": {
+      "v": true,
+      "tag": "READ",
+      "src": "this file's equation: vLLM's chunked prefill shares every engine step, so a read displaces decode"
+     },
+     "decode_1": {
+      "v": 58.42,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-orn35-vllm-s4-real-n1-1027"
+      ],
+      "src": "MEASURED: measured.rows odie-orn35-vllm-s4-real-n1-1027 decode_req_median",
+      "held_out": {
+       "v": 90,
+       "tag": "INFERRED",
+       "src": "INFERRED: predictions.ornith.D_1, written before the run"
+      }
+     },
+     "decode_n": {
+      "v": 58.42,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-orn35-vllm-s4-real-n1-1027"
+      ],
+      "src": "MEASURED: as decode_1 (one agent)",
+      "held_out": {
+       "v": 90,
+       "tag": "INFERRED",
+       "src": "INFERRED: predictions.ornith.D_1"
+      }
+     },
+     "prefill": {
+      "v": 3450,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-orn35-vllm-s4-real-n1-1027"
+      ],
+      "src": "MEASURED: measured.rows odie-orn35-vllm-s4-real-n1-1027 P_server (285,484 / (0.138 x 600 s))",
+      "held_out": {
+       "v": 2090,
+       "tag": "INFERRED",
+       "src": "INFERRED: predictions.ornith.P_1, resident prefill MODEL written before the run"
+      }
+     }
+    },
+    "measured": {
+     "turns_per_agent_min": {
+      "v": 7.7,
+      "tag": "MEASURED",
+      "src": "MEASURED: measured.rows odie-orn35-vllm-s4-real-n1-1027 turns_per_agent_min"
+     },
+     "useful_tps": {
+      "v": 39.83,
+      "tag": "MEASURED",
+      "src": "MEASURED: measured.rows odie-orn35-vllm-s4-real-n1-1027 useful"
+     }
+    },
+    "before": {
+     "useful_tps": {
+      "v": 75.7,
+      "src": "predictions.ornith.useful_1_formula (agentThroughput, no gap term; the hand-applied gap version predictions.ornith.useful_1 read 51.4)"
+     },
+     "turns_per_agent_min": {
+      "v": 14.65,
+      "src": "derived: 75.7 / the run's 310 output tokens a turn x 60"
+     }
+    },
+    "after_at_commit": {
+     "all": {
+      "turns_per_agent_min": 7.3,
+      "useful_tps": 39.586
+     },
+     "held_out": {
+      "turns_per_agent_min": 7.9,
+      "useful_tps": 59.788
+     }
+    }
+   }
+  ]
+ }
+}

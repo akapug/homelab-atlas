@@ -1,0 +1,181 @@
+{
+ "about": "Falsifiable prediction written BEFORE the 1-agent real-trace replay of the GLM-5.3-Flash seat on snoopy (RTX 3090 Ti + RAM tier). It replaces the INFERRED ~20 tok/s GLM figure in the handoff with a matched measurement against R8's n1 run (32.6 useful tok/s). Do not edit the predicted numbers after the run; add a 'measured' block beside them.",
+ "written_utc": "2026-10-27T16:30Z",
+ "recipe": "snoopy GLM-5.3-Flash EXL3 3.05 bpw seat (ledger row snoopy-glm-seat-trim-c-64k: route trim keep 4 on layers 29-44, 107 GiB RAM tier, batch 1), served by serve.py over exllamav3; replay: agent-replay.py run --trace agent-long-16 --agents 1 --warmup-s 300 --duration-s 600 --stagger-scale 0.02 (same args as R8's n1 run, results/night/1026T1608).",
+ "equation": "per turn: t = out/D + fresh/P + gap; useful = out/t. out and fresh per turn and the gap are taken from R8's n1 run on the same trace (72 turns, 19,574 out, 158,383 fresh, so F 8.09; tool gaps ~22 % of R8's 600 s = 1.83 s a turn). The model generates its own lengths, so out per turn may differ.",
+ "inputs": {
+  "D": {
+   "v": 25.9,
+   "tag": "MEASURED",
+   "src": "row snoopy-glm-seat-trim-c-64k, C1 decode short prompts (25.6-26.7 at 16k)"
+  },
+  "P": {
+   "v": 761,
+   "tag": "MEASURED",
+   "src": "same row, prefill at 16k"
+  },
+  "out_per_turn": {
+   "v": 272,
+   "tag": "MEASURED",
+   "src": "R8 n1: 19574/72"
+  },
+  "fresh_per_turn": {
+   "v": 2200,
+   "tag": "MEASURED",
+   "src": "R8 n1: 158383/72"
+  },
+  "gap_s_per_turn": {
+   "v": 1.83,
+   "tag": "INFERRED",
+   "src": "22 % of R8 n1's window over 72 turns"
+  }
+ },
+ "predictions": {
+  "useful_tok_s": {
+   "v": 17.9,
+   "band": [
+    14,
+    22
+   ],
+   "why": "272/(272/25.9 + 2200/761 + 1.83) = 272/15.2"
+  },
+  "decode_tok_s_median": {
+   "v": 25.5,
+   "band": [
+    22,
+    28
+   ]
+  },
+  "turns_in_window": {
+   "v": 39,
+   "band": [
+    30,
+    48
+   ]
+  },
+  "ratio_R8_over_GLM_useful": {
+   "v": 1.82,
+   "band": [
+    1.5,
+    2.3
+   ]
+  }
+ },
+ "falsifies": "useful outside 14-22, or decode median outside 22-28, says the per-turn model or the seat's measured D/P does not hold on real agent prompts (for example no prefix reuse in the server, which would raise fresh tokens per turn several-fold).",
+ "measured": {
+  "written_utc": "2026-10-27T16:41Z",
+  "src": "lab notes (agent-replay, 1 agent, 300 s warm-up, 600 s window, 0 errors)",
+  "useful_tok_s": {
+   "v": 5.77,
+   "verdict": "FALSIFIED (band 14-22)"
+  },
+  "turns_in_window": {
+   "v": 40,
+   "verdict": "inside band 30-48 (predicted 39)"
+  },
+  "turns_per_agent_min": {
+   "v": 4.0,
+   "vs_R8": 7.2,
+   "ratio_R8_over_GLM": 1.8,
+   "verdict": "the predicted 1.82 ratio holds on turns, not on tokens"
+  },
+  "per_turn_medians": {
+   "prompt": 55202,
+   "out": 76,
+   "recorded_out": 298.5,
+   "ttft_s": 11.33,
+   "dur_s": 11.4,
+   "R8_same_trace": {
+    "prompt": 54063.5,
+    "out": 182.5,
+    "ttft_s": 1.7,
+    "dur_s": 4.67,
+    "fresh": 915.5
+   }
+  },
+  "decode_tok_s_median": {
+   "v": null,
+   "verdict": "UNREADABLE: serve.py sends a turn's output in one chunk at the end (dur == ttft on most turns), so client timing cannot split decode from prefill"
+  },
+  "why_it_missed": [
+   "MEASURED: GLM wrote 76 tokens a turn (median) where R8 wrote 182 and the recording 298; useful tok/s scales with that, so it is the wrong yardstick across models; turns per agent-minute is the matched one.",
+   "MEASURED: a turn took 11.4 s against a predicted ~5.8 s for 76 tokens (76/25.9 + 2200/761).",
+   "INFERRED: the extra ~5.5 s is prompt re-reading; at 761 tok/s that is ~6.5k fresh tokens a turn against R8's 915 median, so the seat's exllamav3 prefix reuse keeps much less of a 55k agent prompt than strata's conversation cache. Not measured: the server reports no cached_tokens."
+  ],
+  "lesson": "Compare models on turns per agent-minute (or tasks per hour), not useful tok/s; and the per-turn model needs each server's measured prefix reuse, not R8's fresh-token count."
+ },
+ "rescore_turn_model": {
+  "about": "Re-score with the per-turn agent model (src/model.js agentReplaySim; data/workload.json turn_model), added after the measurements; the predictions above stay as written. before = this file's own numbers (turns derived where the old model gave only useful tok/s: its useful / the run's measured output a turn); after = the model with every input; held_out = the same with the inputs measured on the scored run replaced by what existed without it (each input's held_out value, else the fallbacks turn_model states). after_at_commit = the model's numbers when this block was written (tests/test_workload.js checks they still hold). node report.js --accuracy prints the table",
+  "written_utc": "2026-10-27T17:3xZ",
+  "model": "src/model.js agentTurnPredict (fluid replay of the trace: turn = out / D1 + fresh / P alone, then the recorded tool gap; shared server w = out / Dn + fresh / P)",
+  "entries": [
+   {
+    "id": "glm-n1",
+    "label": "GLM-5.3-Flash snoopy seat (exllamav3), 1 agent",
+    "run": "snoopy-glm-seat-real-n1-1027",
+    "query": {
+     "trace": "agent-long-16",
+     "gap_scale": 1.0,
+     "stagger_scale": 0.02,
+     "n": 1,
+     "model": "glm",
+     "server": "exllamav3-serve",
+     "warmup_s": 300,
+     "window_s": 600,
+     "stall": {
+      "v": true,
+      "tag": "READ",
+      "src": "serve.py at batch 1: a turn's read and its decode run in turn"
+     },
+     "decode_1": {
+      "v": 25.9,
+      "tag": "MEASURED",
+      "src": "MEASURED: inputs.D (row snoopy-glm-seat-trim-c-64k, short prompts at 16k)"
+     },
+     "decode_n": {
+      "v": 25.9,
+      "tag": "MEASURED",
+      "src": "MEASURED: inputs.D (one agent)"
+     },
+     "prefill": {
+      "v": 761,
+      "tag": "MEASURED",
+      "src": "MEASURED: inputs.P (same row, prefill at 16k)"
+     }
+    },
+    "measured": {
+     "turns_per_agent_min": {
+      "v": 4.0,
+      "tag": "MEASURED",
+      "src": "MEASURED: measured.turns_per_agent_min"
+     },
+     "useful_tps": {
+      "v": 5.77,
+      "tag": "MEASURED",
+      "src": "MEASURED: measured.useful_tok_s"
+     }
+    },
+    "before": {
+     "useful_tps": {
+      "v": 17.9,
+      "src": "predictions.useful_tok_s"
+     },
+     "turns_per_agent_min": {
+      "v": 3.9,
+      "src": "predictions.turns_in_window 39 over the 10-minute window"
+     }
+    },
+    "after_at_commit": {
+     "all": {
+      "turns_per_agent_min": 4,
+      "useful_tps": 5.753
+     },
+     "held_out": {
+      "turns_per_agent_min": 2.8,
+      "useful_tps": 22.577
+     }
+    }
+   }
+  ]
+ }
+}

@@ -68,5 +68,402 @@
    {"arm": "real-comp1-ng-pf16384", "chunk": 16384, "run": "odie-fnx-iq3xxs-2xb70-real-comp1-ng-pf16384-ss16-n16-1026", "P": 857.7, "agent_tps_16": 87.57, "F": 4.52, "prefill_busy_pct": 46.1, "fresh_tokens": 237316, "P_err_pct": 7.5, "agent_err_pct": -2.0, "P_vs_baseline_pct": -1.0}
   ],
   "verdict": "NOT FALSIFIED by the stated test (every arm's P inside 780-1000: 814 / 844 / 858). But the predicted gain did not show: P sits 1-6 % UNDER the 866 baseline instead of 5-6 % over it, so the model over-predicts P by 7.5-12.2 %, worst at the smallest chunk. Two parts held: P rises with the chunk (814 < 844 < 858, the predicted direction), and a bigger chunk is no big lever (all within the 11 % replay noise of the baseline). The 16-agent spread (77.8 / 89.7 / 87.6 against 85.4-85.8 predicted) follows F (5.41 / 4.86 / 4.52), not P"
+ },
+ "rescore_turn_model": {
+  "about": "Re-score with the per-turn agent model (src/model.js agentReplaySim; data/workload.json turn_model), added after the measurements; the predictions above stay as written. before = this file's own numbers (turns derived where the old model gave only useful tok/s: its useful / the run's measured output a turn); after = the model with every input; held_out = the same with the inputs measured on the scored run replaced by what existed without it (each input's held_out value, else the fallbacks turn_model states). after_at_commit = the model's numbers when this block was written (tests/test_workload.js checks they still hold). node report.js --accuracy prints the table",
+  "written_utc": "2026-10-27T17:3xZ",
+  "model": "src/model.js agentTurnPredict (fluid replay of the trace: turn = out / D1 + fresh / P alone, then the recorded tool gap; shared server w = out / Dn + fresh / P)",
+  "entries": [
+   {
+    "id": "r8-n1",
+    "label": "R8 Flash-Next strata, 1 agent",
+    "run": "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026",
+    "query": {
+     "trace": "agent-long-16",
+     "gap_scale": 1.0,
+     "stagger_scale": 0.02,
+     "n": 1,
+     "model": "fnx",
+     "server": "strata-conversation-cache",
+     "warmup_s": 300,
+     "window_s": 600,
+     "stall": {
+      "v": true,
+      "tag": "READ",
+      "src": "data/workload.json engines.strata.reads_stall_decode"
+     },
+     "decode_1": {
+      "v": 68.78,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026"
+      ],
+      "src": "MEASURED: decode tok/s median per request of the R8 1-agent replay (the replay result file (lab notes, not published)); no other one-stream decode of this build at agent depth exists, so a held-out score keeps it (in-sample)"
+     },
+     "decode_n": {
+      "v": 68.78,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026"
+      ],
+      "src": "MEASURED: decode tok/s median per request of the R8 1-agent replay (the replay result file (lab notes, not published)); no other one-stream decode of this build at agent depth exists, so a held-out score keeps it (in-sample)"
+     },
+     "prefill": {
+      "v": 852.3,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026"
+      ],
+      "src": "MEASURED: server prompt tokens / server prompt time of the run (158,383 / 185.8 s; the replay result file (lab notes, not published))",
+      "held_out": {
+       "v": 943.4,
+       "tag": "INFERRED",
+       "src": "INFERRED: post_hoc[0].model.P, prefillPass MODEL from the committed inputs, no refit"
+      }
+     }
+    },
+    "measured": {
+     "turns_per_agent_min": {
+      "v": 7.2,
+      "tag": "MEASURED",
+      "src": "MEASURED: post_hoc[0] run, turns_per_agent_min (72 turns in 600 s; the replay result file (lab notes, not published))"
+     },
+     "useful_tps": {
+      "v": 32.62,
+      "tag": "MEASURED",
+      "src": "MEASURED: post_hoc[0].measured.agent_tps"
+     }
+    },
+    "before": {
+     "useful_tps": {
+      "v": 43.3,
+      "src": "post_hoc[0].model.agent_tps_formula (agentThroughput, no gap term)"
+     },
+     "turns_per_agent_min": {
+      "v": 9.555,
+      "src": "derived: 43.3 / the run's 271.9 output tokens a turn x 60"
+     }
+    },
+    "after_at_commit": {
+     "all": {
+      "turns_per_agent_min": 7.1,
+      "useful_tps": 30.21
+     },
+     "held_out": {
+      "turns_per_agent_min": 7.5,
+      "useful_tps": 38.925
+     }
+    }
+   },
+   {
+    "id": "r8-n16",
+    "label": "R8 Flash-Next strata, 16 agents (mean of 3)",
+    "run": [
+     "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026",
+     "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2",
+     "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3"
+    ],
+    "query": {
+     "trace": "agent-long-16",
+     "gap_scale": 1.0,
+     "stagger_scale": 0.02,
+     "n": 16,
+     "model": "fnx",
+     "server": "strata-conversation-cache",
+     "warmup_s": 600,
+     "window_s": 600,
+     "stall": {
+      "v": true,
+      "tag": "READ",
+      "src": "data/workload.json engines.strata.reads_stall_decode"
+     },
+     "decode_1": {
+      "v": 68.78,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026"
+      ],
+      "src": "MEASURED: decode tok/s median per request of the R8 1-agent replay (the replay result file (lab notes, not published)); no other one-stream decode of this build at agent depth exists, so a held-out score keeps it (in-sample)"
+     },
+     "decode_n": {
+      "v": 185.2,
+      "tag": "INFERRED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3"
+      ],
+      "src": "INFERRED: server output tokens / (window - server prompt time) over the three 16-agent rows: (60,616 + 60,645 + 55,604) / (1,800 - 844.8 s) (the replay result file (lab notes, not published)s); assumes the server is busy the whole window and a read runs alone (strata reads stall decode). The file's inputs.baseline.D_implied 157.2 folds in the replay's window-edge loss (turns in flight at either edge of the window are not counted), which the simulation counts itself"
+     },
+     "prefill": {
+      "v": 866.4,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3"
+      ],
+      "src": "MEASURED: inputs.baseline.P, 731,958 fresh tokens / 844.8 s of server prompt time over the three rows (the prefill fit rows, so no held-out value)"
+     }
+    },
+    "measured": {
+     "turns_per_agent_min": {
+      "v": 1.121,
+      "tag": "MEASURED",
+      "src": "MEASURED: mean of 1.119, 1.144, 1.100 (the replay result file (lab notes, not published)s)"
+     },
+     "useful_tps": {
+      "v": 83.41,
+      "tag": "MEASURED",
+      "src": "MEASURED: mean of 86.02, 84.56, 79.64 (inputs.baseline)"
+     }
+    },
+    "before": {
+     "useful_tps": {
+      "v": 83.4,
+      "src": "predictions.rows[0].agent_tps_16 (the baseline: agentThroughput on its own D_implied, so 0 error by construction)"
+     },
+     "turns_per_agent_min": {
+      "v": 1.12,
+      "src": "derived: 83.4 / the rows' 279.1 output tokens a turn x 60 / 16"
+     }
+    },
+    "after_at_commit": {
+     "all": {
+      "turns_per_agent_min": 1.0188,
+      "useful_tps": 72.405
+     },
+     "held_out": {
+      "turns_per_agent_min": 0.8313,
+      "useful_tps": 45.959
+     }
+    }
+   },
+   {
+    "id": "r8-n16-pf4096",
+    "label": "R8 strata, 16 agents, prefill chunk 4096",
+    "run": "odie-fnx-iq3xxs-2xb70-real-comp1-ng-pf4096-ss16-n16-1026",
+    "query": {
+     "trace": "agent-long-16",
+     "gap_scale": 1.0,
+     "stagger_scale": 0.02,
+     "n": 16,
+     "model": "fnx",
+     "server": "strata-conversation-cache",
+     "warmup_s": 600,
+     "window_s": 600,
+     "stall": {
+      "v": true,
+      "tag": "READ",
+      "src": "data/workload.json engines.strata.reads_stall_decode"
+     },
+     "decode_1": {
+      "v": 68.78,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026"
+      ],
+      "src": "MEASURED: decode tok/s median per request of the R8 1-agent replay (the replay result file (lab notes, not published)); no other one-stream decode of this build at agent depth exists, so a held-out score keeps it (in-sample)"
+     },
+     "decode_n": {
+      "v": 185.2,
+      "tag": "INFERRED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3"
+      ],
+      "src": "INFERRED: server output tokens / (window - server prompt time) over the three 16-agent rows: (60,616 + 60,645 + 55,604) / (1,800 - 844.8 s) (the replay result file (lab notes, not published)s); assumes the server is busy the whole window and a read runs alone (strata reads stall decode). The file's inputs.baseline.D_implied 157.2 folds in the replay's window-edge loss (turns in flight at either edge of the window are not counted), which the simulation counts itself"
+     },
+     "prefill": {
+      "v": 913,
+      "tag": "INFERRED",
+      "src": "INFERRED: this file's predictions.rows chunk 4096 P (prefillPass MODEL, written before the arm)"
+     }
+    },
+    "measured": {
+     "turns_per_agent_min": {
+      "v": 1.137,
+      "tag": "MEASURED",
+      "src": "MEASURED: turns_per_agent_min of the arm (the replay result file (lab notes, not published))"
+     },
+     "useful_tps": {
+      "v": 77.77,
+      "tag": "MEASURED",
+      "src": "MEASURED: measured.rows agent_tps_16"
+     }
+    },
+    "before": {
+     "useful_tps": {
+      "v": 85.4,
+      "src": "predictions.rows chunk 4096 agent_tps_16"
+     },
+     "turns_per_agent_min": {
+      "v": 1.249,
+      "src": "derived: 85.4 / the arm's 256.4 output tokens a turn x 60 / 16"
+     }
+    },
+    "after_at_commit": {
+     "all": {
+      "turns_per_agent_min": 1.0813,
+      "useful_tps": 78.666
+     },
+     "held_out": {
+      "turns_per_agent_min": 1.0813,
+      "useful_tps": 78.666
+     }
+    }
+   },
+   {
+    "id": "r8-n16-pf8192",
+    "label": "R8 strata, 16 agents, prefill chunk 8192",
+    "run": "odie-fnx-iq3xxs-2xb70-real-comp1-ng-pf8192-ss16-n16-1026",
+    "query": {
+     "trace": "agent-long-16",
+     "gap_scale": 1.0,
+     "stagger_scale": 0.02,
+     "n": 16,
+     "model": "fnx",
+     "server": "strata-conversation-cache",
+     "warmup_s": 600,
+     "window_s": 600,
+     "stall": {
+      "v": true,
+      "tag": "READ",
+      "src": "data/workload.json engines.strata.reads_stall_decode"
+     },
+     "decode_1": {
+      "v": 68.78,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026"
+      ],
+      "src": "MEASURED: decode tok/s median per request of the R8 1-agent replay (the replay result file (lab notes, not published)); no other one-stream decode of this build at agent depth exists, so a held-out score keeps it (in-sample)"
+     },
+     "decode_n": {
+      "v": 185.2,
+      "tag": "INFERRED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3"
+      ],
+      "src": "INFERRED: server output tokens / (window - server prompt time) over the three 16-agent rows: (60,616 + 60,645 + 55,604) / (1,800 - 844.8 s) (the replay result file (lab notes, not published)s); assumes the server is busy the whole window and a read runs alone (strata reads stall decode). The file's inputs.baseline.D_implied 157.2 folds in the replay's window-edge loss (turns in flight at either edge of the window are not counted), which the simulation counts itself"
+     },
+     "prefill": {
+      "v": 921,
+      "tag": "INFERRED",
+      "src": "INFERRED: this file's predictions.rows chunk 8192 P (prefillPass MODEL, written before the arm)"
+     }
+    },
+    "measured": {
+     "turns_per_agent_min": {
+      "v": 1.188,
+      "tag": "MEASURED",
+      "src": "MEASURED: turns_per_agent_min of the arm (the replay result file (lab notes, not published))"
+     },
+     "useful_tps": {
+      "v": 89.74,
+      "tag": "MEASURED",
+      "src": "MEASURED: measured.rows agent_tps_16"
+     }
+    },
+    "before": {
+     "useful_tps": {
+      "v": 85.8,
+      "src": "predictions.rows chunk 8192 agent_tps_16"
+     },
+     "turns_per_agent_min": {
+      "v": 1.135,
+      "src": "derived: 85.8 / the arm's 283.4 output tokens a turn x 60 / 16"
+     }
+    },
+    "after_at_commit": {
+     "all": {
+      "turns_per_agent_min": 1.0813,
+      "useful_tps": 78.04
+     },
+     "held_out": {
+      "turns_per_agent_min": 1.0813,
+      "useful_tps": 78.04
+     }
+    }
+   },
+   {
+    "id": "r8-n16-pf16384",
+    "label": "R8 strata, 16 agents, prefill chunk 16384",
+    "run": "odie-fnx-iq3xxs-2xb70-real-comp1-ng-pf16384-ss16-n16-1026",
+    "query": {
+     "trace": "agent-long-16",
+     "gap_scale": 1.0,
+     "stagger_scale": 0.02,
+     "n": 16,
+     "model": "fnx",
+     "server": "strata-conversation-cache",
+     "warmup_s": 600,
+     "window_s": 600,
+     "stall": {
+      "v": true,
+      "tag": "READ",
+      "src": "data/workload.json engines.strata.reads_stall_decode"
+     },
+     "decode_1": {
+      "v": 68.78,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026"
+      ],
+      "src": "MEASURED: decode tok/s median per request of the R8 1-agent replay (the replay result file (lab notes, not published)); no other one-stream decode of this build at agent depth exists, so a held-out score keeps it (in-sample)"
+     },
+     "decode_n": {
+      "v": 185.2,
+      "tag": "INFERRED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3"
+      ],
+      "src": "INFERRED: server output tokens / (window - server prompt time) over the three 16-agent rows: (60,616 + 60,645 + 55,604) / (1,800 - 844.8 s) (the replay result file (lab notes, not published)s); assumes the server is busy the whole window and a read runs alone (strata reads stall decode). The file's inputs.baseline.D_implied 157.2 folds in the replay's window-edge loss (turns in flight at either edge of the window are not counted), which the simulation counts itself"
+     },
+     "prefill": {
+      "v": 922,
+      "tag": "INFERRED",
+      "src": "INFERRED: this file's predictions.rows chunk 16384 P (prefillPass MODEL, written before the arm)"
+     }
+    },
+    "measured": {
+     "turns_per_agent_min": {
+      "v": 1.075,
+      "tag": "MEASURED",
+      "src": "MEASURED: turns_per_agent_min of the arm (the replay result file (lab notes, not published))"
+     },
+     "useful_tps": {
+      "v": 87.57,
+      "tag": "MEASURED",
+      "src": "MEASURED: measured.rows agent_tps_16"
+     }
+    },
+    "before": {
+     "useful_tps": {
+      "v": 85.8,
+      "src": "predictions.rows chunk 16384 agent_tps_16"
+     },
+     "turns_per_agent_min": {
+      "v": 1.053,
+      "src": "derived: 85.8 / the arm's 305.5 output tokens a turn x 60 / 16"
+     }
+    },
+    "after_at_commit": {
+     "all": {
+      "turns_per_agent_min": 1.0875,
+      "useful_tps": 78.549
+     },
+     "held_out": {
+      "turns_per_agent_min": 1.0875,
+      "useful_tps": 78.549
+     }
+    }
+   }
+  ]
  }
 }

@@ -16,6 +16,16 @@ day). Results that change a headline number say so.
   a local model from calling tools. New model in the README's best-result table and in `atlas.json`.
 
 ### Changed
+- Recipe Maker export at fit-viz 5cef1e4: `node report.js --workload` and the Agents tab now replay whole agent turns
+  (each turn's prompt read, the server's prefix re-read, the answer, then the recorded tool gap) and lead with turns
+  per agent-minute; useful tok/s comes second. `docs/how-it-works.md` re-scores the seven retained prediction entries
+  with this model and labels the result post-hoc, not prediction accuracy: configured-input turns error -9.1 % to
+  +1.2 %, the GLM held-out entry -30 %. New: `node report.js --dense SPEC.json` plans a dense model with no planner
+  entry, calibrated per backend, quant type and layer kind (`data/dense-cal.json`, `node report.js --dense-cal`,
+  `tests/test_dense_cal.js`); `--resident` plans a setup that keeps every weight in VRAM; Flint (39.8B total, about
+  2.5B active) has a model entry, two recipes for one llama-server per B70, and a prediction written before its runs
+  (`data/predictions-flint-1030.json`); five more prediction files with their measured blocks. The ledger has 254 rows
+  (251 before). `results/RESULTS.md` is regenerated.
 - Bonsai public review: remove two private-source references from patch prose, correct the XMX block expansion
   to 21.4 %, qualify the hybrid comparison and historical binary provenance, mark service-note-only rates
   unverified, and clarify that device selection uses an ordinal rather than a PCI address.

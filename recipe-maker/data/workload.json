@@ -1,5 +1,5 @@
 {
- "about": "Agent workload (build.py data.workload, src/model.js agent*, node report.js --workload, the page's Agents tab). A coding agent's turn first reads its fresh prompt tokens (the new part past the cached prefix, plus any part read again after a cache eviction), then decodes its answer. With F fresh prompt tokens per output token, a prefill rate P (prompt tok/s) and a decode capacity D (total tok/s of the agents decoding together), useful output is at most min(D, P / F). An engine whose long reads stop every decoding slot runs the two in turn, so it gets 1 / (F / P + 1 / D). The binding term is the smaller of D and P / F. A ledger row measured on a synthetic short-prompt load (one short prompt per agent, then decode only) measures D, decode capacity, never agent throughput. Every number here is {v, tag, src}.",
+ "about": "Agent workload (build.py data.workload, src/model.js agent*, node report.js --workload, the page's Agents tab). agentPlan uses turn_model and agentTurnPredict. Primary output is turns per agent-minute. Each turn reads trace growth plus the server's prefix re-read, decodes the model's observed or recorded answer length, then waits its tool gap. Output length and prefix re-read are inputs, not predictions. The old agentThroughput fields remain server-bound diagnostics without tool gaps. Synthetic short-prompt runs measure decode capacity, not agent throughput. Every numeric input carries {v, tag, src}.",
  "settings": {
   "default_profile": {"v": "coding-agent", "tag": "READ", "src": "a setting (report.js --profile NAME): the workload profile used when a recipe or report names none"},
   "many_agents_min": {"v": 8, "tag": "READ", "src": "a setting: a recipe serving at least this many agents (recipe.conditions.workload.agents, else serving.batch) is a many-agent recipe; its throughput must rest on a real-agent ledger row of the same build, not only on synthetic short-prompt decode (check agent_workload)"},
@@ -16,6 +16,7 @@
  "profiles": {
   "coding-agent": {
    "label": "real coding-agent traffic: recorded coding-agent conversations replayed with their own prompts, outputs and tool gaps",
+   "turn_trace": {"v": "agent-long-16", "tag": "READ", "src": "a planning setting (--trace): the per-turn shape in data/trace-turns.json"},
    "fresh_per_output": {"v": 4.88, "tag": "MEASURED", "src": "MEASURED: steady-state replays of real coding-agent traffic (trace agent-long-16) at 16 agents on odie (2x B70, Flash-Next, the served build image 0de528f7), 600 s warm-up, then a 600 s window with 0 cache evictions: fresh prompt tokens / output tokens by the server's count 4.78, 4.87, 4.98 (ledger rows odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026, odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2, odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3), mean 4.88. The replay client's count over its in-window turns (fresh_split.F of each row's replay result file, our lab notes, not published) reads 3.94-4.93 across the 17 steady-state 16-agent replays of 2026-10-26 (ledger rows tagged steady-state: odie-fnx-iq3xxs-2xb70-real-*-ss16-n16-1026* and odie-fnx-iq3xxs-2xb70-real-sp-m16-n16-1026); the trace needs 4.33 with a perfect cache (trace_ideal_fresh_per_output). The 16 earlier 16-agent replays of 2026-10-26, timed from a cold start, read 17.8-67.7 (cold first prompts and re-reads after cache evictions) and no longer set this profile"},
    "trace": {"v": "16 recorded agents, 923 turns", "tag": "MEASURED", "src": "MEASURED: our recorded-trace file (lab notes, not published) trace agent-long-16 stats (16 recorded agents, 923 turns; token counts in the recorded model's tokenizer)"},
    "trace_ideal_fresh_per_output": {
@@ -101,5 +102,194 @@
   "checks": [
    {"id": "droopy-fnx-rtx6000-11565", "box": "droopy", "model": "fnx", "engine": "strata", "tokens": 11565, "cpu_share": [0.5, 0.84], "measured": {"v": [630, 640], "tag": "MEASURED", "src": "droopy CUDA strata, one Quadro RTX 6000 (PCIe 3 x16), Flash-Next same store, CPU share 0.5-0.84, single-stream prefill of an 11,565-token prompt: 630-640 tok/s (our lab notes, 2026-10-26)"}, "note": "held out: a CUDA build, another card and link; the eta of the SYCL fit rows carried by int8 ops"}
   ]
+ },
+ "turn_model": {
+  "about": "Per-turn agent model (src/model.js agentReplaySim, agentTurnPredict; report.js --accuracy 'agent turn model'). A turn of one agent alone takes out / D1 + fresh / P, then the agent waits its recorded tool gap (x gap_scale) plus the client overhead before it sends the next turn. fresh = the trace's ideal fresh tokens of the turn (cold first prompt, else the prompt growth) x the serving model's tokenizer ratio + the server's re-read tokens per turn (its prefix reuse, servers below). out = the recorded output x the serving model's out_vs_recorded (a measured replay of that model, else the recording's own lengths). Many agents share one server: each running turn costs w = out / Dn + fresh / P server-seconds (an engine whose reads stall decode; else max of the two), and when the running turns' demand passes one server-second a second all of them slow by the same factor (fluid processor sharing). The replay's own counting follows: turns sent after the warm-up and done inside the window. Primary output: turns per agent-minute; useful tok/s = turns x each turn's output. Every input carries its tag and the runs it came from, so a score can hold out the run it scores",
+  "settings": {
+   "plan_warmup_s": {"v": 600, "tag": "READ", "src": "a planning setting (--warmup-s): seconds before the counted window. The steady-state 16-agent replays used 600 seconds"},
+   "plan_window_s": {"v": 600, "tag": "READ", "src": "a planning setting (--window-s): counted window in seconds. The retained replays used 600 seconds"},
+   "gap_scale": {
+    "v": 1.0,
+    "tag": "READ",
+    "src": "a setting (agent-replay.py --gap-scale, report.js --gap-scale): x the recorded tool gaps"
+   },
+   "stagger_scale": {
+    "v": 0.02,
+    "tag": "READ",
+    "src": "a setting (agent-replay.py --stagger-scale): x each recorded agent's start offset; the 2026-10-26/27 replays ran 0.02"
+   },
+   "client_overhead_s": {
+    "v": 0.003,
+    "tag": "MEASURED",
+    "src": "MEASURED: wall time between a turn's end and the next send, less that turn's recorded tool gap, mean over the in-window turns: R8 1 agent 0.003 s (71 turns), GLM seat 1 agent 0.001 s (39), R8 16 agents 0.000 s (171) (the replay result files (lab notes, not published))"
+   },
+   "pick": {
+    "v": "nearest-agents",
+    "tag": "READ",
+    "src": "a setting: a by-agent-count input takes the row at the asked agent count, else the nearest measured count (ties to the smaller); a held-out score skips rows whose runs include the scored run and falls back as each input states"
+   }
+  },
+  "tokenizers": {
+   "flint": {"relative_to": "qwen", "ratio": {"v": 1.0, "tag": "INFERRED", "src": "ASSUMPTION (flint-1030, before any run): Flint's own 150,144-token vocabulary (bos 150000, config.json) reads the trace at the same token count as the qwen tokenizer; no Flint replay or tokenizer count yet. A 10 % error moves fresh tokens and prefill time by 10 %"}},
+   "qwen": {
+    "per_agent": {
+     "v": [
+      0.656,
+      0.6683,
+      0.6741,
+      0.6937,
+      0.6617,
+      0.7108,
+      0.6617,
+      0.7676,
+      0.7409,
+      0.7373,
+      0.7808,
+      0.7024,
+      0.7359,
+      0.7605,
+      0.75,
+      0.7407
+     ],
+     "tag": "MEASURED",
+     "runs": [
+      "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026",
+      "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2",
+      "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3"
+     ],
+     "src": "MEASURED: server prompt tokens / recorded prompt tokens of the same turns, per recorded agent of trace agent-long-16, over the three 16-agent steady-state replays of Flash-Next (the replay result files (lab notes, not published); ledger rows odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026, odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2, odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3); the 1-agent replay reads 0.653 on agent 0 (0.656 here). The ratio is per agent because it follows the text (code vs prose), not only the tokenizer"
+    },
+    "trace": "agent-long-16"
+   },
+   "glm": {
+    "relative_to": "qwen",
+    "ratio": {
+     "v": 0.9206,
+     "tag": "MEASURED",
+     "runs": [
+      "snoopy-glm-seat-real-n1-1027"
+     ],
+     "src": "MEASURED: GLM-5.3-Flash seat 1-agent replay, agent 0: server prompt tokens / recorded 0.6039 over 64 turns, over Flash-Next's 0.656 on the same agent (the replay result files (lab notes, not published))"
+    }
+   },
+   "qwen35": {
+    "relative_to": "qwen",
+    "ratio": {
+     "v": 1.0189,
+     "tag": "MEASURED",
+     "runs": [
+      "odie-orn35-vllm-gptq-smoke-n1-1027"
+     ],
+     "src": "MEASURED: Ornith-1.5-35B-A3B GPTQ smoke replay, agent 0: 0.6684 over 11 turns, over Flash-Next's 0.656 (the replay result files (lab notes, not published))"
+    }
+   }
+  },
+  "models": {
+   "flint": {"tokenizer": "flint", "out_vs_recorded": {"1": {"v": 0.248, "tag": "MEASURED", "src": "MEASURED: out_vs_recorded of the flint-1030 v1 replays at one agent a llama-server: n1 0.247 (81 turns, median 83 output tokens a turn) and n2 (one agent per card) 0.249 (184 turns, median 78.5), pooled by output tokens (agg tok/s x 600 s: 9,246 and 19,020); max_tokens = the recorded length and Flint stops on its own at about a quarter of it (b70-rig/bench/results/flint-1030/replay-summary.json; b70-rig/bench/results/flint-1030/README.md)"}, "2": {"v": 0.325, "tag": "MEASURED", "src": "MEASURED: out_vs_recorded of the flint-1030 v1 replay n4b, two agents a card after a proxy restart (185 turns, median 88 output tokens a turn); the n4 routing-fault run (0.312, three conversations on one card) is left out (b70-rig/bench/results/flint-1030/replay-summary.json; b70-rig/bench/results/flint-1030/README.md)"}}},
+   "fnx": {
+    "tokenizer": "qwen",
+    "out_vs_recorded": {
+     "1": {
+      "v": 0.591,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026"
+      ],
+      "src": "MEASURED: out_vs_recorded of the 1-agent replay (19,574 output tokens over the recorded 33,120 of its 72 in-window turns; the replay result files (lab notes, not published))"
+     },
+     "16": {
+      "v": 0.716,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3"
+      ],
+      "src": "MEASURED: the three 16-agent steady-state replays pooled: 150,130 output tokens over the recorded 209,803 of their 538 in-window turns (0.740, 0.709, 0.698 each; the replay result files (lab notes, not published))"
+     }
+    }
+   },
+   "glm": {
+    "tokenizer": "glm",
+    "out_vs_recorded": {
+     "1": {
+      "v": 0.185,
+      "tag": "MEASURED",
+      "runs": [
+       "snoopy-glm-seat-real-n1-1027"
+      ],
+      "src": "MEASURED: out_vs_recorded of the GLM-5.3-Flash seat 1-agent replay (3,461 output tokens in 40 turns, median 76 a turn against Flash-Next's 182 on the same prompts; the replay result files (lab notes, not published))"
+     }
+    }
+   },
+   "orn35": {
+    "tokenizer": "qwen35",
+    "out_vs_recorded": {
+     "1": {
+      "v": 0.695,
+      "tag": "INFERRED",
+      "runs": [
+       "odie-orn35-vllm-s4-real-n1-1027"
+      ],
+      "src": "INFERRED: Ornith sym_int4 1-agent replay wrote 310 tokens a turn (39.83 tok/s x 600 s / 77 turns, its summary line; the result JSON was lost) over agent 0's recorded mean 446 a turn; the window's own recorded lengths are not kept"
+     }
+    }
+   }
+  },
+  "servers": {
+   "llamacpp-sycl-slots-swa": {"engine": "sycl", "about": "mainline llama.cpp llama-server, fixed slots (-np), q8_0 KV, a sliding-window model (Flint: 35 SWA layers, window 513): a turn continues its slot cache, but a prompt that diverges inside the previous answer (template re-render) can roll back only to a context checkpoint (SWA cells cannot be rolled back), so the turn re-reads from that checkpoint. MEASURED on flint-1030 (B70, build 12004, -np 2, q8_0 KV): the default SWA context checkpoints keep the prefix, 182 of 184 n2 turns read only their growth (\" + \"the CUDA arm of the same build: 250 of 259 at 4 agents); what re-read there is comes from the trace, not the server: agent 0's recorded tool list changes at its turn 29, so the prompt differs near its start and the whole ~48k prompt is read again, on each pass of that agent (any engine pays it; trace growth does not count it)", "reread_per_turn": {"1": {"v": 556, "tag": "MEASURED", "src": "MEASURED: fresh_split re-read of the flint-1030 v1 replays at one agent a llama-server, F_reread x output tokens over turns: n1 10.41 x 9,246 / 81 = 1,188 (INFERRED: two whole re-reads of 48,121 tokens, 96,242, at agent 0's turn-29 tool-list change on two passes) and n2 2.69 x 19,020 / 184 = 278, pooled 147,415 / 265 turns; the server's own re-read is ~0 (182 of 184 n2 turns read only their growth) (b70-rig/bench/results/flint-1030/replay-summary.json; b70-rig/bench/results/flint-1030/README.md; b70-rig/bench/results/flint-1030-cuda/README.md). Replaces the before-run ASSUMPTION of 1,500, which recipes/odie-flint-q4km-1perCard.json now pins for its frozen prediction"}, "2": {"v": 602, "tag": "MEASURED", "src": "MEASURED: fresh_split re-read of the flint-1030 v1 replay n4b, two agents a card: F_reread 4.3 x 25,896 output tokens / 185 turns; agents 2-3 add their own trace re-reads of 31-58 s (b70-rig/bench/results/flint-1030/replay-summary.json; b70-rig/bench/results/flint-1030/README.md)"}}},
+   "strata-conversation-cache": {
+    "engine": "strata",
+    "about": "XeStrata's per-conversation cache: a parked conversation is restored, so a turn re-reads only what an eviction dropped",
+    "reread_per_turn": {
+     "1": {
+      "v": 708,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n1-1026"
+      ],
+      "src": "MEASURED: fresh_split reread of the R8 1-agent replay, 50,991 tokens over 72 turns (F_reread 2.61 of F 8.05; 5 cache evictions in the window; the replay result files (lab notes, not published))"
+     },
+     "16": {
+      "v": 5.0,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r2",
+       "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026-r3"
+      ],
+      "src": "MEASURED: fresh_split reread of the three 16-agent steady-state replays, 2,690 tokens over 538 turns (0 evictions; the replay result files (lab notes, not published))"
+     }
+    }
+   },
+   "vllm-hybrid-block2048": {
+    "engine": "vllm",
+    "about": "vLLM prefix caching on a hybrid (GatedDeltaNet) model in 'align' mode: the cache hits only on 2,048-token boundaries here (cached tokens 14336, 18432, 20480, ...), so each turn re-reads the tail past the last boundary. Cause INFERRED (state saved at chunk boundaries; block 64, long-prefill threshold 2048)",
+    "reread_per_turn": {
+     "1": {
+      "v": 2396,
+      "tag": "MEASURED",
+      "runs": [
+       "odie-orn35-vllm-s4-real-n1-1027"
+      ],
+      "src": "MEASURED: Ornith sym_int4 1-agent replay summary line: F_reread 7.72 x 23,898 output tokens / 77 turns (odie B70, vLLM XPU, block 64, long-prefill 2048; data/predictions-fit-in-vram-1027.json measured)"
+     }
+    }
+   },
+   "exllamav3-serve": {
+    "engine": "exllamav3",
+    "about": "the snoopy GLM seat's serve.py over exllamav3 at batch 1: the server reports no cached tokens, so its prefix reuse is not measured; the row below is inferred from turn time",
+    "reread_per_turn": {
+     "1": {
+      "v": 6084,
+      "tag": "INFERRED",
+      "runs": [
+       "snoopy-glm-seat-real-n1-1027"
+      ],
+      "src": "INFERRED: GLM seat 1-agent replay, mean turn 13.08 s (serve.py sends the answer at the end, so the turn time holds prefill and decode): less 86.5 output tokens / D 25.9 = 3.34 s leaves 9.74 s of prefill, x P 761 = 7,410 fresh tokens a turn, less the trace's ideal 1,326 a turn (agent 0, GLM tokenizer) = 6,084 re-read. Assumes the 16k-depth D and P hold at the replay's ~55k depth (deeper reads are slower, so the true re-read is likely lower)"
+     }
+    }
+   }
+  }
  }
 }

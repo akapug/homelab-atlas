@@ -627,6 +627,12 @@ engines = {
                  'no_solver': True,
                  'unmodelled_why': 'mainline llama.cpp has no planner rate model (host, lane and IQ CPU kernel rates unmeasured for it); ledger-only',
                  'overlap': n(0.0, E, 'ESTIMATE: GPU and CPU run one after the other, as ik')},
+    # vLLM XPU (llm-scaler) on the B70s: ledger-only, so the fit-in-VRAM replays (Ornith-1.5-35B-A3B, one TP1 instance per
+    # card, every weight resident) are recorded under their real engine; no rate model, so it stays out of the solver
+    'vllm': {'name': 'vLLM XPU (llm-scaler 0.26.0-b2) on B70: every weight resident, one TP1 instance per card (check-only, no rate model)',
+             'types': [], 'models': ['orn35'], 'no_solver': True,
+             'unmodelled_why': 'vLLM XPU has no planner rate model (its eager decode is launch-bound, not bandwidth-bound: fit-in-VRAM); ledger-only',
+             'overlap': n(0.0, 'UNKNOWN', 'UNKNOWN: no rate model; vLLM is ledger-only')},
     'strata': {'name': 'Strata (Niko1221/Strata @477ac13c; Qwen3.8-Flash-Next engine: expert cache in VRAM, experts in RAM, PLE table read from NVMe)',
                'types': ['q8_0', 'q6_K', 'q5_K', 'q4_K', 'iq4_nl', 'q2_0', 'gsq_iq3s', 'gsq_iq3xxs', 'gsq41_iq1m', 'gsq41_iq2xxs', 'gsq41_iq2xs'],
                'types_src': 'gsq_iq3xxs SEEN 2026-10-19: XeStrata xe0.1.45-1 served the GSQ-RCO IQ3_XXS file on odie B70 #1 (pack built by its '
@@ -904,10 +910,11 @@ boxes = {
         'name': 'odie (TRX40)', 'atlas': 'C', 'role': 'build primary + central storage + resident model service',
         'cpu': {'desc': 'Threadripper 3960X (24 cores, Zen 2, AVX2)', 'threads': n(44, M, PROBE + ' user.slice cpuset 0-21,24-45'), 'phys': n(24, R, D01),
                 'used': n(24, E, 'ESTIMATE'), 'smt_mult': n(1.0, E, 'unmeasured'), 'f_default': n(0.8, E, 'ESTIMATE: the kernel-efficiency table itself was measured on odie (4 threads)'), 'f_fixed': True},
-        'gpus': [{'id': 'b70_1', 'name': 'Arc Pro B70 #1 (4c:00.0, PCIe 4 x16)', 'vram_gib': n(29.8, R, D01 + ' 32 GB per card'), 'bw': n(608, R, D01 + ' 608 GB/s'), 'engines': ['sycl', 'strata'],
+        'gpus': [{'id': 'b70_1', 'name': 'Arc Pro B70 #1 (4c:00.0, PCIe 4 x16)', 'vram_gib': n(29.8, R, D01 + ' 32 GB per card'), 'bw': n(608, R, D01 + ' 608 GB/s'), 'engines': ['sycl', 'strata', 'vllm'],
                   'other': [{'what': 'qwen27 experiment card (not loaded now: 226 MiB used)', 'gib': n(0.0, M, PROBE + ' xpu-smi')}]},
-                 {'id': 'b70_2', 'name': 'Arc Pro B70 #2 (23:00.0, PCIe 4 x16)', 'vram_gib': n(29.8, R, D01), 'bw': n(608, R, D01), 'engines': ['sycl', 'strata'],
-                  'other': [{'what': 'resident always-on model service (keep)', 'household': True, 'gib': n(26984 / 1024, M, PROBE + ' xpu-smi 26,984 MiB')}]}],
+                 {'id': 'b70_2', 'name': 'Arc Pro B70 #2 (23:00.0, PCIe 4 x16)', 'vram_gib': n(29.8, R, D01), 'bw': n(608, R, D01), 'engines': ['sycl', 'strata', 'vllm'],
+                  'other': [{'what': 'resident always-on model service (keep)', 'household': True, 'gib': n(26984 / 1024, M, PROBE + ' xpu-smi 26,984 MiB'),
+                             'test_card': True, 'service': 'qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)'}]}],
         'dram': {'total_gib': n(121, M, PROBE + ' free -g'), 'usable_gib': n(90, E, 'ESTIMATE: odie is the build primary and hosts the resident model service'),
                  'pinned_margin_gib': n(16, R, 'ruling 2026-10-18 09:0xZ (our lab) after two stalls (b1n2 07:12Z, b1n4 08:57Z): the xe driver allocates the pinned buffer past any floor in one burst and a SIGKILL cannot land while it is inside that allocation (b1n4: killed 08:57:01Z, exited after 09:02:41Z), so the pinned peak keeps 16 GiB beyond the household floor'),
                  'host_floor_gib': n(27, M, 'odie 2026-10-18 07:12:32Z global OOM report (b1n2): CMA free 11.0 GiB (not usable for the pinned SYCL host buffer or user anon) + anon 12.2 GiB (window stop list applied; shmem tmpfs 7.9 GiB inside it) + kernel/page tables ~3 GiB; b1n at 88 GiB pinned loaded, b1n2 at ~94 GiB livelocked the box. The pinned buffer is driver memory (gpu_active), so a docker --memory cap does not hold it: this floor is the containment'),
@@ -1227,6 +1234,18 @@ checks = {
             'glmlite': {'lo': 1.0 + 128 / 1024, 'hi': 1.5, 'candidate': None, 'tag': 'MEASURED',
                         'src': 'glm-lite start-up RESERVE: 1.0 GiB OOMed at the first prefill, 128 MiB short (lab notes 10:58Z); 1.5 ran (11:12Z, 11:50Z). The engine sizes its slot pool after this reserve, so it is inside kv_gib'},
             'sycl': {'lo': 0.0, 'hi': 2.25, 'candidate': None, 'tag': 'ESTIMATE', 'src': 'ESTIMATE: ik split bounds borrowed; nothing measured on the B70'},
+            # mainline llama.cpp on a dense model (model.js predictDense): what the card keeps free beside the weights and KV.
+            # With -ngl pinned (--fit off) only the compute buffers and the device context; with --fit on (llama-server's default)
+            # the fit also holds its free-memory target per device and decides the layer count itself
+            'llamacpp_ngl': {'lo': 0.0, 'hi': round((23980 - (19118.78 - 641.8) - 4862.0) / 1024, 3), 'candidate': None, 'tag': 'MEASURED',
+                             'src': 'snoopy 3090 Ti, Nanbeige4.3-33B Q4_K_M, llama.cpp d454a20 CUDA --fit off -ngl 99 -c 45056 q8_0 KV (lab notes): 23,980 MiB used = '
+                                    '18,477 MiB of weights on the card (the 19,118.78 MiB file less its 642 MiB Q4_K token_embd, which stays in host memory) + 4,862 MiB of q8_0 KV '
+                                    '(52 layers x 2 x 8 KV heads x 128 x 1.0625 B x 45,056) + the rest (641 MiB) = compute buffers and the CUDA context'},
+            'llamacpp_fit': {'lo': 1.0, 'hi': 4.7, 'candidate': None, 'v': 4.2, 'tag': 'FIT',
+                             'src': 'snoopy 3090 Ti, the same model at -c 81920 with --fit on (lab notes, journal 2026-10-25-model-screens/nanbeige/snoopy-screen-1025/'
+                                    'server-nanbeige43-fit81920-aborted.log): about 12 of 52 layers fell back to the CPU (5.7 tok/s). The dense plan leaves 12 on the CPU when 4.2 GiB '
+                                    'stays free beside the weights and KV (11-13 layers: 3.7-4.7). lo = the fit target alone: common/common.h fit_params_target 1024 MiB per '
+                                    'device (llama.cpp -fitt, READ); the rest is the fit\'s own projection of compute buffers for a partial offload. One spill measured, so FIT on it; on SYCL ESTIMATE (borrowed)'},
             'strata': {'lo': 0.0, 'hi': None, 'candidate': None, 'self_sizing': True, 'tag': 'MEASURED-UNKNOWN',
                        'src': 'Strata sizes its expert cache itself (--expert-cache auto) from measured free VRAM after reserving dense, MTP, KV and its own prompt buffers, so post-warm-up VRAM is full by design and a post + margin sum says nothing. The check needs the measured peak under a long prompt (vram.peak_gib) against the card total',
                        'pending': 'the snoopy qfn-e2e.sh run: bench.py --prefill-first samples the peak under the 12.7k-token prompt'}},
@@ -1409,7 +1428,7 @@ levers = runs_tables.levers_from_runs(json.load(open(os.path.join(HERE, 'runs', 
 engines['glmlite']['calibrated_builds'] = ['p512-lane']
 # does the engine's decode run expert work on CPU threads (the cpu_reserve check)? ggml/ik: OpenMP-style worker threads that
 # spin on ggml_barrier (q4d perf: ggml_barrier 77 % of CPU samples in a slow decode). None = UNKNOWN for that engine
-for _e, _c in {'ik': True, 'llamacpp': True, 'sycl': True, 'glmlite': True, 'strata': None}.items():
+for _e, _c in {'ik': True, 'llamacpp': True, 'sycl': True, 'glmlite': True, 'strata': None, 'vllm': None}.items():
     engines[_e]['cpu_decode'] = _c
 engines['glmlite']['builds'] = {'p512-lane': K2E, 'avx2-lane': 'AVX2 lane kernel before 14:40Z (compute-bound 0.228 ms/expert, excl0-1143.stats.json): rates not in the planner'}
 
@@ -1661,6 +1680,10 @@ bench = {
     'line_spec': {'v': 'none', 'src': 'SEEN 2026-10-19 (runs/bench-raw/odie-sycl-*-mtverify-1019.jsonl): Qwen3-30B-A3B Q4_K_S on B70 #1 decodes 116.6 tok/s '
                                       'plain and 57.2 with a Qwen3-1.7B draft (n 3): a speculative row (conditions.spec) measures the draft, not the read'},
     'numa_ref': {'v': 'membind, the threads and the weights on one node, the most threads', 'src': 'the gain unit: one NUMA node read locally (lassie N1-bind4, 7 threads on 8 cores)'},
+    # the dense path (model.js predictDense, tools/harvest.py --hf on a model the planner has no entry for) runs llama.cpp on each card
+    'native_backend': {'v': {'nvidia': 'cuda', 'intel': 'sycl', 'amd': 'vulkan-radv'},
+                       'src': 'the llama.cpp backend our cards of each vendor run: CUDA on the GeForce/Quadro cards (droopy, snoopy, lassie 1080 Ti), SYCL on the '
+                              'odie B70s (engine sycl), Vulkan RADV on the lassie MI25 (no ROCm installed; boxes.lassie mi25 drive.ik.backend)'},
 }
 _med = lambda xs: sorted(xs)[len(xs) // 2] if len(xs) % 2 else sum(sorted(xs)[len(xs) // 2 - 1:len(xs) // 2 + 1]) / 2
 
@@ -2312,8 +2335,36 @@ def workload_measured(cfg, ledger):
     return sorted(out, key=lambda x: (x['when'] or '', x['run']))
 
 
+RESCORE_KEY = 'rescore_turn_model'
+RESCORE_FIELDS = ('id', 'run', 'query', 'measured', 'before')
+
+
+def turn_rescores(root):
+    """the rescore_turn_model block of every data/predictions-*.json (a block added beside a file's original predictions, which
+    stay untouched): its entries with the file they came from. An entry needs an id, the run it scores, the model query
+    (tagged inputs), the measured numbers and the file's own before numbers; any miss is a build error"""
+    out = []
+    for p in sorted(Path(root, 'data').glob('predictions-*.json')):
+        b = json.load(open(p)).get(RESCORE_KEY)
+        if not b:
+            continue
+        for e in b['entries']:
+            miss = [k for k in RESCORE_FIELDS if not e.get(k)]
+            if miss:
+                raise ValueError('%s %s entry %s: missing %s' % (p.name, RESCORE_KEY, e.get('id'), miss))
+            out.append(dict(_wtag(e), file='data/' + p.name, block_written=b.get('written_utc')))
+    return out
+
+
+# the dense path's calibration (model.js denseCal fits its terms at run time from these points, holding out the rest)
+dense_cal = json.load(open(os.path.join(HERE, 'data', 'dense-cal.json')))
+
 _wl = json.load(open(os.path.join(HERE, 'data', 'workload.json')))
 workload = dict(_wtag({k: x for k, x in _wl.items() if k != 'about'}), about=_wl['about'], measured=workload_measured(_wl, _bl))
+# the per-turn agent model: the recorded traces' per-turn shape (data/trace-turns.json, tools/trace_turns.py) and the
+# prediction files' re-scores with it
+workload['turn_model']['traces'] = {k: _wtag(x) for k, x in json.load(open(os.path.join(HERE, 'data', 'trace-turns.json')))['traces'].items()}
+workload['turn_rescore'] = turn_rescores(HERE)
 
 
 def serving_priors(d, profiles):
@@ -2375,7 +2426,7 @@ data = {
     'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py', 'home': PUBLIC_HOME,
              'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}, 'left_out': left_out},
     'types': types, 'engines': engines, 'models': models, 'boxes': boxes, 'b70move': b70move, 'anchors': anchors, 'assume': assume, 'knobs': knobs, 'conditions': conditions, 'accuracy': accuracy, 'causes': causes, 'external': external, 'bench': bench,
-    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'curves': curves, 'workload': workload, 'priors': priors, 'layer_maps': layer_maps, 'upgrade': upgrade,
+    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'curves': curves, 'workload': workload, 'priors': priors, 'dense_cal': dense_cal, 'layer_maps': layer_maps, 'upgrade': upgrade,
     'routing_skew': [HM.skew_evidence(HEAT_MAPS, spec) for spec in HM.jload(os.path.join(HERE, 'tools', 'heat_sources.json')).get('skew', [])],
     'alloc3': {'src': 'homelab dsv41/skew/results/2026-10-08-alloc-3bpw.json (' + alloc['rule'] + ')', 'layers': alloc_layers, 'count': sum(len(x) for x in alloc_layers)} if alloc else None,
     'siblings': {'quant_priors': sibling('quant-priors.json'), 'quant_recipes': sibling('quant-recipes.json'),
@@ -2547,6 +2598,13 @@ def write_page(data):
 
 
 _parts = write_page(data)
+# the TPS REPORT page (tps/build_tps.py): a private page that never ships, so the hook runs only where tps/ exists
+_TPS = os.path.join(HERE, 'tps', 'build_tps.py')
+if os.path.exists(_TPS):
+    _spec = importlib.util.spec_from_file_location('build_tps', _TPS)
+    _tps = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_tps)
+    _tps.write(HERE, data, PAGE_DIR)
 print('data.json %.0f KB; index.html %.0f KB + page/ %s' % (os.path.getsize(os.path.join(HERE, 'data.json')) / 1024, os.path.getsize(os.path.join(HERE, 'index.html')) / 1024,
       ', '.join('%s %.0f KB' % (n, len(s.encode()) / 1024) for n, s in _parts)))
 print('siblings:', {k: (v.get('present') if isinstance(v, dict) else bool(v)) for k, v in data['siblings'].items()})

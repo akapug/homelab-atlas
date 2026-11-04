@@ -1,0 +1,109 @@
+{
+ "about": "Falsifiable prediction for lab notes comp1-xe022, written BEFORE any GPU run of the candidate: the served comp1 lever set (engine 8c783ac, on XeStrata xe0.1.45 / upstream 180d077) merged onto upstream XeStrata xe0.2.2-1 (2026-10-24), the same lever env, against the served comp1 image in the same booking. Do not edit the predicted numbers after the measurements land; add a 'measured' block beside them.",
+ "written_utc": "2026-10-27T16:30Z (image building on droopy; no odie run of it yet)",
+ "recipe": "odie 2x Arc Pro B70, Qwen3.8-Flash-Next GSQ-RCO IQ3_XXS, layer split 25, --batch 32 --batch-groups 2 --kv k8v4 --kv-resident 4096, MAX_CONTEXT 131072, lever env real-comp1-no-gdn (refill, DMMQ_LEAN 7, QSA lanes, CPU share 0.25, BATCH_MAX_T 32, batch prefill, split reuse). Arms: c1-served (image 0de528f7) and c1x022 (the new image), 16 agents, agent-replay --trace agent-long-16 --warmup-s 600, 600 s windows, 2 runs per arm, alternating.",
+ "equation": "useful = 1 / (1 / D + F / P) (src/model.js agentThroughput); the change is read as a ratio against the same-booking served arm, since replay noise (~11 %) moves both arms with F.",
+ "inputs": {
+  "served_useful_16": {
+   "v": 83.4,
+   "tag": "MEASURED",
+   "src": "runs odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026 (86.0), -r2 (84.6), -r3 (79.6)"
+  },
+  "served_P": {
+   "v": 866,
+   "tag": "MEASURED",
+   "src": "fresh prompt tokens / server prompt time on those rows (r2 869, r3 866; the chunk-test file's 866)"
+  },
+  "served_F": {
+   "v": 4.8,
+   "tag": "MEASURED",
+   "src": "server fresh / output on those rows (4.78-4.98)"
+  },
+  "served_D_model": {
+   "v": 279,
+   "tag": "MEASURED",
+   "src": "synthetic 16-agent decode capacity (handoff section 2)"
+  },
+  "upstream_decode_claim": {
+   "v": "+4-9 % B70 IQ3_XXS decode against xe0.1.45-1 (1K 80.5 -> 87.4, 262K 75.7 -> 80.6), single stream",
+   "tag": "MEASURED-BY-THEM",
+   "src": "https://github.com/MistVVK/XeStrata/releases/tag/xe0.2.2-1 'Faster'"
+  },
+  "upstream_prefill_b70": {
+   "v": "no B70 prefill change listed against xe0.1.45-1 (the long-prompt gains listed are the RTX 4070's)",
+   "tag": "READ",
+   "src": "same release notes"
+  },
+  "decode_changes_that_reach_batch_windows": {
+   "v": [
+    "the router's top-10 and doorbell in one launch (7bf8e481)",
+    "QSA K/V projections in one launch (bab3f54e)"
+   ],
+   "tag": "READ",
+   "src": "upstream commits; both sit on the verify-window path comp1's batch decode uses. MTP-side gains (62a5fb70, ff7a23de, d47e1edb, 372bdac4) do not apply: R8 runs --no-batch-mtp"
+  },
+  "igc_gep_workaround": {
+   "v": "the new engine sets IGC_EnableGEPSimplification=0 on this base (libigc 2.28.4, Xe2); upstream measured 5-10 % slower decode at 1K and no loss at 32K",
+   "tag": "READ+MEASURED-BY-THEM",
+   "src": "src/core/device.cpp intel_compiler_workaround; AGENTS.md 'Intel Graphics Compiler'; base image libigc.so.2.28.4+0 (read 2026-10-27). Agents decode at ~80K depth, so INFERRED 0-3 % loss"
+  },
+  "prefill_changes": {
+   "v": "the CPU share's input copied only when the CPU takes experts (8ad82e09): small, the streamed share takes experts in most layers",
+   "tag": "INFERRED"
+  }
+ },
+ "predictions": {
+  "useful_16_ratio": {
+   "v": 1.02,
+   "range": [
+    0.93,
+    1.1
+   ],
+   "tag": "MODEL",
+   "src": "D x 1.04 (0.97-1.09), P x 1.01 (0.95-1.05) in agentThroughput at D 279, P 866, F 4.4: 118.0 / 115.4 = 1.022 (0.958-1.066), widened for merge risk"
+  },
+  "useful_16": {
+   "v": 85,
+   "range": [
+    77,
+    93
+   ],
+   "tag": "MODEL",
+   "src": "1.02 x the served 83.4"
+  },
+  "P": {
+   "v": 875,
+   "range": [
+    820,
+    930
+   ],
+   "tag": "MODEL"
+  },
+  "decode_per_request_median": {
+   "v": 7.2,
+   "range": [
+    6.6,
+    7.7
+   ],
+   "tag": "MODEL",
+   "src": "served 6.8-7.2"
+  },
+  "headline": "inside replay noise: the upstream release brings little to a prefill-bound 16-agent replay on B70 (its decode gains are single-stream, MTP-side or 1K-context; its GEP workaround costs short-context decode); expect +2 % (-7 % to +10 %)",
+  "falsified_if": "the c1x022 mean over 2 runs sits more than 11 % above the same-booking c1-served mean (upstream gains reach batched agent traffic beyond this model) or more than 11 % below it (a merge regression or the GEP workaround costing long-context decode), or its P falls outside 790-960"
+ },
+ "measured": {
+  "status": "UNSCORED: an owner DRAIN stopped the A/B after the first arm; the c1x022 arm loaded (582 s, cold kernel cache) but was never measured",
+  "c1_served_b1": {
+   "useful_16": 97.96,
+   "P": 839,
+   "F_server": 3.78,
+   "F_client": 3.49,
+   "decode_per_request_median": 7.58,
+   "ttft_median_s": 3.05,
+   "errors": 0,
+   "tag": "MEASURED",
+   "src": "b70-rig/bench/results/comp1-xe022-1027/b1 (2026-10-27 17:13Z)"
+  },
+  "note": "the served arm's window F (3.5-3.8) is below the 10-26 runs (4.8), so its output (98) sits above the 83.4 the absolute prediction used; the ratio prediction stands for the rerun"
+ }
+}

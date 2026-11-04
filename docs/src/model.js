@@ -1854,6 +1854,312 @@
     return Object.assign(out, { status: 'PREDICTED', decode_tps: 1 / t, err: meas ? (1 / t) / meas - 1 : null, placement: gpuB > 0 && cpuB > 0 ? 'hybrid' : gpuB > 0 ? 'gpu' : 'cpu',
       bytes_gb: { gpu: gpuB / 1e9, cpu: cpuB / 1e9 }, evidence: [rollup('decode', 1 / t, 'tok/s', terms), prefillUnknown] });
   }
+  // ---------- dense-path calibration (data/dense-cal.json): kernel rates by quant type, the cost of non-plain layers, the KV read rate ----------
+  // The bench lines were fitted on plain llama-style models whose weights are K-quants, Q4_0 or Q8_0. denseCal reads three corrections
+  // at run time: a quant type's kernel rate on a card (MEASURED microbenchmarks, or ms per billion weights FITTED on whole-model points),
+  // ms a non-plain layer adds (FITTED), and the KV read rate at depth (FITTED on a depth pair); each card falls back to the plain line
+  // where nothing is measured. Points marked holdout never set a term: they test the fitted ones (denseCalReport, report.js --dense-cal).
+  function denseCardLine(data, ck) {
+    const [bk, id] = ck.split('/'), box = data.boxes[bk], g = box && box.gpus.find(x => x.id === id);
+    if (!g) return null;
+    const nb = (data.bench.native_backend && data.bench.native_backend.v) || {}, be = nb[g.vendor], L = be && data.bench.gpu && data.bench.gpu[be];
+    return L && v(L.eta) !== null ? { ck, backend: be, line: L, rate: v(L.eta) * v(g.bw) * 1e9, host: L.host_ms } : null;
+  }
+  const denseApplies = (e, be, ck) => (!e.backend || e.backend === '*' || e.backend === be) && (!e.cards || e.cards.includes(ck));
+  const denseKindOf = l => l.kind || (l.f16_bytes_per_token ? (l.window ? 'sliding' : 'full') : 'linear');
+  // the time one card spends on a map of {ggml type: bytes} at its line, each type at its kernel rate (cal null = the plain line)
+  function denseTypesMs(cal, ln, types, skip) {
+    let ms = 0;
+    Object.keys(types || {}).forEach(t => {
+      const T = t.toUpperCase(), b = types[t], f = cal ? denseTypeFactor(cal, ln, T) : null;
+      if (skip && skip(T, f)) return;
+      ms += f && f.per === 'weight' ? b * 8 / f.bpw / 1e9 * f.ms : b / (ln.rate * (f ? f.eff : 1)) * 1000;
+    });
+    return ms;
+  }
+  function denseTypeFactor(cal, ln, T) {
+    const w = cal.terms.find(x => x.kind === 'weight_ms' && x.v !== null && x.types.includes(T) && denseApplies(x, ln.backend, ln.ck));
+    if (w && cal.bpw[T]) return { per: 'weight', ms: w.v, bpw: cal.bpw[T], tag: w.tag, src: w.src, id: w.id };
+    const k = cal.kernels.find(x => x.eff[T] !== undefined && denseApplies(x, ln.backend, ln.ck));
+    return k ? { per: 'byte', eff: k.eff[T], tag: k.tag, src: k.src } : null;
+  }
+  // the fastest MEASURED kernel-bound rate on a card (per byte, below the line): the faster side of a borrowed rate
+  function denseFastestKernel(cal, ln) {
+    let hi = null;
+    cal.kernels.filter(k => k.tag === 'MEASURED' && denseApplies(k, ln.backend, ln.ck)).forEach(k => Object.keys(k.eff).forEach(T => {
+      if (cal.kernel_bound.test(T) && k.eff[T] < 1 && (!hi || k.eff[T] > hi.eff)) hi = { type: T, eff: k.eff[T] };
+    }));
+    return hi;
+  }
+  function denseLayerTerm(cal, ln, kind) {
+    if (kind === 'full') return null;
+    const f = cal.terms.find(x => x.kind === 'layer_ms' && x.layer === kind && x.v !== null && denseApplies(x, ln.backend, ln.ck));
+    return f || cal.assumed.find(x => x.kind === 'layer_ms' && x.layer === kind && denseApplies(x, ln.backend, ln.ck)) || null;
+  }
+  function denseKvTerm(cal, ln) {
+    return cal.terms.find(x => x.kind === 'kv_eff' && x.v !== null && denseApplies(x, ln.backend, ln.ck)) || cal.assumed.find(x => x.kind === 'kv_eff' && denseApplies(x, ln.backend, ln.ck));
+  }
+  // one point's decode step in ms on its card: host + every layer's weights at their kernel rates + its KV at depth + the layer-kind
+  // cost; cal null = the plain line (the dense path before this calibration); without = term ids left out, skipTypes = ggml types
+  // left out (a fit solves for them)
+  function densePointMs(data, cal, p, without, skipTypes) {
+    const ln = denseCardLine(data, p.card), skip = without || [], kvB = p.kv ? v((data.types[p.kv.type] || {}).bpw || 16) / 16 : 1;
+    if (!ln) return null;
+    let ms = v(ln.host);
+    const kvT = cal && denseKvTerm(cal, ln), kvEff = kvT && !skip.includes(kvT.id) ? v(kvT.v) : 1;
+    Object.keys(p.layers).forEach(k => {
+      const L = p.layers[k];
+      ms += denseTypesMs(cal, ln, L.types, cal ? (T, f) => (f && f.id && skip.includes(f.id)) || (skipTypes || []).includes(T) : null);
+      if (k === 'output') return;
+      if (k !== 'linear' && p.kv) ms += L.n * p.kv.f16_bytes_per_token * kvB * p.depth / (ln.rate * kvEff) * 1000;
+      const lt = cal && denseLayerTerm(cal, ln, k);
+      if (lt && !skip.includes(lt.id)) ms += L.n * v(lt.v);
+    });
+    return ms;
+  }
+  function denseCal(data) {
+    if (data._dense_cal) return data._dense_cal;
+    const D = data.dense_cal;
+    if (!D) return null;
+    const byId = {}, points = D.points.map(p0 => {
+      const base = p0.same_as ? D.points.find(x => x.id === p0.same_as) : null, p = Object.assign({}, base ? { layers: base.layers, kv: base.kv, model: base.model, build: base.build } : {}, p0);
+      p.layers = Object.fromEntries(Object.entries(p.layers).map(([k, L]) => [k, Object.assign({}, L, { types: Object.fromEntries(Object.entries(L.types).map(([t, gb]) => [t, gb * 1e9])) })]));   // GB -> bytes
+      byId[p.id] = p;
+      return p;
+    });
+    const kernels = [];
+    D.kernels.forEach(k => {
+      const eff = {};
+      Object.keys(k.gbs || {}).forEach(t => { eff[t] = k.gbs[t] / k.ref_gbs; });
+      Object.keys(k.borrow || {}).forEach(t => { const from = kernels.find(x => x.eff[k.borrow[t]] !== undefined && x.backend === k.backend); if (from) eff[t] = from.eff[k.borrow[t]]; });
+      kernels.push({ backend: k.backend, cards: k.cards, eff, tag: k.tag, src: k.src + (k.borrow ? ' (' + Object.keys(k.borrow).map(t => t + ' <- ' + k.borrow[t]).join(', ') + ')' : '') });
+    });
+    const cal = { kernels, terms: [], assumed: D.assumed.map(x => Object.assign({ id: 'assumed:' + x.kind + ':' + (x.layer || '') + ':' + x.backend }, x)), bpw: D.bpw.v, error: D.error, kernel_bound: new RegExp(D.kernel_bound.v), points };
+    const tms = p => 1000 / p.tps;
+    D.terms.forEach(t0 => {
+      const t = Object.assign({ v: null, tag: 'FIT' }, t0), ps = t.fit_on.map(id => byId[id]);
+      cal.terms.push(t);
+      // only a point marked fit sets a term: a holdout, context or missing id named in fit_on leaves the term unfitted
+      const notFit = t.fit_on.filter((id, i) => !ps[i] || ps[i].use !== 'fit');
+      if (notFit.length) { t.tag = 'UNKNOWN'; t.src = 'UNKNOWN: fit_on names ' + notFit.join(', ') + ', not a point marked use fit. ' + t.src; return; }
+      const ln = denseCardLine(data, ps[0].card);
+      if (!ln) { t.tag = 'UNKNOWN'; return; }
+      let how;
+      if (t.kind === 'kv_eff') {
+        const [a, b] = ps, kvB = x => Object.keys(x.layers).filter(k => k !== 'linear' && k !== 'output').reduce((s, k) => s + x.layers[k].n * x.kv.f16_bytes_per_token * v((data.types[x.kv.type] || {}).bpw || 16) / 16 * x.depth, 0);
+        t.v = (kvB(b) - kvB(a)) / (ln.rate * (tms(b) - tms(a)) / 1000);
+        how = ((kvB(b) - kvB(a)) / 1e9).toFixed(3) + ' GB more KV at ' + b.depth + ' than at ' + a.depth + ' took ' + (tms(b) - tms(a)).toFixed(2) + ' ms more (' + a.tps + ' -> ' + b.tps + ' tok/s); at the line ' + (ln.rate / 1e9).toFixed(0) + ' GB/s that is ' + t.v.toFixed(3) + ' of the line';
+      } else {
+        const xs = ps.map(p => {
+          const rest = densePointMs(data, cal, p, [t.id], t.kind === 'weight_ms' ? t.types : null);
+          const den = t.kind === 'layer_ms' ? p.layers[t.layer].n : Object.keys(p.layers).reduce((s, k) => s + Object.keys(p.layers[k].types).filter(T => t.types.includes(T.toUpperCase()) && cal.bpw[T.toUpperCase()]).reduce((a, T) => a + p.layers[k].types[T] * 8 / cal.bpw[T.toUpperCase()] / 1e9, 0), 0);
+          return { p, x: (tms(p) - rest) / den, rest, den };
+        });
+        t.v = med(xs.map(x => x.x));
+        how = xs.map(x => x.p.id + ': measured ' + tms(x.p).toFixed(2) + ' ms a step (' + x.p.tps + ' tok/s), every other term ' + x.rest.toFixed(2) + ' ms, over ' + (t.kind === 'layer_ms' ? x.den + ' ' + t.layer + ' layers' : x.den.toFixed(2) + ' G weights of ' + t.types.join('/')) + ' = ' + x.x.toFixed(4)).join('; ');
+      }
+      t.src = 'FIT: ' + t.src + '. ' + how + ' (' + ps.map(p => p.src).join(' | ') + ')';
+      t.runs = t.fit_on;
+    });
+    // predicted vs measured for every point, before (the plain line) and after; the stated error per backend = the largest holdout miss
+    const rows = points.map(p => {
+      const before = densePointMs(data, null, p), after = densePointMs(data, cal, p), sc = p.power ? p.power.scale : null;
+      const meas = p.tps * (sc ? (sc[0] + sc[1]) / 2 : 1), ln = denseCardLine(data, p.card);
+      return { id: p.id, use: p.use, card: p.card, backend: ln && ln.backend, model: p.model, build: p.build, depth: p.depth, measured: p.tps, measured_scaled: sc ? [p.tps * sc[0], p.tps * sc[1]] : null,
+        before: before && 1000 / before, after: after && 1000 / after, err_before: before && (1000 / before) / meas - 1, err_after: after && (1000 / after) / meas - 1, src: p.src, power: p.power || null };
+    });
+    cal.rows = rows;
+    cal.base_err = {};
+    rows.filter(r => r.use === 'holdout' && r.err_after !== null).forEach(r => { cal.base_err[r.backend] = Math.max(cal.base_err[r.backend] || 0, Math.abs(r.err_after)); });
+    Object.defineProperty(data, '_dense_cal', { value: cal, enumerable: false, writable: true, configurable: true });
+    return cal;
+  }
+  function denseCalReport(data) {
+    const c = denseCal(data);
+    return c ? { terms: c.terms.map(t => ({ id: t.id, kind: t.kind, v: t.v, tag: t.tag, src: t.src })), kernels: c.kernels, assumed: c.assumed, base_err: c.base_err, rows: c.rows } : null;
+  }
+  // ---------- a dense model the planner has no entry for, planned from its layout alone (tools/harvest.py --hf) ----------
+  // spec (built by harvest from config.json + safetensors or GGUF headers): { model, arch, ctx, kv_type, depths, kv_layers:
+  // [{ f16_bytes_per_token, window }], quants: [{ label, engine, layer_bytes: [...], output_bytes, embd_bytes, src }] }.
+  // Per box: each card runs llama.cpp on its vendor's backend (bench.native_backend) and reads at that backend's bench line
+  // (line reach x the card nameplate, + the line's host ms), the same terms predictExternal uses for a community card. Layers
+  // fill the cards first (weights + their KV at ctx, the engine margin kept free), the rest and the token embedding stay in
+  // DRAM and read at min(DRAM read, DRAM read x kappa x f), the MoE planner's CPU rate. Decode at depth d reads every
+  // resident weight once plus each layer's KV for min(d, window) tokens, each weight at its type's kernel rate on the card, each
+  // non-plain layer at its fitted cost and the KV at the card's fitted read rate (denseCal). llama.cpp keeps checks.vram_peak.margin
+  // llamacpp_fit free per card under --fit on (its default), llamacpp_ngl with -ngl pinned. opts: { knobs: { freeDesktop,
+  // freeHousehold, ngl, fit: 'on' | 'off' }, kvReadEff (overrides the calibrated KV read rate), uncal (the plain line, no calibration) }
+  // the VRAM llama.cpp leaves free on a card for a dense model: -ngl pinned (or --fit off) keeps its compute buffers and context,
+  // --fit on (llama-server's default) also its free-memory target and its own projection (checks.vram_peak.margin llamacpp_*)
+  function denseFitMargin(data, kn) {
+    const M = data.checks && data.checks.vram_peak && data.checks.vram_peak.margin;
+    if (!M) return null;
+    return kn.ngl !== undefined || kn.fit === 'off' ? M.llamacpp_ngl : M.llamacpp_fit;
+  }
+  // a resident on a test card is planned as stopped unless knobs.freeTestCards is false (dense-cal.json plan.free_test_cards);
+  // each card lists what it displaces
+  function denseCards(data, bk, kn, eng) {
+    const B = data.bench || {}, nb = (B.native_backend && B.native_backend.v) || {}, P = (data.dense_cal && data.dense_cal.plan) || {};
+    const freeTest = kn.freeTestCards !== undefined ? !!kn.freeTestCards : !!(P.free_test_cards && P.free_test_cards.v);
+    return data.boxes[bk].gpus.map(g => {
+      const be = nb[g.vendor], L = be && B.gpu && B.gpu[be];
+      const freed = o => (o.desktop && kn.freeDesktop) || (o.household && kn.freeHousehold) || (o.test_card && freeTest);
+      const res = (g.other || []).reduce((a, o) => a + (freed(o) ? 0 : v(o.gib) || 0), 0);
+      const displaced = (g.other || []).filter(o => freed(o) && (v(o.gib) || 0) > 0).map(o => ({ what: o.service || o.what, gib: v(o.gib), test_card: !!o.test_card,
+        src: o.test_card && freeTest ? (P.free_test_cards || {}).src || 'knobs.freeTestCards' : 'a knob (freeDesktop / freeHousehold)' }));
+      const fm = eng === 'llamacpp' ? denseFitMargin(data, kn) : null;
+      const meng = fm ? Object.assign({}, fm, { hi: fm.v !== undefined ? fm.v : fm.hi }) : (g.engines || []).map(e => marginOf(data, e, false)).find(Boolean) || null;
+      const ok = L && (L.vendors || []).includes(g.vendor) && v(L.eta) !== null && v(L.host_ms) !== null;
+      return { id: g.id, name: g.name, vendor: g.vendor, backend: be || null, line: ok ? L : null, rate: ok ? v(L.eta) * v(g.bw) * 1e9 : null,
+        vram: v(g.vram_gib), reserved: res, displaced, margin: meng ? (meng.hi || 0) : 0, marginTerm: meng, why: ok ? null : 'no ' + (be || '?') + ' bench line for ' + g.vendor + ' cards' };
+    });
+  }
+  function predictDense(data, spec, bk, q, opts) {
+    if (!data.cal) applyCal(data);
+    const o = opts || {}, kn = o.knobs || {}, box = data.boxes[bk], T = (n, x) => term(data, n, x), terms = [];
+    const kvB = (spec.kv_type && data.types[spec.kv_type] ? v(data.types[spec.kv_type].bpw) / 8 : 2) / 2;   // x f16 bytes
+    const kvEff = o.kvReadEff || 1, ctx = spec.ctx, Lyr = q.layer_bytes.length;
+    const kvAt = (i, d) => spec.kv_layers[i] ? spec.kv_layers[i].f16_bytes_per_token * kvB * Math.min(d, spec.kv_layers[i].window || d) : 0;
+    // vLLM runs one backend (tensor parallel over cards of the first card's backend); llama.cpp splits layers over any cards
+    const live = denseCards(data, bk, kn, q.engine).filter(c => c.line), cards = q.engine === 'vllm' ? live.filter(c => c.backend === (live[0] || {}).backend) : live;
+    // fill from the output end (llama.cpp -ngl offloads the last layers first), card by card
+    const caps = cards.map(c => Math.max(0, (c.vram - c.reserved - c.margin) * GiB)), on = new Array(Lyr).fill(-1);
+    let ci = 0;
+    const ngl = kn.ngl === undefined ? Lyr : Math.min(Lyr, kn.ngl);   // -ngl N: at most N layers on the cards (the knob), else as many as fit
+    for (let i = Lyr - 1; i >= Lyr - ngl && ci < cards.length; i--) {
+      const need = q.layer_bytes[i] + kvAt(i, ctx);
+      while (ci < cards.length && caps[ci] < need) ci++;
+      if (ci >= cards.length) break;
+      caps[ci] -= need; on[i] = ci;
+    }
+    const allGpu = cards.length && on.every(x => x >= 0);
+    let outOn = -1;
+    if (allGpu) { const k = cards.findIndex((c, j) => caps[j] >= q.output_bytes); outOn = k; if (k >= 0) caps[k] -= q.output_bytes; }
+    const cpuL = on.map((x, i) => x < 0 ? i : -1).filter(i => i >= 0);
+    const cpuW = cpuL.reduce((a, i) => a + q.layer_bytes[i], 0) + (outOn < 0 ? q.output_bytes : 0);
+    const cpuKvCtx = cpuL.reduce((a, i) => a + kvAt(i, ctx), 0);
+    const dramNeed = (cpuW + cpuKvCtx + q.embd_bytes) / GiB, dramCap = v(box.dram.usable_gib);
+    const fits = dramNeed > dramCap ? 'no' : 'yes';
+    const qt = quantType(data, q.label), kap = qt ? kappaOf(data, bk, qt) : null, cal = (data.cal && data.cal.boxes[bk]) || {};
+    const f = v(cal.f !== undefined ? cal.f : box.cpu.f_default), Bd = v(box.dram.bw) * 1e9;
+    const cpuRate = kap ? Math.min(Bd, Bd * kap * f) : null;
+    const perCard = cards.map((c, j) => ({ card: bk + ' ' + c.id, backend: c.backend, layers: on.filter(x => x === j).length, output: outOn === j,
+      gib: (on.reduce((a, x, i) => a + (x === j ? q.layer_bytes[i] + kvAt(i, ctx) : 0), 0) + (outOn === j ? q.output_bytes : 0)) / GiB,
+      free_gib: caps[j] / GiB, reserved_gib: c.reserved, margin_gib: c.margin })).filter(x => x.layers || x.output);
+    // the services this plan stops: residents freed on a card that holds part of the model (a freed card left empty displaces nothing)
+    const displaces = [].concat(...cards.map((c, j) => on.includes(j) || outOn === j ? c.displaced.map(d => Object.assign({ card: bk + ' ' + c.id }, d)) : []));
+    const out = { box: bk, quant: q.label, engine: q.engine, fits, layers_gpu: Lyr - cpuL.length, layers_cpu: cpuL.length, output_on: outOn >= 0 ? 'gpu' : 'cpu',
+      cards: perCard, displaces, cpu_gib: (cpuW + cpuKvCtx) / GiB, dram_need_gib: dramNeed, dram_usable_gib: dramCap, ctx, kv_type: spec.kv_type || 'f16', decode: [], terms, why: null, status: 'PREDICTED' };
+    const un = why => Object.assign(out, { status: 'UNMODELLED', why, decode_tps: null });
+    if (fits === 'no') return un('does not fit: ' + dramNeed.toFixed(1) + ' GiB on the CPU side > ' + dramCap.toFixed(0) + ' GiB usable DRAM');
+    if (q.gpu_only && cpuL.length) out.fits = 'no';
+    if (q.gpu_only && cpuL.length) return un(q.engine + ' keeps every weight in VRAM: ' + cpuL.length + ' of ' + Lyr + ' layers do not fit the cards');
+    if (q.engine === 'vllm' && cards.some((c, j) => on.includes(j) && c.vendor === 'intel'))
+      return un('vLLM XPU: ' + (data.engines.vllm && data.engines.vllm.unmodelled_why || 'no rate model'));
+    const cpuSide = cpuW > 0;
+    if (cpuSide && cpuRate === null) return un('quant ' + q.label + ' has no CPU kernel efficiency on ' + bk);
+    cards.forEach((c, j) => { if (on.includes(j) || outOn === j) terms.push(T('GPU decode reach x nameplate GB/s (' + bk + ' ' + c.id + ', ' + c.backend + ' line)', { v: c.rate / 1e9, tag: c.line.eta.tag, src: 'bench.gpu.' + c.backend + ' eta ' + v(c.line.eta) + ' x ' + v(data.boxes[bk].gpus.find(g => g.id === c.id).bw) + ' GB/s nameplate; ' + c.line.eta.src })); });
+    if (cpuSide) terms.push(T('DRAM read GB/s (' + bk + ')', box.dram.bw), T('CPU kernel efficiency ' + qt, kappaSrc(data, bk, qt)), T('CPU box factor f (' + bk + ')', cal.f !== undefined ? cal.f : box.cpu.f_default));
+    if (perCard.length && cpuSide) terms.push(T('GPU/CPU overlap', data.engines.llamacpp.overlap));
+    const hb = data.external.host_borrow.v.cpu, gl = cards.find((c, j) => on.includes(j));
+    const host = gl ? gl.line.host_ms : hostSrc(data, data.assume.host_ref_box, hb[0], hb[1]);
+    terms.push(T('host overhead ms/token (' + (gl ? gl.backend + ' line' : 'borrowed, ' + hb.join('|')) + ')', host));
+    if (q.engine !== 'llamacpp') terms.push(T(q.engine + ' decode rate', { v: null, tag: 'ESTIMATE', src: 'ESTIMATE: the llama.cpp bench line stands in for ' + q.engine + ' (the planner has no ' + q.engine + ' rate model: ' + ((data.engines[q.engine] || {}).unmodelled_why || '') + ')' }));
+    // per card: each layer's weights at their types' kernel rates, its KV at the card's read rate, its kind's cost (denseCal);
+    // o.uncal = the plain line (every byte at the line rate, KV at kvEff, no layer cost)
+    const DC = o.uncal ? null : denseCal(data), lns = cards.map(c => denseCardLine(data, bk + '/' + c.id)), kinds = spec.kv_layers.map(denseKindOf);
+    const used = new Map(), err = { why: [] }, use = (name, x) => used.set(name, x);
+    const cardKv = j => o.kvReadEff || !DC ? { v: kvEff } : denseKvTerm(DC, lns[j]) || { v: 1 };
+    const layerMs = (j, i) => {
+      if (!DC || !lns[j]) return 0;
+      const lt = denseLayerTerm(DC, lns[j], kinds[i]);
+      if (lt) use('ms a ' + kinds[i] + ' layer adds (' + bk + ' ' + cards[j].id + ')', lt);
+      return lt ? v(lt.v) : 0;
+    };
+    const typesMs = (j, types, bytes) => {
+      if (!DC || !lns[j] || !types) return bytes / cards[j].rate * 1000;
+      Object.keys(types).forEach(t => {
+        const f = denseTypeFactor(DC, lns[j], t.toUpperCase());
+        if (f) use(f.per === 'weight' ? 'ms per G weights of ' + f.id + ' (' + bk + ' ' + cards[j].id + ')' : t.toUpperCase() + ' kernel rate / line (' + bk + ' ' + cards[j].id + ')', { v: f.per === 'weight' ? f.ms : f.eff, tag: f.tag, src: f.src });
+      });
+      return denseTypesMs(DC, lns[j], types);
+    };
+    // the fixed part of a step per card (weights + layer cost) does not change with depth
+    const fixedMs = cards.map((c, j) => on.reduce((a, x, i) => a + (x === j ? typesMs(j, q.layer_types && q.layer_types[i], q.layer_bytes[i]) + layerMs(j, i) : 0), 0) +
+      (outOn === j ? typesMs(j, q.output_types, q.output_bytes) : 0));
+    cards.forEach((c, j) => {
+      if (!on.includes(j) && outOn !== j) return;
+      const kt = cardKv(j);
+      if (!o.kvReadEff) terms.push(T('KV read rate / weight read rate (' + bk + ' ' + c.id + ')', { v: v(kt.v), tag: kt.tag || 'ESTIMATE', src: kt.src || 'ESTIMATE: KV read at the weight-read rate' }));
+    });
+    if (o.kvReadEff) terms.push(T('KV read rate / weight read rate', { v: kvEff, tag: 'READ', src: 'a setting' }));
+    used.forEach((u, name) => terms.push(T(name, { v: u.v !== undefined ? u.v : null, tag: u.tag, src: u.src })));
+    displaces.forEach(d => terms.push(T('resident service displaced (' + d.card + ')', { v: d.gib, tag: 'READ', src: d.what + ' stops for this plan: ' + d.src })));
+    if (q.engine === 'llamacpp' && cards.length) { const m = cards[0].marginTerm; if (m) terms.push(T('VRAM llama.cpp keeps free per card (' + (kn.ngl !== undefined || kn.fit === 'off' ? '-ngl pinned' : '--fit on') + ')', { v: cards[0].margin, tag: m.tag, src: m.src })); }
+    const step = d => {
+      let t = v(host) / 1000;
+      cards.forEach((c, j) => {
+        if (!on.includes(j) && outOn !== j) return;
+        const ke = v(cardKv(j).v);
+        t += fixedMs[j] / 1000 + on.reduce((a, x, i) => a + (x === j ? kvAt(i, d) : 0), 0) / (c.rate * ke);
+      });
+      if (cpuSide) t += (cpuW + cpuL.reduce((a, i) => a + kvAt(i, d) / kvEff, 0)) / cpuRate;
+      return t;
+    };
+    // the stated error: the largest holdout miss on the cards' backends (denseCal), widened toward slower for each term no
+    // measurement covers and toward faster for a borrowed kernel rate (dense-cal.json error)
+    if (DC) {
+      const E = DC.error, pct = k => v(E[k]) / 100, be = [...new Set(cards.filter((c, j) => on.includes(j) || outOn === j).map(c => c.backend))];
+      const base = Math.max(pct('floor_pct'), ...be.map(b => DC.base_err[b] || 0));
+      let minus = base;
+      const kb = new Set();
+      cards.forEach((c, j) => {
+        if (!lns[j] || !(on.includes(j) || outOn === j)) return;
+        on.forEach((x, i) => { if (x === j && q.layer_types) Object.keys(q.layer_types[i]).forEach(t => { const T_ = t.toUpperCase(), f = DC.kernel_bound.test(T_) ? denseTypeFactor(DC, lns[j], T_) : true; if (!f || f !== true && !['MEASURED', 'FIT'].includes(f.tag)) kb.add(T_ + (f ? ' (borrowed rate)' : '') + ' on ' + bk + ' ' + c.id); }); });
+      });
+      if (kb.size) { minus += pct('unmeasured_kernel_pct'); err.why.push('no measured kernel rate: ' + [...kb].join(', ') + ' (-' + v(E.unmeasured_kernel_pct) + ' %)'); }
+      const nh = be.filter(b => DC.base_err[b] === undefined);
+      if (nh.length) { minus += pct('no_holdout_pct'); err.why.push('no holdout point on ' + nh.join(', ') + ' (-' + v(E.no_holdout_pct) + ' %)'); }
+      const lk = new Set();
+      cards.forEach((c, j) => { if (lns[j]) on.forEach((x, i) => { if (x === j && kinds[i] !== 'full') { const lt = denseLayerTerm(DC, lns[j], kinds[i]); if (!lt || lt.tag !== 'FIT' && !(lt.measured_on || []).includes(bk + '/' + c.id)) lk.add(kinds[i] + ' layers on ' + bk + ' ' + c.id); } }); });
+      if (lk.size) { minus += pct('unmeasured_layer_pct'); err.why.push('no fitted cost: ' + [...lk].join(', ') + ' (-' + v(E.unmeasured_layer_pct) + ' %)'); }
+      if (Lyr > v(E.deep_layers)) { minus += pct('deep_model_pct'); err.why.push(Lyr + ' layers, the lines saw at most ' + v(E.deep_layers) + ' (-' + v(E.deep_model_pct) + ' %)'); }
+      if (cpuSide) { minus += pct('cpu_spill_pct'); err.why.push((cpuL.length ? cpuL.length + ' layers' : '') + (cpuL.length && outOn < 0 ? ' and ' : '') + (outOn < 0 ? 'the output head' : '') + ' on the CPU (-' + v(E.cpu_spill_pct) + ' %)'); }
+      // a borrowed rate can be wrong both ways: the faster side re-times every borrowed byte at the fastest kernel-bound rate
+      // measured on its card (dense-cal.json error.borrowed_kernel_plus)
+      let tb = 0, tbHi = 0;
+      const hiOf = new Set();
+      cards.forEach((c, j) => {
+        if (!lns[j] || !(on.includes(j) || outOn === j)) return;
+        const hi = denseFastestKernel(DC, lns[j]);
+        const add = types => Object.keys(types || {}).forEach(t => {
+          const T_ = t.toUpperCase(), f = DC.kernel_bound.test(T_) ? denseTypeFactor(DC, lns[j], T_) : null;
+          if (!f || f.per !== 'byte' || ['MEASURED', 'FIT'].includes(f.tag) || !hi || hi.eff <= f.eff) return;
+          tb += types[t] / (lns[j].rate * f.eff); tbHi += types[t] / (lns[j].rate * hi.eff); hiOf.add(hi.type + ' on ' + bk + ' ' + c.id);
+        });
+        on.forEach((x, i) => { if (x === j && q.layer_types) add(q.layer_types[i]); });
+        if (outOn === j) add(q.output_types);
+      });
+      let plus = base;
+      if (tb > 0) {
+        const s = step(ctx / 2), up = s / (s - (tb - tbHi)) - 1;
+        plus += up;
+        err.why.push('borrowed rate: at the fastest measured kernel-bound rate (' + [...hiOf].join(', ') + ') the borrowed bytes decode ' + (100 * up).toFixed(0) + ' % faster (+' + (100 * up).toFixed(0) + ' %)');
+      }
+      err.why.unshift('holdout miss ' + (be.filter(b => DC.base_err[b] !== undefined).map(b => b + ' ' + (100 * DC.base_err[b]).toFixed(0) + ' %').join(', ') || 'none') + ' (floor ' + v(E.floor_pct) + ' %)');
+      out.error = { minus_pct: Math.round(100 * Math.min(minus, 0.9)), plus_pct: Math.round(100 * plus), why: err.why };
+    }
+    out.decode = (spec.depths || [0, Math.round(ctx / 2), ctx]).map(d => ({ depth: d, tps: 1 / step(d), kv_read_gb: spec.kv_layers.reduce((a, _, i) => a + kvAt(i, d), 0) / 1e9 }));
+    out.decode_tps = 1 / step(ctx / 2);   // tokens / time of one decode that fills 0..ctx (step time is linear in depth)
+    out.read_gb = { gpu: perCard.reduce((a, c) => a + c.gib, 0) * GiB / 1e9, cpu: (cpuW + cpuKvCtx) / 1e9 };
+    out.evidence = rollup('decode', out.decode_tps, 'tok/s', terms);
+    return out;
+  }
+  function predictDenseAll(data, spec, opts) {
+    const rows = [];
+    spec.quants.forEach(q => Object.keys(data.boxes).forEach(bk => rows.push(predictDense(data, spec, bk, q, opts))));
+    return rows;
+  }
   // per hardware class (and placement): median |error| and bias of our physics over the predicted external rows
   function externalSummary(data) {
     if (data._ext) return data._ext;
@@ -3697,7 +4003,9 @@
   // A coding agent's turn reads its fresh prompt tokens, then decodes its answer. With F fresh prompt tokens per output token,
   // a prefill rate P and a decode capacity D (total tok/s of the agents decoding together), useful output is at most
   // min(D, P / F); an engine whose reads stop every decoding slot (workload.engines.<engine>.reads_stall_decode) runs the two
-  // in turn: 1 / (F / P + 1 / D). The smaller of D and P / F binds. A synthetic short-prompt run measures D only
+  // in turn: 1 / (F / P + 1 / D). The smaller of D and P / F binds. A synthetic short-prompt run measures D only. This is the
+  // server-bound limit of agentTurns below: it leaves out the tool gaps, so it reads high where the agents, not the server, bind
+  // (one agent: 33 % high on the R8 run of 2026-10-26)
   function agentThroughput(t) {
     const { decode, prefill, fresh, stall } = t;
     const cap = prefill && fresh > 0 ? prefill / fresh : prefill ? Infinity : null;
@@ -3712,6 +4020,120 @@
   function agentEvidence(data, q) {
     const rows = ((data.workload || {}).measured || []).filter(x => x.box === q.box && x.model === q.model && x.engine === q.engine), k = buildKey(data, q.build);
     return { key: k, same: rows.filter(x => x.build_key === k), other: rows.filter(x => x.build_key !== k) };
+  }
+  // ---------- per-turn agent model (data.workload.turn_model) ----------
+  // Turns per agent-minute is the primary output; useful tok/s = turns x each model's output a turn, which differs by model
+  // (GLM wrote 76 tokens a turn where Flash-Next wrote 182 on the same prompts). Closed form on means: one agent alone cycles
+  // in out / D1 + fresh / P + gap; the server spends out / Dn + fresh / P a turn (reads stall decode; else the larger of the
+  // two); turns/s = min(n / cycle, 1 / server). Many agents and stall: useful = agentThroughput's serial term
+  function agentTurns(t) {
+    const { n, out, fresh, gap, decode_1, decode_n, prefill, stall } = t;
+    const dec = out / decode_1, pre = fresh / prefill, cycle = dec + pre + gap;
+    const server = stall ? out / decode_n + pre : Math.max(out / decode_n, pre), agents = n / cycle, rate = Math.min(agents, 1 / server);
+    return { turns_per_s: rate, turns_per_agent_min: 60 * rate / n, useful_tps: rate * out, binding: agents < 1 / server ? 'agents' : 'server', cycle_s: cycle, server_s: server,
+      share: { decode: dec / cycle, prefill: pre / cycle, gap: gap / cycle } };
+  }
+  // the row of a {agent count: tagged value} table at n, else at the nearest measured count (ties to the smaller); hold = the run
+  // ids whose rows are skipped (a held-out score)
+  const fromRun = (x, runs) => (x.runs || []).some(r => runs.includes(r));
+  function byAgents(tbl, n, hold) {
+    const ks = Object.keys(tbl || {}).map(Number).filter(k => !hold || !fromRun(tbl[k], hold)).sort((a, b) => Math.abs(a - n) - Math.abs(b - n) || a - b);
+    return ks.length ? { row: tbl[ks[0]], at: ks[0] } : null;
+  }
+  // the inputs of one replay prediction: q = {trace, n, model, server, decode_1, decode_n, prefill, stall, warmup_s, window_s,
+  // [gap_scale], [stagger_scale]}, the D / P / stall inputs tagged (an input may carry held_out: the value to use when its own
+  // value came from the scored run). mode 'all' uses every input; 'held_out' skips the rows measured on the scored run and
+  // falls back: output lengths to the recording's own, a relative tokenizer ratio to its base, a server's re-read to UNKNOWN (0
+  // assumed, so the prediction is an upper bound). Every input used is listed with its tag; in_sample names those that came from
+  // the scored run
+  function turnInputs(data, q, run, mode) {
+    const TM = (data.workload || {}).turn_model, runs = [].concat(run), hold = mode === 'held_out' ? runs : null, used = [], inS = [];
+    const un = why => ({ status: 'UNMODELLED', why });
+    if (!TM) return un('no data.workload.turn_model');
+    const tr = TM.traces[q.trace], M = TM.models[q.model], S = TM.servers[q.server];
+    if (!tr) return un('trace ' + q.trace + ' has no per-turn shape (data/trace-turns.json; tools/trace_turns.py)');
+    if (!M) return un('model ' + q.model + ' has no turn_model.models row (tokenizer, output per turn)');
+    if (!S) return un('server ' + q.server + ' has no turn_model.servers row (prefix re-read per turn)');
+    const note = (name, x, basis) => { used.push({ name, v: v(x), tag: x.tag, src: x.src, runs: x.runs || [], basis: basis || null }); if (fromRun(x, runs)) inS.push(name); return v(x); };
+    const tagged = (name, x) => { if (!x) throw new Error('turn query ' + run + ': input ' + name + ' missing'); return note(name, mode === 'held_out' && x.held_out && fromRun(x, runs) ? x.held_out : x); };
+    const tok = TM.tokenizers[M.tokenizer], base = tok && (tok.relative_to ? TM.tokenizers[tok.relative_to] : tok);
+    if (!tok || !base || !Array.isArray(v(base.per_agent)) || v(base.per_agent).length < v(tr).length)
+      return un('model tokenizer has no complete per-agent ratio for the selected trace');
+    const per = note('tokenizer ratio per recorded agent (' + (tok.relative_to || M.tokenizer) + ')', base.per_agent);
+    const rel = !tok.relative_to ? 1 : hold && fromRun(tok.ratio, hold)
+      ? note(M.tokenizer + ' tokenizer over ' + tok.relative_to, { v: 1, tag: 'INFERRED', src: 'INFERRED: held out (the ratio was measured on the scored run): assumed the same as ' + tok.relative_to }, 'fallback')
+      : note(M.tokenizer + ' tokenizer over ' + tok.relative_to, tok.ratio);
+    const o = byAgents(M.out_vs_recorded, q.n, hold);
+    // q.out_ratio / q.reread_per_turn (tagged): a scenario's own value replaces the model's and the server's table rows
+    const outR = q.out_ratio ? note('output a turn / recorded (the query\'s own)', q.out_ratio) : o ? note('output a turn / recorded (' + q.model + ' at ' + o.at + ' agents)', o.row, 'replay')
+      : note('output a turn / recorded', { v: 1, tag: 'READ', src: 'the recording\'s own output lengths: no ' + (hold ? 'held-out ' : '') + 'measured replay of ' + q.model }, 'recording');
+    const r = byAgents(S.reread_per_turn, q.n, hold);
+    const reread = q.fresh_per_output !== undefined ? 0 : q.reread_per_turn ? note('re-read tokens a turn (the query\'s own)', q.reread_per_turn) : r ? note('re-read tokens a turn (' + q.server + ' at ' + r.at + ' agents)', r.row)
+      : note('re-read tokens a turn', { v: 0, tag: 'UNKNOWN', src: 'UNKNOWN: no ' + (hold ? 'held-out ' : '') + 'measured prefix reuse of ' + q.server + '; 0 assumed, so turns and output are upper bounds' }, 'unknown');
+    const set = (name, x, dflt) => x !== undefined ? note(name, typeof x === 'object' ? x : { v: x, tag: 'READ', src: 'the replay\'s own argument' }) : note(name, dflt);
+    return { status: 'OK', run, mode, n: q.n, trace: v(tr), tok: per.map(x => x * rel), out_ratio: outR, reread, bound: r || q.fresh_per_output !== undefined ? null : 'upper',
+      D1: tagged('decode one stream (D1)', q.decode_1), Dn: tagged('decode capacity at ' + q.n + ' agents (Dn)', q.decode_n), P: tagged('prefill (P)', q.prefill),
+      stall: !!tagged('reads stall decode', q.stall), gap_scale: set('gap scale', q.gap_scale, TM.settings.gap_scale), stagger: set('stagger scale', q.stagger_scale, TM.settings.stagger_scale),
+      overhead: note('client overhead a turn (s)', TM.settings.client_overhead_s),
+      fresh_override: q.fresh_per_output === undefined ? null : tagged('fresh prompt tokens per output token (replaces trace growth and server re-read)', q.fresh_per_output),
+      warmup_s: q.warmup_s, window_s: q.window_s, used, in_sample: inS };
+  }
+  // A replay of the trace by n agents, as agent-replay.py runs it: agent i loops recorded agent i mod A, starting at its recorded
+  // offset x stagger, each turn followed by its recorded gap x gap_scale + the client overhead. A turn alone takes s = out / D1 +
+  // fresh / P and costs the server w = out / Dn + fresh / P (stall; else the larger); while the running turns ask more than one
+  // server-second a second (sum of w / s), all of them slow by the same factor. Counted like the replay: turns sent after the
+  // warm-up and done by the window's end; time shares are the solo decode / prefill / gap seconds of those turns
+  function agentReplaySim(I) {
+    const A = I.trace, T1 = I.warmup_s + I.window_s, ag = [];
+    for (let i = 0; i < I.n; i++) { const a = A[i % A.length]; ag.push({ a, tok: I.tok[i % A.length], k: 0, ready: a.start_s * I.stagger, run: null }); }
+    let t = 0, turns = 0, out = 0, fresh = 0, dec = 0, pre = 0, gap = 0, guard = 0;
+    const start = g => { const [gp, ro, rf] = g.a.turns[g.k], o = ro * I.out_ratio, f = I.fresh_override === null || I.fresh_override === undefined ? rf * g.tok + I.reread : o * I.fresh_override, a = o / I.D1, b = f / I.P;
+      g.run = { sent: t, o, f, a, b, s: Math.max(a + b, 1e-9), w: I.stall ? o / I.Dn + b : Math.max(o / I.Dn, b), p: 0, gap: gp * I.gap_scale + I.overhead }; };
+    while (t < T1 - 1e-9) {
+      if (++guard > 1e7) throw new Error('agentReplaySim: no progress at t ' + t);
+      ag.forEach(g => { if (!g.run && g.ready <= t + 1e-9) start(g); });
+      const act = ag.filter(g => g.run), load = act.reduce((x, g) => x + g.run.w / g.run.s, 0), f = load > 1 ? 1 / load : 1;
+      let dt = T1 - t;
+      act.forEach(g => { dt = Math.min(dt, (1 - g.run.p) * g.run.s / f); });
+      ag.forEach(g => { if (!g.run) dt = Math.min(dt, g.ready - t); });
+      t += dt;
+      act.forEach(g => {
+        g.run.p += dt * f / g.run.s;
+        if (g.run.p < 1 - 1e-9) return;
+        const x = g.run;
+        if (x.sent >= I.warmup_s) { turns++; out += x.o; fresh += x.f; dec += x.a; pre += x.b; gap += x.gap; }
+        g.ready = t + x.gap; g.run = null; g.k = (g.k + 1) % g.a.turns.length;
+      });
+    }
+    const all = dec + pre + gap;
+    return { turns, out_tokens: out, fresh_tokens: fresh, turns_per_agent_min: turns / (I.n * I.window_s / 60), useful_tps: out / I.window_s,
+      out_per_turn: turns ? out / turns : null, fresh_per_output: out ? fresh / out : null, share: all ? { decode: dec / all, prefill: pre / all, gap: gap / all } : null };
+  }
+  // one replay prediction: the inputs (turnInputs) and the simulated replay (agentReplaySim)
+  function agentTurnPredict(data, q, run, mode) {
+    const positive = ['decode_1', 'decode_n', 'prefill'].every(k => Number.isFinite(v(q[k])) && v(q[k]) > 0);
+    const nonnegative = ['gap_scale', 'stagger_scale', 'fresh_per_output'].every(k => q[k] === undefined || Number.isFinite(v(q[k])) && v(q[k]) >= 0);
+    if (!Number.isInteger(q.n) || q.n < 1 || !positive || !nonnegative || !Number.isFinite(q.warmup_s) || q.warmup_s < 0 || !Number.isFinite(q.window_s) || q.window_s <= 0)
+      return { status: 'UNMODELLED', why: 'turn model needs positive D1, Dn, P and window seconds, an integer agent count, and nonnegative warm-up, gap, stagger and fresh settings' };
+    const I = turnInputs(data, q, run, mode || 'all');
+    if (I.status !== 'OK') return I;
+    const sim = agentReplaySim(I);
+    return Object.assign({ status: 'MODEL', mode: I.mode, bound: I.bound, in_sample: I.in_sample, inputs: I.used }, sim);
+  }
+  // the prediction files' re-scores (data.workload.turn_rescore, build.py from each file's rescore_turn_model block): the file's
+  // own before numbers, today's model with every input (after) and with the scored run held out (held_out), against the
+  // measured numbers; err = (pred - meas) / meas
+  function agentTurnRescore(data) {
+    const err = (p, m) => p === null || p === undefined || !m ? null : p / m - 1;
+    return ((data.workload || {}).turn_rescore || []).map(e => {
+      const meas = { turns: e.measured.turns_per_agent_min ? v(e.measured.turns_per_agent_min) : null, useful: e.measured.useful_tps ? v(e.measured.useful_tps) : null };
+      const bef = { turns: e.before.turns_per_agent_min ? v(e.before.turns_per_agent_min) : null, useful: e.before.useful_tps ? v(e.before.useful_tps) : null };
+      const row = (p, s) => p.status !== 'MODEL' ? { status: p.status, why: p.why } : { status: p.status, turns: p.turns_per_agent_min, useful: p.useful_tps, bound: p.bound, in_sample: p.in_sample,
+        share: p.share, out_per_turn: p.out_per_turn, err_turns: err(p.turns_per_agent_min, meas.turns), err_useful: err(p.useful_tps, meas.useful), stored: s || null };
+      const st = e.after_at_commit || {};
+      return { id: e.id, file: e.file, run: e.run, label: e.label || e.id, n: e.query.n, measured: meas, before: Object.assign(bef, { err_turns: err(bef.turns, meas.turns), err_useful: err(bef.useful, meas.useful), src: e.before.src || null }),
+        after: row(agentTurnPredict(data, e.query, e.run, 'all'), st.all), held_out: row(agentTurnPredict(data, e.query, e.run, 'held_out'), st.held_out) };
+    });
   }
   // ---------- prefill from first principles (data.workload.prefill_pass) ----------
   // A read of T fresh tokens runs in chunks of C; each chunk is one pass over the experts of every stage (one card each): the
@@ -3781,9 +4203,36 @@
     if (!p) throw new Error('workload profile ' + name + ' is not in data.workload.profiles (' + Object.keys(W.profiles).join(', ') + ')');
     return { name, p, fresh: o.fresh !== undefined ? { v: o.fresh, tag: 'READ', src: 'a setting (report.js --fresh)' } : p.fresh_per_output };
   }
-  // per curve config: D from the fitted curve (FIT; a measured point where no fit), P from the newest real-agent row of the same
-  // build (MEASURED; opts.prefill overrides), F from the profile; one row per agent count with the binding term, the window-row
-  // check at that count and the real-agent rows measured there
+  // Adapt a curve to the existing replay model. A unique engine match selects a server prior, not measured cache behavior
+  // of this build. No match, an ambiguous match, or an engine mismatch stays UNMODELLED.
+  function planTurns(data, c, o, pr, n, D, Dtag, P, st, fit) {
+    const TM = (data.workload || {}).turn_model, un = why => ({ status: 'UNMODELLED', why });
+    if (!TM) return un('no data.workload.turn_model');
+    if (pr.p.decode_capacity_only) return un('synthetic-short measures decode capacity only, not agent turns');
+    const trace = o.trace || v(pr.p.turn_trace), candidates = Object.keys(TM.servers).filter(k => TM.servers[k].engine === c.engine);
+    const server = o.server || c.turn_server || (candidates.length === 1 ? candidates[0] : null);
+    if (!trace) return un('profile has no per-turn trace. Set --trace NAME');
+    if (!server || !TM.servers[server]) return un('no unambiguous server prefix re-read prior. Set --server NAME');
+    if (TM.servers[server].engine !== c.engine) return un('server prefix re-read prior ' + server + ' belongs to another engine');
+    if (!st) return un('engine has no reads_stall_decode rule');
+    const solo = c.points.filter(p => p.n === 1).slice(-1)[0];
+    const D1 = o.decode_one !== undefined ? { v: o.decode_one, tag: 'READ', src: 'a setting (--decode-one, decode tok/s)' }
+      : solo ? solo.tps : fit.ok ? { v: fit.at(1), tag: 'FIT', src: 'solo decode from the synthetic curve at n=1. This can extrapolate below measured counts' } : null;
+    const q = { trace, server, model: c.model, n, decode_1: D1,
+      decode_n: n === 1 ? D1 : { v: D, tag: Dtag, src: 'synthetic decode capacity at n=' + n + ' of curve ' + c.id }, prefill: P, stall: st,
+      warmup_s: o.warmup_s !== undefined ? o.warmup_s : v(TM.settings.plan_warmup_s),
+      window_s: o.window_s !== undefined ? o.window_s : v(TM.settings.plan_window_s) };
+    ['gap_scale', 'stagger_scale'].forEach(k => { if (o[k] !== undefined) q[k] = { v: o[k], tag: 'READ', src: 'a plan setting (--' + k.replace('_', '-') + ')' }; });
+    if (o.fresh !== undefined) q.fresh_per_output = pr.fresh;
+    const p = agentTurnPredict(data, q, [], 'all');
+    return Object.assign(p, { trace, server, warmup_s: q.warmup_s, window_s: q.window_s, query: q,
+      server_basis: o.server || c.turn_server ? 'setting' : 'unique engine prior (assumed, not build-verified)',
+      answer_length: 'measured or inferred model replay ratio, else recorded lengths. Not predicted',
+      prefix_reread: o.fresh !== undefined ? 'replaced by --fresh' : 'server prior, not predicted',
+      calibration: 'POST-HOC inputs. This plan is not a held-out accuracy test' });
+  }
+  // Per curve: primary output is simulated turns per agent-minute. The old fluid fields remain compatible aliases of
+  // legacy_server, a server-bound diagnostic that omits tool gaps. Real rows below still check that legacy diagnostic.
   function agentPlan(data, c, opts) {
     const W = data.workload, o = opts || {}, pr = agentProfile(data, o), F = v(pr.fresh), ev = agentEvidence(data, c);
     const st = W.engines[c.engine] && W.engines[c.engine].reads_stall_decode, stall = st ? !!v(st) : false;
@@ -3799,7 +4248,8 @@
       // each real-agent row at n judged with its own P and F (the arm's own reads), so the miss is the model's, not the workload's
       const real = ev.same.filter(x => x.n === n).map(x => { const w = agentThroughput({ decode: D, prefill: x.prefill_tps ? v(x.prefill_tps) : null, fresh: x.fresh_per_output ? v(x.fresh_per_output) : F, stall }), m = v(x.agent_tps);
         return { run: x.run, label: x.label, tps: m, prefill: x.prefill_tps ? v(x.prefill_tps) : null, fresh: x.fresh_per_output ? v(x.fresh_per_output) : null, own: w, err_expect: w.expect ? w.expect / m - 1 : null, err_ceiling: w.ceiling ? w.ceiling / m - 1 : null, busy: x.prefill_busy_pct ? v(x.prefill_busy_pct) / 100 : null }; });
-      return Object.assign({ n, decode: D, decode_tag: f.ok ? 'FIT' : pt.length ? 'MEASURED' : 'UNKNOWN', extrapolated: f.ok ? n > f.n_max : !pt.length, cpu_pool: cpu, real }, t);
+      const Dtag = f.ok ? 'FIT' : pt.length ? 'MEASURED' : 'UNKNOWN', turn = planTurns(data, c, o, pr, n, D, Dtag, P, st, f);
+      return Object.assign({ n, decode: D, decode_tag: Dtag, extrapolated: f.ok ? n > f.n_max : !pt.length, cpu_pool: cpu, real, turn, legacy_server: t }, t);
     });
     // each lever carries its own tag when it has one (else the list's); a MEASURED gain whose smallest value is within the
     // replay's run-to-run noise (settings.replay_noise_pct) is marked inside_noise
@@ -3807,11 +4257,61 @@
     const levers = P && lev ? v(lev).map(x => { const tag = x.tag || lev.tag;
       return { id: x.id, lever: x.lever, gain: x.gain, tag, src: x.src || lev.src, prefill_cap: x.gain.map(g => v(P) * g / F),
         inside_noise: tag === 'MEASURED' && noise !== null ? Math.min(...x.gain) - 1 < noise : null }; }) : [];
-    return { cfg: c, profile: pr.name, fresh: pr.fresh, prefill: P, prefill_run: o.prefill !== undefined || !last ? null : last.run, prefill_basis: o.prefill !== undefined ? 'setting' : last ? 'measured' : P ? 'model' : null, stall, evidence: ev, decode_capacity_only: true, fit_ok: f.ok, why: f.ok ? null : f.why, rows, levers, noise_pct: noise === null ? null : 100 * noise };
+    return { cfg: c, profile: pr.name, fresh: pr.fresh, primary: 'turns_per_agent_min', prefill: P, prefill_run: o.prefill !== undefined || !last ? null : last.run, prefill_basis: o.prefill !== undefined ? 'setting' : last ? 'measured' : P ? 'model' : null, stall, evidence: ev, decode_capacity_only: true, fit_ok: f.ok, why: f.ok ? null : f.why, rows, levers, noise_pct: noise === null ? null : 100 * noise };
   }
   // the prefill reference of a build: its real-agent row with the highest agent tok/s (the arm a server of that build would run)
   const agentReference = ev => ev.same.filter(x => x.prefill_tps).reduce((a, x) => !a || v(x.agent_tps) > v(a.agent_tps) ? x : a, null);
   function agentPlans(data, opts) { return data.curves.configs.map(c => agentPlan(data, c, opts)); }
+  // ---------- every weight resident in VRAM, one server per card (recipe.resident_plan) ----------
+  // For a model with no synthetic curve and no real-agent row: decode and prefill come from the card's bandwidth and a
+  // per-layer launch cost fitted on measured decode anchors of the same engine (t = bytes x a + layers x c, a in ms/GB);
+  // n agents split over the instances by conversation affinity, each instance replays its share (agentTurnPredict) with at
+  // most `slots` turns decoding together. Every input is a tagged value of the recipe; the fit is least squares on the anchors
+  function residentTerms(R) {
+    const I = R.inputs, val = k => { if (!I[k]) throw new Error('resident_plan input ' + k + ' missing'); return v(I[k]); };
+    const A = val('decode_anchors'), fit = lsq(A.map(x => [x.read_gb, x.layers]), A.map(x => 1000 / x.tps));
+    const a = fit[0], c = fit[1], s = val('engine_slowdown'), L = val('layers'), E = val('experts'), k = val('experts_used');
+    const kvd = d => val('kv_bytes_per_token') * d / 1e9 * a / val('kv_read_eff');
+    const step = (b, d) => s * ((val('dense_read_gb') + val('experts_all_gb') * (1 - Math.pow(1 - k / E, b))) * a + L * c * (b > 1 ? val('batch_layer_mult') : 1)) + b * kvd(d);
+    const decode = (b, d) => b * 1000 / step(b, d);
+    const tpass = val('file_gb') * a, C = val('chunk');
+    const prefill = (T, d) => T * 1000 / (Math.ceil(T / C) * tpass + T * (s * val('linear_ms_per_token') + val('attn_ms_per_token_per_ctx') * d));
+    return { a_ms_per_gb: a, layer_ms: c, bw_eff_gbs: 1000 / a, decode, prefill, step, tpass_ms: tpass };
+  }
+  // optional lever inputs of a resident_plan (each tagged; absent = the stock server): stall (false = a prompt read never
+  // delays the other slots' decode: disaggregated or non-blocking prefill), decode_mult (x decode, e.g. a draft model's
+  // accepted tokens a verify step over the verify cost), out_ratio and reread_per_turn (replace the turn model's model and
+  // server rows), gap_scale (x the recorded tool gaps)
+  const RESIDENT_LEVERS = ['stall', 'decode_mult', 'out_ratio', 'reread_per_turn', 'gap_scale'];
+  function residentAgentPlan(data, recipe, ns) {
+    const R = recipe.resident_plan, I = R.inputs, T = residentTerms(R);
+    ['depth_tokens', 'slots', 'instances', 'read_tokens', 'warmup_s', 'window_s'].forEach(k => { if (!I[k]) throw new Error('resident_plan input ' + k + ' missing'); });
+    const d = v(I.depth_tokens), slots = v(I.slots), cards = v(I.instances);
+    const P = { v: T.prefill(v(I.read_tokens), d), tag: 'MODEL', src: 'residentTerms prefill at ' + v(I.read_tokens) + ' fresh tokens a read, depth ' + d };
+    const rows = ns.map(n => {
+      const per = Array.from({ length: cards }, (_, i) => Math.floor(n / cards) + (i < n % cards ? 1 : 0)).filter(x => x > 0);
+      const sims = per.map(nc => {
+        const b = Math.min(nc, slots), dm = I.decode_mult ? v(I.decode_mult) : 1;
+        const q = { trace: R.trace, server: R.server, model: recipe.model, n: nc, warmup_s: v(I.warmup_s), window_s: v(I.window_s), stall: I.stall || { v: true, tag: 'READ', src: R.stall_src },
+          decode_1: { v: dm * T.decode(1, d), tag: 'MODEL', src: 'residentTerms decode, 1 stream at depth ' + d + (dm !== 1 ? ' x decode_mult ' + dm : '') },
+          decode_n: { v: dm * T.decode(b, d), tag: 'MODEL', src: 'residentTerms decode, ' + b + ' streams (slots ' + slots + ') at depth ' + d + (dm !== 1 ? ' x decode_mult ' + dm : '') }, prefill: P };
+        ['out_ratio', 'reread_per_turn', 'gap_scale'].forEach(k => { if (I[k]) q[k] = I[k]; });
+        const p = agentTurnPredict(data, q, [], 'all');
+        if (p.status !== 'MODEL') return { nc, p };
+        const fresh = p.fresh_tokens / Math.max(p.turns, 1), out = p.out_per_turn, gap = p.share ? p.share.gap / (p.share.decode + p.share.prefill) * (out / q.decode_1.v + fresh / P.v) : 0;
+        const cf = agentTurns({ n: nc, out, fresh, gap, decode_1: q.decode_1.v, decode_n: q.decode_n.v, prefill: P.v, stall: !!v(q.stall) });
+        const binding = cf.binding === 'agents' ? 'agents' : out / q.decode_n.v >= fresh / P.v ? 'decode' : 'prefill';
+        return { nc, p, D1: q.decode_1.v, Dn: q.decode_n.v, binding, server_busy: Math.min(1, cf.turns_per_s * cf.server_s), closed: cf };
+      });
+      const bad = sims.find(x => x.p.status !== 'MODEL');
+      if (bad) return { n, status: 'UNMODELLED', why: bad.p.why };
+      const turns = sims.reduce((x, y) => x + y.p.turns, 0), outT = sims.reduce((x, y) => x + y.p.out_tokens, 0), win = v(I.window_s);
+      return { n, status: 'MODEL', per_instance: per, turns_per_agent_min: turns / (n * win / 60), useful_tps_total: outT / win, useful_tps_per_agent: outT / win / n,
+        decode_per_request: sims[0].D1, decode_card_at_slots: sims.map(x => x.Dn), prefill_tps: P.v, out_per_turn: turns ? outT / turns : null,
+        fresh_per_output: sims[0].p.fresh_per_output, share: sims[0].p.share, binding: sims.map(x => x.binding), server_busy: sims.map(x => x.server_busy), bound: sims[0].p.bound, inputs: sims[0].p.inputs };
+    });
+    return { terms: { bw_eff_gbs: T.bw_eff_gbs, layer_ms: T.layer_ms, tpass_ms: T.tpass_ms }, prefill: P, rows };
+  }
   // a many-agent recipe (agents >= many_agents_min) must rest on a real-agent row of its own build: without one its numbers are
   // decode capacity from a synthetic short-prompt load, flagged (UNKNOWN; --strict holds it). With one: the binding term at its
   // agent count from the newest such row's P and the profile's F (D from the same build's curve when one fits)
@@ -3934,6 +4434,6 @@
   }
   function replayChecks(data) { return ((data.workload || {}).measured || []).map(x => ({ run: x.run, n: x.n, label: x.label, checks: [replayArtifactCheck(data, x), steadyStateCheck(data, x)] })); }
 
-  const api = { prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
+  const api = { RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

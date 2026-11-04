@@ -339,10 +339,229 @@ if (!W.measured.length) skip('the ledger\'s real-agent rows under the replay che
 else test('the ledger\'s real-agent rows: each is judged by both replay checks; a row over K x its trace-ideal ratio is FLAGGED', () => {
   FM.replayChecks(data).forEach(x => {
     const [a, s] = x.checks, row = W.measured.find(y => y.run === x.run && y.n === x.n);
-    assert.strictEqual(a.status, a.fresh / a.ref.v > K ? 'FLAG' : 'PASS', x.run);
+    // a row whose server reports no prompt tokens (the snoopy GLM seat) has no F: UNKNOWN, never a PASS on a missing number
+    assert.strictEqual(a.status, a.fresh === null ? 'UNKNOWN' : a.fresh / a.ref.v > K ? 'FLAG' : 'PASS', x.run);
     assert(['PASS', 'NOTE', 'FLAG'].includes(s.status), x.run);
     if (row.trace && traces.includes(row.trace)) assert.strictEqual(a.ref.basis, 'trace-ideal', x.run);
   });
+});
+
+// ---------- per-turn agent model (turn_model, agentTurns, agentReplaySim, agentTurnRescore) ----------
+test('agentTurns: one agent cycles in out / D1 + fresh / P + gap; many stalled agents reduce to agentThroughput serial', () => {
+  const one = FM.agentTurns({ n: 1, out: 300, fresh: 2000, gap: 2, decode_1: 60, decode_n: 60, prefill: 1000, stall: true });
+  near(one.cycle_s, 300 / 60 + 2 + 2);
+  near(one.turns_per_agent_min, 60 / 9);
+  near(one.useful_tps, 300 / 9);
+  assert.strictEqual(one.binding, 'agents');
+  const many = FM.agentTurns({ n: 64, out: 300, fresh: 2000, gap: 2, decode_1: 60, decode_n: 150, prefill: 1000, stall: true });
+  assert.strictEqual(many.binding, 'server');
+  near(many.useful_tps, FM.agentThroughput({ decode: 150, prefill: 1000, fresh: 2000 / 300, stall: true }).serial, 1e-9);
+});
+
+// a synthetic trace: [gap_s, out, fresh] per turn
+const simIn = o => Object.assign({ n: 1, trace: [{ start_s: 0, turns: [[1, 100, 1000], [1, 100, 1000]] }], tok: [1], out_ratio: 1, reread: 0, D1: 50, Dn: 50, P: 1000,
+  stall: true, gap_scale: 1, stagger: 0, overhead: 0, warmup_s: 0, window_s: 400 }, o || {});
+test('agentReplaySim: one agent alone matches the closed form; tool gaps and re-reads move it the right way; the warm-up is not counted', () => {
+  const a = FM.agentReplaySim(simIn());
+  // each turn 100 / 50 + 1000 / 1000 = 3 s, then a 1 s gap: 100 turns in 400 s
+  assert.strictEqual(a.turns, 100);
+  near(a.turns_per_agent_min, 15);
+  near(a.useful_tps, 100 * 100 / 400);
+  near(a.share.gap, 0.25, 1e-9);
+  assert(FM.agentReplaySim(simIn({ gap_scale: 0 })).turns > a.turns, 'no tool gaps: more turns');
+  assert(FM.agentReplaySim(simIn({ reread: 1000 })).turns < a.turns, 'more re-read: fewer turns');
+  assert.strictEqual(FM.agentReplaySim(simIn({ warmup_s: 2, window_s: 398 })).turns, 99, 'the turn sent before the warm-up is not counted');
+});
+test('agentReplaySim: many agents saturate at the server bound (1 / w turns a second, less the window edges)', () => {
+  const n = 32, s = FM.agentReplaySim(simIn({ n, trace: Array.from({ length: n }, () => ({ start_s: 0, turns: [[0, 100, 1000]] })), tok: Array(n).fill(1), Dn: 200, window_s: 3000 }));
+  const w = 100 / 200 + 1000 / 1000, bound = 3000 / w;
+  assert(s.turns <= bound + 1e-9 && s.turns > bound - 2 * n, s.turns + ' vs bound ' + bound);
+});
+
+const TR = FM.agentTurnRescore(data);
+test('turn rescore: every entry models (after and held-out), and the numbers stored at commit still hold', () => {
+  assert(TR.length >= 3, 'the prediction files carry rescore blocks');
+  TR.forEach(r => ['after', 'held_out'].forEach(k => {
+    const x = r[k];
+    assert.strictEqual(x.status, 'MODEL', r.id + ' ' + k + ': ' + x.why);
+    assert(x.stored, r.id + ' ' + k + ': after_at_commit missing');
+    near(x.turns, x.stored.turns_per_agent_min, 1e-3 * x.stored.turns_per_agent_min);
+    near(x.useful, x.stored.useful_tps, 1e-3 * x.stored.useful_tps);
+  }));
+});
+test('turn rescore: a held-out score uses no row measured on the scored run except the inputs it names in-sample', () => {
+  const TM = W.turn_model;
+  W.turn_rescore.forEach(e => {
+    const runs = [].concat(e.run), p = FM.agentTurnPredict(data, e.query, e.run, 'held_out'), m = TM.models[e.query.model], S = TM.servers[e.query.server];
+    const onlyHere = t => Object.values(t).every(x => (x.runs || []).some(r => runs.includes(r)));
+    assert.strictEqual(p.bound === 'upper', onlyHere(S.reread_per_turn), e.id + ': an upper bound exactly when no held-out re-read exists');
+    assert.strictEqual(p.inputs.some(i => i.basis === 'recording'), onlyHere(m.out_vs_recorded), e.id + ': output lengths fall back to the recording');
+    const all = FM.agentTurnPredict(data, e.query, e.run, 'all');
+    assert(p.in_sample.every(x => all.in_sample.includes(x)), e.id + ': held-out in-sample inputs are a subset');
+  });
+});
+test('turn rescore: on the 1-agent runs the per-turn model lands within 10 % on turns, where the old formula missed by more', () => {
+  TR.filter(r => r.n === 1).forEach(r => assert(Math.abs(r.after.err_turns) < 0.1 && Math.abs(r.after.err_turns) < Math.abs(r.before.err_useful), r.id + ' after ' + r.after.err_turns));
+});
+test('turn_model: every input carries a tag, a src and an evidence class', () => {
+  const TM = W.turn_model, rows = [TM.settings.gap_scale, TM.settings.stagger_scale, TM.settings.client_overhead_s, TM.tokenizers.qwen.per_agent]
+    .concat(Object.values(TM.tokenizers).filter(t => t.ratio).map(t => t.ratio))
+    .concat(...Object.values(TM.models).map(m => Object.values(m.out_vs_recorded)), ...Object.values(TM.servers).map(s => Object.values(s.reread_per_turn)));
+  rows.forEach(x => assert(x.tag && x.src && x.evidence, JSON.stringify(x).slice(0, 80)));
+  Object.values(TM.traces).forEach(t => assert(t.tag === 'MEASURED' && t.v.length && t.v.every(a => a.turns.every(r => r.length === 3))));
+});
+
+// Consumer qualification uses a deterministic trace, not a fitted accuracy target.
+const planFixture = () => {
+  const d = withReal([realRow({ n: 1, prefill_tps: tag(1000) })]), T = d.workload.turn_model;
+  d.workload.profiles['coding-agent'].turn_trace = tag('unit', 'READ');
+  T.traces.unit = tag([{ start_s: 0, turns: [[1, 100, 1000]] }]);
+  T.tokenizers.qwen.per_agent = tag([1]);
+  T.models.fnx.out_vs_recorded = { 1: tag(1) };
+  T.servers = { unit: { engine: 'strata', reread_per_turn: { 1: tag(0) } } };
+  T.settings.client_overhead_s = tag(0);
+  T.settings.plan_warmup_s = tag(0, 'READ');
+  T.settings.plan_window_s = tag(400, 'READ');
+  T.settings.gap_scale = tag(1, 'READ');
+  T.settings.stagger_scale = tag(0, 'READ');
+  return { d, c: cfg([[1, 50], [16, 200]]), opts: { n: [1] } };
+};
+test('agentPlan primary result is the existing replay primitive with explicit units and compatible legacy diagnostics', () => {
+  const { d, c, opts } = planFixture(), p = FM.agentPlan(d, c, opts), r = p.rows[0], t = r.turn;
+  assert.strictEqual(p.primary, 'turns_per_agent_min');
+  assert.strictEqual(t.status, 'MODEL', t.why);
+  near(t.turns_per_agent_min, 15);
+  near(t.useful_tps, 25);
+  near(t.out_per_turn, 100);
+  const primitive = FM.agentTurnPredict(d, t.query, [], 'all');
+  ['turns', 'turns_per_agent_min', 'useful_tps', 'fresh_tokens'].forEach(k => near(t[k], primitive[k]));
+  near(t.share.gap, 0.25);
+  assert.strictEqual(t.server_basis, 'unique engine prior (assumed, not build-verified)');
+  Object.keys(r.legacy_server).forEach(k => assert.deepStrictEqual(r[k], r.legacy_server[k]));
+  assert(t.inputs.every(x => x.tag && x.src && Array.isArray(x.runs)));
+});
+test('agentPlan responds to tool gaps, server re-read, explicit fresh and seconds overrides', () => {
+  const { d, c, opts } = planFixture(), base = FM.agentPlan(d, c, opts).rows[0].turn;
+  assert(FM.agentPlan(d, c, { ...opts, gap_scale: 0 }).rows[0].turn.turns > base.turns);
+  d.workload.turn_model.servers.unit.reread_per_turn[1] = tag(1000);
+  assert(FM.agentPlan(d, c, opts).rows[0].turn.turns < base.turns);
+  const fresh = FM.agentPlan(d, c, { ...opts, fresh: 0 }).rows[0].turn;
+  near(fresh.fresh_tokens, 0);
+  assert.strictEqual(fresh.prefix_reread, 'replaced by --fresh');
+  const window = FM.agentPlan(d, c, { ...opts, warmup_s: 2, window_s: 398, fresh: 10 }).rows[0].turn;
+  assert.strictEqual(window.turns, 99);
+  assert.strictEqual(window.warmup_s, 2);
+  assert.strictEqual(window.window_s, 398);
+});
+test('agentPlan uses excluded solo decode points for D1 and labels an unmeasured solo curve', () => {
+  const { d, c, opts } = planFixture();
+  c.points[0].used = false;
+  c.points.push({ ...c.points[1], n: 32, tps: tag(250) });
+  const t = FM.agentPlan(d, c, opts).rows[0].turn;
+  assert.strictEqual(t.query.decode_1.v, 50);
+  assert.strictEqual(t.query.decode_1.tag, 'MEASURED');
+  c.points = c.points.filter(p => p.n !== 1);
+  const extrap = FM.agentPlan(d, c, opts).rows[0].turn;
+  assert.strictEqual(extrap.query.decode_1.tag, 'FIT');
+  assert.match(extrap.query.decode_1.src, /extrapolate/);
+  assert.strictEqual(FM.agentPlan(d, c, { ...opts, decode_one: 80 }).rows[0].turn.query.decode_1.v, 80);
+});
+test('agentPlan keeps missing, ambiguous, cross-engine, decode-only and invalid inputs honest', () => {
+  const { d, c, opts } = planFixture();
+  const unknown = o => { const t = FM.agentPlan(d, c, { ...opts, ...o }).rows[0].turn; assert.strictEqual(t.status, 'UNMODELLED', JSON.stringify(t)); assert(t.why); assert.strictEqual(t.useful_tps, undefined); };
+  unknown({ server: 'missing' }); unknown({ trace: 'missing' }); unknown({ prefill: 0 }); unknown({ n: [0] });
+  unknown({ gap_scale: -1 }); unknown({ window_s: 0 }); unknown({ warmup_s: NaN }); unknown({ profile: 'synthetic-short' });
+  d.workload.turn_model.servers.other = { engine: 'strata', reread_per_turn: { 1: tag(9999) } };
+  unknown({});
+  assert.strictEqual(FM.agentPlan(d, c, { ...opts, server: 'unit' }).rows[0].turn.status, 'MODEL');
+  d.workload.turn_model.servers.other.engine = 'another-engine';
+  unknown({ server: 'other' });
+  delete d.workload.turn_model.servers.unit.reread_per_turn[1];
+  const t = FM.agentPlan(d, c, opts).rows[0].turn;
+  assert.strictEqual(t.bound, 'upper');
+  assert(t.inputs.some(x => x.tag === 'UNKNOWN' && x.basis === 'unknown'));
+});
+test('held-out GLM miss and larger all-input misses remain visible without changing frozen predictions', () => {
+  const glm = TR.find(x => x.id.includes('glm'));
+  assert(glm, 'GLM retained rescore');
+  near(glm.held_out.err_turns, -0.3, 0.005);
+  assert(glm.held_out.err_useful > 2.8);
+  assert(TR.some(x => x.after.err_turns < -0.085), 'no blanket five-percent claim');
+});
+test('actual UI renderer uses agentPlan numbers, shows every rescore, unknowns and source-safe text', () => {
+  const { d, c } = planFixture(), src = fs.readFileSync(path.join(ROOT, 'src/app.js'), 'utf8');
+  const start = src.indexOf('  function workloadHTML('), end = src.indexOf('  // what the replays', start);
+  assert(start >= 0 && end > start);
+  const esc = x => String(x).replace(/[&<>"']/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[x]));
+  const fmt = n => x => x === null || x === undefined || !Number.isFinite(x) ? '-' : x.toFixed(n);
+  const render = new Function('data', 'FM', 'v', 'f1', 'f2', 'esc', 'chip', 'groundingHTML', src.slice(start, end) + '; return workloadHTML;');
+  const html = () => render(d, { ...FM, agentTurnRescore: () => TR }, v, fmt(1), fmt(2), esc, x => esc(x.tag), () => '')({ cfg: c, headline: { n: 1 } });
+  assert.match(html(), /15\.00 turns\/agent-minute at 1 agent/);
+  assert.match(html(), /25\.0 useful tok\/s/);
+  assert.match(html(), /POST-HOC inputs, not new prediction accuracy/);
+  assert.match(html(), /-30\.0%/);
+  TR.forEach(x => assert(html().includes(esc(x.id)), x.id));
+  d.workload.profiles['coding-agent'].turn_trace.v = '<missing>';
+  assert.match(html(), /UNMODELLED/);
+  assert(html().includes('&lt;missing&gt;'));
+  assert(!html().includes('<missing>'));
+});
+test('CLI JSON binds the same agentPlan query, and text leads with turns and preserves the full error table', () => {
+  const c = data.curves.configs[0];
+  if (!c) return skip('CLI config binding');
+  const { execFileSync } = require('child_process');
+  const run = extra => execFileSync(process.execPath, [path.join(ROOT, 'report.js'), '--workload', c.id, '--n', '1', '--warmup-s', '2', '--window-s', '60', ...extra], { cwd: ROOT, encoding: 'utf8' });
+  const p = JSON.parse(run(['--json'])), own = FM.agentPlan(data, c, { n: [1], warmup_s: 2, window_s: 60 });
+  assert.deepStrictEqual(p.rows[0].turn, JSON.parse(JSON.stringify(own.rows[0].turn)));
+  assert.strictEqual(p.turn_rescore.length, TR.length);
+  const text = run([]);
+  assert.match(text, /Primary: turns\/agent-minute/);
+  assert.match(text, /Legacy server-bound diagnostic WITHOUT tool gaps/);
+  assert.match(text, /GLM held-out turns miss by about -30%/);
+  assert.match(text, /Configured-input means each entry's declared mixture, not all measured inputs/);
+  assert.match(text, /Chunk rows retain advance predicted P, not the later measured P/);
+  TR.forEach(x => assert(text.includes(x.id), x.id));
+});
+
+test('resident plan: the decode fit reproduces its two anchors; agents split over instances; slots cap Dn; the frozen flint-1030 numbers still hold', () => {
+  const rec = JSON.parse(fs.readFileSync(path.join(ROOT, 'recipes', 'odie-flint-q4km-1perCard.json'), 'utf8')), R = rec.resident_plan;
+  const one = Object.assign(clone(R), { inputs: Object.assign(clone(R.inputs), { engine_slowdown: tag(1, 'READ'), kv_read_eff: tag(1, 'READ') }) }), T = FM.residentTerms(one);
+  v(R.inputs.decode_anchors).forEach(x => near(1000 / (x.read_gb * T.a_ms_per_gb + x.layers * T.layer_ms), x.tps, 1e-6));
+  const t = FM.residentTerms(R);
+  assert(t.decode(1, 80000) < t.decode(1, 0), 'KV at depth slows decode');
+  assert(t.decode(2, 80000) > t.decode(1, 80000) && t.decode(2, 80000) < 2 * t.decode(1, 80000), 'two slots batch, sublinearly');
+  const P = FM.residentAgentPlan(data, rec, [1, 4, 8]);
+  assert.deepStrictEqual(P.rows.map(r => r.per_instance), [[1], [2, 2], [4, 4]]);
+  assert.strictEqual(P.rows[0].decode_card_at_slots[0], P.rows[0].decode_per_request, 'one agent decodes alone');
+  near(P.rows[2].decode_card_at_slots[0], t.decode(2, 80000), 1e-9);
+  const frozen = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'predictions-flint-1030.json'), 'utf8')).predictions;
+  P.rows.forEach(r => { near(r.turns_per_agent_min, frozen[r.n].turns_per_agent_min, 0.006); near(r.useful_tps_per_agent, frozen[r.n].useful_tps_per_agent, 0.06); });
+  const no = clone(rec); delete no.resident_plan.inputs.slots;
+  assert.throws(() => FM.residentAgentPlan(data, no, [1]), /slots/);
+});
+
+test('resident plan levers: stall off, decode_mult, out_ratio and reread_per_turn reach the turn model; the fit1030 baseline holds its replay rows', () => {
+  const rec = JSON.parse(fs.readFileSync(path.join(ROOT, 'recipes', 'odie-flint-q4km-1perCard-fit1030.json'), 'utf8'));
+  const run = (set, ns) => { const r = clone(rec); Object.entries(set).forEach(([k, x]) => { r.resident_plan.inputs[k] = tag(x, 'LEVER'); }); return FM.residentAgentPlan(data, r, ns).rows; };
+  const base = run({}, [1, 2, 4]);
+  // with each run's own measured inputs the baseline lands within the pinned error of the flint-1030 replay rows
+  near(run({ reread_per_turn: 1187 }, [1])[0].turns_per_agent_min, 8.1, 0.25);
+  near(base[1].turns_per_agent_min, 9.2, 0.3);
+  assert(run({ out_ratio: 0.325, reread_per_turn: 600 }, [4])[0].turns_per_agent_min > 4.6, 'RM is optimistic at 2 agents a card (stall model): a fix must update this pin');
+  const free = run({ stall: false }, [4])[0], d = run({ decode_mult: 1.4 }, [1])[0];
+  assert(free.turns_per_agent_min > base[2].turns_per_agent_min, 'reads that never stall decode help 2 agents a card');
+  near(run({ stall: false }, [1])[0].turns_per_agent_min, base[0].turns_per_agent_min, 1e-9);
+  near(d.decode_per_request, 1.4 * base[0].decode_per_request, 1e-9);
+  const long = run({ out_ratio: 1 }, [1])[0];
+  near(long.out_per_turn / base[0].out_per_turn, 4, 0.6);
+  assert(long.turns_per_agent_min < base[0].turns_per_agent_min);
+  assert(run({ reread_per_turn: 0 }, [1])[0].turns_per_agent_min > base[0].turns_per_agent_min);
+  assert(FM.RESIDENT_LEVERS.includes('stall'));
+  // the CLI --set reaches the same plan, and refuses an empty or unknown value instead of a silent 0
+  const { spawnSync } = require('child_process'), R = path.join(ROOT, 'recipes', 'odie-flint-q4km-1perCard-fit1030.json');
+  const cli = set => spawnSync(process.execPath, [path.join(ROOT, 'report.js'), '--resident', R, '--n', '4', '--set', set, '--json'], { cwd: ROOT, encoding: 'utf8' });
+  near(JSON.parse(cli('stall=false').stdout).rows[0].turns_per_agent_min, free.turns_per_agent_min, 1e-9);
+  ['out_ratio=', 'reread_per_turn', 'stall=maybe', 'nosuch=1'].forEach(s => assert.strictEqual(cli(s).status, 2, '--set ' + s + ' must exit 2'));
 });
 
 console.log(passed + ' passed');

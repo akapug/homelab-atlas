@@ -72,7 +72,7 @@ served Ornith-1.5-35B-A3B and card 1 Qwen3.8 Flash-Next; since then both cards s
 ## The run ledger, read correctly
 
 - `recipe-maker/runs/runs.jsonl` is the live segment and may be empty; the rows are in the sealed segments
-  `runs.0001.jsonl` ... read in order, then `runs.jsonl`. 201 rows on 2026-10-24.
+  `runs.0001.jsonl` ... read in order, then `runs.jsonl`. 254 rows on 2026-11-04.
 - Each row: `recipe` (what was launched), `check` (the pre-launch gate's verdict per check), `prediction`,
   `measured` (per-phase decode, prefill, draft acceptance, residency, system state), `sources`.
 - A check whose result is null was not evaluated for that run. It is not a PASS.
