@@ -733,26 +733,11 @@ for _mk, _fam in (('v41', 'deepseek-v4.1-flash'), ('glm', 'glm-5.3-flash')):
 
 
 # Qwen3.8-Flash-Next (scout 10-17): no routing counts yet -> a synthetic per-layer heat shaped like GLM's LIVE coding routing on
-# snoopy (rs-1340: top2000 0.391 / top3000 0.501 / top4000 0.597 of 12,096 experts). Cumulative share C(x) = x^a over the expert
-# fraction x; a fitted to those three points. Expert ids are permuted per layer (deterministic) so layers differ.
-_gx = [(2000 / 12096, 0.391), (3000 / 12096, 0.501), (4000 / 12096, 0.597)]
-FNX_A = sum(math.log(y) / math.log(x) for x, y in _gx) / len(_gx)
-
-
-def synth_heat(L, E, frac_of=1.0, seed=17):
-    out, st = [], seed
-    for l in range(L):
-        perm = list(range(E))
-        for i in range(E - 1, 0, -1):  # Fisher-Yates with an LCG (deterministic)
-            st = (st * 1103515245 + 12345) % 2 ** 31
-            j = st % (i + 1)
-            perm[i], perm[j] = perm[j], perm[i]
-        C = lambda x: (x * frac_of) ** FNX_A / frac_of ** FNX_A
-        row = [0.0] * E
-        for r in range(E):
-            row[perm[r]] = round(1e6 * (C((r + 1) / E) - C(r / E)), 3)
-        out.append(row)
-    return out
+# snoopy (src/heat_shape.py owns the shape; the generic MoE path in tools/harvest.py uses the same one).
+_hs_spec = importlib.util.spec_from_file_location('fitviz_heat_shape', os.path.join(SRC, 'heat_shape.py'))
+_hs = importlib.util.module_from_spec(_hs_spec)
+_hs_spec.loader.exec_module(_hs)
+_gx, FNX_A, synth_heat = _hs.SHAPE_POINTS, _hs.SHAPE_A, _hs.synth_heat
 
 
 FNX_P = 3 * 2560 * 640
@@ -2359,6 +2344,20 @@ def turn_rescores(root):
 # the dense path's calibration (model.js denseCal fits its terms at run time from these points, holding out the rest)
 dense_cal = json.load(open(os.path.join(HERE, 'data', 'dense-cal.json')))
 
+# the generic MoE path (tools/harvest.py harvest_moe): what a planner entry built from a new model's headers borrows, and the
+# measured MoE runs harvest.py --moe-cal re-predicts with it. derived: the GLM figures the entry's VRAM reserve scales from.
+# The harvest tool stays home (publish/manifest.json), so a public copy has no moe-cal.json and no moe_cal block
+_mc = os.path.join(HERE, 'data', 'moe-cal.json')
+moe_cal = json.load(open(_mc)) if os.path.exists(_mc) else None
+_glm_vocab = next(t[1][1] for t in json.load(open(os.path.join(SRC, 'hdr-glm.json')))['tensors'] if t[0] == 'token_embd.weight')
+if moe_cal is not None:
+    moe_cal['derived'] = {
+        'glm_ctx_mib': n(GLM_CTX_MIB, M, 'CUDA context before the load, ' + GLM_VRAM_SRC),
+        'glm_cb4096_mib': n(GLM_CB4096_MIB, M, 'GLM compute buffer at -ub 4096 (mostly the logits of 4096 rows x the vocabulary), ' + GLM_VRAM_SRC),
+        'glm_vocab': n(_glm_vocab, R, HGLM + ': token_embd rows'),
+        'heat_floor': common_heat_floor,
+    }
+
 _wl = json.load(open(os.path.join(HERE, 'data', 'workload.json')))
 workload = dict(_wtag({k: x for k, x in _wl.items() if k != 'about'}), about=_wl['about'], measured=workload_measured(_wl, _bl))
 # the per-turn agent model: the recorded traces' per-turn shape (data/trace-turns.json, tools/trace_turns.py) and the
@@ -2426,7 +2425,7 @@ data = {
     'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py', 'home': PUBLIC_HOME,
              'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}, 'left_out': left_out},
     'types': types, 'engines': engines, 'models': models, 'boxes': boxes, 'b70move': b70move, 'anchors': anchors, 'assume': assume, 'knobs': knobs, 'conditions': conditions, 'accuracy': accuracy, 'causes': causes, 'external': external, 'bench': bench,
-    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'curves': curves, 'workload': workload, 'priors': priors, 'dense_cal': dense_cal, 'layer_maps': layer_maps, 'upgrade': upgrade,
+    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'curves': curves, 'workload': workload, 'priors': priors, 'dense_cal': dense_cal, 'moe_cal': moe_cal, 'layer_maps': layer_maps, 'upgrade': upgrade,
     'routing_skew': [HM.skew_evidence(HEAT_MAPS, spec) for spec in HM.jload(os.path.join(HERE, 'tools', 'heat_sources.json')).get('skew', [])],
     'alloc3': {'src': 'homelab dsv41/skew/results/2026-10-08-alloc-3bpw.json (' + alloc['rule'] + ')', 'layers': alloc_layers, 'count': sum(len(x) for x in alloc_layers)} if alloc else None,
     'siblings': {'quant_priors': sibling('quant-priors.json'), 'quant_recipes': sibling('quant-recipes.json'),

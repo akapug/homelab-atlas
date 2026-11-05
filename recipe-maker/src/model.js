@@ -2155,6 +2155,22 @@
     out.evidence = rollup('decode', out.decode_tps, 'tok/s', terms);
     return out;
   }
+  // ---------- a MoE model the planner has no family for (tools/harvest.py, the generic MoE path) ----------
+  // extra = { models: { key: planner model entry built from GGUF or safetensors headers }, kld: { key: { type: tagged KLD } } }.
+  // The entries join data.models before applyCal, so each borrows its host from models[key].host_borrow on every box
+  // (borrowHostLists, after the run-ledger host fit) and plans through predictRecipe / checkRecipe like any family. A key that names a family already in the planner is refused:
+  // the generic path never replaces a hand family.
+  function addModels(data, extra) {
+    const X = extra || {}, keys = Object.keys(X.models || {});
+    keys.forEach(k => {
+      if (data.models[k]) throw new Error('addModels: ' + k + ' is already a planner model');
+      data.models[k] = X.models[k];
+      const kl = (X.kld || {})[k] || {};
+      Object.keys(data.types).forEach(q => { data.types[q].kld = data.types[q].kld || {}; data.types[q].kld[k] = kl[q] || { v: null, tag: 'UNKNOWN', src: 'UNKNOWN: no KLD analog for ' + q }; });
+    });
+    if (keys.length && data.cal) applyCal(data);
+    return keys;
+  }
   function predictDenseAll(data, spec, opts) {
     const rows = [];
     spec.quants.forEach(q => Object.keys(data.boxes).forEach(bk => rows.push(predictDense(data, spec, bk, q, opts))));
@@ -3659,12 +3675,14 @@
         } else if (fb) res.host[mk] = fb;
       });
     });
-    // models with no run anywhere borrow another model's host on each box (ESTIMATE)
+    // models with no run anywhere borrow another model's host on each box (ESTIMATE). A list borrow (the generic MoE
+    // path) is resolved after the run-ledger host fit instead (borrowHostLists, applyCal)
     Object.keys(data.boxes).forEach(bk => {
       const res = cal.boxes[bk];
       Object.keys(data.models).forEach(mk => {
         const b = data.models[mk].host_borrow;
-        if (!b || res.host[mk] !== undefined || res.host[b] === undefined) return;
+        if (!b || Array.isArray(b) || res.host[mk] !== undefined) return;
+        if (res.host[b] === undefined) return;
         res.host[mk] = { v: v(res.host[b]), tag: 'ESTIMATE', src: 'no ' + data.models[mk].short + ' run on any box: borrowed this box\'s ' + b + ' host overhead (' + res.host[b].tag + ')' };
       });
     });
@@ -3874,9 +3892,30 @@
     });
   }
 
+  // A list borrow (the generic MoE path, tools/harvest.py: a model with no run anywhere) takes on each box the median of
+  // the listed models' hosts that were fitted there, by an anchor or on the run ledger (not ESTIMATE), else the median
+  // of every listed host the box has. It runs after ledgerHosts: most families' hosts on most boxes are ledger fits
+  // (lassie Ornith-35B 6.9 ms against a 15 ms estimate before them)
+  function borrowHostLists(data) {
+    Object.keys(data.boxes).forEach(bk => {
+      const res = data.cal.boxes[bk];
+      Object.keys(data.models).forEach(mk => {
+        const b = data.models[mk].host_borrow;
+        if (!Array.isArray(b) || res.host[mk] !== undefined) return;
+        const have = b.filter(k => res.host[k] !== undefined && v(res.host[k]) !== null);
+        const fit = have.filter(k => res.host[k].tag !== 'ESTIMATE'), use = fit.length ? fit : have;
+        if (!use.length) return;
+        const xs = use.map(k => v(res.host[k])).sort((x, y) => x - y), h = xs.length;
+        res.host[mk] = { v: h % 2 ? xs[(h - 1) / 2] : (xs[h / 2 - 1] + xs[h / 2]) / 2, tag: 'ESTIMATE', src: 'no ' + data.models[mk].short + ' run on any box: the median of this box\'s ' +
+          (fit.length ? 'fitted' : 'estimated') + ' host overheads of ' + use.map(k => k + ' ' + v(res.host[k]).toFixed(1) + ' ms').join(', ') };
+      });
+    });
+  }
+
   function applyCal(data) {
     data.cal = calibrate(data);
     ledgerHosts(data);
+    borrowHostLists(data);
     ledgerHops(data);
     data.cal.recipe_decode = fitRecipeDecode(data);
     ledgerDrafts(data);
@@ -4434,6 +4473,6 @@
   }
   function replayChecks(data) { return ((data.workload || {}).measured || []).map(x => ({ run: x.run, n: x.n, label: x.label, checks: [replayArtifactCheck(data, x), steadyStateCheck(data, x)] })); }
 
-  const api = { RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
+  const api = { RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

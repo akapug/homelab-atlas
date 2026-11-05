@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Node report: best projected point at 20 and 25 tok/s per model x box x engine, calibration residuals,
 // owner's droopy layout, and a knob-combination search. Usage: node report.js [--json out.json] [--quick]
-// Pre-launch check: node report.js --check recipe.json [--json] [--strict]. Run ledger accuracy: node report.js --accuracy [runs.jsonl] [--json] [--bucket day|week]
+// Pre-launch check: node report.js --check recipe.json [--json] [--strict] [--models MODELS.json (generic MoE path entries)]. Run ledger accuracy: node report.js --accuracy [runs.jsonl] [--json] [--bucket day|week]
 // External validation (community rows, runs/external.jsonl): node report.js --external [--json]
 // Dense model with no planner entry (spec from tools/harvest.py): node report.js --dense SPEC.json [--knobs '{"freeDesktop":true}'] [--kv-read-eff X] [--json]
 // Dense-path calibration (data/dense-cal.json: fitted terms, predicted vs measured before and after per point): node report.js --dense-cal [--json]
@@ -48,6 +48,11 @@ if (ci >= 0) {
       return null;
     } catch (e) { return e.message; }
   })();
+  // --models FILE: planner model entries of the generic MoE path (tools/harvest.py) join data.models before calibration
+  const mi = args.indexOf('--models');
+  if (mi >= 0) {
+    try { FM.addModels(data, JSON.parse(fs.readFileSync(args[mi + 1], 'utf8'))); } catch (e) { console.error('cannot add models from ' + args[mi + 1] + ': ' + e.message); process.exit(2); }
+  }
   FM.applyCal(data);
   let worst = 0;
   const outAll = [], gaps = [];
