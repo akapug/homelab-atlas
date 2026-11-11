@@ -3,6 +3,7 @@
  "box": "lassie",
  "model": "v41",
  "engine": "ik",
+ "roofline_placement": "cpu_only",
  "label": "lassie V4.1 CPU rows8 Q8_0: 1017 Q8_0 store (mrfakename, routed experts MXFP4 (native), non-experts Q8_0), --no-mmap, routed experts rows:0..7 (slice k on node k) + GGML_MOE_GROUPS=8, -cr 0-63, T64, DSpark q2 draft CPU n4 / n0, no GPU",
  "store": {
   "split": false,

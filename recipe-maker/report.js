@@ -7,6 +7,7 @@
 // Dense-path calibration (data/dense-cal.json: fitted terms, predicted vs measured before and after per point): node report.js --dense-cal [--json]
 // Screening rounds against the card conditions (runs/screen.jsonl, data/cards): node report.js --screen [--json]
 // Batched decode (N concurrent streams, data.batch): node report.js --batch [--json]
+// Per-phase roofline + batch landscape (data.roofline): node report.js --roofline [--box B --model M --engine E [--store S] [--tokens T] [--unlock stock|unlocked] [--ctx X] [--draft]] [--json]
 // Batch window (bottom-up kernel cost per pipeline stage, data.window; lever table): node report.js --window [CONFIG] [--agents N] [--xfloor K] [--bw GBS] [--stages S] [--anchor ID | --no-anchor] [--source ubench] [--propose LEVER] [--json]
 // Agent turns (data.workload.turn_model): node report.js --workload [RUN_ID | all] [--profile NAME] [--trace NAME] [--server NAME] [--n 1,16] [--prefill P] [--decode-one D1] [--fresh F] [--warmup-s S] [--window-s S] [--gap-scale X] [--stagger-scale X] [--json]
 // Serving priors (data/priors-serving.json; the ones that apply to a recipe): node report.js --priors [recipe.json] [--json]
@@ -470,6 +471,151 @@ if (pri >= 0) {
 // ---------- batched decode: node report.js --batch [--json] ----------
 // N concurrent streams of one model (data.batch): the fit of the free constants per miss mode, its residuals on the ledger rows,
 // the hit-rate sensitivity, the one-card vs split twin, and the planning table (config x kernel variant x context x streams)
+// Per-phase roofline (data.roofline, src/model.js phaseBound): node report.js --roofline [--json] prints the worked checks
+// (predicted vs measured, the binding term at the bound and at the fitted eta) and the batch landscapes; with --box B --model M
+// --engine E [--store S] [--tokens T] [--depth D] [--chunk C] [--ctx X] [--unlock stock|unlocked] [--draft] [--fresh F]
+// [--placement cpu_only --threads N --expert-quant q2_K,q3_K] it bounds one
+// query: prefill and decode at batch 1 and N, then the landscape B = 1 ... 128 with the agent prefill/decode mix
+// Multi-box serving plans (data/multibox.json candidates, src/model.js pipelineLandscape): node report.js --multibox [--id ID] [--json]
+// each candidate's layer split per card (refused when a stage passes its card or a hop has no measured round trip), decode at
+// every B (serial llama.cpp RPC and the ring arm), the hop share, the stream capacity at the plan's depth, prefill, and the
+// agent duty-cycle useful tok/s by B
+if (args.includes('--multibox')) {
+  const want = (() => { const i = args.indexOf('--id'); return i >= 0 ? args[i + 1] : null; })();
+  const out = (data.multibox.candidates || []).filter(c => !want || c.id === want).map(c => Object.assign({ id: c.id, label: c.label }, FM.pipelineLandscape(data, c)));
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(out, (k, x) => (k === 'g' || k === 'line' ? undefined : x), 1) + '\n'); process.exit(0); }
+  const f1 = x => x === null || x === undefined ? '-' : x >= 100 ? x.toFixed(0) : x.toFixed(1);
+  out.forEach(L => {
+    console.log('\n' + L.id + ': ' + L.label);
+    if (L.status !== 'OK') { console.log('  ' + L.status + ': ' + L.why); return; }
+    const p = L.plan;
+    console.log('  weights ' + p.weights_gb.toFixed(1) + ' GB on ' + p.vram_gb.toFixed(1) + ' GB free VRAM; a stream at depth ' + p.ctx + ' holds ' + p.stream_gb.toFixed(2) + ' GB; capacity ' + p.capacity_streams + ' streams; prefill ' + f1(L.prefill.tps) + ' tok/s (2,048 tokens)');
+    p.stages.forEach(s => console.log('  stage ' + (s.box + ' ' + s.gpu).padEnd(16) + String(s.layers).padStart(3) + ' layers ' + s.weights_gb.toFixed(1).padStart(5) + ' GB, room ' + s.room_gb.toFixed(1).padStart(5) + ' GB, ' + s.line.backend + ' ' + s.line.rate_gbs.toFixed(0) + ' GB/s ' + s.line.tag));
+    L.rows.forEach(r => console.log('  B ' + String(r.B).padStart(3) + '  per stream ' + f1(r.per_stream_tps).padStart(5) + '  aggregate ' + f1(r.aggregate_tps).padStart(5) + '  ring ' + f1(r.ring_aggregate_tps).padStart(5) + '  hops ' + (100 * r.hop_share).toFixed(1) + ' %  slowest ' + r.slowest + (r.fits ? '' : '  PAST CAPACITY') + (r.calibration === 'UNCALIBRATED' ? '  UNCALIBRATED (' + r.uncalibrated.join('; ') + ')' : '')));
+    if (L.uncalibrated_from_B) console.log('  UNCALIBRATED from B ' + L.uncalibrated_from_B + ': those rows price a class with no batch-curve constant at its bandwidth line; no phase_bound claim there');
+    if (L.agents && L.agents.status === 'OK') console.log('  agents (useful tok/s by B, B_eff): ' + L.agents.rows.filter(r => r.status === 'OK').map(r => r.B + ': ' + f1(r.useful_tps) + ' (' + r.b_eff.toFixed(1) + ')').join(', '));
+    console.log('  best useful: ' + (L.best_useful ? f1(L.best_useful.useful_tps) + ' tok/s at B ' + L.best_useful.B + ' (' + f1(L.best_useful.per_agent) + ' an agent)' : '-'));
+  });
+  process.exit(0);
+}
+// The per-card batch curves (data/multibox.json card_curves, src/model.js cardCurveRescore / agentPointRescore): node report.js
+// --cardcurve [--json]: the constants and the calibration point each is solved from, then every measured multi-box point
+// predicted (calibration vs hold-out marked, the old bandwidth line beside it), then the R8 agent points under the served-engine sim
+if (args.includes('--cardcurve')) {
+  const R = FM.cardCurveRescore(data), A = FM.agentPointRescore(data);
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify({ pipeline: R, agents: A }, null, 1) + '\n'); process.exit(0); }
+  const f1 = x => x === null || x === undefined ? '-' : x >= 100 ? x.toFixed(0) : x.toFixed(1), pc = x => x === null || x === undefined ? '-' : (x >= 0 ? '+' : '') + (100 * x).toFixed(1) + ' %';
+  if (R.status !== 'OK') { console.log(R.why); process.exit(1); }
+  console.log('constants (each solved from ONE calibration point, in order):');
+  R.constants.forEach(c => console.log('  ' + c.constant.padEnd(24) + ' ' + (c.value === undefined ? '-' : c.value.toFixed(4)).padStart(9) + ' ' + (c.unit || '') + '  <- ' + c.anchor + ' B ' + c.B + ' (' + c.measured_tps + ' tok/s) ' + (c.status === 'SOLVED' ? '' : c.status)));
+  console.log('\nmulti-box points (llama.cpp; aggregate tok/s): use, measured, predicted, err, bandwidth line, err, curve');
+  R.rows.forEach(r => console.log('  ' + (r.anchor + ' B ' + r.B).padEnd(22) + ' ' + r.use.padEnd(10) + ' ' + f1(r.measured).padStart(6) + ' ' + (r.status === 'REFUSED' ? 'REFUSED ' + r.why : f1(r.predicted).padStart(6) + ' ' + pc(r.err).padStart(9) + '   ' + f1(r.line_tps).padStart(6) + ' ' + pc(r.line_err).padStart(9) + '  ' + r.calibration + (r.note ? '  (' + r.note + ')' : ''))));
+  const S = x => 'n ' + x.n + ', median |err| ' + (x.median_abs_pct === null ? '-' : x.median_abs_pct.toFixed(1) + ' %') + ', median err ' + (x.bias_pct === null ? '-' : x.bias_pct.toFixed(1) + ' %') + ', within 25 % ' + x.within_25;
+  console.log('  hold-out: ' + S(R.holdout) + '; B 1: ' + S(R.holdout_b1) + '; B > 1: ' + S(R.holdout_batched) + (R.uncalibrated.length ? '; UNCALIBRATED (left out): ' + R.uncalibrated.join(', ') : ''));
+  if (A.status === 'OK') {
+    console.log('\nR8 agent points (useful tok/s; served-engine sim): measured, evict branch (err), today no refit (err), step-increment arm (err, use), B_eff / stall % / read busy % predicted vs measured');
+    A.rows.forEach(r => console.log('  ' + r.label.padEnd(24) + ' ' + (r.status !== 'OK' ? r.why : f1(r.measured.useful_tps).padStart(6) + '  ' + f1(r.evict_branch_useful).padStart(5) + ' ' + pc(r.evict_branch_err).padStart(9) + '  ' + f1(r.predicted.useful_tps).padStart(6) + ' ' + pc(r.err).padStart(9) +
+      (r.scaled ? '  ' + f1(r.scaled.useful_tps).padStart(6) + ' ' + pc(r.scaled.err).padStart(9) + ' ' + r.scaled.use.padEnd(10) : '') + '  B_eff ' + f1(r.predicted.b_eff) + ' / ' + f1(r.measured.b_eff) + '  stall ' + f1(r.predicted.stall_pct) + ' / ' + f1(r.measured.stall_pct) + '  busy ' + f1(r.predicted.read_busy_pct) + ' / ' + f1(r.measured.prefill_busy_pct)) + (r.count === 'VERIFIED' ? '' : '  UNVERIFIED-COUNT')));
+    console.log('  median |err|: evict branch ' + f1(A.evict_branch_median_abs_pct) + ' % (n ' + A.evict_branch_n + '), today no refit ' + f1(A.median_abs_pct) + ' %' + (A.decode_step_increment ? ', step-increment arm on the hold-outs ' + f1(A.scaled_holdout_median_abs_pct) + ' % (n ' + A.scaled_holdout_n + '; lambda ' + A.decode_step_increment.v.toFixed(3) + (A.decode_step_increment.count === 'VERIFIED' ? '' : ' UNVERIFIED-COUNT') + ', calibration residual ' + pc(A.decode_step_increment.cal_residual) + ', ' + A.decode_step_increment.src + ')' : ''));
+    if (A.unverified_count.length) console.log('  UNVERIFIED-COUNT (measured.turn_counted_if is not ' + A.count_rule + '): ' + A.unverified_count.join(', '));
+  }
+  process.exit(0);
+}
+const rfi = args.indexOf('--roofline');
+if (rfi >= 0) {
+  const str = f => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : undefined; }, num = f => str(f) !== undefined ? Number(str(f)) : undefined;
+  const f1 = x => x === null || x === undefined ? '-' : x >= 100 ? x.toFixed(0) : x.toFixed(1), pc = x => x === null || x === undefined ? '-' : (x >= 0 ? '+' : '') + (100 * x).toFixed(1) + ' %';
+  const landRows = L => L.rows.map(x => x.status !== 'OK' ? '  B ' + x.B + ': ' + x.why : '  B ' + String(x.B).padStart(3) + '  per stream ' + f1(x.per_stream_tps).padStart(5) + '  aggregate ' + f1(x.aggregate_tps).padStart(5) +
+    '  distinct experts/layer ' + x.distinct_experts_per_layer.toFixed(0).padStart(3) + '  rows/expert ' + x.rows_per_expert.toFixed(2).padStart(5) + '  weight GB/out tok ' + x.weight_gb_per_output_token.toFixed(3) + '  KV+state GB/step ' + x.kv_state_gb_per_step.toFixed(2) +
+    (x.fits_vram ? '' : '  PAST VRAM CAPACITY') + '  compute ' + (100 * x.compute_share).toFixed(1) + ' %  binds: ' + x.binding + (x.useful_tps !== null ? '  | agent mix useful ' + f1(x.useful_tps) + ' (' + f1(x.useful_per_agent) + ' each), binds: ' + x.mix_binding : ''));
+  const landHead = L => 'landscape: F ' + (L.F === null ? '-' : L.F) + ' fresh prompt tokens an output token, prefill ' + f1(L.prefill_tps) + ' tok/s' + (L.prefill_eta ? ' (eta ' + L.prefill_eta.toFixed(3) + ')' : ' (bound, no fit)') +
+    ', decode efficiency ' + (L.decode_eta ? L.decode_eta.toFixed(3) + ' FIT' : 'none (bound): ' + L.decode_why) + ', VRAM holds ' + (L.capacity_streams === null ? '-' : L.capacity_streams) + ' streams at ctx ' + L.query.ctx +
+    ', compute overtakes bandwidth at B = ' + (L.compute_overtakes_bandwidth_at || 'none up to 128') +
+    '\n  binding changes: ' + (L.binding_changes.length ? L.binding_changes.map(c => 'B ' + c.B + ' ' + c.from + ' -> ' + c.to).join('; ') : 'none') +
+    '; best useful ' + (L.best_useful ? f1(L.best_useful.useful_tps) + ' at B = ' + L.best_useful.B + ' inside the VRAM capacity' : '-') +
+    (L.best_useful_any && L.best_useful && L.best_useful_any.B !== L.best_useful.B ? ' (' + f1(L.best_useful_any.useful_tps) + ' at B = ' + L.best_useful_any.B + ' past it)' : '') +
+    '\n  prefill GEMMs by rows: ' + (L.prefill_shapes.join('; ') || '-') + '\n  decode experts at B 1: ' + ((L.rows[0] || {}).experts_shape || '-');
+  const explainLines = ex => ex.status !== 'OK' ? ['explain: ' + ex.why] : ['explain (' + ex.agents + ' agent(s); the agent mix binds ' + ex.mix_binds + '): prefill binds ' + ex.prefill.binding + ', next ' + ex.prefill.next + '; decode binds ' + ex.decode.binding + ', next ' + ex.decode.next + '; ' + (ex.relief ? (ex.relief.relieves_binding ? 'relieve ' + ex.target + ' with ' : 'nothing in the search relieves ' + ex.target + '; best other: ') + ex.relief.id + ' ' + pc(ex.relief.gain) : 'no rearrangement in the search gains'),
+    '  base: useful ' + f1(ex.search.base.useful_tps) + ' tok/s = 1 / (1 / decode ' + f1(ex.search.base.decode_agg) + ' + F ' + ex.search.fresh + ' / prefill ' + f1(ex.search.base.prefill_tps) + '); ' + ex.search.base.arithmetic]
+    .concat(ex.search.rows.map(r => '  ' + (r.status !== 'OK' ? r.id + ': ' + r.why : (pc(r.gain).padStart(8) + '  ' + r.change + ' [relieves ' + r.targets + ']' + (r.needs_code ? ' NEEDS CODE: ' + r.needs_code : '') + (r.condition ? ' if: ' + r.condition : '') + '\n            ' + r.arithmetic))));
+  // --predict SPEC.json: write the prediction record BEFORE the run (data/predictions-roofline-ID.json with the time and the RM
+  // commit; refuses a spec with no hypothesis, tested term or band, and an id that already has a record). --score ID --measured X --measured-utc T: score a run
+  // against its record (refuses a run measured before its record, and a time with no zone), with the term attribution from the
+  // record's own frozen terms and, apart, against the current model
+  if (str('--predict')) {
+    let spec; try { spec = JSON.parse(fs.readFileSync(str('--predict'), 'utf8')); } catch (e) { console.error('cannot read ' + str('--predict') + ': ' + e.message); process.exit(2); }
+    const out = [].concat(spec).map(x => FM.rooflinePredict(data, x));
+    const bad = out.find(x => x.status !== 'OK');
+    if (bad) { console.error('REFUSED: ' + bad.why); process.exit(2); }
+    const cp = require('child_process'), git = a => { try { return cp.execFileSync('git', a, { cwd: __dirname, encoding: 'utf8' }).trim(); } catch (e) { return null; } };
+    const head = git(['rev-parse', 'HEAD']), dirty = !!git(['status', '--porcelain', '--', 'src', 'data', 'build.py', 'report.js']);
+    const recs = out.map(x => Object.assign({ about: 'roofline prediction written BEFORE its run by report.js --roofline --predict; never edit the predicted block: score with --score and add a measured block beside it', written_utc: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), rm_commit: head, rm_dirty: dirty }, x.record));
+    const fileOf = r => path.join(__dirname, 'data', 'predictions-roofline-' + r.id + '.json');
+    const clash = recs.find(r => !/^[a-z0-9][a-z0-9-]*$/.test(r.id) || fs.existsSync(fileOf(r)));
+    if (clash) { console.error('REFUSED: ' + clash.id + (fs.existsSync(fileOf(clash)) ? ' already has a record (a prediction is never rewritten; give the new run a new id)' : ' is not a lower-case dashed id')); process.exit(2); }
+    if (args.includes('--dry-run')) { fs.writeSync(1, JSON.stringify(recs, null, 1) + '\n'); process.exit(0); }
+    recs.forEach(r => { fs.writeFileSync(fileOf(r), JSON.stringify(r, null, 1) + '\n'); console.log('recorded data/predictions-roofline-' + r.id + '.json at ' + r.written_utc + ' (RM ' + (head || '?').slice(0, 7) + (dirty ? ' dirty' : '') + ')'); });
+    process.exit(0);
+  }
+  if (str('--score')) {
+    // the measurement from the flags, else the record's own measured block (added beside the prediction by --write)
+    const rec = (data.roofline.predictions || []).find(r => r.id === str('--score')), mb = (rec && rec.measured) || {};
+    const mv = num('--measured') !== null && num('--measured') !== undefined ? num('--measured') : mb.value, mu = str('--measured-utc') || mb.measured_utc;
+    const sc = FM.rooflineScore(data, rec, mv, mu);
+    if (args.includes('--write') && sc.status !== 'REFUSED') {
+      const file = path.join(__dirname, rec.file), doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (doc.measured) { console.error('REFUSED: ' + rec.file + ' already has a measured block'); process.exit(2); }
+      doc.measured = { value: mv, measured_utc: mu, run: str('--run') || null, scored: { status: sc.status, err: sc.err, verdict: sc.attribution && sc.attribution.verdict || null } };
+      fs.writeFileSync(file, JSON.stringify(doc, null, 1) + '\n');
+    }
+    if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(sc, null, 1) + '\n'); process.exit(sc.status === 'REFUSED' ? 2 : 0); }
+    if (sc.status === 'REFUSED') { console.log('REFUSED: ' + sc.why); process.exit(2); }
+    console.log(sc.id + ': ' + sc.status + ' (predicted ' + f1(sc.predicted) + ', measured ' + f1(sc.measured) + ', ' + pc(sc.err) + ', band +-' + sc.band_pct + ' %); tested term ' + sc.tests_term + (sc.tested_term_needed && sc.tested_term_needed.k ? ' would need x' + sc.tested_term_needed.k.toFixed(2) + ' (' + sc.tested_term_needed.verdict + ')' : ''));
+    // the record's frozen attribution first; the current model's reading is printed apart and labelled, never in its place
+    [['attribution, as predicted', sc.attribution], ['attribution against the CURRENT model (not the record)', sc.attribution_current]].forEach(([name, a]) => {
+      if (!a) return;
+      if (a.status !== 'OK') { console.log('  ' + name + ': ' + a.status + ': ' + a.why); return; }
+      console.log('  ' + name + ' [' + a.basis + ']: predicted ' + a.predicted_s.toFixed(3) + ' s, measured ' + a.measured_s.toFixed(3) + ' s; ' + a.verdict);
+      a.terms.forEach(t => console.log('    ' + t.term + ': ' + (t.k ? 'x' + t.k.toFixed(2) + ' ' : '') + t.verdict));
+    });
+    process.exit(0);
+  }
+  if (str('--box')) {
+    const q = { box: str('--box'), model: str('--model'), engine: str('--engine'), store: str('--store'), tokens: num('--tokens') || 2048, depth: num('--depth'), chunk: num('--chunk'), ctx: num('--ctx') || 0, unlock: str('--unlock'), draft: args.includes('--draft'),
+      placement: str('--placement'), threads: num('--threads'), expert_quant: str('--expert-quant') ? str('--expert-quant').split(',') : undefined };
+    const pb = FM.phaseBound(data, q), L = FM.batchLandscape(data, q, { fresh: num('--fresh') });
+    if (args.includes('--json')) { fs.writeSync(1, JSON.stringify({ bound: pb, landscape: L }, null, 1) + '\n'); process.exit(0); }
+    const show = (name, p) => {
+      if (!p) return; if (p.status !== 'OK') { console.log(name + ': UNMODELLED: ' + p.why); return; }
+      console.log(name + ': ' + f1(p.tps) + ' tok/s, ' + p.time_s.toFixed(2) + ' s for ' + p.tokens + ' tokens in ' + p.chunks + ' chunk(s) of ' + p.chunk + ' (placement ' + p.placement + ', overlap ' + p.overlap + ', eta ' + p.eta.toFixed(3) + (p.eta_cpu !== p.eta ? ', CPU eta ' + p.eta_cpu.toFixed(3) : '') + (p.cpu_paths ? ', cpu path ' + p.cpu_paths.join(' + ') : '') + '); ' + p.binding.side + ' binds: ' + p.binding.term + ' (' + p.binding.resource + ')');
+      p.terms.forEach(t => console.log('   ' + t.id.padEnd(22) + (t.s.toFixed(3) + ' s').padStart(10) + '  ' + t.resource));
+      if (p.unmodelled.length) console.log('   not modelled: ' + p.unmodelled.join('; '));
+      Object.keys(p.ceilings).forEach(k => { const c = p.ceilings[k]; console.log('   ceiling ' + k + ': ' + c.value + ' ' + c.unit + ' [' + c.key + ', ' + c.state + '] ' + c.tag + (c.fallback ? ' (fallback)' : '') + (c.core_share !== undefined && c.core_share !== 1 ? ' x core share ' + c.core_share.toFixed(2) : '')); });
+      (p.shapes || []).forEach(x => console.log('   shape ' + x.card + ' ' + x.line));
+    };
+    show('prefill bound', pb.prefill.bound); show('prefill predicted', pb.prefill.predicted);
+    [['decode batch 1', pb.decode.b1], ['decode batch ' + pb.decode.n, pb.decode.bN]].forEach(([n, d]) => console.log(n + ': ' + (d.status !== 'OK' ? 'UNMODELLED: ' + d.why : 'bound ' + f1(d.tps_per_stream) + ' tok/s a stream, ' + f1(d.tps_total) + ' total; binds: ' + d.binding.term + ' (' + d.binding.resource + '); ' + d.terms.map(t => t.id + ' ' + (t.s * 1e3).toFixed(2) + ' ms').join(', '))));
+    console.log(landHead(L)); console.log(landRows(L).join('\n'));
+    console.log(explainLines(FM.rooflineExplain(data, q, { agents: num('--agents') || 1, fresh: num('--fresh') })).join('\n'));
+    process.exit(0);
+  }
+  const C = FM.rooflineChecks(data), Ls = (data.roofline.landscapes || []).map(x => Object.assign({ id: x.id, measured: x.measured }, FM.batchLandscape(data, x.query, { prefill_query: x.prefill_query })));
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify({ fits: Object.keys(data.roofline.fits).map(e => Object.assign({ engine: e }, FM.rooflineFit(data, e))), cpu_fits: Object.keys(data.roofline.cpu_fits || {}).map(e => Object.assign({ engine: e }, FM.rooflineFit(data, e, 'cpu'))), checks: C.map(c => Object.assign({}, c, { roof: undefined })), landscapes: Ls }, null, 1) + '\n'); process.exit(0); }
+  Object.keys(data.roofline.fits).forEach(e => { const f = FM.rooflineFit(data, e); console.log('fit ' + e + ': ' + (f.status === 'FIT' ? 'eta ' + f.eta.toFixed(4) + ' on ' + f.cells.join(', ') : f.why)); });
+  Object.keys(data.roofline.cpu_fits || {}).forEach(e => { const f = FM.rooflineFit(data, e, 'cpu'); console.log('CPU fit ' + e + ': ' + (f.status === 'FIT' ? 'eta ' + f.eta.toFixed(4) + ' (cpu path ' + f.path + ') on ' + f.cells.join(', ') : f.why)); });
+  console.log('\nprefill checks (measured / bound / predicted at the fitted eta):');
+  C.filter(c => c.phase === 'prefill').forEach(c => console.log('  ' + c.id.padEnd(24) + ' ' + c.role.padEnd(8) + ' T ' + String(c.tokens).padStart(6) + ' ' + (c.unlock || '').padEnd(8) + ' measured ' + f1(c.measured_tps).padStart(5) + '  bound ' + f1(c.bound_tps).padStart(5) + ' (' + (c.bound_binding ? c.bound_binding.term : '-') + ')  predicted ' + f1(c.pred_tps).padStart(5) + ' ' + pc(c.err).padStart(9) +
+    '  binds: ' + (c.binding ? c.binding.side + ' / ' + c.binding.term : c.why || '-') + (c.eta_side === 'cpu' ? ' (CPU eta)' : '') + '\n      ' + c.evidence + (c.attribution && c.attribution.status === 'OK' ? '\n      score: ' + c.attribution.verdict + ' [' + c.attribution.terms.map(t => t.term + (t.k ? ' x' + t.k.toFixed(2) : ' -')).join(', ') + ']' : '')));
+  console.log('\ndecode checks (bound at the hardware ceilings vs measured):');
+  C.filter(c => c.phase === 'decode').forEach(c => console.log('  ' + c.id.padEnd(24) + ' measured ' + f1(c.measured) + '  bound ' + f1(c.bound_tps) + ' (x' + (c.bound_over_measured ? c.bound_over_measured.toFixed(2) : '-') + ')  binds: ' + (c.binding ? c.binding.term + ' (' + c.binding.resource + ')' : c.why)));
+  const P = data.roofline.predictions || [];
+  console.log('\nroofline prediction records (data/predictions-roofline-*.json, written before their runs): ' + (P.length ? '' : 'none'));
+  P.forEach(r => console.log('  ' + r.id + ' ' + r.written_utc + ' RM ' + String(r.rm_commit || '?').slice(0, 7) + ': ' + (r.phase === 'decode' ? 'decode ' + f1(r.predicted.decode_tps) : 'prefill ' + f1(r.predicted.prefill_tps)) + ' tok/s +-' + r.band_pct + ' %, binds ' + r.predicted.binding + '; tests ' + r.tests_term + ': ' + r.hypothesis));
+  Ls.forEach(L => { console.log('\n' + L.id + ' ' + landHead(L)); console.log(landRows(L).join('\n')); (L.measured || []).forEach(m => console.log('  measured B ' + m.B + ': ' + JSON.stringify(Object.assign({}, m, { note: undefined, B: undefined })) + ' ' + m.note));
+    const x = (data.roofline.landscapes || []).find(y => y.id === L.id); console.log(explainLines(FM.rooflineExplain(data, x.query, { prefill_query: x.prefill_query, agents: x.explain_agents || 1 })).join('\n')); });
+  process.exit(0);
+}
+
 if (args.includes('--batch')) {
   if (!data.batch) { console.log('batched decode: no data.batch in this build (its ledger rows are not here)'); process.exit(0); }
   const B = data.batch, fits = B.miss_modes.v.map(m => FM.batchFit(data, m));

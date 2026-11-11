@@ -1,0 +1,118 @@
+{
+ "about": "roofline prediction written BEFORE its run by report.js --roofline --predict; never edit the predicted block: score with --score and add a measured block beside it",
+ "written_utc": "2026-11-11T09:00:35Z",
+ "rm_commit": "f42cd7d4a250a8a1e5fdf9f0fc769bd7d640cffd",
+ "rm_dirty": false,
+ "id": "r8-agents-b33-1111",
+ "phase": "agents",
+ "B": 33,
+ "query": {
+  "box": "odie",
+  "model": "fnx",
+  "engine": "strata",
+  "store": "gsq_iq3xxs",
+  "flags": "--prefill auto; layer split 25; STRATA_PREFILL_STREAM_CPU_SHARE=0.25",
+  "ctx": 60000,
+  "draft": true,
+  "other_gib": 0,
+  "kv_format": "k8v4"
+ },
+ "agents": {
+  "prefill_query": {
+   "tokens": 1202,
+   "read_mix": true
+  },
+  "trace": "agent-long-16",
+  "server": "strata-conversation-cache",
+  "model": "fnx",
+  "slots": {
+   "v": 32,
+   "tag": "READ",
+   "src": "READ: the the served build engine admits at most 32 requests (--batch 32), homelab lane r8-batch-sweep PREDICTION.json pre_registered_expectations (626024a8055)"
+  },
+  "decode_curve": {
+   "v": [
+    [
+     1,
+     68.8
+    ],
+    [
+     16,
+     271.04
+    ],
+    [
+     32,
+     356.1
+    ]
+   ],
+   "tag": "MEASURED",
+   "src": "MEASURED before this sweep: R8 one-agent decode 68.8 tok/s (roofline check r8-decode, 2026-10-26) and the synthetic aggregate decode of the served image 06103b88 (engine 6655dc0, ctl-window cure) at 16 and 32 rows, curve odie-fnx-iq3xxs-2xb70-ctlw-prof-b32-nowrap-1026 (271.04, 356.1); ASSUMED the sweep serves that build"
+  }
+ },
+ "hypothesis": "B real agents decode only B_eff = B x duty at once (tool gaps, prefill stalls); useful tok/s follows the trace replay at the served build's measured decode curve, the RM prefill rate and F(B, cache) with the conversation cache holding every agent; past 32 requests the server queues",
+ "tests_term": "duty_cycle",
+ "band_pct": 20,
+ "conditions": {
+  "sweep": "homelab lane r8-batch-sweep 2026-11-11, points 1,8,16,24,33,40, warm-up 600 s, window 600 s, stagger 0.02, recorded tool gaps",
+  "frozen_before_reading": "B=8..40 results; B=1 (useful 30.25, decode 70.6, F 10.8, B_eff 0.43) was relayed by the coordinator before this record and is not scored here"
+ },
+ "predicted": {
+  "useful_tps": 33.37514666666667,
+  "useful_per_agent": 1.011368080808081,
+  "b_eff": 14.331152108145579,
+  "duty": 0.4342773366104721,
+  "F": 13.070995594943886,
+  "per_stream_at_beff": 17.910002879604352,
+  "aggregate_at_beff": 256.67097552493533,
+  "reread_per_turn": 21.454545454545453,
+  "evicted_share": 0,
+  "turns_per_agent_min": 0.3424242424242424,
+  "share": {
+   "decode": 0.30465958207204946,
+   "prefill": 0.31622303670269936,
+   "gap": 0.37911738122525107
+  },
+  "landscape_useful": 84.5959799645842,
+  "decode_basis": "curve: MEASURED before this sweep: R8 one-agent decode 68.8 tok/s (roofline check r8-decode, 2026-10-26) and the synthetic aggregate decode of the served image 06103b88 (engine 6655dc0, ctl-window cure) at 16 and 32 rows, curve odie-fnx-iq3xxs-2xb70-ctlw-prof-b32-nowrap-1026 (271.04, 356.1); ASSUMED the sweep serves that build"
+ },
+ "variants": {
+  "roofline_decode": {
+   "useful_tps": 26.787946666666656,
+   "useful_per_agent": 0.8117559595959593,
+   "b_eff": 13.38953847915186,
+   "duty": 0.4057435902773291,
+   "F": 14.696748936971028,
+   "per_stream_at_beff": 10.076744586889717,
+   "aggregate_at_beff": 134.92295939074506,
+   "reread_per_turn": 21.454545454545453,
+   "evicted_share": 0,
+   "turns_per_agent_min": 0.2878787878787879,
+   "share": {
+    "decode": 0.28646475605840127,
+    "prefill": 0.33432008450689177,
+    "gap": 0.37921515943470696
+   },
+   "landscape_useful": 84.5959799645842,
+   "decode_basis": "roofline decode at the fitted decode eta"
+  },
+  "cache_32_conversations": {
+   "useful_tps": 15.73648666666666,
+   "useful_per_agent": 0.47686323232323213,
+   "b_eff": 8.4747717571868,
+   "duty": 0.256811265369297,
+   "F": 32.97778593371668,
+   "per_stream_at_beff": 23.357459341854103,
+   "aggregate_at_beff": 197.94913674998415,
+   "reread_per_turn": 1731.9217374634748,
+   "evicted_share": 0.030303030303030276,
+   "turns_per_agent_min": 0.18484848484848485,
+   "share": {
+    "decode": 0.18588907187087855,
+    "prefill": 0.4867941474454844,
+    "gap": 0.32731678068363695
+   },
+   "landscape_useful": 84.5959799645842,
+   "decode_basis": "curve: MEASURED before this sweep: R8 one-agent decode 68.8 tok/s (roofline check r8-decode, 2026-10-26) and the synthetic aggregate decode of the served image 06103b88 (engine 6655dc0, ctl-window cure) at 16 and 32 rows, curve odie-fnx-iq3xxs-2xb70-ctlw-prof-b32-nowrap-1026 (271.04, 356.1); ASSUMED the sweep serves that build"
+  }
+ }
+}

@@ -1,0 +1,69 @@
+{
+ "about": "roofline prediction written BEFORE its run by report.js --roofline --predict; never edit the predicted block: score with --score and add a measured block beside it",
+ "written_utc": "2026-11-11T00:41:04Z",
+ "rm_commit": "799e2d2ea727056ff4f9b9e067601119ffaf514d",
+ "rm_dirty": false,
+ "id": "tq-snoopy-unlock-ab-read1k-stock",
+ "phase": "prefill",
+ "query": {
+  "box": "snoopy",
+  "model": "fnx",
+  "engine": "tqllm",
+  "store": "gsq_iq3s",
+  "tokens": 1000,
+  "unlock": "stock"
+ },
+ "hypothesis": "a short agent read streams every expert once over PCIe; the stream binds, so the read takes ~1.95 s whatever the tensor ceiling",
+ "tests_term": "stream.experts",
+ "band_pct": 15,
+ "conditions": "same session as the 32K A/B; 5 reads of ~1,000 fresh tokens at depth 0 after the warm-up",
+ "predicted": {
+  "prefill_tps": 513.7194499017681,
+  "time_s": 1.9465877731341823,
+  "bound_tps": 513.7194499017681,
+  "binding": "stream.experts",
+  "side": "stream",
+  "eta": 0.2690165978699123,
+  "terms": [
+   {
+    "id": "compute.trunk",
+    "s": 0.3213958108367714
+   },
+   {
+    "id": "compute.experts",
+    "s": 0.054812974800649644
+   },
+   {
+    "id": "compute.attention",
+    "s": 0.004339902992925546
+   },
+   {
+    "id": "stream.experts",
+    "s": 1.9465877731341823
+   }
+  ]
+ },
+ "composition_backfill": {
+  "about": "added after the record, never part of its prediction: the per-chunk composition of the predicted block, made by the record's own RM commit (its src/model.js and data, instrumented to emit its chunk groups) and kept only because that model reproduced the predicted block exactly; frozen attribution reads it, since this record predates stored compositions",
+  "from_rm_commit": "799e2d2ea727056ff4f9b9e067601119ffaf514d",
+  "link": {
+   "gbs": 26.14832,
+   "spec_gbs": 31.504
+  },
+  "composition": {
+   "rule": "max",
+   "groups": [
+    {
+     "compute": {
+      "compute.trunk": 0.3213958108367714,
+      "compute.experts": 0.054812974800649644,
+      "compute.attention": 0.004339902992925546
+     },
+     "stream": {
+      "stream.experts": 1.9465877731341823
+     }
+    }
+   ]
+  }
+ }
+}

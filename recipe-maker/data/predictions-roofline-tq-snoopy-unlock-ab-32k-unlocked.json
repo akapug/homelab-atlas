@@ -1,0 +1,89 @@
+{
+ "about": "roofline prediction written BEFORE its run by report.js --roofline --predict; never edit the predicted block: score with --score and add a measured block beside it",
+ "written_utc": "2026-11-11T00:41:04Z",
+ "rm_commit": "799e2d2ea727056ff4f9b9e067601119ffaf514d",
+ "rm_dirty": false,
+ "id": "tq-snoopy-unlock-ab-32k-unlocked",
+ "phase": "prefill",
+ "query": {
+  "box": "snoopy",
+  "model": "fnx",
+  "engine": "tqllm",
+  "store": "gsq_iq3s",
+  "tokens": 36000,
+  "unlock": "unlocked"
+ },
+ "hypothesis": "the unlock lifts the BF16 trunk ceiling 84.2 -> 131.4 TFLOPS; compute-bound 16K chunks then read x1.31 faster than tq-snoopy-unlock-ab-32k-stock (diluted by the INT8 expert terms, which the unlock does not touch)",
+ "tests_term": "compute.trunk",
+ "band_pct": 10,
+ "conditions": "as tq-snoopy-unlock-ab-32k-stock, unlock on",
+ "predicted": {
+  "prefill_tps": 3313.5595759035314,
+  "time_s": 10.86444929549324,
+  "bound_tps": 6164.633398821218,
+  "binding": "compute.trunk",
+  "side": "compute",
+  "eta": 0.2690165978699123,
+  "terms": [
+   {
+    "id": "compute.trunk",
+    "s": 7.41411706094689
+   },
+   {
+    "id": "compute.experts",
+    "s": 1.9732670928233873
+   },
+   {
+    "id": "compute.attention",
+    "s": 0.41007113202458617
+   },
+   {
+    "id": "stream.experts",
+    "s": 5.839763319402547
+   }
+  ]
+ },
+ "composition_backfill": {
+  "about": "added after the record, never part of its prediction: the per-chunk composition of the predicted block, made by the record's own RM commit (its src/model.js and data, instrumented to emit its chunk groups) and kept only because that model reproduced the predicted block exactly; frozen attribution reads it, since this record predates stored compositions",
+  "from_rm_commit": "799e2d2ea727056ff4f9b9e067601119ffaf514d",
+  "link": {
+   "gbs": 26.14832,
+   "spec_gbs": 31.504
+  },
+  "composition": {
+   "rule": "max",
+   "groups": [
+    {
+     "compute": {
+      "compute.trunk": 3.3742470535153846,
+      "compute.experts": 0.8980557791338438,
+      "compute.attention": 0.18662792853030055
+     },
+     "stream": {
+      "stream.experts": 1.9465877731341823
+     }
+    },
+    {
+     "compute": {
+      "compute.trunk": 3.3742470535153846,
+      "compute.experts": 0.8980557791338438,
+      "compute.attention": 0.18662792853030055
+     },
+     "stream": {
+      "stream.experts": 1.9465877731341823
+     }
+    },
+    {
+     "compute": {
+      "compute.trunk": 0.6656229539161208,
+      "compute.experts": 0.17715553455569966,
+      "compute.attention": 0.03681527496398507
+     },
+     "stream": {
+      "stream.experts": 1.9465877731341823
+     }
+    }
+   ]
+  }
+ }
+}

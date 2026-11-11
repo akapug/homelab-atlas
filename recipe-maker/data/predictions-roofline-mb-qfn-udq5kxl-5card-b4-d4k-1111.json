@@ -1,0 +1,151 @@
+{
+ "about": "roofline prediction written BEFORE its run by report.js --roofline --predict; never edit the predicted block: score with --score and add a measured block beside it",
+ "written_utc": "2026-11-11T09:14:19Z",
+ "rm_commit": "401e3fecdcaf22576086b5d43e880c61ba61f5c2",
+ "rm_dirty": false,
+ "id": "mb-qfn-udq5kxl-5card-b4-d4k-1111",
+ "phase": "pipeline",
+ "B": 4,
+ "ctx_read": 4096,
+ "plan_spec": {
+  "id": "qfn-udq5kxl-5card",
+  "label": "QFN ud_q5kxl over every IB-side card: lassie 1080 Ti + MI25, droopy RTX 6000, odie 2x B70",
+  "model": "fnx",
+  "store": "ud_q5kxl",
+  "client": "odie",
+  "cards": [
+   {
+    "box": "lassie",
+    "gpu": "1080ti"
+   },
+   {
+    "box": "lassie",
+    "gpu": "mi25"
+   },
+   {
+    "box": "droopy",
+    "gpu": "rtx6000"
+   },
+   {
+    "box": "odie",
+    "gpu": "b70_2"
+   },
+   {
+    "box": "odie",
+    "gpu": "b70_1"
+   }
+  ],
+  "ctx": 56445,
+  "streams": 1,
+  "kv_type": "q8_0",
+  "split": "memory",
+  "transport": "tcp",
+  "transport_by_box": {
+   "snoopy": "tcp-lan"
+  },
+  "displace": [
+   "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+  ],
+  "mode": "serial"
+ },
+ "hypothesis": "QFN UD-Q5_K_XL (the highest-fidelity QFN that fits the IB side) over every IB-side card (lassie 1080 Ti + MI25 behind one rpc-server, droopy RTX 6000, odie 2x B70 client), upstream llama.cpp RPC; the MI25 stage (Vulkan RADV, 197 GB/s measured line) is the slowest at B >= 4, and the plan holds only ~4 streams at the trace's mean depth, so capacity, not bandwidth, caps the agent rate",
+ "tests_term": "stage_read",
+ "band_pct": 25,
+ "conditions": {
+  "engine": "upstream llama.cpp f3b407c + homelab multibox patch 0001 (RPC), -ngl all, -sm layer, -ts by free memory, -ctk/-ctv q8_0, -ub 512, MTP off, the client holds the last stage",
+  "workload": "synthetic: B concurrent requests decoding at ~4096 tokens of depth (primary); agent rows: trace agent-long-16 replay at the trace's mean depth 56,445",
+  "written_before": "any multibox QFN run"
+ },
+ "predicted": {
+  "aggregate_tps": 110.70722965757768,
+  "per_stream_tps": 27.67680741439442,
+  "per_stream_b1_tps": 48.311001855118406,
+  "step_ms": 36.13133498482597,
+  "hop_share": 0.014156825333612462,
+  "slowest": "lassie mi25 (read)",
+  "ring_aggregate_tps": 169.32983167820285,
+  "stages": [
+   {
+    "box": "lassie",
+    "gpu": "1080ti",
+    "layers": 4,
+    "weights_gb": 8.54368832,
+    "ms": 3.307087078149829,
+    "binds": "read",
+    "rate_gbs": 349.932,
+    "rate_tag": "ESTIMATE"
+   },
+   {
+    "box": "lassie",
+    "gpu": "mi25",
+    "layers": 7,
+    "weights_gb": 14.95145456,
+    "ms": 9.735442241017099,
+    "binds": "read",
+    "rate_gbs": 197.1,
+    "rate_tag": "MEASURED"
+   },
+   {
+    "box": "droopy",
+    "gpu": "rtx6000",
+    "layers": 9,
+    "weights_gb": 19.22329872,
+    "ms": 5.519783540670712,
+    "binds": "read",
+    "rate_gbs": 486.1,
+    "rate_tag": "MEASURED"
+   },
+   {
+    "box": "odie",
+    "gpu": "b70_2",
+    "layers": 14,
+    "weights_gb": 29.90290912,
+    "ms": 7.952452761221173,
+    "binds": "read",
+    "rate_gbs": 586,
+    "rate_tag": "MEASURED"
+   },
+   {
+    "box": "odie",
+    "gpu": "b70_1",
+    "layers": 14,
+    "weights_gb": 30.57833952,
+    "ms": 9.105064365316736,
+    "binds": "read",
+    "rate_gbs": 586,
+    "rate_tag": "MEASURED"
+   }
+  ],
+  "prefill_tps": 1263.8842043601246,
+  "prefill_tokens": 2048,
+  "capacity_streams": 4,
+  "plan_ctx": 56445,
+  "weights_gb": 103.19969024,
+  "agents": [
+   {
+    "B": 1,
+    "useful_tps": 28.86542499999999,
+    "b_eff": 0.6524249095194399,
+    "F": 7.7123945573871415
+   },
+   {
+    "B": 4,
+    "useful_tps": 57.64417000000005,
+    "b_eff": 2.5546267255698676,
+    "F": 6.017930052596813
+   },
+   {
+    "B": 8,
+    "useful_tps": 4.614725,
+    "b_eff": 1.5468890921314182,
+    "F": 143.5888173495046
+   },
+   {
+    "B": 16,
+    "useful_tps": 0,
+    "b_eff": 0.9641966393753315,
+    "F": null
+   }
+  ]
+ }
+}

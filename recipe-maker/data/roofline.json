@@ -1,0 +1,340 @@
+{
+ "about": "Per-phase roofline (src/model.js phaseBound; node report.js --roofline). Each card and CPU carries its compute ceilings by precision, its VRAM read rate and PCIe link; each engine says which precision its prefill and decode kernels run at and how its weight streams overlap the kernels; each model says its FLOPs per token by class. A phase's time is the max (engine overlap 'max', per chunk) or the sum (overlap 'sum') of its terms: compute (FLOPs / (ceiling x eta)), weight streaming (bytes not resident / link rate), resident weight reads (bytes / VRAM rate), attention and KV bytes. The bound is the time at eta 1 (the hardware ceiling); the prediction uses the engine's fitted eta (one factor per engine, fit cells named under checks). Every phase names the term that binds. build.py copies each card's and CPU's ceilings into data.boxes (gpus[].ceil, cpu.ceil) and the firmware unlock setting into gpus[].firmware_unlock.",
+ "precision_fallback": {
+  "v": {
+   "bf16_tensor": ["fp16_tensor", "fp16", "fp32"],
+   "fp16_tensor": ["fp16", "fp32"],
+   "int8_tensor": ["int8_dp4a", "fp16_tensor", "fp16", "fp32"],
+   "sdpa_bf16": ["bf16_tensor", "fp16_tensor", "fp16", "fp32"],
+   "int8_cpu": ["fp32"],
+   "bf16_cpu": ["fp32"]
+  },
+  "tag": "READ",
+  "src": "a setting: the ceiling a phase falls back to when the card lacks the precision its engine asks for (Turing has no BF16 tensor path, Pascal no tensor cores); the bound names the key it used. Of the chain the card has, the fastest key prices the phase (ties keep this order): the GTX 1080 Ti has FP16 at 1/64 rate, so its FP16 tensor phases run at FP32, as llama.cpp does there"
+ },
+ "cards": {
+  "rtx3090ti": {
+   "match": "3090 Ti",
+   "ceil": {
+    "bf16_tensor": {"v": 84.2, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-10 snoopy, torch BF16 GEMM in the homelab/vllm-cuda image at a 480 W limit, firmware stock (dense, FP32 accumulate); the unlock A/B of the local-ai lane"},
+    "fp16_tensor": {"v": 84.4, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-10 snoopy, torch FP16 GEMM (FP32 accumulate), homelab/vllm-cuda image, 480 W, firmware stock"},
+    "tf32_tensor": {"v": 42.5, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-10 snoopy, torch TF32 GEMM, homelab/vllm-cuda image, 480 W, firmware stock"},
+    "sdpa_bf16": {"v": 78.2, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-10 snoopy, torch causal SDPA bf16, homelab/vllm-cuda image, 480 W, firmware stock"},
+    "gemm_4096x5120x17408_bf16": {"v": 86.1, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-10 snoopy, torch 4096x5120x17408 BF16 GEMM, homelab/vllm-cuda image, 480 W, firmware stock"},
+    "int8_tensor": {"v": 320, "unit": "TOPS", "tag": "DATASHEET", "src": "DATASHEET NVIDIA GeForce RTX 3090 Ti (GA102): INT8 tensor 320 TOPS dense (640 with sparsity); the firmware unlock was not measured on INT8, so both states read this value"},
+    "fp32": {"v": 40.0, "unit": "TFLOPS", "tag": "DATASHEET", "src": "DATASHEET NVIDIA GeForce RTX 3090 Ti: FP32 40 TFLOPS"},
+    "vram_gbs": {"v": 1008, "unit": "GB/s", "tag": "DATASHEET", "src": "DATASHEET NVIDIA GeForce RTX 3090 Ti: 21 Gbps GDDR6X x 384-bit = 1,008 GB/s (homelab lab notes)"}
+   },
+   "unlock": {
+    "states": ["stock", "unlocked"],
+    "by_state": {
+     "unlocked": {
+      "bf16_tensor": {"v": 131.4, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-10 snoopy after the firmware unlock, torch BF16 GEMM (FP32 accumulate), homelab/vllm-cuda image, 480 W (84.2 stock)"},
+      "fp16_tensor": {"v": 131.8, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-10 snoopy after the firmware unlock, torch FP16 GEMM (FP32 accumulate), 480 W (84.4 stock)"},
+      "tf32_tensor": {"v": 74.5, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-10 snoopy after the firmware unlock, torch TF32 GEMM, 480 W (42.5 stock)"},
+      "sdpa_bf16": {"v": 128.1, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-10 snoopy after the firmware unlock, torch causal SDPA bf16, 480 W (78.2 stock)"},
+      "gemm_4096x5120x17408_bf16": {"v": 153.9, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-10 snoopy after the firmware unlock, torch 4096x5120x17408 BF16 GEMM, 480 W (86.1 stock)"}
+     }
+    },
+    "src": "firmware unlock of the RTX 3090 Ti (lab notes lead; applied on snoopy 2026-11-10): lifts the FP16/BF16/TF32 tensor rates with FP32 accumulate; a value the unlock state does not list keeps its stock value"
+   }
+  },
+  "b70": {
+   "match": "0xe223|B70",
+   "ceil": {
+    "int8_tensor": {"v": 269.2, "unit": "TOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-11 s8 x s8 -> s32 square 8192 GEMM (262 at 4096); odie B70 #1 (0000:4c:00.0), oneDNN 3.11.4 GPU matmul (oneAPI 2026.1, ghcr.io/ggml-org/llama.cpp:full-intel), Level Zero driver 1.15.38308, hashed random inputs, best of 5 means of 20 back-to-back runs after a 3 s warm-up; the card sat at its 230 W power limit (median 228 W, PowerBurst throttle) and clocked 1,950-2,250 MHz under load (2,800 max), so a datasheet figure (2,800 MHz) overstates what the power limit allows by ~1.25-1.4x; B70 #2 (23:00.0) within 2 %; lab notes (ceilings.cpp, results-2026-11-11). DATASHEET 367 TOPS (homelab lab notes) at the 2,800 MHz clock the power limit does not hold"},
+    "fp16_tensor": {"v": 133.7, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-11 f16 square 4096 GEMM, f16 out (128.1 at 8192); odie B70 #1 (0000:4c:00.0), oneDNN 3.11.4 GPU matmul (oneAPI 2026.1, ghcr.io/ggml-org/llama.cpp:full-intel), Level Zero driver 1.15.38308, hashed random inputs, best of 5 means of 20 back-to-back runs after a 3 s warm-up; the card sat at its 230 W power limit (median 228 W, PowerBurst throttle) and clocked 1,950-2,250 MHz under load (2,800 max), so a datasheet figure (2,800 MHz) overstates what the power limit allows by ~1.25-1.4x; B70 #2 (23:00.0) within 2 %; lab notes (ceilings.cpp, results-2026-11-11). Was ESTIMATE 183.5 (half the INT8 datasheet)"},
+    "bf16_tensor": {"v": 138.5, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-11 bf16 square 8192 GEMM, bf16 out (138.4 at 4096); odie B70 #1 (0000:4c:00.0), oneDNN 3.11.4 GPU matmul (oneAPI 2026.1, ghcr.io/ggml-org/llama.cpp:full-intel), Level Zero driver 1.15.38308, hashed random inputs, best of 5 means of 20 back-to-back runs after a 3 s warm-up; the card sat at its 230 W power limit (median 228 W, PowerBurst throttle) and clocked 1,950-2,250 MHz under load (2,800 max), so a datasheet figure (2,800 MHz) overstates what the power limit allows by ~1.25-1.4x; B70 #2 (23:00.0) within 2 %; lab notes (ceilings.cpp, results-2026-11-11). Was ESTIMATE 183.5"},
+    "fp32": {"v": 20.1, "unit": "TFLOPS", "tag": "MEASURED", "src": "MEASURED 2026-11-11 f32 square 4096 GEMM, strict fp32 math (18.6 at 8192); odie B70 #1 (0000:4c:00.0), oneDNN 3.11.4 GPU matmul (oneAPI 2026.1, ghcr.io/ggml-org/llama.cpp:full-intel), Level Zero driver 1.15.38308, hashed random inputs, best of 5 means of 20 back-to-back runs after a 3 s warm-up; the card sat at its 230 W power limit (median 228 W, PowerBurst throttle) and clocked 1,950-2,250 MHz under load (2,800 max), so a datasheet figure (2,800 MHz) overstates what the power limit allows by ~1.25-1.4x; B70 #2 (23:00.0) within 2 %; lab notes (ceilings.cpp, results-2026-11-11). DATASHEET 22.94 TFLOPS"},
+    "vram_gbs": {"v": 602, "unit": "GB/s", "tag": "MEASURED", "src": "MEASURED 2026-11-11 read-only SYCL sum over 2 GiB and 4 GiB of hashed data (602.1, 601.9); a copy reaches 513-529 GB/s counting read + write; odie B70 #1 (0000:4c:00.0), oneDNN 3.11.4 GPU matmul (oneAPI 2026.1, ghcr.io/ggml-org/llama.cpp:full-intel), Level Zero driver 1.15.38308, hashed random inputs, best of 5 means of 20 back-to-back runs after a 3 s warm-up; the card sat at its 230 W power limit (median 228 W, PowerBurst throttle) and clocked 1,950-2,250 MHz under load (2,800 max), so a datasheet figure (2,800 MHz) overstates what the power limit allows by ~1.25-1.4x; B70 #2 (23:00.0) within 2 %; lab notes (ceilings.cpp, results-2026-11-11). DATASHEET 608 GB/s (19 Gbps x 256-bit)"}
+   },
+   "shape_curves": {
+    "about": "Measured kernel rates of a GEMM class (experts | trunk) by kernel path and precision, as a function of rows: for experts the rows an expert sees (tokens x k / the distinct experts they touch), for the trunk the tokens in the GEMM. src/model.js shapeRate interpolates in log(rows) (power law between neighbouring points; MEASURED within 5 % of a point, ESTIMATE between and beyond, never above the square ceiling); a card, path or precision with no curve keeps the square ceiling, flagged unmeasured. bits_per_weight is the weight layout the bench read (the excess compose mode subtracts that read, see settings.shape_compose); model names the expert / trunk dims measured (another model's dims read ESTIMATE). Common bench: odie B70 #1 (0000:4c:00.0), oneDNN 3.11.4 GPU matmul (oneAPI 2026.1, ghcr.io/ggml-org/llama.cpp:full-intel), Level Zero 1.15.38308, best of 5 means of 20 runs after a 3 s warm-up, the card at its 230 W limit; lab notes results-2026-11-11 (full-b70-1.jsonl, m1202-b70-1.jsonl, tbo-b70-1.txt)",
+    "experts": {
+     "onednn_grouped": {
+      "int8_tensor": {"unit": "TOPS", "bits_per_weight": 8, "model": "fnx", "points": [
+        {"rows": 24, "v": 24.58, "tag": "MEASURED", "src": "MEASURED 2026-11-11 the routed experts of a 1,202-token read as one oneDNN batched s8 GEMM, 512 experts x 24 rows (uniform top-10): gate+up 24 x 2560 x 1280 at 25.67 TOPS, down 24 x 640 x 2560 at 22.65; 24.58 FLOP-weighted (full-b70-1.jsonl). The int8 weights stream at 512 GB/s here (85 % of the 602 GB/s VRAM read): read-bound"},
+        {"rows": 80, "v": 66.62, "tag": "MEASURED", "src": "MEASURED 2026-11-11 the same at 80 rows (4,096 tokens): gate+up 73.92, down 55.63 TOPS, 66.62 FLOP-weighted; weights at 416 GB/s"},
+        {"rows": 320, "v": 151.80, "tag": "MEASURED", "src": "MEASURED 2026-11-11 the same at 320 rows (16,384 tokens): gate+up 193.15, down 106.29 TOPS, 151.80 FLOP-weighted; weights at 237 GB/s"}],
+       "src": "the ideal grouped GEMM (every expert the same rows); XeStrata runs its own grouped int8 kernel (iq_mmq_grouped), not timed: an engine that names this path reads the best measured kernel at its shape"},
+      "bf16_tensor": {"unit": "TFLOPS", "bits_per_weight": 16, "model": "fnx", "points": [
+        {"rows": 24, "v": 13.58, "tag": "MEASURED", "src": "MEASURED 2026-11-11 oneDNN batched bf16 experts, 512 x 24 rows: gate+up 13.77, down 13.21 TFLOPS, 13.58 FLOP-weighted; weights at 566 GB/s (94 % of the VRAM read): read-bound"},
+        {"rows": 80, "v": 40.58, "tag": "MEASURED", "src": "MEASURED 2026-11-11 512 x 80 rows: gate+up 41.94, down 38.10, 40.58 FLOP-weighted; weights at 507 GB/s (84 %): still read-bound"},
+        {"rows": 320, "v": 116.90, "tag": "MEASURED", "src": "MEASURED 2026-11-11 512 x 320 rows: gate+up 125.21, down 103.20, 116.90 FLOP-weighted (84 % of the 138.5 square)"}]},
+      "fp16_tensor": {"unit": "TFLOPS", "bits_per_weight": 16, "model": "fnx", "points": [
+        {"rows": 24, "v": 13.58, "tag": "MEASURED", "src": "MEASURED 2026-11-11 oneDNN batched fp16 experts, 512 x 24 rows: gate+up 13.77, down 13.21, 13.58 FLOP-weighted; weights at 566 GB/s: read-bound"},
+        {"rows": 80, "v": 40.59, "tag": "MEASURED", "src": "MEASURED 2026-11-11 512 x 80 rows: gate+up 41.93, down 38.15, 40.59 FLOP-weighted; weights at 507 GB/s"},
+        {"rows": 320, "v": 115.79, "tag": "MEASURED", "src": "MEASURED 2026-11-11 512 x 320 rows: gate+up 124.58, down 101.48, 115.79 FLOP-weighted"}]}
+     },
+     "sycl_mmid": {
+      "fp16_tensor": {"unit": "TFLOPS", "bits_per_weight": 3.0625, "quant": "iq3_xxs", "model": "fnx", "points": [
+        {"rows": 10, "v": 3.89, "tag": "MEASURED", "src": "MEASURED 2026-11-11 llama.cpp SYCL (a34de8618, XMX on) test-backend-ops perf MUL_MAT_ID IQ3_XXS, QFN gate shape (512 experts, top-10, 640 x 2560), 512 tokens (10 rows an expert): 3.89 TFLOPS (tbo-b70-1.txt; the patch in tbo-qfn-shapes.patch). The weights stream at 74 GB/s: compute-bound (dequant + GEMM)"},
+        {"rows": 40, "v": 7.29, "tag": "MEASURED", "src": "MEASURED 2026-11-11 the same at 2,048 tokens (40 rows an expert): 7.29 TFLOPS. Other quants at 512 / 2,048 tokens: IQ2_XXS 4.53 / 8.19, IQ3_S 3.65 / 6.95, Q8_0 4.62 / 8.52, F16 1.29 / 4.68; down (2560 x 640) IQ4_NL 3.52 / 6.98, Q2_0 1.28 / 4.12"}],
+       "src": "the dequant path the sycl engine runs for experts at prefill sizes; a store of another quant reads this IQ3_XXS curve as ESTIMATE"}
+     }
+    },
+    "trunk": {
+     "onednn": {
+      "int8_tensor": {"unit": "TOPS", "bits_per_weight": 8, "model": "fnx", "points": [
+        {"rows": 1202, "v": 245, "tag": "MEASURED", "src": "MEASURED 2026-11-11 QFN trunk-shaped s8 GEMMs at 1,202 rows (the R8 mean read): 2560 x 8192 242.8, 4096 x 2560 250.0, 2560 x 12288 244.7 TOPS (m1202-b70-1.jsonl); 218-248 at 4,096-16,384 rows"}]},
+      "bf16_tensor": {"unit": "TFLOPS", "bits_per_weight": 16, "model": "fnx", "points": [
+        {"rows": 1202, "v": 128, "tag": "MEASURED", "src": "MEASURED 2026-11-11 QFN trunk-shaped bf16 GEMMs at 1,202 rows: 133.7 / 109.8 / 139.8 (fp16 124.3 / 109.9 / 130.7); 131-142 at 4,096-16,384 rows"}]},
+      "fp16_tensor": {"unit": "TFLOPS", "bits_per_weight": 16, "model": "fnx", "points": [
+        {"rows": 1202, "v": 124.6, "tag": "MEASURED", "src": "MEASURED 2026-11-11 QFN trunk-shaped fp16 GEMMs at 1,202 rows: 124.3 / 109.9 / 130.7 TFLOPS, 124.6 FLOP-weighted (m1202-b70-1.jsonl); 124-128 at 4,096-16,384 rows"}]}
+     }
+    }
+   }
+  },
+  "rtx6000": {
+   "match": "Quadro RTX 6000",
+   "ceil": {
+    "fp16_tensor": {"v": 130.5, "unit": "TFLOPS", "tag": "DATASHEET", "src": "DATASHEET NVIDIA Quadro RTX 6000 (TU102): FP16 tensor 130.5 TFLOPS (Quadro: full rate with FP32 accumulate); no BF16 tensor path on Turing, so bf16_tensor falls back to this"},
+    "int8_tensor": {"v": 261, "unit": "TOPS", "tag": "DATASHEET", "src": "DATASHEET NVIDIA Quadro RTX 6000: INT8 tensor 261 TOPS"},
+    "fp32": {"v": 16.3, "unit": "TFLOPS", "tag": "DATASHEET", "src": "DATASHEET NVIDIA Quadro RTX 6000: FP32 16.3 TFLOPS"},
+    "vram_gbs": {"v": 672, "unit": "GB/s", "tag": "DATASHEET", "src": "DATASHEET NVIDIA Quadro RTX 6000: 672 GB/s"}
+   }
+  },
+  "gtx1080ti": {
+   "match": "1080 Ti",
+   "ceil": {
+    "fp32": {"v": 11.34, "unit": "TFLOPS", "tag": "DATASHEET", "src": "DATASHEET NVIDIA GTX 1080 Ti (GP102, sm_61): FP32 11.34 TFLOPS; no tensor cores"},
+    "fp16": {"v": 0.177, "unit": "TFLOPS", "tag": "DATASHEET", "src": "DATASHEET GP102: FP16 at 1/64 of FP32 (0.177 TFLOPS); llama.cpp computes in FP32 / dp4a there"},
+    "int8_dp4a": {"v": 45.4, "unit": "TOPS", "tag": "ESTIMATE", "src": "ESTIMATE: sm_61 dp4a at 4x the FP32 rate (4 int8 MACs per FMA slot)"},
+    "vram_gbs": {"v": 484, "unit": "GB/s", "tag": "DATASHEET", "src": "DATASHEET NVIDIA GTX 1080 Ti: 484 GB/s"}
+   }
+  },
+  "mi25": {
+   "match": "MI25|0x6860",
+   "ceil": {
+    "fp16": {"v": 24.6, "unit": "TFLOPS", "tag": "DATASHEET", "src": "DATASHEET AMD Radeon Instinct MI25 (Vega10): packed FP16 24.6 TFLOPS; no int8 dot instruction on gfx900, so int8 kernels fall back to this"},
+    "fp32": {"v": 12.3, "unit": "TFLOPS", "tag": "DATASHEET", "src": "DATASHEET AMD Radeon Instinct MI25: FP32 12.3 TFLOPS"},
+    "vram_gbs": {"v": 484, "unit": "GB/s", "tag": "DATASHEET", "src": "DATASHEET MI25 HBM2 945 MHz x 2048-bit = 484 GB/s (homelab lab notes)"}
+   }
+  }
+ },
+ "cpus": {
+  "9950x3d": {
+   "match": "9950X3D",
+   "ceil": {
+    "fp32": {"v": 5.1, "unit": "TFLOPS", "tag": "ESTIMATE", "src": "ESTIMATE: 16 Zen 5 cores x 2 x 512-bit FMA (64 FP32 FLOP a cycle) x ~5.0 GHz all-core"},
+    "bf16_cpu": {"v": 10.2, "unit": "TFLOPS", "tag": "ESTIMATE", "src": "ESTIMATE: AVX512_BF16 dot products at 2x the FP32 rate"},
+    "int8_cpu": {"v": 20.4, "unit": "TOPS", "tag": "ESTIMATE", "src": "ESTIMATE: AVX512_VNNI at 4x the FP32 rate"}
+   }
+  },
+  "gold5215x2": {
+   "match": "Gold 5215",
+   "ceil": {
+    "fp32": {"v": 1.28, "unit": "TFLOPS", "tag": "ESTIMATE", "src": "ESTIMATE: 2 sockets x 10 Cascade Lake cores x 1 AVX-512 FMA unit (32 FP32 FLOP a cycle) x ~2.0 GHz AVX-512 all-core (droopy: 20 physical cores, boxes/droopy.json probe; no avx512_bf16, so BF16 / FP16 CPU math runs at this rate)"},
+    "int8_cpu": {"v": 5.1, "unit": "TOPS", "tag": "ESTIMATE", "src": "ESTIMATE: AVX512_VNNI at 4x the FP32 rate (one 512-bit vpdpbusd a cycle on the one FMA port = 64 int8 MACs = 128 ops a cycle a core x 20 cores x ~2.0 GHz); no measured CPU GEMM rate in homelab docs or inventory (grep gflops|tflops, 2026-11-11)"}
+   }
+  },
+  "tr3960x": {
+   "match": "3960X",
+   "ceil": {
+    "fp32": {"v": 2.9, "unit": "TFLOPS", "tag": "ESTIMATE", "src": "ESTIMATE: 24 Zen 2 cores x 2 x 256-bit FMA (32 FP32 FLOP a cycle) x ~3.8 GHz"},
+    "int8_cpu": {"v": 5.8, "unit": "TOPS", "tag": "ESTIMATE", "src": "ESTIMATE: AVX2 maddubs int8 at 2x the FP32 rate (no VNNI)"}
+   }
+  },
+  "epyc7601x2": {
+   "match": "EPYC 7601",
+   "ceil": {
+    "fp32": {"v": 2.76, "unit": "TFLOPS", "tag": "ESTIMATE", "src": "ESTIMATE: 2 sockets x 32 Zen 1 cores x 2 x 128-bit FMA (16 FP32 FLOP a cycle) x ~2.7 GHz (lassie: 64 physical cores, boxes/lassie.json probe)"},
+    "int8_cpu": {"v": 5.5, "unit": "TOPS", "tag": "ESTIMATE", "src": "ESTIMATE: AVX2 maddubs int8 at 2x the FP32 rate (no VNNI: vpmaddubsw then vpmaddwd to widen, two 128-bit halves a 256-bit op on Zen 1); no measured CPU GEMM rate in homelab docs or inventory (grep gflops|tflops, 2026-11-11)"}
+   }
+  }
+ },
+ "link": {
+  "pcie_gbs_per_lane": {"v": {"3": 0.985, "4": 1.969, "5": 3.938}, "tag": "READ", "src": "PCI-SIG spec rates per lane per direction (8, 16, 32 GT/s with 128b/130b)"},
+  "dma_eff": {"v": 0.83, "tag": "ESTIMATE", "src": "ESTIMATE: large pinned host-to-device copies reach about 83 % of the PCIe spec (about 26 GB/s on gen4 x16); an engine with its own measured or fitted link share sets link_eff"}
+ },
+ "settings": {
+  "shape_compose": {"v": "excess", "tag": "READ", "src": "a setting: how a measured shape curve (cards[].shape_curves) prices a GEMM class. excess (default): the measured kernel time less the read of its own weights at the bench layout (bits_per_weight / VRAM read), never faster than the square ceiling, because the engine's own terms already price the weights at the store's bytes (the strata pass, read.resident, read.misses, the PCIe stream) and the low-row bench points sit at the weight-read roof (int8 85 %, fp16 94 % of the VRAM read at 24 rows), so the kernel time alone would price the weights twice and at the bench layout's width. kernel: the measured kernel time as the compute term (the shape ceiling as a plain ceiling). Chosen on the held-out R8 16-agent useful rate (83.4 tok/s, not a fit cell): see docs/how-it-works.md roofline"},
+  "placements": {"v": {"gpu": {"trunk": "gpu", "attention": "gpu", "experts": "gpu"}, "cpu_only": {"trunk": "cpu", "attention": "cpu", "experts": "cpu"}}, "tag": "READ",
+   "src": "a setting: where a query's GEMM classes run. gpu (the default when a query or recipe states none): trunk and attention on the stage card, experts resident on it or host-side by the query's resident bytes and host path. cpu_only (a recipe's placement field, the external rows' vocabulary): trunk, attention and experts on the box CPU at its cpus ceilings x the share of physical cores the recipe's threads use, every weight read from DRAM once a chunk. A placement not in this table, or a CPU placement on a box or engine with no CPU ceiling or CPU kernel metadata, is refused (no bound), never bounded on the GPU"},
+  "firmware_unlock": {
+   "snoopy": {
+    "3090ti": {"v": "unlocked", "since": "2026-11-10", "tag": "READ", "src": "a setting: the RTX 3090 Ti firmware unlock is on since 2026-11-10 (owner reboot); a query or recipe sets unlock stock|unlocked to judge the other state, and a check dated before since reads stock"}
+   }
+  }
+ },
+ "engines": {
+  "tqllm": {
+   "prefill": {
+    "trunk": "bf16_tensor", "experts": "int8_tensor", "attention": "bf16_tensor", "overlap": "max", "chunk_default": 16384,
+    "stream": "all", "link_eff": null,
+    "src": {"tag": "READ", "src": "tqLLM 1.5.0 source read 2026-11-10 (turbo-tan/tqllm 6314171): src/models/qwen/qwen4exp/fn_prefill.cpp runs the routed-expert GEMMs through llama.cpp's MMQ (int8 mma) for the formats it covers, the grouped fp16 kernel otherwise; the trunk projections are BF16 / FP16 with FP32 accumulate (cublasLt CUBLAS_COMPUTE_32F, mma f32.f16.f16.f32); fn_engine_prefill.cpp: every chunk streams every expert once, and on 24 GB cards the streams hide under the kernels (author's nsys 10-19: 90.7 % busy); chunk 16384 on 24 GB (server log 'chunks of 16384')"}
+   },
+   "decode": {"miss_path": "cpu", "overlap": "sum", "src": {"tag": "READ", "src": "tqLLM source fn_cpu_experts.hpp: missed experts are computed on the CPU (AVX2) from the pinned packed copy; layers run in order, so per-token terms add"}}
+  },
+  "strata": {
+   "prefill": {
+    "trunk": "int8_tensor", "experts": "int8_tensor", "attention": null, "overlap": "sum", "chunk_default": 2048, "trunk_path": "onednn", "experts_path": "onednn_grouped",
+    "stream": "nonresident", "link_eff": 0.508, "pass": "prefill_pass",
+    "src": {"tag": "READ", "src": "the existing first-principles prefill model (data/workload.json prefill_pass, src/model.js prefillPass): every token's active params at the card's int8 rate, one pass over the experts per chunk, pass and compute in series; link share 0.508 (16 GB/s single-expert uploads); attention and DeltaNet depth terms not modelled"}
+   },
+   "decode": {"miss_path": "cpu", "overlap": "sum", "src": {"tag": "READ", "src": "XeStrata layer split: a stage computes the experts it misses on the CPU pool (engines.strata.serving.split_cpu_experts)"}}
+  },
+  "vllm": {
+   "prefill": {
+    "trunk": "fp16_tensor", "experts": "fp16_tensor", "attention": "fp16_tensor", "overlap": "max", "chunk_default": 8192,
+    "stream": "nonresident", "link_eff": null,
+    "src": {"tag": "ESTIMATE", "src": "ESTIMATE: vLLM XPU (llm-scaler) runs int4 weight-only GEMMs as dequant + FP16 XMX at prefill sizes; chunk = max-num-batched-tokens 8192 (homelab fit-in-vram-2026-10-27.md settings)"}
+   },
+   "decode": {"miss_path": "link", "overlap": "sum", "src": {"tag": "ESTIMATE", "src": "ESTIMATE: every weight resident; a miss would cross the link"}}
+  },
+  "ik": {
+   "prefill": {
+    "trunk": "int8_tensor", "experts": "int8_tensor", "cpu_experts": "int8_cpu", "attention": "fp16_tensor", "overlap": "sum", "chunk_default": 512,
+    "stream": "offload", "link_eff": null,
+    "cpu_trunk": "int8_cpu", "cpu_attention": "fp32",
+    "cpu_paths": {"q2_K": "kquant_requant", "q3_K": "kquant_requant", "q4_K": "kquant_requant", "q8_0": "q8_0_repack", "mxfp4": "q8_0_repack", "q4_0": "q8_0_repack"},
+    "cpu_src": {"tag": "READ", "src": "ik_llama.cpp source read 2026-11-11 (ik-dsv4ps 9af6a6cd) ggml/src/iqk/iqk_mul_mat.cpp:239-330 is_dequant_better + :776-808 mul_mat_moe: at 32 or more rows a GEMM converts each thread's slice of weight rows once a call (so once a ubatch, amortised over the rows) and runs an int8 GEMM over every row: Q2_K / Q3_K dequantize and requantize each 256-block to Q8_K_R16 (AVX-512 VNNI) or Q8_K_R8 (AVX2) = cpu path kquant_requant; Q8_0 / MXFP4 / Q4_0 unpack to Q8_0_R8 = cpu path q8_0_repack. The Q8_0 trunk runs the same int8 path (int8_cpu). Attention with -fa 1 on a CPU with no native FP16 / BF16 math (droopy has no avx512_bf16, lassie is AVX2) is taken at the FP32 rate (ESTIMATE). The convert cost and the barrier waits (ggml_barrier ~25 % of the droopy CPU-only profile, lab notes) are not separate terms: they sit in the CPU eta, fitted per engine on cells of one cpu path (cpu_fits)"}
+   },
+   "decode": {"miss_path": "cpu", "overlap": "sum", "src": {"tag": "ESTIMATE", "src": "ESTIMATE: CPU-resident experts are computed on the CPU from DRAM / PMem; with placement cpu_only every weight, the KV and the compute stay on the CPU (DRAM read rate, CPU ceilings)"}}
+  },
+  "llamacpp": {
+   "prefill": {
+    "trunk": "int8_tensor", "experts": "int8_tensor", "cpu_experts": "int8_cpu", "attention": "fp16_tensor", "overlap": "sum", "chunk_default": 512,
+    "stream": "offload", "link_eff": null,
+    "src": {"tag": "ESTIMATE", "src": "ESTIMATE: mainline llama.cpp as ik (MMQ int8 on CUDA; SYCL/Vulkan fall back by the card's ceilings)"}
+   },
+   "decode": {"miss_path": "cpu", "overlap": "sum", "src": {"tag": "ESTIMATE", "src": "ESTIMATE: as ik"}}
+  },
+  "sycl": {
+   "prefill": {
+    "trunk": "fp16_tensor", "experts": "fp16_tensor", "cpu_experts": "int8_cpu", "attention": "fp16_tensor", "overlap": "sum", "chunk_default": 512, "experts_path": "sycl_mmid",
+    "stream": "offload", "link_eff": 0.508,
+    "src": {"tag": "ESTIMATE", "src": "ESTIMATE: llama.cpp SYCL dequantizes to FP16 for oneDNN XMX GEMMs at prefill sizes; link share 0.508 (engines.sycl.recipe_rates.cache_link_gbs 16 GB/s over the gen4 x16 spec)"}
+   },
+   "decode": {"miss_path": "cpu", "overlap": "sum", "src": {"tag": "ESTIMATE", "src": "ESTIMATE: as ik"}}
+  },
+  "glmlite": {
+   "prefill": {
+    "trunk": "fp16_tensor", "experts": "fp16_tensor", "cpu_experts": "int8_cpu", "attention": "fp16_tensor", "overlap": "sum", "chunk_default": 512,
+    "stream": "offload", "link_eff": null,
+    "src": {"tag": "ESTIMATE", "src": "ESTIMATE: glm-lite CUDA trellis kernels dequantize to FP16; CPU lanes compute the CPU experts"}
+   },
+   "decode": {"miss_path": "cpu", "overlap": "sum", "src": {"tag": "ESTIMATE", "src": "ESTIMATE: CPU lanes read the CPU experts from DRAM"}}
+  }
+ },
+ "models": {
+  "fnx": {
+   "trunk_params": {"v": 3.64e9, "tag": "READ", "src": "data/models/fnx.json intake bytes_by_class (BF16 safetensors) / 2: attention 0.617B + linear attention 2.087B + shared expert 0.236B + hyper-connection mixers 0.641B + router 0.063B; with the routed 2.36B this is the card's 6B active"},
+   "head_params": {"v": 0.636e9, "tag": "READ", "src": "data/models/fnx.json intake output 1,271,398,400 B BF16 / 2 (the LM head: one row per prompt, every decode token)"},
+   "attn_layers": {"v": 12, "tag": "READ", "src": "data/models/fnx.json: 48 layers minus 36 Gated DeltaNet layers"},
+   "q_dim": {"v": 4096, "tag": "ESTIMATE", "src": "ESTIMATE: 16 query heads x head_dim 256, from the attention bytes (102.9 MB a layer: gated q 2560 x 8192 + o 4096 x 2560 + kv + indexer)"},
+   "attn_keys_cap": {"v": 2048, "tag": "ESTIMATE", "src": "ESTIMATE: QSA attends to a selected 2,048 keys a query (tqLLM qwen4exp QSA score scratch block x heads x 2052); the indexer scan over every key is not counted"},
+   "draft_mult": {"v": 1.5, "tag": "ESTIMATE", "src": "models.fnx.draft.mult_default (MTP decode speed-up, ESTIMATE)"},
+   "state_geometry": {"v": {"gdn_layers": 36, "value_heads": 48, "key_dim": 128, "value_dim": 128, "conv_channels": 10240, "conv_tail": 3, "bytes": 4}, "tag": "TRACED",
+    "src": "TRACED XeStrata 305c819a416e include/strata/core/layout.hpp:34-65 (36 GDN layers, 48 value heads, state width 128, convolution channels 10,240; geometry checked at load, src/core/layout.cpp:178-220) and src/core/session.cpp:42-76,95-103 (per stream: recurrence layers x 128 x 48 x 128 x 4 B fp32 + convolution layers x 10,240 x 3 x 4 B); lab notes (an agent, landed aaa4045162b). Persistent per-stream state = recurrence + convolution, read and written every decode step; the indexer pooled arrays, PLE, draft and checkpoints are not counted. Replaces 75.5e6 (32 value heads, no convolution)"},
+   "stores": {
+    "gsq_iq3s": {"expert_bytes": {"v": 50.9e9, "tag": "MEASURED", "src": "MEASURED tqLLM server log on snoopy 2026-11-10 'packed experts built from the GGUF in memory: 50.9 GB' (ISTA GSQ-RCO IQ3_S); the plan's own count (65.4 GB a chunk) is an upper bound: the largest layer's block x every expert"},
+                 "dense_read_bytes": {"v": 1.6e9, "tag": "ESTIMATE", "src": "ESTIMATE: non-expert bytes read per decode token of the GSQ-RCO files ~1.6 GB (models.fnxc dense_gib note, scout)"}},
+    "gsq_iq3xxs": {"expert_bytes": {"v": 47e9, "tag": "MEASURED", "src": "MEASURED: the served XeStrata build's engine log at load 'loading the experts the GPU does not hold into RAM (of about 47 GB)' (data/workload.json prefill_pass.stores.fnx)"},
+                   "dense_read_bytes": {"v": 1.6e9, "tag": "ESTIMATE", "src": "ESTIMATE: non-expert bytes read per decode token of the GSQ-RCO files ~1.6 GB (models.fnxc dense_gib note, scout)"}}
+   }
+  },
+  "v41": {
+   "trunk_params": {"v": 7.17e9, "tag": "ESTIMATE", "src": "ESTIMATE from READ figures: models.v41 dense_gib 8.33 GiB (GGUF header of the vcruz Q8_0: every tensor but the routed experts, engram tables and token_embd) less the BF16 output 1.233 GiB, at Q8_0 8.5 bits a weight = 7.17B (attention + compressor + indexer 5.1B by intake bytes, shared expert 1.42B, router, hyper-connection and engram projections)"},
+   "head_params": {"v": 0.662e9, "tag": "READ", "src": "data/models/v41.json intake output 1.233 GiB BF16 / 2 bytes (one row a prompt)"},
+   "attn_layers": {"v": 40, "tag": "READ", "src": "GGUF deepseek41.block_count 40 (src/hdr-v41.json): every layer attends (sliding window plus compressed keys)"},
+   "q_dim": {"v": 32768, "tag": "READ", "src": "GGUF deepseek41.attention.head_count 64 x key_length 512 (value_length 512, one shared KV head)"},
+   "attn_keys_cap": {"v": 640, "tag": "ESTIMATE", "src": "ESTIMATE: sliding_window 128 + indexer top_k 512 selected compressed keys a query (src/hdr-v41.json); the heavily compressed layers read fewer, and the indexer's own scan (32 heads x 128 over every compressed key, O(N) a query) is not counted"},
+   "stores": {
+    "q3kl0_13_q2k": {"expert_bytes": {"v": 197.7e9, "tag": "ESTIMATE", "src": "ESTIMATE: the 1017 requant DeepSeek-V4.1-Flash-1017-q3kL0-13-q2k (lab notes): 384 experts x 35,389,440 params x (14 layers at Q3_K 3.4375 + 26 at Q2_K 2.625 bits) / 8"},
+                     "dense_read_bytes": {"v": 8.94e9, "tag": "READ", "src": "models.v41 dense_gib 8.33 GiB (Q8_0 non-experts + BF16 output, the source's)"},
+                     "expert_quant": ["q3_K", "q2_K"]},
+    "mxfp4": {"expert_bytes": {"v": 288.8e9, "tag": "READ", "src": "models.v41 experts_gib 268.95 GiB (3 x 89.648 GiB MXFP4, GGUF header)"},
+              "dense_read_bytes": {"v": 8.94e9, "tag": "READ", "src": "models.v41 dense_gib 8.33 GiB (Q8_0 non-experts + BF16 output)"},
+              "expert_quant": ["mxfp4"]}
+   }
+  },
+  "orn35": {
+   "trunk_params": {"v": 1.45e9, "tag": "ESTIMATE", "src": "ESTIMATE: data/models/orn35.json intake bytes at ~4.85 bits a weight (Q4_K_M): attention 0.145 GiB + linear attention 0.590 + shared expert 0.071 GiB -> 1.43B, + router 0.02B"},
+   "head_params": {"v": 0.51e9, "tag": "ESTIMATE", "src": "ESTIMATE: output 0.389 GiB at ~6.56 bits a weight (Q6_K)"},
+   "attn_layers": {"v": 10, "tag": "READ", "src": "data/models/orn35.json: 40 layers minus 30 Gated DeltaNet layers"},
+   "q_dim": {"v": 4096, "tag": "ESTIMATE", "src": "ESTIMATE: 16 query heads x head_dim 256 (Qwen3.5-A3B family shape)"},
+   "attn_keys_cap": {"v": null, "tag": "READ", "src": "full causal attention: every earlier key"},
+   "draft_mult": {"v": 1.0, "tag": "READ", "src": "served with MTP off (fit-in-VRAM settings)"},
+   "state_geometry": {"v": {"gdn_layers": 30, "value_heads": 32, "key_dim": 128, "value_dim": 128, "conv_channels": 8192, "conv_tail": 3, "bytes": 4}, "tag": "ESTIMATE",
+    "src": "ESTIMATE: the geometry is READ from the GGUF header (src/hdr-orn35.json: 40 main layers at full_attention_interval 4 = 30 Gated DeltaNet layers, ssm.time_step_rank 32 value heads, ssm.state_size 128, blk.N.ssm_conv1d [4, 8192] = conv kernel 4 over 8,192 channels, so a 3-row tail); the 4-byte (fp32) element for the recurrence and the convolution tail is not traced in the serving engine (vLLM may hold the convolution tail at the model dtype). Was 62.9e6 B stated with no convolution: 30 x (32 x 128 x 128 + 8,192 x 3) x 4 = 65,863,680 B a stream"},
+   "stores": {
+    "sym_int4": {"expert_bytes": {"v": 17.6e9, "tag": "ESTIMATE", "src": "ESTIMATE: 40 x 256 x 3.146M x 4.25 bits / 8 (sym_int4 + scales)"},
+                 "dense_read_bytes": {"v": 1.1e9, "tag": "ESTIMATE", "src": "ESTIMATE: 1.96B trunk + head params at 4.25 bits"}}
+   }
+  }
+ },
+ "fits": {
+  "tqllm": {"cells": ["tq-snoopy-before-32k-a", "tq-snoopy-before-32k-b"], "src": "eta fitted on the two pre-unlock 32K prefill cells (both measured before the unlock; the 16K pre-unlock cells disagree with them, see checks)"},
+  "strata": {"cells": ["r8-prefill"], "src": "eta fitted on the R8 replay rows (the same rows data/workload.json prefill_pass fits)"},
+  "vllm": {"cells": ["fitvram-cold-64k"], "src": "eta fitted on the one cold 64,281-token prompt (fit-in-VRAM 2026-10-27)"}
+ },
+ "cpu_fits": {
+  "ik": {"cells": ["ced-droopy-p12k-off", "ced-droopy-p30k-off"], "path": "kquant_requant",
+         "src": "the CPU eta of ik (one factor on every CPU compute term: compute.cpu_trunk, compute.cpu_attention, compute.cpu_experts) fitted on the two whole-agent-prompt CED reference arms on droopy CPU only (lab notes, 2026-11-11). It holds what the terms do not: the Q2_K / Q3_K -> Q8_K_R16 convert, the ggml_barrier waits (~25 % of the profile), the PMem share of the RAM disk, and kernel efficiency. Pre-registered before the fit (not blind: the measurement was known): bound ~110 tok/s, eta prior 0.19 from the GPU-dense cell prefill.cpu_tps droopy|v41|ik|4096 (57.3 tok/s with only the experts on the CPU) -> 21 tok/s, band 15-27. A query on another cpu path (q8_0_repack) gets this eta with the path difference named as unmodelled"}
+ },
+ "decode_fits": {
+  "strata": {"cells": ["r8-decode"], "src": "decode efficiency = measured / bound on the R8 one-agent decode (68.8 tok/s with MTP)"},
+  "vllm": {"cells": ["fitvram-decode"], "src": "decode efficiency = measured / bound on the Ornith sym_int4 one-agent decode (58.4 tok/s, vLLM XPU eager)"},
+  "tqllm": {"cells": ["tq-snoopy-decode"], "src": "decode efficiency = measured / bound on the tqLLM one-agent decode (44.5 tok/s with MTP 3, pre-unlock)"}
+ },
+ "landscapes": [
+  {"id": "r8-odie", "explain_agents": 16, "query": {"box": "odie", "model": "fnx", "engine": "strata", "store": "gsq_iq3xxs", "flags": "--prefill auto; layer split 25; STRATA_PREFILL_STREAM_CPU_SHARE=0.25", "ctx": 60000, "draft": true, "other_gib": 0, "kv_format": "k8v4"},
+   "prefill_query": {"tokens": 1202, "read_mix": true},
+   "measured": [{"B": 1, "decode_tps": 68.8, "useful_tps": 32.6, "note": "R8 1 agent 2026-10-26: decode 68.8 a request, useful 32.6 including the agent's tool gaps (the server idles between turns)"},
+                {"B": 16, "useful_tps": 83.4, "lo": 79.6, "hi": 90.0, "note": "16 real agents on the served build 2026-10-26: 86.0, 84.6, 79.6 (mean 83.4; 77.8-89.7 across the prefill-chunk arms)"}],
+   "tag": "MEASURED", "src": "MEASURED R8 replays 2026-10-26 (homelab lab notes.md; ledger rows odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026, -r2, -r3 and -n1-1026)"},
+  {"id": "fitvram-odie", "explain_agents": 8, "query": {"box": "odie", "model": "orn35", "engine": "vllm", "store": "sym_int4", "ctx": 60000, "other_gib": 0},
+   "prefill_query": {"tokens": 3700, "depth": 60000},
+   "measured": [{"B": 1, "decode_tps": 58.4, "useful_tps": 39.8, "note": "Ornith sym_int4 1 agent 2026-10-27 (one vLLM instance a card): decode 58.4 a request, useful 39.8 including tool gaps"}],
+   "tag": "MEASURED", "src": "MEASURED homelab fit-in-vram-2026-10-27.md"},
+  {"id": "tq-snoopy", "explain_agents": 1, "query": {"box": "snoopy", "model": "fnx", "engine": "tqllm", "store": "gsq_iq3s", "ctx": 60000, "draft": true, "resident_frac": 0.156, "other_gib": 1.5, "unlock": "stock"},
+   "prefill_query": {"tokens": 1000},
+   "measured": [{"B": 1, "decode_tps": 44.5, "useful_tps": 26.7, "note": "tqLLM 1 agent 2026-11-10: decode 44.5, useful 26.7 including tool gaps"}],
+   "tag": "MEASURED", "src": "MEASURED tqllm-n1.json 2026-11-10"}
+ ],
+ "checks": [
+  {"id": "tq-snoopy-before-16k-a", "role": "held_out", "confounds": ["the first long prompts after the server start", "n=2"], "query": {"box": "snoopy", "model": "fnx", "engine": "tqllm", "store": "gsq_iq3s", "tokens": 18669, "unlock": "stock"},
+   "measured": {"ttft_s": 15.831, "prefill_tps": 1179.2}, "tag": "MEASURED", "src": "MEASURED 2026-11-10 tq-sweep.py agent config greedy depth 16000 k 0 (sweep-agentcfg-greedy.jsonl; server log: 18669 tokens in 2 chunks of 16384); firmware stock; the first long request after the server start"},
+  {"id": "tq-snoopy-before-16k-b", "role": "held_out", "confounds": ["the first long prompts after the server start", "n=2"], "query": {"box": "snoopy", "model": "fnx", "engine": "tqllm", "store": "gsq_iq3s", "tokens": 17891, "unlock": "stock"},
+   "measured": {"ttft_s": 13.825, "prefill_tps": 1294.1}, "tag": "MEASURED", "src": "MEASURED 2026-11-10 tq-sweep.py agent config greedy depth 16000 k 1 (17891 tokens in 2 chunks of 16384); firmware stock"},
+  {"id": "tq-snoopy-before-32k-a", "role": "fit", "query": {"box": "snoopy", "model": "fnx", "engine": "tqllm", "store": "gsq_iq3s", "tokens": 38685, "unlock": "stock"},
+   "measured": {"ttft_s": 14.926, "prefill_tps": 2591.8}, "tag": "MEASURED", "src": "MEASURED 2026-11-10 tq-sweep.py agent config greedy depth 32000 k 0 (38685 tokens in 3 chunks of 16384); firmware stock"},
+  {"id": "tq-snoopy-before-32k-b", "role": "fit", "query": {"box": "snoopy", "model": "fnx", "engine": "tqllm", "store": "gsq_iq3s", "tokens": 37462, "unlock": "stock"},
+   "measured": {"ttft_s": 15.172, "prefill_tps": 2469.1}, "tag": "MEASURED", "src": "MEASURED 2026-11-10 tq-sweep.py agent config greedy depth 32000 k 1 (37462 tokens in 3 chunks of 16384); firmware stock"},
+  {"id": "tq-snoopy-after-16k-a", "role": "held_out", "confounds": ["a fresh reboot between the stock and unlocked runs (free VRAM and desktop state changed; depth-0 decode rose 42-52 -> 63-64, which the unlock cannot do)", "n=2 a cell", "seen before the model was final"], "query": {"box": "snoopy", "model": "fnx", "engine": "tqllm", "store": "gsq_iq3s", "tokens": 16200, "unlock": "unlocked"},
+   "measured": {"ttft_s": 6.3, "prefill_tps": 2577}, "tag": "MEASURED", "src": "MEASURED 2026-11-10 re-measure after a fresh reboot with the unlock on, same tq-sweep.py, greedy, 512 out, manifest s80, np 2 (n=2 a cell; tokens given to 0.1k); not blind: these numbers reached the model before it was final"},
+  {"id": "tq-snoopy-after-16k-b", "role": "held_out", "confounds": ["a fresh reboot between the stock and unlocked runs (free VRAM and desktop state changed; depth-0 decode rose 42-52 -> 63-64, which the unlock cannot do)", "n=2 a cell", "seen before the model was final"], "query": {"box": "snoopy", "model": "fnx", "engine": "tqllm", "store": "gsq_iq3s", "tokens": 18400, "unlock": "unlocked"},
+   "measured": {"ttft_s": 7.7, "prefill_tps": 2381}, "tag": "MEASURED", "src": "MEASURED 2026-11-10 re-measure after a fresh reboot with the unlock on (see tq-snoopy-after-16k-a)"},
+  {"id": "tq-snoopy-after-32k-a", "role": "held_out", "confounds": ["a fresh reboot between the stock and unlocked runs (free VRAM and desktop state changed; depth-0 decode rose 42-52 -> 63-64, which the unlock cannot do)", "n=2 a cell", "seen before the model was final"], "query": {"box": "snoopy", "model": "fnx", "engine": "tqllm", "store": "gsq_iq3s", "tokens": 36000, "unlock": "unlocked"},
+   "measured": {"ttft_s": 12.2, "prefill_tps": 2949}, "tag": "MEASURED", "src": "MEASURED 2026-11-10 re-measure after a fresh reboot with the unlock on (see tq-snoopy-after-16k-a)"},
+  {"id": "tq-snoopy-after-32k-b", "role": "held_out", "confounds": ["a fresh reboot between the stock and unlocked runs (free VRAM and desktop state changed; depth-0 decode rose 42-52 -> 63-64, which the unlock cannot do)", "n=2 a cell", "seen before the model was final"], "query": {"box": "snoopy", "model": "fnx", "engine": "tqllm", "store": "gsq_iq3s", "tokens": 39000, "unlock": "unlocked"},
+   "measured": {"ttft_s": 12.5, "prefill_tps": 3110}, "tag": "MEASURED", "src": "MEASURED 2026-11-10 re-measure after a fresh reboot with the unlock on (see tq-snoopy-after-16k-a)"},
+  {"id": "tq-snoopy-agent-read", "role": "held_out", "query": {"box": "snoopy", "model": "fnx", "engine": "tqllm", "store": "gsq_iq3s", "tokens": 1000, "unlock": "stock"},
+   "measured": {"ttft_s": 3.2}, "tag": "MEASURED", "src": "MEASURED 2026-11-10 tqllm-n1.json (1 agent, agent-long-16): first-token median 3.2 s (p10 2.3, min 1.8) over 47 turns whose fresh reads were 264-1,860 tokens (server log 'prefill of N tokens in 1 chunks'); the first token also pays the request's plan, bank borrow and sampling"},
+  {"id": "tq-snoopy-decode", "role": "bound", "phase": "decode", "query": {"box": "snoopy", "model": "fnx", "engine": "tqllm", "store": "gsq_iq3s", "batch": 1, "ctx": 60000, "resident_frac": 0.156, "draft": true, "unlock": "stock", "other_gib": 1.5},
+   "measured": {"decode_tps": 44.5}, "tag": "MEASURED", "src": "MEASURED 2026-11-10 tqllm-n1.json decode median 44.47 tok/s a request (MTP 3 drafts, greedy, 80 expert slots a layer of 512 = 0.156 resident; manifest slots 58..141)"},
+  {"id": "ced-droopy-p12k-off", "role": "fit", "query": {"box": "droopy", "model": "v41", "engine": "ik", "store": "q3kl0_13_q2k", "placement": "cpu_only", "tokens": 11569, "chunk": 4096, "threads": 38},
+   "measured": {"ttft_s": 1495.648, "prefill_tps": 7.74}, "tag": "MEASURED", "src": "MEASURED 2026-11-11 droopy CPU only (lab notes gate-B.jsonl, arm off): ik ced-prefill 5983d37e, V4.1 1017 q3kL0-13-q2k held in a tmpfs interleaved over nodes 0/1/2 (node 2 = Optane PMem), T38, -ub/-b 4096, -fa 1, whole 11,569-token agent-replay prompt; decode in the same arm 1.135 tok/s"},
+  {"id": "ced-droopy-p30k-off", "role": "fit", "query": {"box": "droopy", "model": "v41", "engine": "ik", "store": "q3kl0_13_q2k", "placement": "cpu_only", "tokens": 30381, "chunk": 4096, "threads": 38},
+   "measured": {"ttft_s": 4276.404, "prefill_tps": 7.10}, "tag": "MEASURED", "src": "MEASURED 2026-11-11 droopy CPU only (gate-C.jsonl, arm off): as ced-droopy-p12k-off, whole 30,381-token agent-replay prompt; decode 0.985 tok/s"},
+  {"id": "ced-droopy-p40k-4k-off", "role": "held_out", "confounds": ["decode in the same arm read 0.61 tok/s vs 0.99-1.14 in the fit cells: the box ran slower in that window (INFERRED)", "a 4,096-token prefix of a longer prompt", "n=1"], "query": {"box": "droopy", "model": "v41", "engine": "ik", "store": "q3kl0_13_q2k", "placement": "cpu_only", "tokens": 4096, "chunk": 4096, "threads": 38},
+   "measured": {"ttft_s": 1380.191, "prefill_tps": 2.97}, "tag": "MEASURED", "src": "MEASURED 2026-11-11 droopy CPU only (gate-A.jsonl, arm off): as ced-droopy-p12k-off, the 4,096-token prefix of p40k"},
+  {"id": "ced-droopy-p12k-4k-off", "role": "held_out", "confounds": ["decode in the same arm read 0.23 tok/s over 8 tokens vs 0.99-1.14 in the fit cells: the box ran slower in that window (INFERRED)", "the first run of the night (unpublished build build)", "n=1"], "query": {"box": "droopy", "model": "v41", "engine": "ik", "store": "q3kl0_13_q2k", "placement": "cpu_only", "tokens": 4096, "chunk": 4096, "threads": 38},
+   "measured": {"ttft_s": 1149.838, "prefill_tps": 3.56}, "tag": "MEASURED", "src": "MEASURED 2026-11-11 droopy CPU only (calib-unpublished.jsonl, arm off): ik ced-prefill unpublished build, the 4,096-token prefix of p12k"},
+  {"id": "lassie-v41-q8-mm7-cpu", "role": "held_out", "confounds": ["cpu path q8_0_repack (MXFP4 experts) where the ik CPU eta is fitted on kquant_requant (Q2_K / Q3_K)", "another box: Zen 1 AVX2, 8 NUMA nodes, the tmpfs interleaved over 7 of them", "prompt tokens stated as ~1.5-2.2k (std set): 1,850 is the middle (ESTIMATE)"], "query": {"box": "lassie", "model": "v41", "engine": "ik", "store": "mxfp4", "placement": "cpu_only", "tokens": 1850, "chunk": 4096, "threads": 64},
+   "measured": {"prefill_tps": 38.8}, "tag": "MEASURED", "src": "MEASURED 2026-10-20 lassie CPU only (runs ledger lassie-v41-q8-mm7, recipes/lassie-v41-q8-mm7.json): ik, 1017 Q8_0 store (routed experts MXFP4, non-experts Q8_0) mmapped from a tmpfs, T64, -ub 4096, no GPU; mean of the std phases' prompt_per_second (short ~600 tokens 38.2-38.5, long ~3.7k 40.7-40.9)"},
+  {"id": "droopy-v41-gpu-dense-cpu-experts", "role": "held_out", "confounds": ["the 1017 split store: hot experts MXFP4 (q8_0_repack) and cold Q2_K (22.5 % of reads), a mixed cpu path", "experts in DRAM + PMem by the planner, banks off, offload off", "n=1 at this prompt size"], "query": {"box": "droopy", "model": "v41", "engine": "ik", "tokens": 2210, "chunk": 4096, "resident_bytes": 0, "host_path": "cpu", "expert_quant": ["mxfp4", "q2_K"], "threads": 40},
+   "measured": {"prefill_tps": 64.8}, "tag": "MEASURED", "src": "MEASURED 2026-10-18 droopy b1017off2 (build.py prefill.calibration, the offload-off phase of the 2,210-token prompt): dense and attention on the Quadro RTX 6000, routed experts on the CPU, T40, -ub 4096"},
+  {"id": "r8-prefill", "role": "fit", "query": {"box": "odie", "model": "fnx", "engine": "strata", "store": "gsq_iq3xxs", "flags": "--prefill auto; layer split 25; STRATA_PREFILL_STREAM_CPU_SHARE=0.25", "tokens": 1202, "read_mix": true},
+   "measured": {"prefill_tps": 866.4}, "tag": "MEASURED", "src": "MEASURED R8 (odie 2x B70, XeStrata comp1 no-gdn, 16 real agents x 3 runs, 2026-10-26): 731,958 fresh tokens in 844.8 s of server prompt time over 609 reads (data/workload.json prefill_pass.engines.strata.fit); lab notes rounds it to ~850"},
+  {"id": "r8-decode", "role": "bound", "phase": "decode", "query": {"box": "odie", "model": "fnx", "engine": "strata", "store": "gsq_iq3xxs", "flags": "layer split 25", "batch": 1, "ctx": 60000, "draft": true, "other_gib": 0, "kv_format": "k8v4"},
+   "measured": {"decode_tps": 68.8}, "tag": "MEASURED", "src": "MEASURED R8 1-agent replay 2026-10-26: decode 68.8 tok/s a request (lab notes)"},
+  {"id": "fitvram-decode", "role": "bound", "phase": "decode", "query": {"box": "odie", "model": "orn35", "engine": "vllm", "store": "sym_int4", "batch": 1, "ctx": 60000, "other_gib": 0},
+   "measured": {"decode_tps": 58.4}, "tag": "MEASURED", "src": "MEASURED 2026-10-27 fit-in-VRAM 1-agent replay: decode 58.4 tok/s a request (Ornith sym_int4, vLLM XPU eager, MTP off)"},
+  {"id": "fitvram-cold-64k", "role": "fit", "query": {"box": "odie", "model": "orn35", "engine": "vllm", "store": "sym_int4", "tokens": 64281},
+   "measured": {"ttft_s": 17.3, "prefill_tps": 3716}, "tag": "MEASURED", "src": "MEASURED 2026-10-27 fit-in-VRAM: one 64,281-token prompt in 17.3 s on one B70 (vLLM XPU, Ornith-1.5-35B-A3B sym_int4, every weight resident)"},
+  {"id": "fitvram-agent-read", "role": "held_out", "query": {"box": "odie", "model": "orn35", "engine": "vllm", "store": "sym_int4", "tokens": 3700, "depth": 60000},
+   "measured": {"prefill_tps": 3450}, "tag": "MEASURED", "src": "MEASURED 2026-10-27 fit-in-VRAM 1-agent replay: ~3.45k prompt tok/s (the record's own INFERRED rate: prefill busy 13.8 % x 600 s over 285,484 fresh tokens); read size ~3.7k fresh tokens (F 11.9 x ~310 output tokens a turn, INFERRED) at depth 15-120k (mean ~60k, INFERRED)"}
+ ]
+}

@@ -6,7 +6,7 @@ alone), plus OPTIONAL live source directories on the research hub (see INPUTS be
 quant-recipes.json are embedded when present.
 Run: python3 build.py   (then: node report.js for the numbers in the report)
 """
-import json, os, re, datetime, shutil, math, importlib.util, hashlib, sys
+import json, os, re, datetime, shutil, math, importlib.util, hashlib, sys, copy
 from pathlib import Path
 
 # One Python canonicalization owner for both the build and prospective capture. The hash-only path reads stdin and
@@ -100,11 +100,13 @@ EVIDENCE = {
                'INFERRED-BY-US': INFERRED, R: INFERRED, P: INFERRED, 'CLAIMED': INFERRED, 'M-ext': INFERRED, E: INFERRED, FIT: INFERRED,
                'UNKNOWN': UNKNOWN,
                # the serving priors' labels (data/priors-serving.json): our own logged number, someone else's published one, arithmetic
-               'MEASURED-HERE': SEEN, 'MEASURED-ELSEWHERE': INFERRED, 'INFERRED': INFERRED},
+               'MEASURED-HERE': SEEN, 'MEASURED-ELSEWHERE': INFERRED, 'INFERRED': INFERRED,
+               'DATASHEET': INFERRED,  # a vendor spec-sheet figure (data/roofline.json card ceilings)
+               'TRACED': INFERRED},  # derived from an engine's source at a cited revision (file:line), not measured
     # a src that opens with one of these words declares its own class: a tag that disagrees is a build error (10-19 audit:
     # fnx dense_gib was MEASURED with an M-ext source, strata overlap ESTIMATE with an UNKNOWN one)
     'src_words': {'MEASURED': SEEN, 'M-ext': INFERRED, 'ESTIMATE': INFERRED, 'INFERRED': INFERRED, 'PRIOR': INFERRED, 'CLAIMED': INFERRED,
-                  'VENDOR': INFERRED, 'UNKNOWN': UNKNOWN},
+                  'VENDOR': INFERRED, 'DATASHEET': INFERRED, 'UNKNOWN': UNKNOWN},
     # a READ of our own file or box (GGUF header bytes on our disks, a live kit setting) is our own observation, so seen
     'seen_reads': {'v': ['GGUF header', 'mean expert bpw from GGUF header', 'kit-settings/'],
                    'src': 'READ values whose src starts with one of these read our own files; other READs (docs, vendor specs, code tables, HF configs) stay inferred'},
@@ -1030,6 +1032,45 @@ b70move = {'gpu': {'id': 'b70_moved', 'name': 'Arc Pro B70 moved from odie (32 G
                    'other': [], 'needs_code': {'ik': 'ik_llama.cpp is CUDA/CPU only: experts on a B70 beside the CUDA card need a SYCL/XPU expert worker (the 0xSero dsv41 recipe has one, lab notes)'},
                    'note': 'glm-lite cannot use it (CUDA trellis kernels). ik needs a SYCL/XPU worker (code). Mainline SYCL can drive it alone (the CUDA card then idles).'}}
 
+# ---------------- roofline: compute ceilings per card and CPU (data/roofline.json, src/model.js phaseBound) ----------------
+# Each GPU whose model or name matches a card class gets ceil = {class, values by precision, unlock, shape_curves}; each box CPU gets
+# cpu.ceil. The firmware unlock state of a card is a setting (roofline.settings.firmware_unlock), never a literal in the
+# ceilings: a query or recipe can judge either state. A card or CPU with no class is left without ceil (its bound is UNMODELLED)
+ROOFLINE = json.load(open(os.path.join(HERE, 'data', 'roofline.json')))
+
+
+def roofline_ceil(table, text):
+    cls = next((k for k, c in table.items() if re.search(c['match'], text)), None)
+    if cls is None:
+        return None
+    c = table[cls]
+    out = dict({'class': cls, 'values': copy.deepcopy(c['ceil'])}, **({'unlock': copy.deepcopy(c['unlock'])} if 'unlock' in c else {}))
+    if 'shape_curves' in c:  # measured kernel rate by rows (src/model.js shapeRate): experts by rows an expert, trunk by tokens
+        out['shape_curves'] = copy.deepcopy(c['shape_curves'])
+    return out
+
+
+for _bk, _b in boxes.items():
+    for _g in _b['gpus']:
+        _txt = str((_g.get('model') or {}).get('v', '') if isinstance(_g.get('model'), dict) else _g.get('model', '')) + ' ' + _g['name']
+        _c = roofline_ceil(ROOFLINE['cards'], _txt)
+        if _c:
+            _g['ceil'] = _c
+        _u = ROOFLINE['settings']['firmware_unlock'].get(_bk, {}).get(_g['id'])
+        if _u:
+            _g['firmware_unlock'] = copy.deepcopy(_u)
+    _cm = _b['cpu'].get('model')
+    _c = roofline_ceil(ROOFLINE['cpus'], str(_cm.get('v', '') if isinstance(_cm, dict) else _b['cpu'].get('desc', '')) + ' ' + _b['cpu'].get('desc', ''))
+    if _c:
+        _b['cpu']['ceil'] = _c
+_c = roofline_ceil(ROOFLINE['cards'], b70move['gpu']['name'])
+if _c:
+    b70move['gpu']['ceil'] = _c
+roofline = {k: x for k, x in ROOFLINE.items() if k not in ('cards', 'cpus')}
+# roofline prediction records: data/predictions-roofline-*.json, the same written-before-the-run files as every other
+# data/predictions-*.json (report.js --roofline --predict writes one; a 'measured' block is added beside it, never over it)
+roofline['predictions'] = [dict(json.load(open(_p)), file='data/' + _p.name) for _p in sorted(Path(HERE, 'data').glob('predictions-roofline-*.json'))]
+
 # ---------------- anchors ----------------
 S = 'lab notes'
 anchors = [
@@ -1901,12 +1942,21 @@ _bfx = json.load(open(os.path.join(HERE, 'data', 'models', 'fnx.json')))
 # the Flash-Next config values the state and attention terms use (HF Qwen/Qwen3.8-Flash-Next config.json text_config; the
 # full config is the intake fixture tests/fixtures/hf-qfn.json, which a public copy does not ship)
 BCFG = 'HF Qwen/Qwen3.8-Flash-Next config.json text_config'
-_bcfg = {'linear_num_value_heads': 48, 'linear_key_head_dim': 128, 'linear_value_head_dim': 128, 'indexer_budget': 2048, 'indexer_head_dim': 128, 'indexer_compress_ratio': 4}
+_bcfg = {'linear_num_value_heads': 48, 'linear_num_key_heads': 16, 'linear_key_head_dim': 128, 'linear_value_head_dim': 128, 'linear_conv_kernel_dim': 4,
+         'indexer_budget': 2048, 'indexer_head_dim': 128, 'indexer_compress_ratio': 4}
 _bm = models['fnx']
 _bgpu = boxes['odie']['gpus'][0]
 _bfull = _bfx['layers']['v']['main'] - len(_bfx['layers']['v']['linear_attention'])
 _blin = len(_bfx['layers']['v']['linear_attention'])
-_bstate = _blin * _bcfg['linear_num_value_heads'] * _bcfg['linear_key_head_dim'] * _bcfg['linear_value_head_dim'] * 4
+# the per-stream state is the engine's: data/roofline.json models.fnx.state_geometry (TRACED to XeStrata layout.hpp / session.cpp),
+# the same bytes src/model.js rlStateBytes prices, recurrence + the convolution tail. The HF config must agree with it (conv
+# channels = 2 x key heads x key dim + value heads x value dim, tail = conv kernel - 1), or the build stops
+_bgeo = ROOFLINE['models']['fnx']['state_geometry']['v']
+assert (_bgeo['gdn_layers'], _bgeo['value_heads'], _bgeo['key_dim'], _bgeo['value_dim']) == (
+    _blin, _bcfg['linear_num_value_heads'], _bcfg['linear_key_head_dim'], _bcfg['linear_value_head_dim']), _bgeo
+assert _bgeo['conv_channels'] == 2 * _bcfg['linear_num_key_heads'] * _bcfg['linear_key_head_dim'] + _bcfg['linear_num_value_heads'] * _bcfg['linear_value_head_dim'], _bgeo
+assert _bgeo['conv_tail'] == _bcfg['linear_conv_kernel_dim'] - 1, _bgeo
+_bstate = _bgeo['gdn_layers'] * (_bgeo['value_heads'] * _bgeo['key_dim'] * _bgeo['value_dim'] + _bgeo['conv_channels'] * _bgeo['conv_tail']) * _bgeo['bytes']
 _bne_cls = ('attention', 'hyper_connection', 'linear_attention', 'output', 'router', 'shared_expert')
 _bne_bf16 = sum(_bfx['intake']['gib_by_class'][c] for c in _bne_cls)
 _bslot262 = 1.87
@@ -1929,7 +1979,7 @@ batch = {
     'experts_gib': n(round(sum(_bsplit['recipe']['gpu_split']['banks_gib']), 2), M, 'MEASURED: %s expert banks %s GiB = all %d x %d experts of the GSQ-RCO IQ3_XXS file resident on two B70s' % (BATCH_SPLIT, ' + '.join(map(str, _bsplit['recipe']['gpu_split']['banks_gib'])), _bm['L'], _bm['E'])),
     'nonexpert_gib': n(round(_bne_bf16 * _bm['dense_bpw']['v'] / 16, 3), E, 'ESTIMATE: the non-expert tensors read every step (%s: %.2f GiB at BF16, READ from data/models/fnx.json) at models.fnx.dense_bpw %.1f; matches %s (VRAM free after load 9.8 + 3.3 GiB of 2 x 29.8 with %.2f GiB of experts and the MTP head)' % (
         ', '.join(_bne_cls), _bne_bf16, _bm['dense_bpw']['v'], BATCH_SPLIT, sum(_bsplit['recipe']['gpu_split']['banks_gib']))),
-    'state_mib_per_row': n(round(_bstate / 2 ** 20, 1), R, '%s: %d Gated DeltaNet layers x %d value heads x %d x %d f32 recurrent state per stream, read and written every step' % (BCFG, _blin, _bcfg['linear_num_value_heads'], _bcfg['linear_key_head_dim'], _bcfg['linear_value_head_dim'])),
+    'state_mib_per_row': n(round(_bstate / 2 ** 20, 1), R, '%s (equal to data/roofline.json models.fnx.state_geometry, TRACED to the engine): %d Gated DeltaNet layers x (%d value heads x %d x %d f32 recurrence + %d convolution channels x %d f32 tail) per stream = %d B, read and written every step' % (BCFG, _blin, _bgeo['value_heads'], _bgeo['key_dim'], _bgeo['value_dim'], _bgeo['conv_channels'], _bgeo['conv_tail'], _bstate)),
     'kv_bytes_per_token': n(round((_bslot262 * GiB - _bstate) / 262144, 1), M, 'MEASURED: odie-fnx-iq3xxs-1xb70-batch-262k-plain-1022 "each batch slot\'s %.2f GiB session" at 262,144 tokens, minus the DeltaNet state = int8 KV + indexer keys of the %d full-attention layers per token' % (_bslot262, _bfull)),
     'attn_budget_tokens': n(_bcfg['indexer_budget'], R, BCFG + ': indexer_budget, the tokens whose KV a decode step reads at any depth (sparse attention); the depth term is the indexer keys'),
     'index_bytes_per_token': n(_bfull * _bcfg['indexer_head_dim'] // _bcfg['indexer_compress_ratio'], E, 'ESTIMATE from %s: %d full-attention layers x indexer_head_dim %d / indexer_compress_ratio %d x 1 B (int8) scanned per token of depth' % (BCFG, _bfull, _bcfg['indexer_head_dim'], _bcfg['indexer_compress_ratio'])),
@@ -1947,7 +1997,7 @@ batch = {
     'mtp_rows_max': n(1, R, 'lab notes batch rows: "--batch-mtp off", so MTP drafts only while one stream decodes; with two or more each row commits one token per step'),
     'mtp_verify_positions': n(5, R, '%s: MTP --spec 4, so a one-stream step verifies 1 + 4 positions' % BATCH_ONE),
     'split_hop_ms': n(engines['sycl']['recipe_rates']['allreduce_ms']['v'], E, 'ESTIMATE: borrows engines.sycl.recipe_rates.allreduce_ms: one hidden-vector hand-off between the cards per step of a layer split'),
-    'miss_modes': {'v': ['overlap', 'serial'], 'src': 'overlap = the task form max(bandwidth incl. misses, kernel); serial = the step waits for its misses after the kernel. Both are fitted and printed; the planning table uses the first'},
+    'miss_modes': {'v': ['overlap', 'serial'], 'src': 'overlap = the task form max(bandwidth incl. misses, kernel); serial = the step waits for its misses after the kernel. Both are fitted and printed; the planning table uses the first, and only the first (overlap) is gated against the 10 % median bar (tests/test_batch.js)'},
     'variants': {'fit': {'label': 'ms per row as fitted', 'row_ms': None},
                  'row2': {'label': 'ms per row ~2', 'row_ms': n(2.0, E, 'ESTIMATE (what-if): a batched decode path whose per-row overhead is ~2 ms, near the ~1.7 ms bandwidth cost of a row')},
                  'ideal': {'label': 'bandwidth only', 'row_ms': n(0.0, E, 'ESTIMATE (what-if): no kernel term at all; the step is its bytes'), 'no_fixed': True}},
@@ -2211,6 +2261,15 @@ def network_catalog(path):
 
 _network_path = os.path.join(HERE, 'data', 'interconnects.json')
 network = network_catalog(_network_path) if os.path.exists(_network_path) else None
+# multi-box serving plans (data/multibox.json, src/model.js pipelinePlan / pipelineRoof / pipelineLandscape): stores, settings
+# and candidates; every hop a plan prices must have a measured round trip in data/interconnects.json hop_rtt
+_multibox_path = os.path.join(HERE, 'data', 'multibox.json')
+MULTIBOX = json.load(open(_multibox_path)) if os.path.exists(_multibox_path) else None
+if MULTIBOX and network:
+    _links = {x['id']: x for x in network['links']}
+    for _h in network.get('hop_rtt', []):
+        if _h['link'] not in _links or sorted(_h['ends']) != sorted(_links[_h['link']]['ends']):
+            raise ValueError('hop_rtt %s: ends are not link %s' % (_h['id'], _h['link']))
 
 
 def curve_configs(cfg, ledger):
@@ -2425,7 +2484,7 @@ data = {
     'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py', 'home': PUBLIC_HOME,
              'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}, 'left_out': left_out},
     'types': types, 'engines': engines, 'models': models, 'boxes': boxes, 'b70move': b70move, 'anchors': anchors, 'assume': assume, 'knobs': knobs, 'conditions': conditions, 'accuracy': accuracy, 'causes': causes, 'external': external, 'bench': bench,
-    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'curves': curves, 'workload': workload, 'priors': priors, 'dense_cal': dense_cal, 'moe_cal': moe_cal, 'layer_maps': layer_maps, 'upgrade': upgrade,
+    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'multibox': MULTIBOX, 'curves': curves, 'workload': workload, 'priors': priors, 'dense_cal': dense_cal, 'moe_cal': moe_cal, 'layer_maps': layer_maps, 'upgrade': upgrade, 'roofline': roofline,
     'routing_skew': [HM.skew_evidence(HEAT_MAPS, spec) for spec in HM.jload(os.path.join(HERE, 'tools', 'heat_sources.json')).get('skew', [])],
     'alloc3': {'src': 'homelab dsv41/skew/results/2026-10-08-alloc-3bpw.json (' + alloc['rule'] + ')', 'layers': alloc_layers, 'count': sum(len(x) for x in alloc_layers)} if alloc else None,
     'siblings': {'quant_priors': sibling('quant-priors.json'), 'quant_recipes': sibling('quant-recipes.json'),

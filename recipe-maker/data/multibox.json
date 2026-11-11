@@ -1,0 +1,1984 @@
+{
+ "about": "Multi-box serving plans (src/model.js pipelinePlan, pipelineRoof, pipelineLandscape; node report.js --multibox). One model split by layers over cards on several boxes (llama.cpp RPC: the client holds the last stage, every other box runs an rpc-server; lab notes README engine verdict, an agent 2026-11-11 08:45Z), each stage priced with its card's measured llama.cpp decode line (data.bench.gpu by backend: bytes / rate + the per-step intercept + a per-MoE-layer cost), every remote stage paying one blocking round trip a step at its payload (data/interconnects.json hop_rtt), and the batch landscape run through the agent duty cycle (agentLandscape). A plan is refused when a stage's memory passes its card or a hop has no measured round trip in data/interconnects.json. Every number carries {v, tag, src}.",
+ "settings": {
+  "card_reserve_gib": {
+   "v": 1.5,
+   "tag": "ESTIMATE",
+   "src": "ESTIMATE: per card, backend context + compute buffer at a 512-token ubatch beside the weights (droopy CUDA context 718 MiB + compute buffer 2,484 MiB at -ub 4096 for GLM, data.models.glm.kv_gib src; a 512 ubatch needs about a quarter of that buffer)"
+  },
+  "kv_type_bytes": {
+   "v": {
+    "f16": 2.0,
+    "q8_0": 1.0625
+   },
+   "tag": "READ",
+   "src": "ggml block sizes: f16 2 B, q8_0 34 B per 32 values"
+  },
+  "default_kv_type": {
+   "v": "q8_0",
+   "tag": "READ",
+   "src": "a setting: llama-server -ctk q8_0 -ctv q8_0 for a many-agent split (halves the KV of f16)"
+  },
+  "keys_read": {
+   "v": "all",
+   "tag": "INFERRED",
+   "src": "INFERRED (CL 70): llama.cpp builds Qwen3.8-Flash-Next's QSA as an indexer top-k MASK over the full attention (ik's MASK_TOPK; homelab fidelity-panel-2026-11-10 README engine finding), so a decode step reads every cached key of every stream, not the 2,048 the indexer selects (XeStrata and tqLLM read only the selected keys: data.roofline.models.fnx attn_keys_cap). 'cap' reads only the cap"
+  },
+  "prefill_eta": {
+   "v": {
+    "sycl": 0.25,
+    "cuda": 0.35,
+    "vulkan-radv": 0.2,
+    "vulkan": 0.2
+   },
+   "tag": "ESTIMATE",
+   "src": "ESTIMATE: share of the card's int8 / fp16 tensor ceiling llama.cpp prefill reaches on a 512-token ubatch of a 512-expert MoE (rows an expert ~10, far below the square-GEMM rate; tqLLM's fitted roofline eta on the same shape is in data.roofline.fits); no llama.cpp prefill of this model on these cards is retained"
+  },
+  "ubatch": {
+   "v": 512,
+   "tag": "READ",
+   "src": "a setting: llama-server -ub 512 (the RPC scheduler copies a ubatch through the client between boxes)"
+  },
+  "act_bytes_per_value": {
+   "v": 4,
+   "tag": "TRACED",
+   "src": "TRACED lab notes README a.3 (llama.cpp f3b407c ggml-rpc.cpp): the hidden state crosses a stage boundary as f32, n_embd x B x 4 bytes each way"
+  },
+  "rpc_round_trips_per_remote_stage": {
+   "v": 1,
+   "tag": "MEASURED",
+   "src": "MEASURED lab notes README a.3 (S1, GGML_RPC_DEBUG=2 on lassie's rpc-server): per decode token and remote stage 1.00 GET_TENSOR (the one blocking call), 1.00 GRAPH_RECOMPUTE, 5.0 SET_TENSOR (fire-and-forget)"
+  },
+  "batches": {
+   "v": [
+    1,
+    2,
+    4,
+    8,
+    16,
+    24,
+    32,
+    48,
+    64,
+    96,
+    128
+   ],
+   "tag": "READ",
+   "src": "a setting: the B grid of report.js --multibox"
+  },
+  "agent_server": {
+   "v": "llamacpp-sycl-slots-swa",
+   "tag": "INFERRED",
+   "src": "INFERRED: a multi-box plan is served by llama-server (-np slots, the client box); its agent duty cycle (pipelineLandscape -> agentLandscape) takes the one-agent prefix re-read of this workload.turn_model.servers row, the llama.cpp server measured on odie SYCL"
+  },
+  "agent_stall": {
+   "v": true,
+   "tag": "INFERRED",
+   "src": "INFERRED: llama-server runs a prompt ubatch inside the same decode step (the step waits for it)"
+  },
+  "hop_model": {
+   "v": "stream",
+   "tag": "INFERRED",
+   "src": "INFERRED: a hop = the measured small-payload round trip (hop_rtt, 64 B) + the payload both ways at the link's measured single-connection TCP rate (interconnects observations *-tcp-p1: 19.9-22.6 Gb/s; snoopy's LAN 9.41 Gb/s at 4 streams); llama.cpp's RPC is one TCP connection per server. 'pingpong' prices the measured python ping-pong curve instead (0.6 GB/s a byte past 20 KB: python copies), the upper-bound arm"
+  },
+  "plan_ctx_src": {
+   "v": 56445,
+   "tag": "INFERRED",
+   "src": "INFERRED: the mean prompt depth of trace agent-long-16 in QFN tokens (src/model.js agentDepthMean: the cumulative fresh tokens of each turn x the measured per-agent tokenizer ratio); a unified KV pool (llama-server -kvu) holds the streams' actual depths, so capacity = free VRAM / the mean-depth stream"
+  }
+ },
+ "backend_of_card": {
+  "v": {
+   "b70": "sycl",
+   "rtx6000": "cuda",
+   "gtx1080ti": "cuda",
+   "rtx3090ti": "cuda",
+   "mi25": "vulkan-radv"
+  },
+  "tag": "READ",
+  "src": "lab notes README (llama.cpp f3b407c builds: SYCL on odie's B70s, CUDA sm75 droopy, CUDA sm61 lassie 1080 Ti, Vulkan RADV lassie MI25 behind the same rpc-server); snoopy CUDA sm86"
+ },
+ "models": {
+  "fnx": {
+   "label": "Qwen3.8-Flash-Next (QFN)",
+   "hidden_stream": {
+    "v": 10240,
+    "tag": "READ",
+    "src": "GGUF qwen4exp.embedding_length 2560 x qwen4exp.hyper_connection.count 4 (tests/fixtures/gguf-qfn-q8.hdr.json; hc_* tensors are [10240, ...]): the residual a layer hands the next is 4 hyper-connection streams. INFERRED (CL 70) that llama.cpp's split carries the 10,240-wide residual, not 2,560"
+   },
+   "kv_values_per_token_layer": {
+    "v": 1024,
+    "tag": "READ",
+    "src": "GGUF head_count_kv 2 x (key_length 256 + value_length 256) on each of the 12 full-attention layers (full_attention_interval 4)"
+   },
+   "attn_layers": {
+    "v": 12,
+    "tag": "READ",
+    "src": "48 blocks, full_attention_interval 4"
+   },
+   "indexer_values_per_token_layer": {
+    "v": 128,
+    "tag": "READ",
+    "src": "GGUF qwen4exp.attention.indexer.key_length 128 (one indexer key a token a full-attention layer)"
+   },
+   "state_bytes_per_stream": {
+    "v": 117669888,
+    "tag": "TRACED",
+    "src": "data.roofline.models.fnx state_geometry (TRACED XeStrata layout): 36 GDN layers x 48 x 128 x 128 x 4 B + 36 x 10,240 x 3 x 4 B; llama.cpp keeps the recurrent state f32 too (INFERRED)"
+   },
+   "active_params_per_token": {
+    "v": 6000000000.0,
+    "tag": "READ",
+    "src": "data.roofline.models.fnx trunk_params 3.64B + routed 10 x 4,915,200 x 48 = 2.36B (the card's 6B active); the 0.636B LM head (head_params) is priced on the last stage only"
+   },
+   "stores": {
+    "ud_iq4xs": {
+     "experts_bytes": {
+      "v": 60384870400,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-IQ4_XS (first-shard header via probe/model_intake.py --hf, 2026-11-11; 4 shards): every *_exps tensor"
+     },
+     "trunk_bytes": {
+      "v": 3617139200,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-IQ4_XS (first-shard header via probe/model_intake.py --hf, 2026-11-11; 4 shards): every blk.* tensor but the routed experts, plus the hyper-connection output mixers"
+     },
+     "head_bytes": {
+      "v": 521472000,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-IQ4_XS (first-shard header via probe/model_intake.py --hf, 2026-11-11; 4 shards): output.weight (read every step on the last stage)"
+     },
+     "host_bytes": {
+      "v": 29137853440,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-IQ4_XS (first-shard header via probe/model_intake.py --hf, 2026-11-11; 4 shards): token_embd + per_layer_token_embd, input lookups llama.cpp keeps in client host RAM (get_rows on the CPU)"
+     },
+     "fidelity": {
+      "arg_values_earf": {
+       "v": null,
+       "tag": "UNKNOWN",
+       "src": "UNKNOWN: no panel arm yet (lab notes arm tonight covers Q4/Q5/Q6)"
+      },
+      "note": "mixes IQ3_XXS (18 GB of its 60 GB experts): not a clean 4-bit"
+     }
+    },
+    "ud_q4kxl": {
+     "experts_bytes": {
+      "v": 77017907200,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q4_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 4 shards): every *_exps tensor"
+     },
+     "trunk_bytes": {
+      "v": 4154723840,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q4_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 4 shards): every blk.* tensor but the routed experts, plus the hyper-connection output mixers"
+     },
+     "head_bytes": {
+      "v": 675430400,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q4_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 4 shards): output.weight (read every step on the last stage)"
+     },
+     "host_bytes": {
+      "v": 29475568640,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q4_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 4 shards): token_embd + per_layer_token_embd, input lookups llama.cpp keeps in client host RAM (get_rows on the CPU)"
+     },
+     "fidelity": {
+      "arg_values_earf": {
+       "v": null,
+       "tag": "UNKNOWN",
+       "src": "UNKNOWN: lab notes Q4 arm runs tonight; prior: between UD-IQ3_XXS 0.925 (MEASURED) and the Q8 floor 0.975 (MEASURED)"
+      },
+      "gen_kl_prior": {
+       "v": 0.0416,
+       "tag": "ESTIMATE",
+       "src": "data.types q4k_nl kld ESTIMATE (4.5 bpw, K-quant gate/up x1.05)"
+      }
+     }
+    },
+    "ud_q5kxl": {
+     "experts_bytes": {
+      "v": 98369536000,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q5_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards): every *_exps tensor"
+     },
+     "trunk_bytes": {
+      "v": 4154723840,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q5_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards): every blk.* tensor but the routed experts, plus the hyper-connection output mixers"
+     },
+     "head_bytes": {
+      "v": 675430400,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q5_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards): output.weight (read every step on the last stage)"
+     },
+     "host_bytes": {
+      "v": 55075691520,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q5_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards): token_embd + per_layer_token_embd, input lookups llama.cpp keeps in client host RAM (get_rows on the CPU)"
+     },
+     "fidelity": {
+      "arg_values_earf": {
+       "v": null,
+       "tag": "UNKNOWN",
+       "src": "UNKNOWN: lab notes Q5 arm runs tonight"
+      },
+      "gen_kl_prior": {
+       "v": 0.02,
+       "tag": "ESTIMATE",
+       "src": "ESTIMATE: between q4k_nl 0.042 and q8_0 0.0025 on the data.types bpw curve at 6.5 bpw"
+      }
+     }
+    },
+    "ud_q6kxl": {
+     "experts_bytes": {
+      "v": 109248512000,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q6_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards): every *_exps tensor"
+     },
+     "trunk_bytes": {
+      "v": 4154723840,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q6_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards): every blk.* tensor but the routed experts, plus the hyper-connection output mixers"
+     },
+     "head_bytes": {
+      "v": 675430400,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q6_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards): output.weight (read every step on the last stage)"
+     },
+     "host_bytes": {
+      "v": 55075691520,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF UD-Q6_K_XL (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards): token_embd + per_layer_token_embd, input lookups llama.cpp keeps in client host RAM (get_rows on the CPU)"
+     },
+     "fidelity": {
+      "arg_values_earf": {
+       "v": null,
+       "tag": "UNKNOWN",
+       "src": "UNKNOWN: lab notes Q6 arm runs tonight"
+      },
+      "gen_kl_prior": {
+       "v": 0.012,
+       "tag": "ESTIMATE",
+       "src": "ESTIMATE: data.types bpw curve at 7.2 bpw"
+      }
+     }
+    },
+    "q8_0": {
+     "experts_bytes": {
+      "v": 128345702400,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF Q8_0 (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards; tests/fixtures/gguf-qfn-q8.hdr.json): every *_exps tensor"
+     },
+     "trunk_bytes": {
+      "v": 4117184000,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF Q8_0 (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards; tests/fixtures/gguf-qfn-q8.hdr.json): every blk.* tensor but the routed experts, plus the hyper-connection output mixers"
+     },
+     "head_bytes": {
+      "v": 675430400,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF Q8_0 (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards; tests/fixtures/gguf-qfn-q8.hdr.json): output.weight (read every step on the last stage)"
+     },
+     "host_bytes": {
+      "v": 55075691520,
+      "tag": "READ",
+      "src": "READ: GGUF tensor table of HF unsloth/Qwen3.8-Flash-Next-GGUF Q8_0 (first-shard header via probe/model_intake.py --hf, 2026-11-11; 6 shards; tests/fixtures/gguf-qfn-q8.hdr.json): token_embd + per_layer_token_embd, input lookups llama.cpp keeps in client host RAM (get_rows on the CPU)"
+     },
+     "fidelity": {
+      "arg_values_earf": {
+       "v": 0.975,
+       "tag": "MEASURED",
+       "src": "MEASURED lab notes (relayed 2026-11-11 by the coordinator): the engine floor, Q8_0 on ik vs upstream llama.cpp, generated-token KL 0.013, arg_values EARf 0.975; Q8_0 is the panel reference, so its own damage vs BF16 is not in this number (Unsloth's table: Q8_0 vs BF16 KL 0.027, top-1 94.1 %)"
+      },
+      "gen_kl": {
+       "v": 0.013,
+       "tag": "MEASURED",
+       "src": "MEASURED lab notes engine floor (see arg_values_earf)"
+      }
+     }
+    }
+   },
+   "head_params": {
+    "v": 636000000.0,
+    "tag": "READ",
+    "src": "data.roofline.models.fnx head_params"
+   },
+   "L": {
+    "v": 48,
+    "tag": "READ",
+    "src": "GGUF qwen4exp.block_count"
+   },
+   "E": {
+    "v": 512,
+    "tag": "READ",
+    "src": "GGUF expert_count"
+   },
+   "k": {
+    "v": 10,
+    "tag": "READ",
+    "src": "GGUF expert_used_count"
+   },
+   "trunk_params": {
+    "v": 3640000000.0,
+    "tag": "READ",
+    "src": "data.roofline.models.fnx trunk_params (attention + linear attention + shared expert + hyper-connection mixers + router): the non-routed weights a dense kernel reads; the dequantize-to-f16 path (card_curves) writes and reads 2 bytes a parameter of them"
+   }
+  },
+  "q38_27b": {
+   "label": "Qwen3.8-27B (dense hybrid, qwen35 graph)",
+   "hidden_stream": {
+    "v": 5120,
+    "tag": "READ",
+    "src": "lab notes PREDICTION.md S2: n_embd 5120"
+   },
+   "kv_values_per_token_layer": {
+    "v": 2048,
+    "tag": "ESTIMATE",
+    "src": "ESTIMATE: 4 KV heads x (256 + 256) on each full-attention layer (the qwen35 hybrid shape); the bench depth is ~576 tokens, so the KV term is under 2 % of a step either way"
+   },
+   "attn_layers": {
+    "v": 16,
+    "tag": "ESTIMATE",
+    "src": "ESTIMATE: one full-attention block in four of 65 (the qwen35 hybrid interval)"
+   },
+   "indexer_values_per_token_layer": {
+    "v": 0,
+    "tag": "READ",
+    "src": "no indexer"
+   },
+   "state_bytes_per_stream": {
+    "v": 0,
+    "tag": "UNKNOWN",
+    "src": "UNKNOWN: the gated delta-net state of this model is not in data; not priced (it would add at most ~5 % of the B 8 step)"
+   },
+   "active_params_per_token": {
+    "v": 27000000000.0,
+    "tag": "READ",
+    "src": "the model name: 27B dense"
+   },
+   "trunk_params": {
+    "v": 27000000000.0,
+    "tag": "READ",
+    "src": "the model name: 27B dense (the head is inside the trunk bytes here)"
+   },
+   "head_params": {
+    "v": 0,
+    "tag": "READ",
+    "src": "counted in the trunk"
+   },
+   "L": {
+    "v": 65,
+    "tag": "READ",
+    "src": "lab notes PREDICTION.md S2: 65 blocks"
+   },
+   "E": {
+    "v": 0,
+    "tag": "READ",
+    "src": "dense"
+   },
+   "k": {
+    "v": 0,
+    "tag": "READ",
+    "src": "dense"
+   },
+   "stores": {
+    "ud_q4kxl": {
+     "experts_bytes": {
+      "v": 0,
+      "tag": "READ",
+      "src": "dense"
+     },
+     "trunk_bytes": {
+      "v": 17600000000.0,
+      "tag": "READ",
+      "src": "lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11): Qwen3.8-27B UD-Q4_K_XL 17.6 GB"
+     },
+     "head_bytes": {
+      "v": 0,
+      "tag": "READ",
+      "src": "counted in the trunk bytes"
+     },
+     "host_bytes": {
+      "v": 0,
+      "tag": "READ",
+      "src": "none priced"
+     }
+    }
+   }
+  },
+  "qwen3_17b": {
+   "label": "Qwen3-1.7B (dense)",
+   "hidden_stream": {
+    "v": 2048,
+    "tag": "READ",
+    "src": "lab notes PREDICTION.md S1: n_embd 2048"
+   },
+   "kv_values_per_token_layer": {
+    "v": 2048,
+    "tag": "READ",
+    "src": "Qwen3-1.7B config: 8 KV heads x (128 + 128)"
+   },
+   "attn_layers": {
+    "v": 28,
+    "tag": "READ",
+    "src": "every block attends"
+   },
+   "indexer_values_per_token_layer": {
+    "v": 0,
+    "tag": "READ",
+    "src": "no indexer"
+   },
+   "state_bytes_per_stream": {
+    "v": 0,
+    "tag": "READ",
+    "src": "no recurrent state"
+   },
+   "active_params_per_token": {
+    "v": 1720000000.0,
+    "tag": "READ",
+    "src": "Q8_0 1.83 GB / 1.0625 B a weight"
+   },
+   "trunk_params": {
+    "v": 1720000000.0,
+    "tag": "READ",
+    "src": "Q8_0 1.83 GB / 1.0625 B a weight"
+   },
+   "head_params": {
+    "v": 0,
+    "tag": "READ",
+    "src": "counted in the trunk"
+   },
+   "L": {
+    "v": 28,
+    "tag": "READ",
+    "src": "lab notes PREDICTION.md S1: 28 layers"
+   },
+   "E": {
+    "v": 0,
+    "tag": "READ",
+    "src": "dense"
+   },
+   "k": {
+    "v": 0,
+    "tag": "READ",
+    "src": "dense"
+   },
+   "stores": {
+    "q8_0": {
+     "experts_bytes": {
+      "v": 0,
+      "tag": "READ",
+      "src": "dense"
+     },
+     "trunk_bytes": {
+      "v": 1830000000.0,
+      "tag": "READ",
+      "src": "data.bench rows droopy-cuda-qwen3-1.7b-q8_0 / odie-sycl-qwen3-1.7b-q8_0: 1.83 GB"
+     },
+     "head_bytes": {
+      "v": 0,
+      "tag": "READ",
+      "src": "counted in the trunk bytes"
+     },
+     "host_bytes": {
+      "v": 0,
+      "tag": "READ",
+      "src": "none priced"
+     }
+    }
+   }
+  }
+ },
+ "candidates": [
+  {
+   "id": "qfn-udq4kxl-3card",
+   "label": "QFN ud_q4kxl over droopy RTX 6000 + odie 2x B70",
+   "model": "fnx",
+   "store": "ud_q4kxl",
+   "client": "odie",
+   "cards": [
+    {
+     "box": "droopy",
+     "gpu": "rtx6000"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_2"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_1"
+    }
+   ],
+   "ctx": 56445,
+   "streams": 1,
+   "kv_type": "q8_0",
+   "split": "memory",
+   "transport": "tcp",
+   "transport_by_box": {
+    "snoopy": "tcp-lan"
+   },
+   "displace": [
+    "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+   ],
+   "mode": "serial"
+  },
+  {
+   "id": "qfn-udq4kxl-4card",
+   "label": "QFN ud_q4kxl over lassie 1080 Ti + droopy RTX 6000 + odie 2x B70",
+   "model": "fnx",
+   "store": "ud_q4kxl",
+   "client": "odie",
+   "cards": [
+    {
+     "box": "lassie",
+     "gpu": "1080ti"
+    },
+    {
+     "box": "droopy",
+     "gpu": "rtx6000"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_2"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_1"
+    }
+   ],
+   "ctx": 56445,
+   "streams": 1,
+   "kv_type": "q8_0",
+   "split": "memory",
+   "transport": "tcp",
+   "transport_by_box": {
+    "snoopy": "tcp-lan"
+   },
+   "displace": [
+    "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+   ],
+   "mode": "serial"
+  },
+  {
+   "id": "qfn-udq4kxl-5card",
+   "label": "QFN ud_q4kxl over every IB-side card: lassie 1080 Ti + MI25, droopy RTX 6000, odie 2x B70",
+   "model": "fnx",
+   "store": "ud_q4kxl",
+   "client": "odie",
+   "cards": [
+    {
+     "box": "lassie",
+     "gpu": "1080ti"
+    },
+    {
+     "box": "lassie",
+     "gpu": "mi25"
+    },
+    {
+     "box": "droopy",
+     "gpu": "rtx6000"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_2"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_1"
+    }
+   ],
+   "ctx": 56445,
+   "streams": 1,
+   "kv_type": "q8_0",
+   "split": "memory",
+   "transport": "tcp",
+   "transport_by_box": {
+    "snoopy": "tcp-lan"
+   },
+   "displace": [
+    "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+   ],
+   "mode": "serial"
+  },
+  {
+   "id": "qfn-udq4kxl-6card",
+   "label": "QFN ud_q4kxl over every card: + snoopy 3090 Ti over the 10GbE LAN (household use: optional)",
+   "model": "fnx",
+   "store": "ud_q4kxl",
+   "client": "odie",
+   "cards": [
+    {
+     "box": "snoopy",
+     "gpu": "3090ti"
+    },
+    {
+     "box": "lassie",
+     "gpu": "1080ti"
+    },
+    {
+     "box": "lassie",
+     "gpu": "mi25"
+    },
+    {
+     "box": "droopy",
+     "gpu": "rtx6000"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_2"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_1"
+    }
+   ],
+   "ctx": 56445,
+   "streams": 1,
+   "kv_type": "q8_0",
+   "split": "memory",
+   "transport": "tcp",
+   "transport_by_box": {
+    "snoopy": "tcp-lan"
+   },
+   "displace": [
+    "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+   ],
+   "mode": "serial"
+  },
+  {
+   "id": "qfn-udiq4xs-4card",
+   "label": "QFN ud_iq4xs over lassie 1080 Ti + droopy RTX 6000 + odie 2x B70",
+   "model": "fnx",
+   "store": "ud_iq4xs",
+   "client": "odie",
+   "cards": [
+    {
+     "box": "lassie",
+     "gpu": "1080ti"
+    },
+    {
+     "box": "droopy",
+     "gpu": "rtx6000"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_2"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_1"
+    }
+   ],
+   "ctx": 56445,
+   "streams": 1,
+   "kv_type": "q8_0",
+   "split": "memory",
+   "transport": "tcp",
+   "transport_by_box": {
+    "snoopy": "tcp-lan"
+   },
+   "displace": [
+    "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+   ],
+   "mode": "serial"
+  },
+  {
+   "id": "qfn-udq5kxl-5card",
+   "label": "QFN ud_q5kxl over every IB-side card: lassie 1080 Ti + MI25, droopy RTX 6000, odie 2x B70",
+   "model": "fnx",
+   "store": "ud_q5kxl",
+   "client": "odie",
+   "cards": [
+    {
+     "box": "lassie",
+     "gpu": "1080ti"
+    },
+    {
+     "box": "lassie",
+     "gpu": "mi25"
+    },
+    {
+     "box": "droopy",
+     "gpu": "rtx6000"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_2"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_1"
+    }
+   ],
+   "ctx": 56445,
+   "streams": 1,
+   "kv_type": "q8_0",
+   "split": "memory",
+   "transport": "tcp",
+   "transport_by_box": {
+    "snoopy": "tcp-lan"
+   },
+   "displace": [
+    "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+   ],
+   "mode": "serial"
+  },
+  {
+   "id": "qfn-udq5kxl-6card",
+   "label": "QFN ud_q5kxl over every card: + snoopy 3090 Ti over the 10GbE LAN (household use: optional)",
+   "model": "fnx",
+   "store": "ud_q5kxl",
+   "client": "odie",
+   "cards": [
+    {
+     "box": "snoopy",
+     "gpu": "3090ti"
+    },
+    {
+     "box": "lassie",
+     "gpu": "1080ti"
+    },
+    {
+     "box": "lassie",
+     "gpu": "mi25"
+    },
+    {
+     "box": "droopy",
+     "gpu": "rtx6000"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_2"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_1"
+    }
+   ],
+   "ctx": 56445,
+   "streams": 1,
+   "kv_type": "q8_0",
+   "split": "memory",
+   "transport": "tcp",
+   "transport_by_box": {
+    "snoopy": "tcp-lan"
+   },
+   "displace": [
+    "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+   ],
+   "mode": "serial"
+  },
+  {
+   "id": "qfn-udq6kxl-5card",
+   "label": "QFN ud_q6kxl over every IB-side card: lassie 1080 Ti + MI25, droopy RTX 6000, odie 2x B70",
+   "model": "fnx",
+   "store": "ud_q6kxl",
+   "client": "odie",
+   "cards": [
+    {
+     "box": "lassie",
+     "gpu": "1080ti"
+    },
+    {
+     "box": "lassie",
+     "gpu": "mi25"
+    },
+    {
+     "box": "droopy",
+     "gpu": "rtx6000"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_2"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_1"
+    }
+   ],
+   "ctx": 56445,
+   "streams": 1,
+   "kv_type": "q8_0",
+   "split": "memory",
+   "transport": "tcp",
+   "transport_by_box": {
+    "snoopy": "tcp-lan"
+   },
+   "displace": [
+    "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+   ],
+   "mode": "serial"
+  },
+  {
+   "id": "qfn-udq6kxl-6card",
+   "label": "QFN ud_q6kxl over every card: + snoopy 3090 Ti over the 10GbE LAN (household use: optional)",
+   "model": "fnx",
+   "store": "ud_q6kxl",
+   "client": "odie",
+   "cards": [
+    {
+     "box": "snoopy",
+     "gpu": "3090ti"
+    },
+    {
+     "box": "lassie",
+     "gpu": "1080ti"
+    },
+    {
+     "box": "lassie",
+     "gpu": "mi25"
+    },
+    {
+     "box": "droopy",
+     "gpu": "rtx6000"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_2"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_1"
+    }
+   ],
+   "ctx": 56445,
+   "streams": 1,
+   "kv_type": "q8_0",
+   "split": "memory",
+   "transport": "tcp",
+   "transport_by_box": {
+    "snoopy": "tcp-lan"
+   },
+   "displace": [
+    "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+   ],
+   "mode": "serial"
+  },
+  {
+   "id": "qfn-q80-6card",
+   "label": "QFN q8_0 over every card: + snoopy 3090 Ti over the 10GbE LAN (household use: optional)",
+   "model": "fnx",
+   "store": "q8_0",
+   "client": "odie",
+   "cards": [
+    {
+     "box": "snoopy",
+     "gpu": "3090ti"
+    },
+    {
+     "box": "lassie",
+     "gpu": "1080ti"
+    },
+    {
+     "box": "lassie",
+     "gpu": "mi25"
+    },
+    {
+     "box": "droopy",
+     "gpu": "rtx6000"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_2"
+    },
+    {
+     "box": "odie",
+     "gpu": "b70_1"
+    }
+   ],
+   "ctx": 56445,
+   "streams": 1,
+   "kv_type": "q8_0",
+   "split": "memory",
+   "transport": "tcp",
+   "transport_by_box": {
+    "snoopy": "tcp-lan"
+   },
+   "displace": [
+    "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+   ],
+   "mode": "serial"
+  }
+ ],
+ "card_curves": {
+  "about": "Per-card batched decode step by kernel class (src/model.js cardStage, used by pipelineRoof): the step of a stage at B tokens is the card's host intercept x its layer share + the model's graph overhead x its layers + its dense weights (trunk share + head) + its routed experts + every stream's KV and state, each class priced by the kernel the backend runs at that B (kernels, TRACED). Mat-vec (B <= mv_max): the weights are read once and every column pays its ALU work, max(W / R, B x W x col). Past mv_max: SYCL dequantizes to f16 and runs a GEMM (W + 4 bytes a parameter of traffic: DERIVED, no constant), CUDA runs MMQ (W x mmq a GB), Vulkan mul_mm (no constant: UNCALIBRATED). MoE: B x k mat-vec columns over their experts while B <= moe_mv_max, else the distinct experts E(1 - (1 - k/E)^B) through the batched kernel (SYCL grouped dequant GEMM: grp a GB; CUDA MMQ). Every constant is solved from ONE named calibration point below (cardCurveFit, in list order: later anchors use the constants earlier ones solved); every other point is a hold-out, scored by cardCurveRescore and node report.js --cardcurve.",
+  "kernels": {
+   "v": {
+    "sycl": {
+     "mv_max": 8,
+     "moe_mv_max": 1,
+     "dense_batched": "dequant_f16",
+     "moe_batched": "grouped"
+    },
+    "cuda": {
+     "mv_max": 8,
+     "moe_mv_max": 8,
+     "moe_mv_max_by_class": {
+      "gtx1080ti": 5
+     },
+     "dense_batched": "mmq",
+     "moe_batched": "mmq"
+    },
+    "vulkan-radv": {
+     "mv_max": 8,
+     "moe_mv_max": 8,
+     "dense_batched": "mul_mm",
+     "moe_batched": "mul_mm"
+    }
+   },
+   "tag": "TRACED",
+   "src": "TRACED llama.cpp f3b407ca1bfe: SYCL MMVQ_MAX_BATCH_SIZE 8 (ggml-sycl/common.hpp:238, can_use_mul_mat_vec_q ggml-sycl.cpp:5172), ggml_sycl_supports_mmq returns false (4385) so a wider quantized mat-mul runs ggml_sycl_op_mul_mat_sycl (dequantize to f16 + GEMM; INFERRED, CL 60, that the reorder XMX batch kernel can_use_xmx_batch does not take UD-Q4_K_XL's mixed types: the S2 B 16 cliff is that path), the MoE mat-vec only at one token (ggml_sycl_mul_mat_id_mmvq_eligible 5636: ne12 == 1, ids->ne[1] == 1), every wider MoE step the grouped dequant GEMM over the routed experts (ggml_sycl_grouped_dequant_gemm_device, fused-gemm.cpp:1420); CUDA MMVQ_MAX_BATCH_SIZE 8 (mmvq.cuh:3), MUL_MAT_ID mat-vec up to get_mmvq_mmid_max_batch (8 on Turing for Q4_K/Q5_K/Q6_K, 5 on Pascal for Q4_K/Q5_K: mmvq.cu), then MMQ over the routed experts (ggml-cuda.cu ggml_cuda_mul_mat_id); Vulkan mul_mat_vec_id while ids->ne[1] <= 8 (ggml-vulkan.cpp:8089), dense mat-vec up to mul_mat_vec_max_cols (INFERRED 8), then mul_mm"
+  },
+  "units": {
+   "col": "ms a GB of weights a column (mat-vec ALU)",
+   "mmq": "ms a GB (CUDA MMQ at B <= its tile)",
+   "grp": "ms a GB of distinct experts (SYCL grouped dequant GEMM)",
+   "rate": "GB/s (the B 1 read when no own line was measured)",
+   "overhead": "ms a layer a step (the model graph's launches beyond the line's intercept)"
+  },
+  "anchors": [
+   {
+    "id": "s1-lassie-alone",
+    "arm": "S1 lassie 1080 Ti alone, Qwen3-1.7B Q8_0",
+    "tool": "bench",
+    "plan": {
+     "model": "qwen3_17b",
+     "store": "q8_0",
+     "client": "lassie",
+     "cards": [
+      {
+       "box": "lassie",
+       "gpu": "1080ti"
+      }
+     ],
+     "layers": [
+      28
+     ],
+     "kv_type": "f16",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 123.3,
+      "use": "calibrates",
+      "constant": "cuda/gtx1080ti.rate"
+     },
+     {
+      "B": 8,
+      "tps": 593,
+      "use": "calibrates",
+      "constant": "cuda/gtx1080ti.col"
+     },
+     {
+      "B": 16,
+      "tps": 861,
+      "use": "calibrates",
+      "constant": "cuda/gtx1080ti.mmq"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S1 table, lassie alone; llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   },
+   {
+    "id": "s1-droopy-alone",
+    "arm": "S1 droopy RTX 6000 alone, Qwen3-1.7B Q8_0",
+    "tool": "bench",
+    "plan": {
+     "model": "qwen3_17b",
+     "store": "q8_0",
+     "client": "droopy",
+     "cards": [
+      {
+       "box": "droopy",
+       "gpu": "rtx6000"
+      }
+     ],
+     "layers": [
+      28
+     ],
+     "kv_type": "f16",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 182.6,
+      "use": "line",
+      "note": "the CUDA line (bench.gpu.cuda) was fitted on this model on this card (bench row droopy-cuda-qwen3-1.7b-q8_0, 194.5 tok/s): a line check, not a hold-out"
+     },
+     {
+      "B": 8,
+      "tps": 906,
+      "use": "calibrates",
+      "constant": "cuda/rtx6000.col"
+     },
+     {
+      "B": 16,
+      "tps": 1260,
+      "use": "calibrates",
+      "constant": "cuda/rtx6000.mmq"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S1 table, droopy alone; llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   },
+   {
+    "id": "s2-b70-alone",
+    "arm": "S2 one B70 alone, Qwen3.8-27B UD-Q4_K_XL",
+    "tool": "bench",
+    "plan": {
+     "model": "q38_27b",
+     "store": "ud_q4kxl",
+     "client": "odie",
+     "cards": [
+      {
+       "box": "odie",
+       "gpu": "b70_1"
+      }
+     ],
+     "layers": [
+      65
+     ],
+     "kv_type": "f16",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 22.2,
+      "use": "calibrates",
+      "constant": "overhead.q38_27b"
+     },
+     {
+      "B": 8,
+      "tps": 84.1,
+      "use": "calibrates",
+      "constant": "sycl/b70.col"
+     },
+     {
+      "B": 16,
+      "tps": 60.2,
+      "use": "holdout",
+      "note": "SYCL past 8 columns: the dequantize-to-f16 + GEMM path, DERIVED with no constant (the test of the derivation)"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S2 table, one B70 alone (warm B = 1 row: the first is SYCL JIT); llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   },
+   {
+    "id": "s2a-lassie-local",
+    "arm": "S2a lassie alone, one process: 1080 Ti (CUDA) + MI25 (Vulkan RADV), Qwen3.8-27B",
+    "tool": "bench",
+    "plan": {
+     "model": "q38_27b",
+     "store": "ud_q4kxl",
+     "client": "lassie",
+     "cards": [
+      {
+       "box": "lassie",
+       "gpu": "1080ti"
+      },
+      {
+       "box": "lassie",
+       "gpu": "mi25"
+      }
+     ],
+     "layers": [
+      33,
+      32
+     ],
+     "kv_type": "f16",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 9.7,
+      "use": "holdout"
+     },
+     {
+      "B": 8,
+      "tps": 22.1,
+      "use": "calibrates",
+      "constant": "vulkan-radv/mi25.col"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S2a table, lassie alone one process (split 9 / 8.6 GB -> 33 / 32 of 65 layers); llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   },
+   {
+    "id": "s4b-server",
+    "arm": "S4 layout B through llama-server: RTX 6000 12 / B70 #2 18 / B70 #1 18 + head, QFN UD-Q4_K_XL",
+    "tool": "server",
+    "plan": {
+     "model": "fnx",
+     "store": "ud_q4kxl",
+     "client": "odie",
+     "cards": [
+      {
+       "box": "droopy",
+       "gpu": "rtx6000"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_2"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_1"
+      }
+     ],
+     "layers": [
+      12,
+      18,
+      18
+     ],
+     "kv_type": "q8_0",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 34.6,
+      "use": "calibrates",
+      "constant": "overhead.fnx"
+     },
+     {
+      "B": 4,
+      "tps": 58.4,
+      "use": "holdout"
+     },
+     {
+      "B": 8,
+      "tps": 72.5,
+      "use": "holdout"
+     },
+     {
+      "B": 16,
+      "tps": 90.2,
+      "use": "holdout"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S4 table, server smoke layout B (multibox-smoke.sh, llama-server -np 16, decode-streams.py, B fresh per point); depth ASSUMED ~576 like the bench"
+   },
+   {
+    "id": "s4b-bench",
+    "arm": "S4 layout B (by speed): RTX 6000 12 / B70 #2 18 / B70 #1 18 + head, QFN UD-Q4_K_XL",
+    "tool": "bench",
+    "plan": {
+     "model": "fnx",
+     "store": "ud_q4kxl",
+     "client": "odie",
+     "cards": [
+      {
+       "box": "droopy",
+       "gpu": "rtx6000"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_2"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_1"
+      }
+     ],
+     "layers": [
+      12,
+      18,
+      18
+     ],
+     "kv_type": "q8_0",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 23.3,
+      "use": "holdout",
+      "note": "the bench ran its B = 1 row after the B = 8 / 16 passes and reads low (README S4: the server smoke, B = 1 first on a fresh server, gives 34.6): scored, flagged order-depressed"
+     },
+     {
+      "B": 4,
+      "tps": 63.7,
+      "use": "holdout"
+     },
+     {
+      "B": 8,
+      "tps": 93.2,
+      "use": "calibrates",
+      "constant": "sycl/b70.grp"
+     },
+     {
+      "B": 16,
+      "tps": 117.8,
+      "use": "holdout"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S4 table, layout B, second pass after a warm-up; llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   },
+   {
+    "id": "s4a-bench",
+    "arm": "S4 layout A (RM's): 1080 Ti 5 / RTX 6000 11 / B70 #2 16 / B70 #1 16 + head, QFN UD-Q4_K_XL",
+    "tool": "bench",
+    "plan": {
+     "model": "fnx",
+     "store": "ud_q4kxl",
+     "client": "odie",
+     "cards": [
+      {
+       "box": "lassie",
+       "gpu": "1080ti"
+      },
+      {
+       "box": "droopy",
+       "gpu": "rtx6000"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_2"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_1"
+      }
+     ],
+     "layers": [
+      5,
+      11,
+      16,
+      16
+     ],
+     "kv_type": "q8_0",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 23.0,
+      "use": "holdout",
+      "note": "the bench ran its B = 1 row after the B = 8 / 16 passes and reads low (README S4: the server smoke, B = 1 first on a fresh server, gives 34.6): scored, flagged order-depressed"
+     },
+     {
+      "B": 4,
+      "tps": 61.6,
+      "use": "holdout"
+     },
+     {
+      "B": 8,
+      "tps": 87.9,
+      "use": "holdout"
+     },
+     {
+      "B": 16,
+      "tps": 110.7,
+      "use": "holdout"
+     }
+    ],
+    "rm_frozen": {
+     "record": "mb-qfn-udq4kxl-4card-b8-d4k-1111",
+     "B1": 57.7,
+     "B8": 198.7,
+     "note": "RM's bandwidth-line prediction at ~4k depth, frozen 09:14:19Z"
+    },
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S4 table, layout A; llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   },
+   {
+    "id": "s3-bench",
+    "arm": "S3 1080 Ti 5 / MI25 8 / B70 #2 17 / B70 #1 18 + head, QFN UD-Q4_K_XL",
+    "tool": "bench",
+    "plan": {
+     "model": "fnx",
+     "store": "ud_q4kxl",
+     "client": "odie",
+     "cards": [
+      {
+       "box": "lassie",
+       "gpu": "1080ti"
+      },
+      {
+       "box": "lassie",
+       "gpu": "mi25"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_2"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_1"
+      }
+     ],
+     "layers": [
+      5,
+      8,
+      17,
+      18
+     ],
+     "kv_type": "q8_0",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 26.8,
+      "use": "holdout"
+     },
+     {
+      "B": 8,
+      "tps": 58.5,
+      "use": "holdout"
+     },
+     {
+      "B": 16,
+      "tps": 61.1,
+      "use": "holdout"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S3 table, depth 512 row, -ub 512, MI25 on Vulkan; llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   },
+   {
+    "id": "s3-bench-4k",
+    "arm": "S3 at ~4k depth (4,096-token prompt, -ub 64)",
+    "tool": "bench",
+    "plan": {
+     "model": "fnx",
+     "store": "ud_q4kxl",
+     "client": "odie",
+     "cards": [
+      {
+       "box": "lassie",
+       "gpu": "1080ti"
+      },
+      {
+       "box": "lassie",
+       "gpu": "mi25"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_2"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_1"
+      }
+     ],
+     "layers": [
+      5,
+      8,
+      17,
+      18
+     ],
+     "kv_type": "q8_0",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 4160,
+    "points": [
+     {
+      "B": 1,
+      "tps": 25.6,
+      "use": "holdout"
+     },
+     {
+      "B": 8,
+      "tps": 57.6,
+      "use": "holdout"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S3 table, ~4k row; llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   },
+   {
+    "id": "s2-2xb70",
+    "arm": "S2 two B70s, one process, Qwen3.8-27B",
+    "tool": "bench",
+    "plan": {
+     "model": "q38_27b",
+     "store": "ud_q4kxl",
+     "client": "odie",
+     "cards": [
+      {
+       "box": "odie",
+       "gpu": "b70_2"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_1"
+      }
+     ],
+     "layers": [
+      33,
+      32
+     ],
+     "kv_type": "f16",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 22.3,
+      "use": "holdout"
+     },
+     {
+      "B": 8,
+      "tps": 82.9,
+      "use": "holdout"
+     },
+     {
+      "B": 16,
+      "tps": 58.9,
+      "use": "holdout"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S2 table, two B70s one process; layers ASSUMED split 33 / 32 (llama.cpp -ts by free memory on twin cards); llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   },
+   {
+    "id": "s2-split",
+    "arm": "S2 B70 (client, head) + lassie 1080 Ti over RPC, Qwen3.8-27B",
+    "tool": "bench",
+    "plan": {
+     "model": "q38_27b",
+     "store": "ud_q4kxl",
+     "client": "odie",
+     "cards": [
+      {
+       "box": "lassie",
+       "gpu": "1080ti"
+      },
+      {
+       "box": "odie",
+       "gpu": "b70_1"
+      }
+     ],
+     "layers": [
+      16,
+      49
+     ],
+     "kv_type": "f16",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 20.7,
+      "use": "holdout"
+     },
+     {
+      "B": 8,
+      "tps": 77.1,
+      "use": "holdout"
+     },
+     {
+      "B": 16,
+      "tps": 78.8,
+      "use": "holdout"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S2 table, B70 + 1080 Ti over RPC (split 4.0 / 12.5 GB -> 16 / 49 of 65 layers); llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   },
+   {
+    "id": "s1-split",
+    "arm": "S1 lassie 1080 Ti (RPC) + droopy RTX 6000 (client, head), TCP, Qwen3-1.7B",
+    "tool": "bench",
+    "plan": {
+     "model": "qwen3_17b",
+     "store": "q8_0",
+     "client": "droopy",
+     "cards": [
+      {
+       "box": "lassie",
+       "gpu": "1080ti"
+      },
+      {
+       "box": "droopy",
+       "gpu": "rtx6000"
+      }
+     ],
+     "layers": [
+      14,
+      14
+     ],
+     "kv_type": "f16",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 122.3,
+      "use": "holdout"
+     },
+     {
+      "B": 8,
+      "tps": 617,
+      "use": "holdout"
+     },
+     {
+      "B": 16,
+      "tps": 912,
+      "use": "holdout"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S1 table, split head local TCP (half the layers each); llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   },
+   {
+    "id": "s2a-3card",
+    "arm": "S2a lassie 1080 Ti + MI25 (one rpc-server) + droopy RTX 6000 (client, head), TCP, Qwen3.8-27B",
+    "tool": "bench",
+    "plan": {
+     "model": "q38_27b",
+     "store": "ud_q4kxl",
+     "client": "droopy",
+     "cards": [
+      {
+       "box": "lassie",
+       "gpu": "1080ti"
+      },
+      {
+       "box": "lassie",
+       "gpu": "mi25"
+      },
+      {
+       "box": "droopy",
+       "gpu": "rtx6000"
+      }
+     ],
+     "layers": [
+      31,
+      22,
+      12
+     ],
+     "kv_type": "f16",
+     "transport": "tcp",
+     "no_memory_check": true
+    },
+    "ctx_read": 576,
+    "points": [
+     {
+      "B": 1,
+      "tps": 10.1,
+      "use": "holdout"
+     },
+     {
+      "B": 8,
+      "tps": 24.1,
+      "use": "holdout"
+     }
+    ],
+    "src": "MEASURED lab notes README (lane multibox-serving, tip 24b63959ce1, an agent 2026-11-11) S2a table, three cards two boxes TCP, split 7.4 / 5.4 / 2.9 GB -> 31 / 22 / 12 of 65 layers (one rpc-server for both lassie cards: priced as two round trips, conservative); llama-batched-bench pp 512, tg 128, -fa on -b 2048 -ub 512, aggregate tok/s over B sequences"
+   }
+  ],
+  "agent_points": {
+   "about": "The R8 agent points (XeStrata GSQ IQ3_XXS on odie 2x B70, trace agent-long-16, 600 s warm-up + 600 s window) rescored by agentPointRescore with the frozen records' own inputs: the synthetic decode curve (MEASURED on image 06103b88: B 1 / 16 / 32 = 68.8 / 271.04 / 356.1, the named calibration data of every R8 record, never refitted), the prefill rate, the slots; the no-door points with the engine's admission, the shared prefix and the two slot groups the door records declared. The no-refit arm (predicted) calibrates nothing: every point is a hold-out there. The step-increment arm (scaled) solves ONE factor, decode_step_increment lambda, on ONE named point (calibration below: no-door B 8); that point reproduces itself by construction and is scored as use calibrates, never as a hold-out, and every other point is its hold-out. measured.useful_tps counts only turns that ended by the window end (measured.turn_counted_if; correction below). evict_branch_useful = the evict branch's rescore (docs/multibox-plan.md at ce47d16; the door rows = the frozen door records). The conv-door-live points (kind door32_lane: the served door, admission door with the lane's 60 s idle release) have no evict-branch value (null).",
+   "points": [
+    {
+     "B": 1,
+     "kind": "no_door",
+     "measured": {
+      "useful_tps": 30.25,
+      "b_eff": 0.43,
+      "F_server": 10.77,
+      "stall_pct": 0.0,
+      "prefill_busy_pct": 41.2,
+      "as_reported": {
+       "useful_tps": 30.25,
+       "turn_counted_if": "ended_by_join",
+       "late_turns": 0,
+       "late_max_s_past_window": 0.0,
+       "note": "kept for the record; never a calibration or a score (Correction 2026-11-11 in card_curves.agent_points.correction)"
+      },
+      "turn_counted_if": "ended_by_window_end",
+      "recount_src": "MEASURED: recounted from the point's replay.json (turns sent inside the window that ended by its end, out tokens / 600 s); lab notes recount table (master a87b3f98738)"
+     },
+     "evict_branch_useful": 34.2,
+     "opts_from": "r8-agents-b8-1111",
+     "override": {
+      "admission": {
+       "v": {
+        "policy": "engine"
+       },
+       "tag": "READ",
+       "src": "READ: the no-door sweep ran the engine's own slots (no door)"
+      },
+      "shared_prefix": {
+       "v": 4924,
+       "tag": "MEASURED",
+       "src": "MEASURED: the door records' shared_prefix (r8-door32-b40-1111): 4,924 cached tokens on cold first turns"
+      },
+      "slot_groups": {
+       "v": 2,
+       "tag": "READ",
+       "src": "READ: R8 serves --batch 32 --batch-groups 2 (the door records' slot_groups)"
+      }
+     },
+     "src": "MEASURED lab notes (lane r8-batch-sweep, merged to homelab master 8cdad7cca10) b1"
+    },
+    {
+     "B": 8,
+     "kind": "no_door",
+     "measured": {
+      "useful_tps": 57.54,
+      "b_eff": 5.04,
+      "F_server": 4.98,
+      "stall_pct": 37.8,
+      "prefill_busy_pct": 44.4,
+      "as_reported": {
+       "useful_tps": 61.03,
+       "turn_counted_if": "ended_by_join",
+       "late_turns": 6,
+       "late_max_s_past_window": 17.5,
+       "note": "kept for the record; never a calibration or a score (Correction 2026-11-11 in card_curves.agent_points.correction)"
+      },
+      "turn_counted_if": "ended_by_window_end",
+      "recount_src": "MEASURED: recounted from the point's replay.json (turns sent inside the window that ended by its end, out tokens / 600 s); lab notes recount table (master a87b3f98738)"
+     },
+     "evict_branch_useful": 91.4,
+     "opts_from": "r8-agents-b8-1111",
+     "override": {
+      "admission": {
+       "v": {
+        "policy": "engine"
+       },
+       "tag": "READ",
+       "src": "READ: the no-door sweep ran the engine's own slots (no door)"
+      },
+      "shared_prefix": {
+       "v": 4924,
+       "tag": "MEASURED",
+       "src": "MEASURED: the door records' shared_prefix (r8-door32-b40-1111): 4,924 cached tokens on cold first turns"
+      },
+      "slot_groups": {
+       "v": 2,
+       "tag": "READ",
+       "src": "READ: R8 serves --batch 32 --batch-groups 2 (the door records' slot_groups)"
+      }
+     },
+     "src": "MEASURED lab notes (lane r8-batch-sweep, merged to homelab master 8cdad7cca10) b8"
+    },
+    {
+     "B": 16,
+     "kind": "no_door",
+     "measured": {
+      "useful_tps": 64.47,
+      "b_eff": 14.17,
+      "F_server": 5.37,
+      "stall_pct": 44.7,
+      "prefill_busy_pct": 48.6,
+      "as_reported": {
+       "useful_tps": 69.35,
+       "turn_counted_if": "ended_by_join",
+       "late_turns": 11,
+       "late_max_s_past_window": 19.6,
+       "note": "kept for the record; never a calibration or a score (Correction 2026-11-11 in card_curves.agent_points.correction)"
+      },
+      "turn_counted_if": "ended_by_window_end",
+      "recount_src": "MEASURED: recounted from the point's replay.json (turns sent inside the window that ended by its end, out tokens / 600 s); lab notes recount table (master a87b3f98738)"
+     },
+     "evict_branch_useful": 95.8,
+     "opts_from": "r8-agents-b8-1111",
+     "override": {
+      "admission": {
+       "v": {
+        "policy": "engine"
+       },
+       "tag": "READ",
+       "src": "READ: the no-door sweep ran the engine's own slots (no door)"
+      },
+      "shared_prefix": {
+       "v": 4924,
+       "tag": "MEASURED",
+       "src": "MEASURED: the door records' shared_prefix (r8-door32-b40-1111): 4,924 cached tokens on cold first turns"
+      },
+      "slot_groups": {
+       "v": 2,
+       "tag": "READ",
+       "src": "READ: R8 serves --batch 32 --batch-groups 2 (the door records' slot_groups)"
+      }
+     },
+     "src": "MEASURED lab notes (lane r8-batch-sweep, merged to homelab master 8cdad7cca10) b16"
+    },
+    {
+     "B": 24,
+     "kind": "no_door",
+     "measured": {
+      "useful_tps": 64.19,
+      "b_eff": 21.58,
+      "F_server": 7.52,
+      "stall_pct": 57.2,
+      "prefill_busy_pct": 69.9,
+      "as_reported": {
+       "useful_tps": 79.09,
+       "turn_counted_if": "ended_by_join",
+       "late_turns": 21,
+       "late_max_s_past_window": 28.0,
+       "note": "kept for the record; never a calibration or a score (Correction 2026-11-11 in card_curves.agent_points.correction)"
+      },
+      "turn_counted_if": "ended_by_window_end",
+      "recount_src": "MEASURED: recounted from the point's replay.json (turns sent inside the window that ended by its end, out tokens / 600 s); lab notes recount table (master a87b3f98738)"
+     },
+     "evict_branch_useful": 73.6,
+     "opts_from": "r8-agents-b8-1111",
+     "override": {
+      "admission": {
+       "v": {
+        "policy": "engine"
+       },
+       "tag": "READ",
+       "src": "READ: the no-door sweep ran the engine's own slots (no door)"
+      },
+      "shared_prefix": {
+       "v": 4924,
+       "tag": "MEASURED",
+       "src": "MEASURED: the door records' shared_prefix (r8-door32-b40-1111): 4,924 cached tokens on cold first turns"
+      },
+      "slot_groups": {
+       "v": 2,
+       "tag": "READ",
+       "src": "READ: R8 serves --batch 32 --batch-groups 2 (the door records' slot_groups)"
+      }
+     },
+     "src": "MEASURED lab notes (lane r8-batch-sweep, merged to homelab master 8cdad7cca10) b24"
+    },
+    {
+     "B": 33,
+     "kind": "no_door",
+     "measured": {
+      "useful_tps": 5.68,
+      "b_eff": 15.21,
+      "F_server": 111.31,
+      "stall_pct": 78.8,
+      "prefill_busy_pct": 116.7,
+      "as_reported": {
+       "useful_tps": 9.66,
+       "turn_counted_if": "ended_by_join",
+       "late_turns": 9,
+       "late_max_s_past_window": 130.9,
+       "note": "kept for the record; never a calibration or a score (Correction 2026-11-11 in card_curves.agent_points.correction)"
+      },
+      "turn_counted_if": "ended_by_window_end",
+      "recount_src": "MEASURED: recounted from the point's replay.json (turns sent inside the window that ended by its end, out tokens / 600 s); lab notes recount table (master a87b3f98738)"
+     },
+     "evict_branch_useful": 1.0,
+     "opts_from": "r8-agents-b8-1111",
+     "override": {
+      "admission": {
+       "v": {
+        "policy": "engine"
+       },
+       "tag": "READ",
+       "src": "READ: the no-door sweep ran the engine's own slots (no door)"
+      },
+      "shared_prefix": {
+       "v": 4924,
+       "tag": "MEASURED",
+       "src": "MEASURED: the door records' shared_prefix (r8-door32-b40-1111): 4,924 cached tokens on cold first turns"
+      },
+      "slot_groups": {
+       "v": 2,
+       "tag": "READ",
+       "src": "READ: R8 serves --batch 32 --batch-groups 2 (the door records' slot_groups)"
+      }
+     },
+     "src": "MEASURED lab notes (lane r8-batch-sweep, merged to homelab master 8cdad7cca10) b33"
+    },
+    {
+     "B": 40,
+     "kind": "no_door",
+     "measured": {
+      "useful_tps": 3.52,
+      "b_eff": 9.26,
+      "F_server": 134.97,
+      "stall_pct": 81.3,
+      "prefill_busy_pct": 111.4,
+      "as_reported": {
+       "useful_tps": 7.99,
+       "turn_counted_if": "ended_by_join",
+       "late_turns": 12,
+       "late_max_s_past_window": 149.3,
+       "note": "kept for the record; never a calibration or a score (Correction 2026-11-11 in card_curves.agent_points.correction)"
+      },
+      "turn_counted_if": "ended_by_window_end",
+      "recount_src": "MEASURED: recounted from the point's replay.json (turns sent inside the window that ended by its end, out tokens / 600 s); lab notes recount table (master a87b3f98738)"
+     },
+     "evict_branch_useful": 0.5,
+     "opts_from": "r8-agents-b8-1111",
+     "override": {
+      "admission": {
+       "v": {
+        "policy": "engine"
+       },
+       "tag": "READ",
+       "src": "READ: the no-door sweep ran the engine's own slots (no door)"
+      },
+      "shared_prefix": {
+       "v": 4924,
+       "tag": "MEASURED",
+       "src": "MEASURED: the door records' shared_prefix (r8-door32-b40-1111): 4,924 cached tokens on cold first turns"
+      },
+      "slot_groups": {
+       "v": 2,
+       "tag": "READ",
+       "src": "READ: R8 serves --batch 32 --batch-groups 2 (the door records' slot_groups)"
+      }
+     },
+     "src": "MEASURED lab notes (lane r8-batch-sweep, merged to homelab master 8cdad7cca10) b40"
+    },
+    {
+     "B": 33,
+     "kind": "door32",
+     "measured": {
+      "useful_tps": 63.02,
+      "b_eff": 30.6,
+      "F_server": 9.03,
+      "stall_pct": 64.1,
+      "prefill_busy_pct": 78.8,
+      "as_reported": {
+       "useful_tps": 79.01,
+       "turn_counted_if": "ended_by_join",
+       "late_turns": 29,
+       "late_max_s_past_window": 22.8,
+       "note": "kept for the record; never a calibration or a score (Correction 2026-11-11 in card_curves.agent_points.correction)"
+      },
+      "turn_counted_if": "ended_by_window_end",
+      "recount_src": "MEASURED: recounted from the point's replay.json (turns sent inside the window that ended by its end, out tokens / 600 s); lab notes recount table (master a87b3f98738)"
+     },
+     "evict_branch_useful": 30.2,
+     "opts_from": "r8-door32-b40-1111",
+     "override": {},
+     "src": "MEASURED lab notes (lane r8-admission 7ddf8ae9f54) b33 (door 32 conversations)"
+    },
+    {
+     "B": 40,
+     "kind": "door32",
+     "measured": {
+      "useful_tps": 66.82,
+      "b_eff": 31.85,
+      "F_server": 8.41,
+      "stall_pct": 64.1,
+      "prefill_busy_pct": 81.5,
+      "as_reported": {
+       "useful_tps": 85.28,
+       "turn_counted_if": "ended_by_join",
+       "late_turns": 30,
+       "late_max_s_past_window": 41.9,
+       "note": "kept for the record; never a calibration or a score (Correction 2026-11-11 in card_curves.agent_points.correction)"
+      },
+      "turn_counted_if": "ended_by_window_end",
+      "recount_src": "MEASURED: recounted from the point's replay.json (turns sent inside the window that ended by its end, out tokens / 600 s); lab notes recount table (master a87b3f98738)"
+     },
+     "evict_branch_useful": 37.8,
+     "opts_from": "r8-door32-b40-1111",
+     "override": {},
+     "src": "MEASURED lab notes (lane r8-admission 7ddf8ae9f54) b40 (door 32 conversations)"
+    },
+    {
+     "B": 40,
+     "kind": "door32_lane",
+     "label": "door32 lane B 40",
+     "measured": {
+      "useful_tps": 59.48,
+      "b_eff": 21.26,
+      "F_server": 9.97,
+      "stall_pct": 65.9,
+      "prefill_busy_pct": 67.2,
+      "turn_counted_if": "ended_by_window_end",
+      "recount_src": "MEASURED: the run counted only turns that ended by the window end; the recount of its replay.json gives the same number"
+     },
+     "evict_branch_useful": null,
+     "opts_from": "r8-door32-b40-1111",
+     "override": {
+      "admission": {
+       "v": {
+        "policy": "door",
+        "conversations": 32,
+        "idle_release_s": 60
+       },
+       "tag": "READ",
+       "src": "READ: reqlog ConversationDoor on the hub seat lane: cap = R8 /props total_slots (32), FIFO, REQLOG_DOOR_IDLE_S default 60 (b70-rig/agent-eval/reqlog.py DOOR_IDLE_S, homelab 738e0132d9f)"
+      }
+     },
+     "src": "MEASURED lab notes (lane conv-door-live f3701cabc59, merged to homelab master a87b3f98738) b40 (the served door on the hub seat lane :8088, lane thinking default 4,096)"
+    },
+    {
+     "B": 40,
+     "kind": "door32_lane",
+     "label": "door32 lane nocap B 40",
+     "measured": {
+      "useful_tps": 65.45,
+      "b_eff": 29.43,
+      "F_server": 9.24,
+      "stall_pct": 63.7,
+      "prefill_busy_pct": 68.8,
+      "turn_counted_if": "ended_by_window_end",
+      "recount_src": "MEASURED: the run counted only turns that ended by the window end; the recount of its replay.json gives the same number"
+     },
+     "evict_branch_useful": null,
+     "opts_from": "r8-door32-b40-1111",
+     "override": {
+      "admission": {
+       "v": {
+        "policy": "door",
+        "conversations": 32,
+        "idle_release_s": 60
+       },
+       "tag": "READ",
+       "src": "READ: reqlog ConversationDoor on the hub seat lane: cap = R8 /props total_slots (32), FIFO, REQLOG_DOOR_IDLE_S default 60 (b70-rig/agent-eval/reqlog.py DOOR_IDLE_S, homelab 738e0132d9f)"
+      }
+     },
+     "src": "MEASURED lab notes (lane conv-door-live f3701cabc59, merged to homelab master a87b3f98738) b40 (the served door, requests set reasoning_budget_tokens 0; RM has no thinking-cap term, so its prediction equals the lane arm's)"
+    },
+    {
+     "B": 40,
+     "kind": "door32",
+     "label": "door32 repeat B 40",
+     "measured": {
+      "useful_tps": 55.98,
+      "b_eff": 26.13,
+      "F_server": 11.28,
+      "stall_pct": 68.4,
+      "prefill_busy_pct": 70.6,
+      "turn_counted_if": "ended_by_window_end",
+      "recount_src": "MEASURED: the run counted only turns that ended by the window end; the recount of its replay.json gives the same number"
+     },
+     "evict_branch_useful": 37.8,
+     "opts_from": "r8-door32-b40-1111",
+     "override": {},
+     "src": "MEASURED lab notes (lane conv-door-live f3701cabc59, merged to homelab master a87b3f98738) b40 (the client door straight to :8089, same hour as the lane arms; evict_branch_useful = the frozen r8-door32-b40-1111 record)"
+    }
+   ],
+   "calibration": {
+    "B": 8,
+    "kind": "no_door",
+    "term": "decode_step_increment",
+    "why": "the first sweep point past one agent. The synthetic curve was measured on image 06103b88 at shallow depth; its one-agent point matches the served one (68.8 vs 70.6 MEASURED), so one factor on the batched part of its step stands for the served build and depth until the served curve is measured"
+   },
+   "correction": {
+    "date": "2026-11-11",
+    "what": "Every R8 point's measured useful_tps was recounted to the turns that ended inside the window; the as-reported number stays in measured.as_reported and is never used. lambda was re-solved on the recounted no-door B 8 (57.54, was 61.03) and every hold-out rescored. The conv-door-live points (two through the served lane door, one client-door repeat) are new hold-outs.",
+    "cause": "the replay counted turns that ended after the window closed: R8 answers Connection: close, so http.client drops the socket after getresponse(), Run.cut() cannot shut a running stream, the 5 s joins per thread let it finish, and report() counted any turn with an end and no error (TRACED, homelab conv-door-live f3701cabc59, agent-replay.py per_turn/report)",
+    "guard": "agentPointRescore marks a point whose measured block lacks turn_counted_if: ended_by_window_end as UNVERIFIED-COUNT, and a lambda solved on such a point carries count UNVERIFIED-COUNT (report.js --cardcurve prints it)",
+    "not_recounted": "b_eff, F_server, stall_pct and prefill_busy_pct come from server /metrics deltas and client stalls, not the turn count; the after-snapshot was read after the joins, so the no-door and r8-admission server deltas include up to the late turns' post-window work (INFERRED, not recounted)"
+   }
+  }
+ }
+}

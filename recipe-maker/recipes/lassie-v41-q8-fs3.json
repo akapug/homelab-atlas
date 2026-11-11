@@ -1,0 +1,116 @@
+{
+ "id": "lassie-v41-q8-fs3",
+ "box": "lassie",
+ "model": "v41",
+ "engine": "ik",
+ "label": "lassie V4.1 full stack 3 (lab notes): ik sched-inplace-follow 5716ef61 (sm_61 attention fix) + no-host weights + dense-rows; attention, KV, shared experts, router, hc, norms, output head on the GTX 1080 Ti (-ngl 99 --cpu-moe), DSpark draft weights on the CPU (-ngld 0; its DFlash K/V scheduler still allocates ~720 MiB on CUDA0), no hot banks; routed experts rows:0..7 + GGML_MOE_GROUPS=8, --no-mmap, T64 -cr 0-63, MAIN_NO_MOE, offload-batch-size 1e6, DSpark n4 then n0 on the cached prompt",
+ "store": {
+  "split": false,
+  "types": [
+   "mxfp4"
+  ],
+  "hot_type": "mxfp4",
+  "cold_type": "mxfp4"
+ },
+ "lowbit_share": 0.0,
+ "rtr": false,
+ "ub": 1024,
+ "draft": true,
+ "banks_gib": 0,
+ "threads": 64,
+ "numa": {
+  "headroom_gib": 40.0,
+  "layout": "rows",
+  "spill_heal": false,
+  "src": "routed experts rows:0..7 + GGML_MOE_GROUPS=8 (MAIN_NO_MOE: thread 0 issues CUDA); every dense rule of q8-dense-rows8 skips (those tensors sit on the GPU)",
+  "verify": "LLAMA_EXPERT_PLACEMENT_VERIFY=1 + numa_maps per node after load",
+  "pinned_host": false
+ },
+ "system": {
+  "numa_balancing": 0,
+  "demotion": false,
+  "swap": "on (7 GiB, unused)"
+ },
+ "files": [
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00001-of-00010.gguf",
+   "holds": "experts + non-experts shard 1",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00002-of-00010.gguf",
+   "holds": "experts + non-experts shard 2",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00003-of-00010.gguf",
+   "holds": "experts + non-experts shard 3",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00004-of-00010.gguf",
+   "holds": "experts + non-experts shard 4",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00005-of-00010.gguf",
+   "holds": "experts + non-experts shard 5",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00006-of-00010.gguf",
+   "holds": "experts + non-experts shard 6",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00007-of-00010.gguf",
+   "holds": "experts + non-experts shard 7",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00008-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00009-of-00010.gguf",
+   "holds": "engram",
+   "access": "on_file"
+  },
+  {
+   "path": "/mnt/v41/q8/DeepSeek-V4.1-Flash-1017-Q8_0-00010-of-00010.gguf",
+   "holds": "experts + non-experts shard 10",
+   "access": "loaded"
+  },
+  {
+   "path": "/mnt/v41/draft/DeepSeek-V4.1-Flash-1017-DSpark-exps-Q2_K.gguf",
+   "holds": "DSpark q2 draft (1017)",
+   "access": "mmap"
+  }
+ ],
+ "src": "lab notes arm fs3, B=pkg-sif-5716ef61/bin/llama-server PLACE=q8-dense-rows8.placement.tsv (LLAMA_NO_HOST_WEIGHTS=1, DRAFTGPU=0, NKVO=0)",
+ "conditions": {
+  "ctx": "8192 (-c 8192)",
+  "kv_type": "f16 (ik default), KV on the GPU; the V4 D=512 FA runs on the CPU on sm_61 (fattn tile_new unsupported)",
+  "draft_n": "DSpark q2 draft (1017) weights on the CPU (-ngld 0); per request n4 (n_max 4, conf_cum_min 0.5) and n0",
+  "sampling": {
+   "temperature": 0,
+   "set_by": "client"
+  },
+  "reasoning_effort": "none (raw /completion, no chat template)",
+  "workload": {
+   "prompt_kind": "coding-agent.json first 3 briefs (std); per prompt n4 first (carries the prefill), then n0 with cache_prompt true",
+   "gen_tokens": 300,
+   "ignore_eos": true,
+   "cache_prompt": true
+  },
+  "threads": 64,
+  "cpu_reserve": "64 SMT siblings left to the system",
+  "cpu_order": "-cr 0-63"
+ },
+ "gate_waiver": "vram_peak: the planner rejects any V4.1 GPU layout on the 1080 Ti (non-expert weights + KV do not fit, UNMODELLED). Measured 21:11Z on this package (dbg-gpu2.sh gpuattn, -ub 512): CUDA0 weights 8.33 GiB + KV 0.31 + compute 0.27 = 9.3 GiB of 11; -ub 2048 adds ~0.8 GiB compute (rows8ga: 1.09 vs 0.27 GiB), the draft dense ~0.65 GiB: ~10.8 of 11 GiB expected, OOM at load is the stated risk",
+ "gate_note": "gate captured at launch (22:13Z); fs1 minus the draft dense on the GPU, so the DFlash K/V (720 MiB) fits",
+ "knobs": {
+  "draft": false
+ }
+}

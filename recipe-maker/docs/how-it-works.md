@@ -695,6 +695,124 @@ Limits:
 - The legacy formula has no tool-time term. It read 33% high on the one-agent R8 replay and 24.5-36.3% high on this historical example.
   The new replay model includes tool gaps. It still assumes fluid server sharing and cannot predict new answer lengths or prefix re-read.
 
+## Per-phase roofline: `--roofline`
+
+A recipe's speed question is first a question for arithmetic. `node report.js --roofline` bounds each phase from the
+dataflow and names the term that binds; a run only tests a bound that was written down before it (below).
+
+**Ceilings** (`data/roofline.json` `cards` and `cpus`, attached by `build.py` to each card and CPU as `ceil`): one value
+per precision class (BF16 and FP16 tensor with FP32 accumulate, TF32, INT8 tensor, FP32, VRAM GB/s), each tagged
+MEASURED, DATASHEET or ESTIMATE with its source. A firmware unlock is a setting (`settings.firmware_unlock`, dated): the
+card's `unlock.by_state` values apply after its `since` date or when a query names `--unlock`. A class a card lacks falls
+back through `precision_fallback` to the fastest class of that chain the card has (the GTX 1080 Ti runs FP16 tensor phases at
+FP32: its FP16 is 1/64 rate). PCIe is lanes x the per-lane rate of the card's probed generation x the engine's link
+share (`link.dma_eff` ESTIMATE when the engine has no measured one).
+
+**Prefill** of T fresh tokens in chunks of C (`prefillRoof`), per chunk of n tokens and stage s holding a share f of
+the layers:
+
+- compute.trunk = f x 2 x trunk params x n / (trunk-precision ceiling x eta), the ceiling read at n rows (shape curves below)
+- compute.experts = f x 2 x routed params a token x n / (expert-precision ceiling x eta), the ceiling read at the rows an
+  expert sees: n x k / the distinct experts n tokens touch (E (1 - (1 - k / E)^n), `batchDistinct`)
+- compute.attention = f x attention layers x 4 x q_dim x keys x n / (attention ceiling x eta), keys = depth + position (capped)
+- stream.experts = the non-resident expert bytes / the PCIe link (an engine that streams every expert each chunk pays all of them)
+- read.resident = resident expert bytes / VRAM bandwidth
+
+**Shape curves** (`cards[].shape_curves`, `shapeRate` / `shapeTime`): a short GEMM does not reach the square ceiling.
+512 experts at top-10 leave ~24 rows an expert on a 1,202-token read, and the B70 bench measured the grouped expert GEMM
+at 24.6 TOPS (int8) there, 66.6 at 80 rows, 151.8 at 320; llama.cpp SYCL MUL_MAT_ID (IQ3_XXS) at 3.9 / 7.3 TFLOPS at
+10 / 40 rows. A curve is per card, GEMM class (experts, trunk), kernel path (`onednn_grouped`, `sycl_mmid`, `onednn`;
+an engine names its own as `experts_path` / `trunk_path`) and precision, read as a power law between neighbouring
+points: MEASURED within 5 % of a point on the measured dims and quant, ESTIMATE between, beyond, or on another model's
+dims, never above the square ceiling. A card with no curve (the 3090 Ti, the MI25 ...) keeps the square ceiling and the
+output says unmeasured. How a curve prices the term is a setting, `settings.shape_compose`:
+
+- `excess` (default): the measured kernel time less the read of its own weights at the bench layout (`bits_per_weight`
+  over the card's VRAM read), never faster than the square ceiling. The low-row bench points sit at the weight-read
+  roof (int8 at 85 %, fp16 at 94 % of the VRAM read at 24 rows), and the engine's own terms already price those weights
+  at the store's bytes (strata's pass, `read.resident`, `read.misses`, the PCIe stream), so the plain kernel time would
+  price them twice and at the bench layout's width. A compute-bound path (MUL_MAT_ID: its IQ3_XXS weights stream at
+  74 GB/s) keeps nearly all of its kernel time.
+- `kernel`: the measured kernel time as the term (the curve as a plain ceiling).
+
+The default was chosen on a held-out cell, written down before the code (homelab kernel-ceilings lane, 2026-11-11):
+both modes fit strata's eta on `r8-prefill`, and the R8 16-agent useful rate (83.4 measured, not a fit cell) reads
+79.1 (-5 %) with `excess` and 67.5 (-19 %) with `kernel`, whose decode charges the int8 weight read of 1-4 row expert
+GEMMs on top of `read.resident`. Under `excess` strata's eta is 0.069 (the compute bound is 14.5x loose); under
+`kernel` 0.293 (3.4x). A query may set `shape_compose` to judge the other mode.
+
+Overlap is per engine: `max` (compute and stream hide under each other per chunk: tqLLM, vLLM) or `sum` (strata's
+prefill pass, llama.cpp offload). The bound is eta = 1. The prediction uses one eta per engine, fitted by bisection so the
+engine's `fits` cells come out at their measured time; nothing else is fitted.
+
+**Decode** at B streams (`decodeRoof`): distinct experts a layer = E (1 - (1 - k / E)^B); resident hits and misses
+split by the measured heat shape (hit share = x^a, a = `RL_SHAPE_A`); dense reads amortise over B x the draft
+multiplier; KV and recurrent state grow with B and context, and past the VRAM capacity the KV spills over PCIe. A
+model's per-stream state comes from its engine's state geometry where one is traced (`models.fnx.state_geometry`:
+XeStrata's 36 GDN layers x 48 value heads x 128 x 128 fp32 recurrence + 36 x 10,240 x 3 convolution = 117,669,888 B,
+read and written each step; the earlier stated 75.5 MB counted 32 heads and no convolution). A step's
+GEMMs see B x the draft multiplier tokens: compute.trunk at those rows, compute.experts at tokens x k / the distinct
+experts they touch rows an expert (1.0-3.8 for R8 at B 1-128: far below the shortest measured shape, where the bench
+kernel is weight-read-bound, so `excess` adds nothing beyond the read terms). A decode fit (`decode_fits`) is one
+efficiency per engine against its measured cell.
+
+**Placement** (`settings.placements`; a query's `placement` or a recipe's `roofline_placement`, default `gpu`; a
+recipe's own `placement` is the planner's per-card expert object and never names a roofline placement; an unknown word
+is REFUSED). The terms above assume the
+trunk and attention run on the stage card. `cpu_only` (the lassie CPU-only V4.1 recipes, the droopy CED arms) moves
+every GEMM class to the box CPU (`prefillRoofCpu`, `decodeRoofCpu`), at the `cpus` ceilings the engine names
+(`engines.ik.prefill.cpu_trunk` int8_cpu, `cpu_attention` fp32, `cpu_experts` int8_cpu) x the share of physical cores
+the recipe's threads use (SMT siblings add no FMA ports):
+
+- compute.cpu_trunk, compute.cpu_experts, compute.cpu_attention: the formulas above at the CPU ceiling x core share x
+  the CPU eta
+- read.cpu_weights = (the experts a chunk touches + the dense bytes) / the box's measured DRAM read, once a chunk
+- decode reads the dense weights, the batch's distinct experts and the KV from DRAM; no VRAM capacity applies
+
+The CPU eta is its own fit per engine (`cpu_fits`), on cells of one cpu path: ik converts each weight row once a ubatch
+before an int8 GEMM, Q2_K / Q3_K by dequantize + requantize to Q8_K_R16 (`kquant_requant`), Q8_0 / MXFP4 by a repack to
+Q8_0_R8 (`q8_0_repack`) (source read: iqk_mul_mat.cpp is_dequant_better, mul_mat_moe). A query on another path gets the
+eta with the path named as not modelled; the convert, the barrier waits and the NUMA / PMem page placement have no
+derived term and sit inside the eta. A GPU placement never borrows the CPU-only eta: on droopy the CPU experts beside a
+GPU (`droopy-v41-gpu-dense-cpu-experts`) ran 3.6x faster than that eta says. A placement not in the table, or a CPU
+placement on a box or engine with no CPU ceiling or CPU kernel metadata, is refused (`checks.phase_bound` FAIL,
+REFUSED), never bounded on the GPU; so are CPU-computed host experts with no CPU ceiling, which were priced at zero.
+
+The droopy fit (lab notes): V4.1 q3kL0-13-q2k, T38, ub 4096, whole agent prompts of 11,569 and 30,381 tokens measured
+7.74 and 7.10 tok/s against a bound of ~110 (compute-bound: int8 trunk + experts 31.3 GFLOP a token, attention 3.4
+GFLOP a token at FP32): CPU eta 0.064. The held-out lassie Q8_0 / MXFP4 cell (38.8 tok/s, another box and cpu path)
+reads 9.2 at that eta, -76 %, and stays a named miss: one engine eta does not cover both boxes and paths.
+
+**Landscape** (`batchLandscape`, B = 1 ... 128): per stream, aggregate, the binding term, rows an expert, weight GB an
+output token, KV + state GB a step, whether it fits VRAM, where compute overtakes bandwidth, the B where the binding
+term changes, the B that maximises useful tok/s (inside the VRAM capacity and over every row), and the agent mix
+useful = 1 / (1 / decode aggregate + F / prefill), F = fresh prompt tokens an output token (`data/workload.json`).
+
+**Explain and rearrange** (`rooflineExplain`, `rooflineRearrange`): the binding and next-binding term of each phase,
+which phase binds the agent mix, and a small search over rearrangements of the same recipe (chunk size, firmware state,
+experts kept resident through prefill, more resident banks, the CPU share of strata's stream, the host path of an
+offload engine, twice the agents), each scored like the base and ranked by predicted useful tok/s with its arithmetic.
+A rearrangement the engine cannot make today says NEEDS CODE; one that must fit VRAM says so. `checks.phase_bound` on
+every recipe carries the bound, the binding term and the explain line; a recipe the planner cannot bound per phase FAILs
+its fit check.
+
+**Prediction records** (`data/predictions-roofline-ID.json`, the same written-before-the-run files as every other
+`data/predictions-*.json`):
+
+```
+node report.js --roofline --predict SPEC.json     # SPEC: id, query, hypothesis, tests_term, band_pct [, phase, conditions]
+node report.js --roofline --score ID --measured X --measured-utc T [--run RUN] [--write]
+```
+
+`--predict` refuses a spec with no hypothesis, no tested term (one of the phase's terms) or no band, and an id that
+already has a record; it stamps the time and the RM commit. `--score` refuses a record that is missing and a measurement
+not after the record's time (post hoc). It says HOLDS or FALSIFIED against the band, then attributes the miss: for each
+term, the factor that term alone would need, judged against physics (no compute term past its tensor ceiling, no stream
+past the PCIe spec) and against the fit (within x1.5). When no term explains it, the verdict names an unmodelled term of
+so many seconds (a confound or a missing piece of the dataflow); the eta is never refitted on a scored run. `--write`
+adds a `measured` block beside the prediction, never over it. The worked checks (`--roofline` with no query) label every
+held-out cell as pre-registered or post hoc, with its confounds.
+
 ## Blind spots we hit and the checks that now catch them
 
 The planner predicts well only what it models. Each time a run surprised us, the missing factor became a standing
@@ -845,5 +963,6 @@ node tests/test_window.js
 node tests/test_curve.js
 node tests/test_workload.js
 node tests/test_kv_host.js
+node tests/test_roofline.js
 node tests/test_screen.js          # needs the private quality-round ledger; not in the public copy
 ```

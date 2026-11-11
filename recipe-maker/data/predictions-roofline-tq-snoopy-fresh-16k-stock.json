@@ -1,0 +1,79 @@
+{
+ "about": "roofline prediction written BEFORE its run by report.js --roofline --predict; never edit the predicted block: score with --score and add a measured block beside it",
+ "written_utc": "2026-11-11T00:41:04Z",
+ "rm_commit": "799e2d2ea727056ff4f9b9e067601119ffaf514d",
+ "rm_dirty": false,
+ "id": "tq-snoopy-fresh-16k-stock",
+ "phase": "prefill",
+ "query": {
+  "box": "snoopy",
+  "model": "fnx",
+  "engine": "tqllm",
+  "store": "gsq_iq3s",
+  "tokens": 18000,
+  "unlock": "stock"
+ },
+ "hypothesis": "the 11-10 pre-unlock 16K cells (1.2-1.3k tok/s) carried a ~6 s unmodelled term (first long prompts after the server start); on a fresh boot with warm-up discarded, a ~18K prompt reads near the bound at the fitted eta instead",
+ "tests_term": "compute.trunk",
+ "band_pct": 15,
+ "conditions": "fresh boot, unlock off, server started, 2 warm-up prompts discarded, then 3 prompts of ~18K fresh tokens at depth 0; report the first prompt after the server start separately (the suspected state term)",
+ "predicted": {
+  "prefill_tps": 2142.4392456098235,
+  "time_s": 8.401638476743122,
+  "bound_tps": 4623.475049115913,
+  "binding": "compute.trunk",
+  "side": "compute",
+  "eta": 0.2690165978699123,
+  "terms": [
+   {
+    "id": "compute.trunk",
+    "s": 5.785124595061886
+   },
+   {
+    "id": "compute.experts",
+    "s": 0.9866335464116937
+   },
+   {
+    "id": "compute.attention",
+    "s": 0.3199723678624147
+   },
+   {
+    "id": "stream.experts",
+    "s": 3.8931755462683646
+   }
+  ]
+ },
+ "composition_backfill": {
+  "about": "added after the record, never part of its prediction: the per-chunk composition of the predicted block, made by the record's own RM commit (its src/model.js and data, instrumented to emit its chunk groups) and kept only because that model reproduced the predicted block exactly; frozen attribution reads it, since this record predates stored compositions",
+  "from_rm_commit": "799e2d2ea727056ff4f9b9e067601119ffaf514d",
+  "link": {
+   "gbs": 26.14832,
+   "spec_gbs": 31.504
+  },
+  "composition": {
+   "rule": "max",
+   "groups": [
+    {
+     "compute": {
+      "compute.trunk": 5.265748964749663,
+      "compute.experts": 0.8980557791338438,
+      "compute.attention": 0.29124595972543343
+     },
+     "stream": {
+      "stream.experts": 1.9465877731341823
+     }
+    },
+    {
+     "compute": {
+      "compute.trunk": 0.5193756303122226,
+      "compute.experts": 0.08857776727784983,
+      "compute.attention": 0.028726408136981227
+     },
+     "stream": {
+      "stream.experts": 1.9465877731341823
+     }
+    }
+   ]
+  }
+ }
+}

@@ -39,6 +39,7 @@
  "engines": {
   "strata": {
    "reads_stall_decode": {"v": true, "tag": "READ", "src": "XeStrata --batch-groups: a read longer than STRATA_BATCH_PREFILL_MAX_TOKENS (512) drains the pipe and every decoding slot waits until the read is done (generate.cpp); MEASURED in the engine log of the 16-agent replay: 76 reads, 446 s of prompt time in a 600 s window"},
+   "read_batch_max": {"v": 512, "tag": "READ", "src": "STRATA_BATCH_PREFILL_MAX_TOKENS (512): a read up to it is batched into the decode steps; a longer one stalls every decoding slot (reads_stall_decode; agentEngineSim)"},
    "prefill_levers": {
     "v": [
      {"id": "pipeline_reads", "lever": "pipeline the two layer-split stages inside a batched read (several chunks per read)", "gain": [1.2, 1.3]},

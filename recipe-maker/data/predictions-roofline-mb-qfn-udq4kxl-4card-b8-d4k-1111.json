@@ -1,0 +1,137 @@
+{
+ "about": "roofline prediction written BEFORE its run by report.js --roofline --predict; never edit the predicted block: score with --score and add a measured block beside it",
+ "written_utc": "2026-11-11T09:14:19Z",
+ "rm_commit": "401e3fecdcaf22576086b5d43e880c61ba61f5c2",
+ "rm_dirty": false,
+ "id": "mb-qfn-udq4kxl-4card-b8-d4k-1111",
+ "phase": "pipeline",
+ "B": 8,
+ "ctx_read": 4096,
+ "plan_spec": {
+  "id": "qfn-udq4kxl-4card",
+  "label": "QFN ud_q4kxl over lassie 1080 Ti + droopy RTX 6000 + odie 2x B70",
+  "model": "fnx",
+  "store": "ud_q4kxl",
+  "client": "odie",
+  "cards": [
+   {
+    "box": "lassie",
+    "gpu": "1080ti"
+   },
+   {
+    "box": "droopy",
+    "gpu": "rtx6000"
+   },
+   {
+    "box": "odie",
+    "gpu": "b70_2"
+   },
+   {
+    "box": "odie",
+    "gpu": "b70_1"
+   }
+  ],
+  "ctx": 56445,
+  "streams": 1,
+  "kv_type": "q8_0",
+  "split": "memory",
+  "transport": "tcp",
+  "transport_by_box": {
+   "snoopy": "tcp-lan"
+  },
+  "displace": [
+   "qwenlocal (Ornith-1.5-35B-A3B GPTQ, vLLM XPU, :8081; homelab lab notes B70 #2 row)"
+  ],
+  "mode": "serial"
+ },
+ "hypothesis": "QFN UD-Q4_K_XL split by free memory over lassie 1080 Ti (rpc), droopy RTX 6000 (rpc) and odie's two B70s (client, SYCL), upstream llama.cpp RPC f3b407c, -np B, decode runs the four stages one after another; at B 8 every stage is bound by its weight + KV read at its measured llama.cpp line, so aggregate decode = B / (sum of stage reads + intercepts + 2 TCP hops); the hops stay under 2 % of the step",
+ "tests_term": "stage_read",
+ "band_pct": 25,
+ "conditions": {
+  "engine": "upstream llama.cpp f3b407c + homelab multibox patch 0001 (RPC), -ngl all, -sm layer, -ts by free memory, -ctk/-ctv q8_0, -ub 512, MTP off, the client holds the last stage",
+  "workload": "synthetic: B concurrent requests decoding at ~4096 tokens of depth (primary); agent rows: trace agent-long-16 replay at the trace's mean depth 56,445",
+  "written_before": "any multibox QFN run"
+ },
+ "predicted": {
+  "aggregate_tps": 198.71368811247135,
+  "per_stream_tps": 24.839211014058918,
+  "per_stream_b1_tps": 57.71692358266656,
+  "step_ms": 40.25892768631029,
+  "hop_share": 0.01460108825483609,
+  "slowest": "odie b70_1 (read)",
+  "ring_aggregate_tps": 271.9437177411173,
+  "stages": [
+   {
+    "box": "lassie",
+    "gpu": "1080ti",
+    "layers": 5,
+    "weights_gb": 8.4554824,
+    "ms": 5.610898777836394,
+    "binds": "read",
+    "rate_gbs": 349.932,
+    "rate_tag": "ESTIMATE"
+   },
+   {
+    "box": "droopy",
+    "gpu": "rtx6000",
+    "layers": 11,
+    "weights_gb": 18.60206128,
+    "ms": 9.085632265809899,
+    "binds": "read",
+    "rate_gbs": 486.1,
+    "rate_tag": "MEASURED"
+   },
+   {
+    "box": "odie",
+    "gpu": "b70_2",
+    "layers": 16,
+    "weights_gb": 27.05754368,
+    "ms": 11.910980441187776,
+    "binds": "read",
+    "rate_gbs": 586,
+    "rate_tag": "MEASURED"
+   },
+   {
+    "box": "odie",
+    "gpu": "b70_1",
+    "layers": 16,
+    "weights_gb": 27.73297408,
+    "ms": 13.06359204528334,
+    "binds": "read",
+    "rate_gbs": 586,
+    "rate_tag": "MEASURED"
+   }
+  ],
+  "prefill_tps": 2491.001710350379,
+  "prefill_tokens": 2048,
+  "capacity_streams": 15,
+  "plan_ctx": 56445,
+  "weights_gb": 81.84806144000001,
+  "agents": [
+   {
+    "B": 1,
+    "useful_tps": 34.901505000000014,
+    "b_eff": 0.6630977657086533,
+    "F": 7.759769289796145
+   },
+   {
+    "B": 4,
+    "useful_tps": 77.32249999999996,
+    "b_eff": 2.438558776125265,
+    "F": 6.108642658993182
+   },
+   {
+    "B": 8,
+    "useful_tps": 97.47953999999997,
+    "b_eff": 5.035230564823722,
+    "F": 5.017369473977138
+   },
+   {
+    "B": 16,
+    "useful_tps": 70.39950666666665,
+    "b_eff": 10.889757763311504,
+    "F": 16.997013436948464
+   }
+  ]
+ }
+}
