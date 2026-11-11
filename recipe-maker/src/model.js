@@ -5331,8 +5331,168 @@
     const okA = ag && ag.status === 'OK' ? ag.rows.filter(r => r.status === 'OK') : [];
     const best = okA.slice().sort((a, b) => b.useful_tps - a.useful_tps)[0] || null;
     const uncB = rows.filter(r => r.calibration === 'UNCALIBRATED').map(r => r.B);
+    // the replica gate on the serial aggregate inside the plan's stream capacity (o.replica false: skip; an object: its opts)
+    const replica = o.replica === false ? null : replicaGate(data, spec, rows.filter(r => r.fits).map(r => [r.B, r.aggregate_tps, r.calibration]), Object.assign({ split_tag: 'MODEL' }, o.replica || {}));
     return { status: 'OK', plan, prefill: pre, rows, agents: ag, best_useful: best ? { B: best.B, useful_tps: best.useful_tps, b_eff: best.b_eff, per_agent: best.useful_per_agent } : null,
-      uncalibrated_from_B: uncB.length ? Math.min(...uncB) : null };
+      uncalibrated_from_B: uncB.length ? Math.min(...uncB) : null, replica };
+  }
+  // ---------- the replica gate: a split must beat its own cards run apart ----------
+  // A llama.cpp RPC split runs its stages one after another, so by itself it buys room (a model no single card holds), not
+  // throughput: S2 measured two B70s pipelined at 82.9 tok/s at B 8 against 84.1 for one B70 alone. replicaBaseline prices
+  // the other use of the same cards: each card runs its own replica of the best single-card recipe at the quality floor or
+  // above, serving a agents, and the aggregates add. replicaGate compares the split serving N cards x a agents with it:
+  //   GAINS             the split's aggregate passes the replicas' by more than settings.replica_gain_margin;
+  //   CAPACITY-ONLY     it does not: the cards serve as much or more running apart, the split buys only room;
+  //   CAPACITY-REQUIRED no card holds a recipe at the floor alone: the split is the only way to run that quality.
+  // Each side serves its agents at the best concurrency it admits up to its agent count (a server may queue), so its
+  // aggregate at n agents is the best measured or modelled aggregate at b <= n inside its stream capacity. The verdict is
+  // read at the top of settings.replica_agents_per_card, where both sides peak; every row is printed.
+  // Single-card recipes: (1) model: a one-card plan (pipelinePlan, that card alone, VRAM only, priced by the same card
+  // curves as the split, at the split's ctx, KV type and displaced services) for every multibox model and store at the
+  // floor; (2) MEASURED: a card_curves anchor run on one card of the same class; (3) MEASURED: a data.curves agents-vs-speed
+  // config with one stage on this box when every card on the box is of this class, DRAM-assisted when the model's smallest
+  // store does not fit the card. settings.replica_dram_per_box caps the DRAM-assisted replicas a box counts (they share its
+  // DRAM); the result also carries the verdict with the cap lifted. A card with no recipe at the floor adds 0 and is named
+  // (unpriced): no VRAM fit and no measured DRAM run, so a GAINS verdict there is over a partial baseline. A measured
+  // replica ran at its own prompt depth (agent-length bench prompts), while a candidate split is priced at the plan's ctx:
+  // that favours the replica; the measured splits (replicaMeasured) compare like with like.
+  // The floor is a coding rung (multibox models.*.coding_rung, the owner ladder in tps/candidate-score.json); null takes
+  // the split model's own rung. The rung is per model, not per store: when the split's tool-argument fidelity (arg_values
+  // EARf) is measured and a replica in the verdict row ran a store measured below it, fidelity_matched gives the verdict
+  // again over replicas at the split's fidelity or better. The compared quantity is aggregate decode tok/s on both sides (the measured replica
+  // points are decode aggregates); the split's agent duty-cycle useful tok/s is printed beside it, not compared.
+  const mbRung = (data, m) => { const M = (((data.multibox || {}).models) || {})[m]; return M && M.coding_rung ? mbV(M.coding_rung) : null; };
+  // tool-argument fidelity (arg_values EARf, the fidelity panels against one Q8_0 reference) of a multibox store, else of a
+  // measured run's store type (settings.replica_type_earf); null when unmeasured
+  const mbEarf = (data, model, store, types) => {
+    const MB = data.multibox || {}, S = store && MB.models && MB.models[model] && MB.models[model].stores[store], f = S && S.fidelity && S.fidelity.arg_values_earf ? mbV(S.fidelity.arg_values_earf) : null;
+    if (f !== null && f !== undefined) return f;
+    const T = mbV((MB.settings || {}).replica_type_earf) || {}, ks = (types || []).filter(t => T[t] !== undefined);
+    return ks.length ? Math.min(...ks.map(t => T[t])) : null;
+  };
+  const bestUpTo = (pts, n) => { let b = null; for (const p of pts) if (p[0] <= n && (!b || p[1] > b[1])) b = p; return b; };
+  function replicaRecipes(data, card, floor, ref) {
+    const MB = data.multibox, box = data.boxes[card.box], g = box && box.gpus.find(x => x.id === card.gpu), out = [];
+    if (!g) return out;
+    const cls = g.ceil ? g.ceil.class : null, Bs = mbV(MB.settings.batches), r0 = ref || {};
+    for (const m of Object.keys(MB.models)) {
+      const rung = mbRung(data, m);
+      if (rung === null || rung < floor) continue;
+      for (const st of Object.keys(MB.models[m].stores)) {
+        const plan = pipelinePlan(data, { id: 'replica ' + card.box + ' ' + card.gpu, model: m, store: st, client: card.box, cards: [{ box: card.box, gpu: card.gpu }],
+          ctx: r0.ctx || 0, streams: 1, kv_type: r0.kv_type, split: 'memory', transport: 'tcp', displace: r0.displace || [] });
+        if (plan.status !== 'OK') continue;
+        const cap = Number.isFinite(plan.capacity_streams) ? plan.capacity_streams : Infinity;
+        out.push({ kind: 'model', id: m + ' ' + st + ' alone', model: m, store: st, rung, earf: mbEarf(data, m, st), memory: 'vram', tag: 'MODEL', capacity: cap,
+          pts: Bs.filter(b => b <= cap).map(b => { const d = pipelineRoof(data, plan, b); return [b, d.aggregate_tps, d.calibration]; }) });
+      }
+    }
+    for (const a of (((MB.card_curves || {}).anchors) || [])) {
+      if (a.plan.cards.length !== 1) continue;
+      const c = a.plan.cards[0], h = (((data.boxes[c.box] || {}).gpus) || []).find(x => x.id === c.gpu), rung = mbRung(data, a.plan.model);
+      if (!(c.box === card.box && c.gpu === card.gpu) && !(h && h.ceil && cls && h.ceil.class === cls)) continue;
+      if (rung === null || rung < floor) continue;
+      out.push({ kind: 'anchor', id: a.id, model: a.plan.model, store: a.plan.store, rung, earf: mbEarf(data, a.plan.model, a.plan.store), memory: 'vram', tag: 'MEASURED', capacity: Infinity, pts: a.points.map(p => [p.B, p.tps, 'MEASURED']) });
+    }
+    const oneClass = cls && box.gpus.every(x => x.ceil && x.ceil.class === cls), free = (mbV(g.vram_gib) - mbV(MB.settings.card_reserve_gib)) * GiB;
+    for (const C of (((data.curves || {}).configs) || [])) {
+      if (!oneClass || C.box !== card.box || mbV(C.stages) !== 1) continue;
+      const rung = mbRung(data, C.model);
+      if (rung === null || rung < floor) continue;
+      const pts = C.points.filter(p => p.used && p.tps && mbV(p.tps) > 0).map(p => [p.n, mbV(p.tps), 'MEASURED']);
+      if (!pts.length) continue;
+      const S = MB.models[C.model].stores, small = Math.min(...Object.keys(S).map(k => mbV(S[k].experts_bytes) + mbV(S[k].trunk_bytes) + mbV(S[k].head_bytes)));
+      out.push({ kind: 'curve', id: C.id, label: C.label, model: C.model, store: (C.store_types || []).join('+') || null, rung, earf: mbEarf(data, C.model, null, C.store_types), memory: small <= free ? 'vram' : 'vram+dram', tag: 'MEASURED', capacity: Infinity, ctx: C.ctx, pts });
+    }
+    return out;
+  }
+  // the replica arm on a set of cards at the floor: per a (agents a card), each card's best recipe at a, capped DRAM replicas
+  function replicaBaseline(data, cards, floor, opts) {
+    const o = opts || {}, set = data.multibox.settings, grid = o.agents_per_card || mbV(set.replica_agents_per_card);
+    const cap = o.dram_per_box !== undefined ? o.dram_per_box : mbV(set.replica_dram_per_box);
+    // o.earf_min: only recipes with a measured tool-argument fidelity at or above it (the split's own)
+    const recs = cards.map(c => ({ box: c.box, gpu: c.gpu, recipes: replicaRecipes(data, c, floor, o.ref).filter(r => o.earf_min === undefined || o.earf_min === null || (r.earf !== null && r.earf >= o.earf_min)) }));
+    const at = (c, a, mem) => c.recipes.filter(r => !mem || r.memory === mem).map(r => { const p = bestUpTo(r.pts, a); return p ? { recipe: r.id, kind: r.kind, model: r.model, store: r.store, memory: r.memory, tag: r.tag, b: p[0], tps: p[1], curve: p[2] } : null; })
+      .filter(Boolean).sort((x, y) => y.tps - x.tps || (y.tag === 'MEASURED') - (x.tag === 'MEASURED'))[0] || null;
+    const rows = grid.map(a => {
+      const pick = recs.map(c => ({ box: c.box, gpu: c.gpu, any: at(c, a), vram: at(c, a, 'vram'), capped: false }));
+      const n = {}, lift = p => p.any.tps - (p.vram ? p.vram.tps : 0);
+      pick.filter(p => p.any && p.any.memory !== 'vram').sort((x, y) => lift(y) - lift(x)).forEach(p => { n[p.box] = (n[p.box] || 0) + 1; if (cap !== null && cap !== undefined && n[p.box] > cap) p.capped = true; });
+      const used = pick.map(p => Object.assign({ box: p.box, gpu: p.gpu, capped: p.capped }, (p.capped ? p.vram : p.any) || { recipe: null, tps: 0 }));
+      used.forEach(u => { const r = u.recipe && recs.find(c => c.box === u.box && c.gpu === u.gpu).recipes.find(x => x.id === u.recipe); u.earf = r ? r.earf : null; });
+      return { a, agents: a * cards.length, tps: used.reduce((s, u) => s + u.tps, 0), cards: used };
+    });
+    return { floor, rows, unpriced: recs.filter(c => !c.recipes.length).map(c => c.box + ' ' + c.gpu), priced: recs.filter(c => c.recipes.length).map(c => c.box + ' ' + c.gpu) };
+  }
+  // splitPts: [[B, aggregate tok/s, curve]] of the split inside its capacity; splitTag 'MEASURED' or 'MODEL'
+  function replicaGate(data, spec, splitPts, opts) {
+    const o = opts || {}, set = data.multibox.settings, N = spec.cards.length, own = mbRung(data, spec.model);
+    const f = o.floor !== undefined ? o.floor : mbV(set.replica_floor), floor = f === null || f === undefined ? own : f;
+    if (floor === null) return { verdict: 'UNRANKED', why: 'model ' + spec.model + ' has no coding_rung (data/multibox.json models) and settings.replica_floor is null' };
+    // the verdict row: the top of the agents grid, or past it when the split's best point needs more agents than N x a_top
+    // (a split measured only at 48 agents is judged at 48, its replicas at 48 / N a card)
+    const grid = (o.agents_per_card || mbV(set.replica_agents_per_card)).slice(), peak = splitPts.reduce((b, p) => (!b || p[1] > b[1] ? p : b), null);
+    if (peak && Math.ceil(peak[0] / N) > grid[grid.length - 1]) grid.push(Math.ceil(peak[0] / N));
+    const earf = o.earf !== undefined ? o.earf : mbEarf(data, spec.model, spec.store, spec.store_types);
+    const judge = (dram, earfMin) => {
+      const base = replicaBaseline(data, spec.cards, floor, { ref: spec, agents_per_card: grid, dram_per_box: dram, earf_min: earfMin });
+      const rows = base.rows.map(r => { const s = bestUpTo(splitPts, N * r.a);
+        return { a: r.a, agents: r.agents, split_tps: s ? s[1] : null, split_B: s ? s[0] : null, split_curve: s ? s[2] : null, replica_tps: r.tps, gain: s && r.tps > 0 ? s[1] / r.tps - 1 : null, cards: r.cards }; });
+      const top = rows[rows.length - 1], measured = o.split_tag === 'MEASURED' && top.cards.every(c => !c.recipe || c.tag === 'MEASURED');
+      const margin = mbV(set.replica_gain_margin)[measured ? 'measured' : 'model'];
+      let verdict;
+      if (!splitPts.length) verdict = 'NO-SPLIT-POINT';
+      else if (!base.priced.length) verdict = 'CAPACITY-REQUIRED';
+      else verdict = top.split_tps > top.replica_tps * (1 + margin) ? 'GAINS' : 'CAPACITY-ONLY';
+      return { verdict, floor, own_rung: own, margin, margin_basis: measured ? 'measured' : 'model', split_tps: top.split_tps, split_B: top.split_B, replica_tps: top.replica_tps,
+        gain: top.gain, agents: top.agents, a: top.a, rows, unpriced: base.unpriced, partial: verdict === 'GAINS' && base.unpriced.length > 0,
+        uncalibrated: top.split_curve === 'UNCALIBRATED' || top.cards.some(c => c.curve === 'UNCALIBRATED'), dram_capped: top.cards.filter(c => c.capped).map(c => c.box + ' ' + c.gpu) };
+    };
+    const out = judge(o.dram_per_box);
+    // replicas sharing a box's DRAM: the verdict again with one DRAM replica a box (the alternate), or with the cap lifted
+    const shared = Object.entries(out.rows[out.rows.length - 1].cards.filter(c => c.memory && c.memory !== 'vram').reduce((m, c) => { m[c.box] = (m[c.box] || 0) + 1; return m; }, {})).filter(([, n]) => n > 1).map(([b]) => b);
+    out.dram_shared = shared;
+    const alt = out.dram_capped.length ? judge(null) : shared.length ? judge(1) : null;
+    if (alt) out.alternate = { dram_per_box: out.dram_capped.length ? null : 1, verdict: alt.verdict, replica_tps: alt.replica_tps, gain: alt.gain };
+    // the rung is per model, not per store: when the split's tool-argument fidelity is measured and a replica in the
+    // verdict row ran a store measured below it (or never measured), the verdict again over replicas at the split's
+    // fidelity or better
+    out.earf = earf;
+    const top = out.rows[out.rows.length - 1].cards.filter(c => c.recipe);
+    if (earf !== null && top.some(c => c.earf === null || c.earf < earf)) {
+      const fm = judge(o.dram_per_box, earf);
+      out.fidelity_matched = { earf_min: earf, verdict: fm.verdict, replica_tps: fm.replica_tps, gain: fm.gain, below: top.filter(c => c.earf === null || c.earf < earf).map(c => c.box + ' ' + c.gpu + ' ' + c.recipe + ' (EARf ' + (c.earf === null ? 'unmeasured' : c.earf) + ')') };
+    }
+    return out;
+  }
+  // a measured split ran with its cards free, so its replicas get the same cards free: every other service on them displaced
+  const mbOthers = (data, cards) => [].concat(...cards.map(c => ((((data.boxes[c.box] || {}).gpus || []).find(x => x.id === c.gpu) || {}).other || []).map(x => x.service || x.what)));
+  // every measured split (card_curves anchors with more than one card, data.curves configs with as many stages as their
+  // box has cards) against its replicas: both sides measured where the replicas are; a modelled replica of an anchor is
+  // priced at the anchor's measured depth (ctx_read) and KV type, as the split ran
+  function replicaMeasured(data) {
+    const MB = data.multibox || {}, out = [];
+    for (const a of (((MB.card_curves || {}).anchors) || [])) {
+      if (a.plan.cards.length < 2) continue;
+      out.push(Object.assign({ id: a.id, label: a.arm, source: 'card_curves anchor', model: a.plan.model, store: a.plan.store, cards: a.plan.cards.map(c => c.box + ' ' + c.gpu) },
+        replicaGate(data, Object.assign({}, a.plan, { ctx: a.ctx_read, displace: mbOthers(data, a.plan.cards) }), a.points.map(p => [p.B, p.tps, 'MEASURED']), { split_tag: 'MEASURED' })));
+    }
+    for (const C of (((data.curves || {}).configs) || [])) {
+      const box = data.boxes[C.box], S = mbV(C.stages);
+      if (!box || !(S > 1) || S !== box.gpus.length || !MB.models || !MB.models[C.model]) continue;
+      const pts = C.points.filter(p => p.used && p.tps && mbV(p.tps) > 0).map(p => [p.n, mbV(p.tps), 'MEASURED']);
+      if (!pts.length) continue;
+      const spec = { model: C.model, store_types: C.store_types, cards: box.gpus.map(g => ({ box: C.box, gpu: g.id })), ctx: 0, displace: mbOthers(data, box.gpus.map(g => ({ box: C.box, gpu: g.id }))) };
+      out.push(Object.assign({ id: C.id, label: C.label, source: 'data.curves config', model: C.model, store: null, cards: spec.cards.map(c => c.box + ' ' + c.gpu) }, replicaGate(data, spec, pts, { split_tag: 'MEASURED' })));
+    }
+    return out;
+  }
+  // rank plans by the gate, never by raw tok/s: GAINS by gain, then CAPACITY-REQUIRED by split aggregate, then
+  // CAPACITY-ONLY by gain (the least lost first), then everything refused or unranked
+  const REPLICA_ORDER = { GAINS: 0, 'CAPACITY-REQUIRED': 1, 'CAPACITY-ONLY': 2 };
+  function replicaRank(xs, gateOf) {
+    const g = x => gateOf(x) || {}, k = x => (g(x).verdict in REPLICA_ORDER ? REPLICA_ORDER[g(x).verdict] : 9);
+    return xs.slice().sort((x, y) => k(x) - k(y) || (g(x).verdict === 'CAPACITY-REQUIRED' ? (g(y).split_tps || 0) - (g(x).split_tps || 0) : (g(y).gain === null || g(y).gain === undefined ? -Infinity : g(y).gain) - (g(x).gain === null || g(x).gain === undefined ? -Infinity : g(x).gain)));
   }
   // ---------- the agent duty cycle on the batch landscape ----------
   // B real agents do not all decode at once: each loops its recorded turns (trace) and waits its tool gap after each, and
@@ -5787,6 +5947,6 @@
     return { id: 'phase_bound', label: 'prefill and decode bounds per phase, binding term named (data.roofline)', status: st, detail: detail + exd + ud, bound: pb, explain: ex, batch_curve: nMax > 1 ? (unc ? 'UNCALIBRATED' : 'MEASURED') : null };
   }
 
-  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
+  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

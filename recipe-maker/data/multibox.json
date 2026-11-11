@@ -85,6 +85,42 @@
    "v": 56445,
    "tag": "INFERRED",
    "src": "INFERRED: the mean prompt depth of trace agent-long-16 in QFN tokens (src/model.js agentDepthMean: the cumulative fresh tokens of each turn x the measured per-agent tokenizer ratio); a unified KV pool (llama-server -kvu) holds the streams' actual depths, so capacity = free VRAM / the mean-depth stream"
+  },
+  "replica_floor": {
+   "v": null,
+   "tag": "READ",
+   "src": "a setting: the coding rung every replica must meet (models.*.coding_rung). null = the split model's own rung, so a replica runs the same model or a better one; 0.75 = QFN, the owner coding floor (tps/candidate-score.json ladder (owner coding floor ladder 2026-10-27: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat))"
+  },
+  "replica_agents_per_card": {
+   "v": [
+    1,
+    2,
+    4,
+    8,
+    16
+   ],
+   "tag": "READ",
+   "src": "a setting: the agents each card serves in the replica arm (a); the split serves the same total, N cards x a, at the best concurrency it admits up to that count"
+  },
+  "replica_gain_margin": {
+   "v": {
+    "model": 0.15,
+    "measured": 0.05
+   },
+   "tag": "ESTIMATE",
+   "src": "ESTIMATE: a split GAINS only when its aggregate passes the replicas' by more than this share. model: either side priced by RM, the card-curve hold-out median |err| 14.8 % (node report.js --cardcurve, 27 hold-out points, 2026-11-11); measured: both sides measured runs, the run-to-run spread of repeated agent-count points (1-5 %, data.curves odie one-B70 c4 82.5 / 81.8 / 82.2 / 83.6 across four configs)"
+  },
+  "replica_dram_per_box": {
+   "v": null,
+   "tag": "ESTIMATE",
+   "src": "a setting: at most this many DRAM-assisted replicas on one box count in the baseline; null = no cap, every card runs its own best recipe (the brief's per-card baseline). Replicas on one box share its DRAM and its bandwidth, and two at once were never measured, so when two or more share a box the gate also prints the verdict at a cap of 1 (the card that gains most keeps its DRAM recipe, the others take their best VRAM-only one)"
+  },
+  "replica_type_earf": {
+   "v": {
+    "gsq_iq3xxs": 0.894
+   },
+   "tag": "MEASURED",
+   "src": "MEASURED lab notes (fidelity panel 2): GSQ IQ3_XXS arg_values EARf 0.894 [0.881, 0.907] against the unsloth Q8_0 reference, the same panel and reference as the stores' fidelity.arg_values_earf; keyed by the store type a measured run names (data.curves configs store_types)"
   }
  },
  "backend_of_card": {
@@ -101,6 +137,11 @@
  "models": {
   "fnx": {
    "label": "Qwen3.8-Flash-Next (QFN)",
+   "coding_rung": {
+    "v": 0.75,
+    "tag": "READ",
+    "src": "READ tps/candidate-score.json ladder (owner coding floor ladder 2026-10-27: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat): QFN (Qwen3.8 Flash-Next) rung"
+   },
    "hidden_stream": {
     "v": 10240,
     "tag": "READ",
@@ -185,9 +226,9 @@
      },
      "fidelity": {
       "arg_values_earf": {
-       "v": null,
-       "tag": "UNKNOWN",
-       "src": "UNKNOWN: lab notes Q4 arm runs tonight; prior: between UD-IQ3_XXS 0.925 (MEASURED) and the Q8 floor 0.975 (MEASURED)"
+       "v": 0.955,
+       "tag": "MEASURED",
+       "src": "MEASURED lab notes (fidelity panel 3, lassie CPU, upstream llama.cpp a34de86, 4,733 argument values, 95 % block-bootstrap CI): arg_values EARf against the unsloth Q8_0 reference [0.950, 0.961]; below the 0.98 bar, which the panel finds is under this model's perturbation floor (no non-identical file can be shown to meet it)"
       },
       "gen_kl_prior": {
        "v": 0.0416,
@@ -219,9 +260,9 @@
      },
      "fidelity": {
       "arg_values_earf": {
-       "v": null,
-       "tag": "UNKNOWN",
-       "src": "UNKNOWN: lab notes Q5 arm runs tonight"
+       "v": 0.966,
+       "tag": "MEASURED",
+       "src": "MEASURED lab notes (fidelity panel 3, lassie CPU, upstream llama.cpp a34de86, 4,733 argument values, 95 % block-bootstrap CI): arg_values EARf against the unsloth Q8_0 reference [0.961, 0.970]; below the 0.98 bar, which the panel finds is under this model's perturbation floor (no non-identical file can be shown to meet it)"
       },
       "gen_kl_prior": {
        "v": 0.02,
@@ -253,9 +294,9 @@
      },
      "fidelity": {
       "arg_values_earf": {
-       "v": null,
-       "tag": "UNKNOWN",
-       "src": "UNKNOWN: lab notes Q6 arm runs tonight"
+       "v": 0.968,
+       "tag": "MEASURED",
+       "src": "MEASURED lab notes (fidelity panel 3, lassie CPU, upstream llama.cpp a34de86, 4,733 argument values, 95 % block-bootstrap CI): arg_values EARf against the unsloth Q8_0 reference [0.963, 0.972]; below the 0.98 bar, which the panel finds is under this model's perturbation floor (no non-identical file can be shown to meet it)"
       },
       "gen_kl_prior": {
        "v": 0.012,
@@ -327,6 +368,11 @@
   },
   "q38_27b": {
    "label": "Qwen3.8-27B (dense hybrid, qwen35 graph)",
+   "coding_rung": {
+    "v": 0.5,
+    "tag": "READ",
+    "src": "READ tps/candidate-score.json ladder (owner coding floor ladder 2026-10-27: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat): qwen27 (Qwen3.8-27B) rung"
+   },
    "hidden_stream": {
     "v": 5120,
     "tag": "READ",
@@ -409,6 +455,11 @@
   },
   "qwen3_17b": {
    "label": "Qwen3-1.7B (dense)",
+   "coding_rung": {
+    "v": 0.0,
+    "tag": "READ",
+    "src": "READ tps/candidate-score.json ladder (owner coding floor ladder 2026-10-27: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat): never_coding: 1.72 B active <= active_b_max 3.5 (any 3B-active model is never a coding seat)"
+   },
    "hidden_stream": {
     "v": 2048,
     "tag": "READ",

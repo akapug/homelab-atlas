@@ -479,15 +479,33 @@ if (pri >= 0) {
 // Multi-box serving plans (data/multibox.json candidates, src/model.js pipelineLandscape): node report.js --multibox [--id ID] [--json]
 // each candidate's layer split per card (refused when a stage passes its card or a hop has no measured round trip), decode at
 // every B (serial llama.cpp RPC and the ring arm), the hop share, the stream capacity at the plan's depth, prefill, and the
-// agent duty-cycle useful tok/s by B
+// agent duty-cycle useful tok/s by B. Plans are ranked by the replica gate (src/model.js replicaGate), never by raw tok/s:
+// each prints its aggregate beside the replica baseline (its cards run apart, the best single-card recipe at the same or
+// higher coding rung each) and GAINS / CAPACITY-ONLY / CAPACITY-REQUIRED; then every measured split (card_curves anchors,
+// data.curves configs) gets the same verdict on measured numbers
 if (args.includes('--multibox')) {
   const want = (() => { const i = args.indexOf('--id'); return i >= 0 ? args[i + 1] : null; })();
-  const out = (data.multibox.candidates || []).filter(c => !want || c.id === want).map(c => Object.assign({ id: c.id, label: c.label }, FM.pipelineLandscape(data, c)));
-  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(out, (k, x) => (k === 'g' || k === 'line' ? undefined : x), 1) + '\n'); process.exit(0); }
-  const f1 = x => x === null || x === undefined ? '-' : x >= 100 ? x.toFixed(0) : x.toFixed(1);
-  out.forEach(L => {
-    console.log('\n' + L.id + ': ' + L.label);
+  const out = FM.replicaRank((data.multibox.candidates || []).filter(c => !want || c.id === want).map(c => Object.assign({ id: c.id, label: c.label }, FM.pipelineLandscape(data, c))), L => L.replica);
+  const measured = want ? [] : FM.replicaMeasured(data);
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify({ candidates: out, measured }, (k, x) => (k === 'g' || k === 'line' ? undefined : x), 1) + '\n'); process.exit(0); }
+  const f1 = x => x === null || x === undefined ? '-' : x >= 100 ? x.toFixed(0) : x.toFixed(1), pc = x => x === null || x === undefined ? '-' : (x >= 0 ? '+' : '') + (100 * x).toFixed(1) + ' %';
+  // one gate line: the split at N x a agents, the replicas at a a card, the gain, the verdict and what it rests on
+  const gateLine = (R, pre) => {
+    if (!R) return pre + 'replica gate: -';
+    if (!R.rows) return pre + 'replica gate: ' + R.verdict + (R.why ? ' (' + R.why + ')' : '');
+    const lines = [pre + 'replica gate: ' + R.verdict + (R.partial ? ' (over a partial baseline)' : '') + (R.uncalibrated ? ' (UNCALIBRATED point)' : '') + ': split ' + f1(R.split_tps) + ' tok/s at ' + R.agents + ' agents (B ' + R.split_B + ') vs replicas ' + f1(R.replica_tps) + ' (' + R.a + ' a card), gain ' + pc(R.gain) + ', margin ' + (100 * R.margin).toFixed(0) + ' % (' + R.margin_basis + '), rung >= ' + R.floor + (R.earf !== null && R.earf !== undefined ? ', split EARf ' + R.earf : '')];
+    const top = R.rows[R.rows.length - 1];
+    lines.push(pre + '  replicas at ' + R.a + ' a card: ' + top.cards.map(c => c.box + ' ' + c.gpu + ' ' + (c.recipe ? c.recipe + ' [' + c.tag + (c.memory !== 'vram' ? ', ' + c.memory : '') + (c.earf !== null && c.earf !== undefined ? ', EARf ' + c.earf : '') + '] ' + f1(c.tps) + ' at b ' + c.b : 'none at the rung (unpriced)') + (c.capped ? ' (DRAM cap)' : '')).join('; '));
+    lines.push(pre + '  by a (agents a card: split / replicas): ' + R.rows.map(r => r.a + ': ' + f1(r.split_tps) + ' / ' + f1(r.replica_tps)).join(', '));
+    if (R.alternate) lines.push(pre + '  ' + (R.alternate.dram_per_box === 1 ? 'one DRAM replica a box (' + R.dram_shared.join(', ') + ' share their DRAM; never measured two at once): ' : 'DRAM cap lifted: ') + R.alternate.verdict + ', replicas ' + f1(R.alternate.replica_tps) + ', gain ' + pc(R.alternate.gain));
+    if (R.fidelity_matched) lines.push(pre + '  replicas at the split\'s tool-argument fidelity or better (arg_values EARf >= ' + R.fidelity_matched.earf_min + '; below it: ' + R.fidelity_matched.below.join(', ') + '): ' + R.fidelity_matched.verdict + ', replicas ' + f1(R.fidelity_matched.replica_tps) + ', gain ' + pc(R.fidelity_matched.gain));
+    return lines.join('\n');
+  };
+  console.log('ranked by the replica gate (GAINS by gain, CAPACITY-REQUIRED, CAPACITY-ONLY by gain; never by raw tok/s); aggregate decode on both sides');
+  out.forEach((L, i) => {
+    console.log('\n#' + (i + 1) + ' ' + L.id + ': ' + L.label);
     if (L.status !== 'OK') { console.log('  ' + L.status + ': ' + L.why); return; }
+    console.log(gateLine(L.replica, '  ') + '\n  (best useful ' + (L.best_useful ? f1(L.best_useful.useful_tps) + ' tok/s at B ' + L.best_useful.B : '-') + '; a measured replica ran at its own bench depth, the split is priced at depth ' + L.plan.ctx + ')');
     const p = L.plan;
     console.log('  weights ' + p.weights_gb.toFixed(1) + ' GB on ' + p.vram_gb.toFixed(1) + ' GB free VRAM; a stream at depth ' + p.ctx + ' holds ' + p.stream_gb.toFixed(2) + ' GB; capacity ' + p.capacity_streams + ' streams; prefill ' + f1(L.prefill.tps) + ' tok/s (2,048 tokens)');
     p.stages.forEach(s => console.log('  stage ' + (s.box + ' ' + s.gpu).padEnd(16) + String(s.layers).padStart(3) + ' layers ' + s.weights_gb.toFixed(1).padStart(5) + ' GB, room ' + s.room_gb.toFixed(1).padStart(5) + ' GB, ' + s.line.backend + ' ' + s.line.rate_gbs.toFixed(0) + ' GB/s ' + s.line.tag));
@@ -496,6 +514,17 @@ if (args.includes('--multibox')) {
     if (L.agents && L.agents.status === 'OK') console.log('  agents (useful tok/s by B, B_eff): ' + L.agents.rows.filter(r => r.status === 'OK').map(r => r.B + ': ' + f1(r.useful_tps) + ' (' + r.b_eff.toFixed(1) + ')').join(', '));
     console.log('  best useful: ' + (L.best_useful ? f1(L.best_useful.useful_tps) + ' tok/s at B ' + L.best_useful.B + ' (' + f1(L.best_useful.per_agent) + ' an agent)' : '-'));
   });
+  if (measured.length) {
+    const A = measured.filter(m => m.source === 'card_curves anchor'), C = measured.filter(m => m.source !== 'card_curves anchor');
+    console.log('\nmeasured splits (card_curves anchors) vs their replicas, ranked by the gate:');
+    FM.replicaRank(A, m => m).forEach(m => console.log('\n  ' + m.id + ' (' + m.cards.join(' + ') + ', ' + m.model + ')\n' + gateLine(m, '    ')));
+    if (C.length) {
+      const n = {}; C.forEach(m => { n[m.verdict] = (n[m.verdict] || 0) + 1; });
+      const R = FM.replicaRank(C, m => m);
+      console.log('\nmeasured in-box splits (data.curves configs with one stage a card): ' + C.length + ' configs, ' + Object.entries(n).map(([k, x]) => x + ' ' + k).join(', '));
+      [R[0], R[R.length - 1]].forEach((m, i) => console.log('\n  ' + (i ? 'last: ' : 'first: ') + m.id + ' (' + m.cards.join(' + ') + ')\n' + gateLine(m, '    ')));
+    }
+  }
   process.exit(0);
 }
 // The per-card batch curves (data/multibox.json card_curves, src/model.js cardCurveRescore / agentPointRescore): node report.js

@@ -2330,7 +2330,7 @@ def curve_configs(cfg, ledger):
         if got['stage_lend_drop']:
             serving['stage_lend_drop'] = True
         out.append({'key': key, 'id': r0['id'], 'label': r0.get('label') or rc.get('label') or r0['id'], 'box': r0.get('box'), 'model': r0.get('model'), 'engine': r0.get('engine'),
-                     'build': rc.get('engine_build'), 'flags': flags, 'ctx': rc.get('ctx'), 'draft': bool(rc.get('draft')), 'runs': [r['id'] for r in rows],
+                     'build': rc.get('engine_build'), 'flags': flags, 'ctx': rc.get('ctx'), 'draft': bool(rc.get('draft')), 'store_types': (rc.get('store') or {}).get('types'), 'runs': [r['id'] for r in rows],
                      'groups': n(groups, R, 'engine_flags %s' % (got['groups'].group(0) if got['groups'] else 'carry no --batch-groups: 1 group')),
                      'stages': n(stages, R, 'engine_flags (else conditions.isolation) %s' % ('"%s": %d stages' % (got['split'].group(0), stages) if got['split'] else 'carry no layer split: 1 stage')),
                      'slots': n(slots, R, 'engine_flags %s' % got['slots'].group(0)) if slots else None,

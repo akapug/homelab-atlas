@@ -20,6 +20,56 @@ QFN quality or better? And how does that change as the number of agents B goes f
   2. there is only enough memory for that many streams at agent depth (capacity);
   3. the MI25 stage is slow whenever the MI25 is in the plan.
 
+## Replica gate (added 2026-11-11 after the S1-S4 runs; supersedes the ranking below)
+
+The ranking below sorts plans by raw useful tok/s and never asks whether the same cards would serve more running apart.
+They would. A llama.cpp RPC split runs its stages one after another, so it buys room (a model no single card holds), not
+throughput. S2 measured it: two B70s pipelined ran Qwen3.8-27B at 82.9 tok/s at B=8, one B70 alone at 84.1 (MEASURED).
+
+- **`replicaBaseline` / `replicaGate`** (`src/model.js`) price the other use of the same cards. Each card runs its own
+  replica of the best single-card recipe at the split model's coding rung or higher (`models.*.coding_rung`, the owner
+  ladder in `tps/candidate-score.json`; `settings.replica_floor` fixes a rung instead). Each card serves a agents
+  (`settings.replica_agents_per_card`), and the split serves the same total, N × a.
+- A single-card recipe is one of three kinds:
+  - a modelled one-card plan (VRAM only, the same card curves as the split);
+  - a measured one-card anchor;
+  - a measured one-stage `data.curves` config. Today that means QFN IQ3_XXS on one B70 with the experts' complement in
+    odie's DRAM.
+- The verdict:
+  - **GAINS**: the split beats the replicas by more than `settings.replica_gain_margin` (15 % when RM priced either side,
+    the card-curve hold-out error; 5 % when both sides are measured).
+  - **CAPACITY-ONLY**: it does not.
+  - **CAPACITY-REQUIRED**: no card holds a recipe at the rung alone.
+  - When two DRAM-assisted replicas share one box, the gate also prints the verdict with one DRAM replica on that box.
+    Two at once were never measured.
+  - The rung is per model, not per store. Suppose the split's tool-argument fidelity (arg_values EARf, the 2026-11-11 fidelity panels) is
+    measured, and a replica runs a store measured below it. Then the gate also prints the verdict over replicas at the
+    split's fidelity or better.
+- **`report.js --multibox`** ranks by the gate: GAINS by gain, then CAPACITY-REQUIRED, then CAPACITY-ONLY by gain. Then it
+  gives every measured split the same verdict: the card_curves anchors and the 2×B70 XeStrata configs in `data.curves`.
+
+Verdicts on 2026-11-11 data (aggregate decode; `node report.js --multibox`):
+- Every QFN llama.cpp RPC candidate is **CAPACITY-ONLY**. The best, UD-IQ4_XS over 4 cards, reaches 125 tok/s (ESTIMATE).
+  QFN IQ3_XXS on each B70 alone reaches 167 (2 × 83.6, MEASURED one card at a time). With one DRAM replica on odie
+  (83.6), IQ4_XS over 4 cards and Q4_K_XL over 6 cards would read GAINS (+50 % and +31 %; the 6-card point is UNCALIBRATED).
+- The measured S4 (QFN Q4_K_XL over RTX 6000 + 2×B70, 117.8 at B=16) is **CAPACITY-ONLY** at −30 %. With one DRAM
+  replica on odie it reads GAINS. S2, S2-split, S1-split, S2a-3card and S3 are all **CAPACITY-ONLY**. S2a (27B over
+  lassie's 1080 Ti + MI25) is **CAPACITY-REQUIRED**: neither card holds the 27B alone.
+- XeStrata's in-box 2×B70 layer split is the one split that gains. 105 of its 123 measured configs read **GAINS**, up to
+  378 tok/s against 167, on the same IQ3_XXS store as the replicas.
+- At the split's own fidelity, every QFN plan with a measured fidelity (all but UD-IQ4_XS) reads **CAPACITY-REQUIRED**. Q4_K_XL scores EARf 0.955 and Q5/Q6
+  0.966/0.968; the B70 replicas run GSQ IQ3_XXS at 0.894 (MEASURED, fidelity panels 2-3). No card runs QFN alone at
+  Q4_K_XL fidelity or better in any measured run. So these splits trade throughput for tool-argument fidelity; they gain
+  no throughput.
+
+Caveats:
+- A measured replica ran at its bench depth (agent-length prompts), while a candidate split is priced at depth 56,445.
+  That favours the replica. The measured splits compare like with like.
+- The baseline is a floor. The RTX 6000, 3090 Ti and lassie cards have no measured QFN run with DRAM, so they add 0 at the
+  QFN rung.
+- No B70, RTX 6000 or 3090 Ti has a measured single-card run of QFN Q4_K_XL with its experts in DRAM. That is the run that
+  would settle the fidelity-matched verdict.
+
 ## Tags
 
 Every number below carries one of these tags.
