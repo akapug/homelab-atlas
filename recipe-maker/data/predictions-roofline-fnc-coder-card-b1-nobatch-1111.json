@@ -1,0 +1,122 @@
+{
+ "about": "agents prediction written BEFORE its run by the screen lane (decode-levers/PREDICTION.json followup_point) and transcribed here unchanged. It is arithmetic on card-b1's own server split, NOT a Recipe Maker run (its basis below); the query and agents beside it are the Recipe Maker inputs a rescore uses",
+ "written_utc": "2026-11-11T19:45:41Z",
+ "rm_commit": null,
+ "rm_dirty": null,
+ "id": "fnc-coder-card-b1-nobatch-1111",
+ "phase": "agents",
+ "B": 1,
+ "transcribed_from": "lab notes followup_point (frozen before the point ran)",
+ "query": {
+  "box": "odie",
+  "model": "fnxc",
+  "engine": "strata",
+  "store": "gsq_iq1m_coder",
+  "flags": "--prefill auto --kv-resident 4096 --kv k8v4; comp1 levers; one card; no --batch (one session)",
+  "ctx": 60000,
+  "draft": true,
+  "kv_format": "k8v4"
+ },
+ "agents": {
+  "prefill_query": {
+   "tokens": 1202,
+   "read_mix": true
+  },
+  "trace": "agent-long-16",
+  "server": "strata-conversation-cache",
+  "model": "fnx",
+  "shared_prefix": {
+   "v": 4924,
+   "tag": "MEASURED",
+   "src": "MEASURED r8-batch-sweep b24: cached tokens of a cold salted first turn on a warm server (system prompt + tools)"
+  },
+  "slot_groups": {
+   "v": 1,
+   "tag": "READ",
+   "src": "READ: one card, no layer split, one group"
+  },
+  "admission": {
+   "v": {
+    "policy": "engine"
+   },
+   "tag": "READ",
+   "src": "READ: agents <= slots, no door"
+  },
+  "decode_step_increment": {
+   "v": 2.7661404646237315,
+   "tag": "FIT",
+   "count": "VERIFIED",
+   "cal_residual": -0.012586287799791762,
+   "src": "FIT on ONE named calibration point: the R8 no_door B 8 useful 57.54 tok/s (the first sweep point past one agent. The synthetic curve was measured on image 06103b88 at shallow depth; its one-agent point matches the served one (68.8 vs 70.6 MEASURED), so one factor on the batched part of its step stands for the served build and depth until the served curve is measured)"
+  },
+  "slots": {
+   "v": 1,
+   "tag": "READ",
+   "src": "READ: no --batch: the server runs one session"
+  },
+  "rates": {
+   "prefill_tps": {
+    "v": 1002.7613913597064,
+    "tag": "M-ext",
+    "src": "upstream XeStrata lab notes single-B70 Coder prefill 936 @1K, 1573 @4K, log-log at 1202 tokens (RM read-mix size of agent-long-16); all experts in VRAM",
+    "tag_frozen": "MEASURED-EXT"
+   },
+   "decode_curve": {
+    "v": [
+     [
+      1,
+      72.68673267326733
+     ],
+     [
+      2,
+      68.27801988927332
+     ],
+     [
+      4,
+      96.19270895132502
+     ],
+     [
+      8,
+      135.52000000000007
+     ]
+    ],
+    "tag": "INFERRED",
+    "src": "INFERRED: B 1 = R8 served one-agent decode 70.59 (MEASURED r8-batch-sweep-2026-11-11 b1) x 72.8/70.7 (upstream XeStrata lab notes single-B70 decode at 1K, Coder vs IQ3_XXS, MEASURED by upstream); B>1 = R8 frozen synthetic curve (68.8/271.04/356.1 at 1/16/32, image 06103b88) at 2B rows / 2: one card running all 48 layers for B rows does the work of R8's two cards (half the layers each, 2 pipelined groups) for 2B rows. Unmodelled: the batched router of this engine (8c783ac) routes a 256-expert window per token (verify.cpp NE==512 gate; fix 1a25679 not in the image)"
+   },
+   "capacity_streams": {
+    "v": 1,
+    "tag": "READ",
+    "src": "slots"
+   }
+  }
+ },
+ "hypothesis": "without --batch the Coder steps in 26 ms instead of 43-46 (the decode probe), so the same one-agent work takes the card-b1 prompt time plus its decode time x 26.06 / 46.42 plus the tool gaps",
+ "tests_term": "decode_at_beff",
+ "band_pct": 20,
+ "conditions": {
+  "config": "no --batch, one agent, card b (B70 #2)"
+ },
+ "predicted": {
+  "useful_tps": 34.9,
+  "useful_range": [
+   31,
+   38
+  ],
+  "turns_per_agent_min": 7,
+  "prompt_read_tps": 759,
+  "decode_per_stream": 66,
+  "method": "INFERRED arithmetic, not a Recipe Maker run",
+  "basis": "INFERRED from card-b1's own server split (600 s window: prompt 161.1 s, decode 391.2 s, ~48 s tool gaps): decode time x 26.06/46.42 -> 219.6 s, prompt time unchanged (assumes the non-batch prompt path reads at card-b1's 759 tok/s), so the same work takes 161.1 + 219.6 + 48 = 428.7 s: useful 24.93 x 600/428.7 = 34.9, turns 5.0 x 600/428.7 = 7.0. Not an RM run."
+ },
+ "measured": {
+  "value": 37.06,
+  "measured_utc": "2026-11-11T20:11:40Z",
+  "run": "lab notes card-b1-nobatch card b (agent-long-16 replay, 600 s warm-up + 600 s window, stagger 0.02); turns per agent-minute 7.4",
+  "turn_counted_if": "ended_by_window_end",
+  "scored": {
+   "status": "HOLDS",
+   "err": 0.06189111747851017,
+   "verdict": null
+  }
+ }
+}

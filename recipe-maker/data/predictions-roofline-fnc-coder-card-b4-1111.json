@@ -1,0 +1,147 @@
+{
+ "about": "agents prediction written BEFORE its run by the screen lane's own Recipe Maker script (rm-predict.js: agentLandscape with opts.rates, the upstream prefill arm and the lambda decode arm, the primary arm) and transcribed here unchanged from its frozen file; never edit the predicted block",
+ "written_utc": "2026-11-11T18:40:43Z",
+ "rm_commit": "4e9f4397d76e5427e2f24ebe163933fa52a1112a",
+ "rm_dirty": false,
+ "id": "fnc-coder-card-b4-1111",
+ "phase": "agents",
+ "B": 4,
+ "transcribed_from": "lab notes (frozen before any measurement; arm upstream/lambda)",
+ "query": {
+  "box": "odie",
+  "model": "fnxc",
+  "engine": "strata",
+  "store": "gsq_iq1m_coder",
+  "flags": "--prefill auto --batch 4 --no-batch-mtp --kv-resident 4096 --kv k8v4; comp1 levers; one card",
+  "ctx": 60000,
+  "draft": true,
+  "kv_format": "k8v4"
+ },
+ "agents": {
+  "prefill_query": {
+   "tokens": 1202,
+   "read_mix": true
+  },
+  "trace": "agent-long-16",
+  "server": "strata-conversation-cache",
+  "model": "fnx",
+  "shared_prefix": {
+   "v": 4924,
+   "tag": "MEASURED",
+   "src": "MEASURED r8-batch-sweep b24: cached tokens of a cold salted first turn on a warm server (system prompt + tools)"
+  },
+  "slot_groups": {
+   "v": 1,
+   "tag": "READ",
+   "src": "READ: one card, no layer split, one group"
+  },
+  "admission": {
+   "v": {
+    "policy": "engine"
+   },
+   "tag": "READ",
+   "src": "READ: agents <= slots, no door"
+  },
+  "decode_step_increment": {
+   "v": 2.7661404646237315,
+   "tag": "FIT",
+   "count": "VERIFIED",
+   "cal_residual": -0.012586287799791762,
+   "src": "FIT on ONE named calibration point: the R8 no_door B 8 useful 57.54 tok/s (the first sweep point past one agent. The synthetic curve was measured on image 06103b88 at shallow depth; its one-agent point matches the served one (68.8 vs 70.6 MEASURED), so one factor on the batched part of its step stands for the served build and depth until the served curve is measured)"
+  },
+  "slots": {
+   "v": 4,
+   "tag": "READ",
+   "src": "READ: this lane serves --batch 4 per card"
+  },
+  "rates": {
+   "prefill_tps": {
+    "v": 1002.7613913597064,
+    "tag": "M-ext",
+    "src": "upstream XeStrata lab notes single-B70 Coder prefill 936 @1K, 1573 @4K, log-log at 1202 tokens (RM read-mix size of agent-long-16); all experts in VRAM",
+    "tag_frozen": "MEASURED-EXT"
+   },
+   "decode_curve": {
+    "v": [
+     [
+      1,
+      72.68673267326733
+     ],
+     [
+      2,
+      68.27801988927332
+     ],
+     [
+      4,
+      96.19270895132502
+     ],
+     [
+      8,
+      135.52000000000007
+     ]
+    ],
+    "tag": "INFERRED",
+    "src": "INFERRED: B 1 = R8 served one-agent decode 70.59 (MEASURED r8-batch-sweep-2026-11-11 b1) x 72.8/70.7 (upstream XeStrata lab notes single-B70 decode at 1K, Coder vs IQ3_XXS, MEASURED by upstream); B>1 = R8 frozen synthetic curve (68.8/271.04/356.1 at 1/16/32, image 06103b88) at 2B rows / 2: one card running all 48 layers for B rows does the work of R8's two cards (half the layers each, 2 pipelined groups) for 2B rows. Unmodelled: the batched router of this engine (8c783ac) routes a 256-expert window per token (verify.cpp NE==512 gate; fix 1a25679 not in the image)"
+   },
+   "capacity_streams": {
+    "v": 4,
+    "tag": "READ",
+    "src": "slots"
+   }
+  }
+ },
+ "hypothesis": "four real agents on one Coder copy decode only B_eff = B x duty at once; useful tok/s follows the served-engine replay at the per-card curve with R8's batched-step factor lambda",
+ "tests_term": "duty_cycle",
+ "band_pct": 20,
+ "conditions": {
+  "config": "--batch 4, four agents, card b (B70 #2)",
+  "both_cards": "both4 (four agents on each card at once) is the same prediction a card"
+ },
+ "predicted": {
+  "useful_tps": 33.79338000000001,
+  "useful_per_agent": 8.448345000000003,
+  "b_eff": 3.4997804459326427,
+  "duty": 0.8749451114831607,
+  "F": 4.943861356869299,
+  "per_stream_at_beff": 12.016962361385612,
+  "aggregate_at_beff": 42.05672989188592,
+  "reread_per_turn": 177,
+  "evicted_share": 0,
+  "turns_per_agent_min": 2.125,
+  "share": {
+   "decode": 0.8749451114831611,
+   "prefill": 0.04463342339072292,
+   "gap": 0.0804214651261161
+  },
+  "landscape_useful": null,
+  "decode_basis": "curve: INFERRED: B 1 = R8 served one-agent decode 70.59 (MEASURED r8-batch-sweep-2026-11-11 b1) x 72.8/70.7 (upstream XeStrata lab notes single-B70 decode at 1K, Coder vs IQ3_XXS, MEASURED by upstream); B>1 = R8 frozen synthetic curve (68.8/271.04/356.1 at 1/16/32, image 06103b88) at 2B rows / 2: one card running all 48 layers for B rows does the work of R8's two cards (half the layers each, 2 pipelined groups) for 2B rows. Unmodelled: the batched router of this engine (8c783ac) routes a 256-expert window per token (verify.cpp NE==512 gate; fix 1a25679 not in the image); batched step increment x 2.766 (FIT on ONE named calibration point: the R8 no_door B 8 useful 57.54 tok/s (the first sweep point past one agent. The synthetic curve was measured on image 06103b88 at shallow depth; its one-agent point matches the served one (68.8 vs 70.6 MEASURED), so one factor on the batched part of its step stands for the served build and depth until the served curve is measured))",
+  "engine": {
+   "evicted_share": 0,
+   "returning_turns": 84,
+   "stall_share": 0.15537923832796519,
+   "read_busy_share": 0.17265214224699207,
+   "door_wait_mean_s": 0,
+   "starved_agents": 0,
+   "turns_by_agent": [
+    20,
+    18,
+    29,
+    18
+   ],
+   "max_door_queue": 0,
+   "max_engine_queue": 0,
+   "leases_revoked": 0
+  }
+ },
+ "measured": {
+  "value": 32.72,
+  "measured_utc": "2026-11-11T19:38:16Z",
+  "run": "lab notes card-b4 card b (agent-long-16 replay, 600 s warm-up + 600 s window, stagger 0.02); turns per agent-minute 1.5",
+  "turn_counted_if": "ended_by_window_end",
+  "scored": {
+   "status": "HOLDS",
+   "err": -0.03176302577605483,
+   "verdict": null
+  }
+ }
+}

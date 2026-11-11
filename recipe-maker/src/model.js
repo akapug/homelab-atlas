@@ -5356,7 +5356,7 @@
   // (unpriced): no VRAM fit and no measured DRAM run, so a GAINS verdict there is over a partial baseline. A measured
   // replica ran at its own prompt depth (agent-length bench prompts), while a candidate split is priced at the plan's ctx:
   // that favours the replica; the measured splits (replicaMeasured) compare like with like.
-  // The floor is a coding rung (multibox models.*.coding_rung, the owner ladder in tps/candidate-score.json); null takes
+  // The floor is a coding rung (multibox models.*.coding_rung, the owner's coding-floor ladder, kept in our lab notes); null takes
   // the split model's own rung. The rung is per model, not per store: when the split's tool-argument fidelity (arg_values
   // EARf) is measured and a replica in the verdict row ran a store measured below it, fidelity_matched gives the verdict
   // again over replicas at the split's fidelity or better. The compared quantity is aggregate decode tok/s on both sides (the measured replica
@@ -5494,6 +5494,21 @@
     const g = x => gateOf(x) || {}, k = x => (g(x).verdict in REPLICA_ORDER ? REPLICA_ORDER[g(x).verdict] : 9);
     return xs.slice().sort((x, y) => k(x) - k(y) || (g(x).verdict === 'CAPACITY-REQUIRED' ? (g(y).split_tps || 0) - (g(x).split_tps || 0) : (g(y).gain === null || g(y).gain === undefined ? -Infinity : g(y).gain) - (g(x).gain === null || g(x).gain === undefined ? -Infinity : g(x).gain)));
   }
+  // the serving mode's per-step term: a recipe served in a batch mode (XeStrata --batch N; opts.serving_mode {v: 'batch' |
+  // 'single', tag, src} names it, else the query's flags are read) pays workload.engines.<engine>.batch_mode_step.stores.<store>
+  // on every forward step, relative to the single-session decode the curve's one-row point stands for. A store with no row
+  // has no measured term (R8's served batch-mode one-agent decode matches its curve), and a curve measured in the batch mode
+  // itself (decode_curve.serving_mode 'batch') already carries it: neither is charged
+  function batchModeStep(data, q, o) {
+    const E = (((data.workload || {}).engines) || {})[q.engine] || {}, T = E.batch_mode_step ? v(E.batch_mode_step) : null;
+    const flagBatch = /(^|[\s;])--batch\s+\d+/.test(q.flags || '');
+    const mode = o.serving_mode ? v(o.serving_mode) : flagBatch ? 'batch' : 'single', modeSrc = o.serving_mode ? o.serving_mode.src : flagBatch ? 'READ: --batch in the query flags' : 'READ: no --batch in the query flags';
+    const row = T && T.stores ? T.stores[q.store] || null : null;
+    if (mode !== 'batch') return { applied: false, mode, mode_src: modeSrc, why: 'served single-session' };
+    if (o.decode_curve && o.decode_curve.serving_mode === 'batch') return { applied: false, mode, mode_src: modeSrc, why: 'the decode curve was measured in the batch mode' };
+    if (!row) return { applied: false, mode, mode_src: modeSrc, why: 'no measured batch-mode step term for ' + q.engine + ' store ' + q.store };
+    return { applied: true, mode, mode_src: modeSrc, term: row };
+  }
   // ---------- the agent duty cycle on the batch landscape ----------
   // B real agents do not all decode at once: each loops its recorded turns (trace) and waits its tool gap after each, and
   // reads its fresh prompt tokens before it decodes. agentLandscape replays the trace (agentReplaySim, the existing turn model)
@@ -5503,7 +5518,7 @@
   // prompt growth + the server's re-read a turn: the measured re-read of the server's one-agent row diluted over B agents (a
   // trace-driven re-read belongs to one recorded agent) plus, once B passes the conversations the cache holds (C), a
   // whole-prompt re-read for the share 1 - C / B of turns whose conversation was evicted. duty = B_eff / B.
-  // opts: { trace, server, model, slots {v,tag,src}, cache_conversations {v,tag,src}, warmup_s, window_s, batches }
+  // opts: { trace, server, model, slots {v,tag,src}, cache_conversations {v,tag,src}, warmup_s, window_s, batches, serving_mode {v,tag,src} }
   const agentDepthMean = (A, tok) => {
     let n = 0, sum = 0;
     A.forEach((a, i) => { let d = 0; a.turns.forEach(t => { d += t[2]; sum += d * tok[i % tok.length]; n++; }); });
@@ -5537,8 +5552,12 @@
     const lam = o.decode_step_increment ? v(o.decode_step_increment) : 1;
     const inc = agg => n => { if (lam === 1 || n <= 1) return agg(n); const s1 = 1 / agg(1); return n / (s1 + lam * (n / agg(n) - s1)); };
     const curveAgg = inc(curveAt);
-    const decAt = n => { if (R) { const agg = curveAgg(n); return { per: agg / n, agg, fits: !v(R.capacity_streams) || n <= v(R.capacity_streams) }; } const d = decodeRoof(data, Object.assign({}, q, { batch: n })); if (d.status !== 'OK') return null; const step = d.step_s / eta, fits = d.capacity_streams === null || n <= d.capacity_streams;
+    const decRaw = n => { if (R) { const agg = curveAgg(n); return { per: agg / n, agg, fits: !v(R.capacity_streams) || n <= v(R.capacity_streams) }; } const d = decodeRoof(data, Object.assign({}, q, { batch: n })); if (d.status !== 'OK') return null; const step = d.step_s / eta, fits = d.capacity_streams === null || n <= d.capacity_streams;
       if (curve) { const agg = curveAgg(n); return { per: agg / n, agg, fits }; } return { per: d.draft_mult / step, agg: n * d.draft_mult / step, fits }; };
+    // the serving mode's step term (batchModeStep): served in a batch mode, every forward step pays the mode's fixed extra
+    // (m - 1) x the one-row step, so a lone stream steps m times slower and a step of n rows takes n / agg(n) + (m - 1) / agg(1)
+    const BM = batchModeStep(data, q, o), bmx = BM.applied ? v(BM.term) : 1;
+    const decAt = n => { const d = decRaw(n); if (!d || bmx === 1) return d; const d1 = decRaw(1); if (!d1) return null; const agg = n / (n / d.agg + (bmx - 1) / d1.agg); return { per: agg / n, agg, fits: d.fits }; };
     const one = decAt(1);
     if (!one) return un('no decode bound at B 1');
     const st = o.stall !== undefined ? o.stall : (W.engines[q.engine] || {}).reads_stall_decode, stall = st ? !!v(st) : false;
@@ -5575,7 +5594,7 @@
         engine: sim.engine || null };
     });
     const ok = rows.filter(r => r.status === 'OK'), best = ok.slice().sort((a, b) => b.useful_tps - a.useful_tps)[0] || null;
-    return { status: 'OK', query: q, trace, server, model, decode_basis: (curve ? 'curve: ' + o.decode_curve.src : 'roofline decode at the fitted decode eta') + (o.decode_step_increment ? '; batched step increment x ' + lam.toFixed(3) + ' (' + o.decode_step_increment.src + ')' : ''), prefill_tps: L.prefill_tps, decode_eta: df.status === 'FIT' ? df.eta : null, slots: o.slots || null, cache_conversations: o.cache_conversations || null,
+    return { status: 'OK', query: q, trace, server, model, decode_basis: (curve ? 'curve: ' + o.decode_curve.src : 'roofline decode at the fitted decode eta') + (o.decode_step_increment ? '; batched step increment x ' + lam.toFixed(3) + ' (' + o.decode_step_increment.src + ')' : '') + (BM.applied ? '; ' + BM.mode + ' mode step x ' + bmx.toFixed(3) + ' (' + BM.term.src + ')' : ''), batch_mode: BM, prefill_tps: L.prefill_tps, decode_eta: df.status === 'FIT' ? df.eta : null, slots: o.slots || null, cache_conversations: o.cache_conversations || null,
       mean_prompt_depth: depth, one_agent_reread: r1 ? r1.row : null, stall, admission: adm, read_batch_max: readMax, shared_prefix: sharedP, slot_groups: o.slot_groups || null, best: best ? { B: best.B, useful_tps: best.useful_tps, b_eff: best.b_eff } : null, rows };
   }
   // the R8 agent points (card_curves.agent_points) rescored with today's served-engine sim and the frozen records' own inputs
@@ -5615,13 +5634,18 @@
       const label = x.label || x.kind + ' B ' + x.B, count = agentPointCount(x);
       if (!r || r.status !== 'OK') return { B: x.B, kind: x.kind, label, count, status: 'UNMODELLED', why: L.why || (r && r.why) };
       const m = x.measured, e = r.engine || {}, ev = typeof x.evict_branch_useful === 'number' ? x.evict_branch_useful : null;
-      return { B: x.B, kind: x.kind, label, count, status: 'OK', measured: m, predicted: { useful_tps: r.useful_tps, b_eff: r.b_eff, F: r.F, stall_pct: e.stall_share !== undefined ? 100 * e.stall_share : null, read_busy_pct: e.read_busy_share !== undefined ? 100 * e.read_busy_share : null, evicted_share: r.evicted_share },
+      const use = x === cal ? 'calibrates' : x.calibrates && x.calibrates.length ? 'calibrates ' + x.calibrates.join(', ') : 'holdout';
+      return { B: x.B, kind: x.kind, label, set: x.set || 'r8', count, status: 'OK', measured: m, calibrates: x.calibrates || [], batch_mode: L.batch_mode, predicted: { useful_tps: r.useful_tps, turns_per_agent_min: r.turns_per_agent_min, b_eff: r.b_eff, F: r.F, stall_pct: e.stall_share !== undefined ? 100 * e.stall_share : null, read_busy_pct: e.read_busy_share !== undefined ? 100 * e.read_busy_share : null, evicted_share: r.evicted_share },
         err: r.useful_tps / m.useful_tps - 1, evict_branch_useful: ev, evict_branch_err: ev === null ? null : ev / m.useful_tps - 1, decode_basis: L.decode_basis, src: x.src,
-        scaled: k && k.status === 'OK' ? { useful_tps: k.useful_tps, err: k.useful_tps / m.useful_tps - 1, b_eff: k.b_eff, F: k.F, stall_pct: k.engine ? 100 * k.engine.stall_share : null, evicted_share: k.evicted_share, use: x === cal ? 'calibrates' : 'holdout' } : null };
+        scaled: k && k.status === 'OK' ? { useful_tps: k.useful_tps, err: k.useful_tps / m.useful_tps - 1, turns_per_agent_min: k.turns_per_agent_min, turns_err: m.turns_per_agent_min ? k.turns_per_agent_min / m.turns_per_agent_min - 1 : null, b_eff: k.b_eff, F: k.F, per_stream_at_beff: k.per_stream_at_beff, stall_pct: k.engine ? 100 * k.engine.stall_share : null, evicted_share: k.evicted_share, use } : null };
     });
     const ok = rows.filter(r => r.status === 'OK'), med = xs => { const a = xs.slice().sort((p, q) => p - q), n = a.length; return n ? (n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2) : null; };
     const ho = ok.filter(r => r.scaled && r.scaled.use === 'holdout'), ev = ok.filter(r => r.evict_branch_err !== null);
-    return { status: 'OK', rows, median_abs_pct: ok.length ? 100 * med(ok.map(r => Math.abs(r.err))) : null, evict_branch_median_abs_pct: ev.length ? 100 * med(ev.map(r => Math.abs(r.evict_branch_err))) : null, evict_branch_n: ev.length,
+    // per set (points.set; r8 when unnamed): the step-increment arm's hold-out median and the calibration points of each set
+    const sets = {};
+    ok.forEach(r => { const S = sets[r.set] = sets[r.set] || { n: 0, holdout_n: 0, holdout_median_abs_pct: null, calibrates: [] }; S.n++; if (r.scaled && r.scaled.use !== 'holdout') S.calibrates.push(r.label); });
+    Object.keys(sets).forEach(k => { const h = ho.filter(r => r.set === k); sets[k].holdout_n = h.length; sets[k].holdout_median_abs_pct = h.length ? 100 * med(h.map(r => Math.abs(r.scaled.err))) : null; });
+    return { status: 'OK', rows, sets, median_abs_pct: ok.length ? 100 * med(ok.map(r => Math.abs(r.err))) : null, evict_branch_median_abs_pct: ev.length ? 100 * med(ev.map(r => Math.abs(r.evict_branch_err))) : null, evict_branch_n: ev.length,
       decode_step_increment: kTag, scaled_holdout_median_abs_pct: ho.length ? 100 * med(ho.map(r => Math.abs(r.scaled.err))) : null, scaled_holdout_n: ho.length,
       count_rule: AGENT_COUNT_RULE, unverified_count: rows.filter(r => r.count !== 'VERIFIED').map(r => r.label) };
   }
@@ -5947,6 +5971,6 @@
     return { id: 'phase_bound', label: 'prefill and decode bounds per phase, binding term named (data.roofline)', status: st, detail: detail + exd + ud, bound: pb, explain: ex, batch_curve: nMax > 1 ? (unc ? 'UNCALIBRATED' : 'MEASURED') : null };
   }
 
-  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
+  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, batchModeStep, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

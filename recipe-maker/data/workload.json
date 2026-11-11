@@ -40,6 +40,11 @@
   "strata": {
    "reads_stall_decode": {"v": true, "tag": "READ", "src": "XeStrata --batch-groups: a read longer than STRATA_BATCH_PREFILL_MAX_TOKENS (512) drains the pipe and every decoding slot waits until the read is done (generate.cpp); MEASURED in the engine log of the 16-agent replay: 76 reads, 446 s of prompt time in a 600 s window"},
    "read_batch_max": {"v": 512, "tag": "READ", "src": "STRATA_BATCH_PREFILL_MAX_TOKENS (512): a read up to it is batched into the decode steps; a longer one stalls every decoding slot (reads_stall_decode; agentEngineSim)"},
+   "batch_mode_step": {"about": "the batch serving mode's per-step cost (src/model.js batchModeStep, agentLandscape): served with --batch N, every forward step pays a fixed extra of (m - 1) x the one-row single-session step, so a lone stream decodes m times slower and a step of n rows takes n / agg(n) + (m - 1) / agg(1). Per store, relative to the single-session decode that the decode curve's one-row point stands for. A store with no row has no measured term and is not charged: R8 (gsq_iq3xxs) serves --batch 32, and its served one-agent decode (70.6) matches its curve (68.8), so its curve already carries the mode. Cause not located in the engine (the 256-expert window router fix IS in the image; it is not this)",
+    "stores": {
+     "gsq_iq1m_coder": {"v": 1.706, "tag": "MEASURED", "calibration": "card-b1 (--batch 4) against card-b1-nobatch (no --batch): one agent, card b, same replay, same image",
+      "src": "MEASURED on ONE named calibration pair, the server decode counters over each 600 s window: card-b1 15,892 output tokens in 391.24 s of decode = 40.62 tok/s a stream, card-b1-nobatch 22,867 in 329.96 s = 69.30; 69.30 / 40.62 = 1.706. The single-stream decode probe on the same card agrees per forward step: 43.25 and 43.59 ms with --batch 4 against 26.06 and 26.07 ms without (1.67x; drafts accepted per step equal within 1 %). ISTA GSQ-RCO Coder IQ1_M, one XeStrata copy per B70, comp1 image (engine 8c783ac) (lab notes, decode-levers/probe.jsonl). card-b4 and both-card points are its hold-outs (data/multibox.json card_curves.agent_points)"}
+    }},
    "prefill_levers": {
     "v": [
      {"id": "pipeline_reads", "lever": "pipeline the two layer-split stages inside a batched read (several chunks per read)", "gain": [1.2, 1.3]},

@@ -27,8 +27,8 @@ They would. A llama.cpp RPC split runs its stages one after another, so it buys 
 throughput. S2 measured it: two B70s pipelined ran Qwen3.8-27B at 82.9 tok/s at B=8, one B70 alone at 84.1 (MEASURED).
 
 - **`replicaBaseline` / `replicaGate`** (`src/model.js`) price the other use of the same cards. Each card runs its own
-  replica of the best single-card recipe at the split model's coding rung or higher (`models.*.coding_rung`, the owner
-  ladder in `tps/candidate-score.json`; `settings.replica_floor` fixes a rung instead). Each card serves a agents
+  replica of the best single-card recipe at the split model's coding rung or higher (`models.*.coding_rung`, the owner's
+  coding-floor ladder of 2026-10-27, kept in our lab notes; `settings.replica_floor` fixes a rung instead). Each card serves a agents
   (`settings.replica_agents_per_card`), and the split serves the same total, N × a.
 - A single-card recipe is one of three kinds:
   - a modelled one-card plan (VRAM only, the same card curves as the split);
@@ -504,6 +504,81 @@ kept in `measured.as_reported`): `r8-agents-b8` -33.5 % -> -37.3 %, `r8-agents-b
 Not recounted: B_eff, F (server), stall and prefill busy come from server /metrics deltas and client stalls; the
 after-snapshot was read after the joins, so the old server deltas include up to the late turns' post-window work
 (INFERRED).
+
+### 2026-11-11: the batch serving mode's step term (the GSQ-RCO Coder screen)
+
+The screen served the ISTA GSQ-RCO Coder (IQ1_M) as one XeStrata copy per B70 and replayed agent-long-16 against each
+card. Its prediction was frozen before any run: `agentLandscape` with rates, the upstream prefill arm and the lambda
+decode arm. The records are `data/predictions-roofline-fnc-coder-*.json`, transcribed unchanged. The no-batch record is
+the screen's own arithmetic, labelled as such.
+
+What it missed was the serving mode. With `--batch 4` a lone stream decodes 40.6 tok/s; without `--batch` it decodes
+69.3 tok/s on the same card and replay. The curve's one-row point (72.7) stands for the single-session decode.
+
+The new term is `workload.engines.strata.batch_mode_step` (`batchModeStep`). It is MEASURED per store from ONE named
+pair: card-b1 (`--batch 4`) against card-b1-nobatch. The value is the ratio of their window decode counters, 69.30 /
+40.62 = **1.706**. The single-stream probe agrees per forward step: 43.3-43.6 ms against 26.1 ms.
+
+Served in a batch mode, every forward step pays the fixed extra. So a step of n rows takes n / agg(n) + (m - 1) /
+agg(1), and a lone stream steps m times slower. A store with no row is never charged. R8 serves `--batch 32`, and its
+served one-agent decode already matches its curve. A curve measured in the batch mode (`decode_curve.serving_mode:
+'batch'`) is not charged either. card-b4 and both cards at once (a card at a time) are the hold-outs. both1-nobatch is
+left out: the replay client's network failed during it.
+
+| point | measured | frozen prediction (err) | with the term (err) | use |
+|---|---|---|---|---|
+| card-b1, 1 agent | 24.93 | 36.2 (+45 %) | 27.2 (+9.1 %) | calibrates |
+| card-b1-nobatch, 1 agent | 37.06 | 36.2 (-2.3 %) | 36.2 (-2.3 %), not charged | calibrates |
+| card-b4, 4 agents | 32.72 | 33.8 (+3.3 %) | 30.8 (-5.8 %) | hold-out |
+| both1, card a | 25.52 | 36.2 (+42 %) | 27.2 (+6.6 %) | hold-out |
+| both1, card b | 26.34 | 36.2 (+38 %) | 27.2 (+3.3 %) | hold-out |
+| both4, card a | 30.47 | 33.8 (+11 %) | 30.8 (+1.2 %) | hold-out |
+| both4, card b | 30.60 | 33.8 (+10 %) | 30.8 (+0.7 %) | hold-out |
+
+err = predicted / measured - 1. The hold-out median |err| falls from 10.9 % to 3.3 % (n 5). Both cards, summed:
+
+- both1 goes from 72.4 to 54.4, against 51.86 measured (+40 % to +4.9 %);
+- both4 goes from 67.6 to 61.6, against 61.07 (+11 % to +0.9 %).
+
+The guard holds: card-b1 is within 10 % of 24.93, and card-b1-nobatch is within 10 % of 37.06.
+
+**Form.** The fixed extra is charged on every step, not on the lone stream only. The cause is a per-step cost of the
+mode. This form also matches the measured per-stream decode at 4 agents (10.6 predicted at B_eff 3.6, against
+10.3-10.8 measured), where the lone-only form gives 12.0. The lone-only form was run as well, so this choice saw the
+hold-outs: it scores card-b4 at +3.3 % and both4 at +10.4 / +10.9 %.
+
+**Turns per agent-minute still run over.**
+
+- card-b1: 6.2 against 5.0.
+- card-b4: 1.82 against 1.5.
+- both4: 1.82 against 1.35 and 1.63.
+
+The re-read term is not the cause. The sim reads 177 re-read tokens a turn at 4 agents (R8's one-agent 708 / 4). The
+measured card-b4 re-read is 1,819 tokens a turn. Set to that, F matches (11.9 against 11.5 measured), but the predicted
+turns rise to 2.25, so it is not fitted.
+
+The output length a turn does explain the miss. The Coder writes 0.68-0.70 of the recorded output a turn, and the sim
+uses R8's 0.591 (`turn_model.models.fnx` at one agent). With 0.69, card-b4 reads 1.58 turns (+5 %), but card-b1's useful
+rises to 27.8 (+12 %). The two are entangled with the batch-mode prompt read, which is the open term: 759 tok/s with
+`--batch` against 1,141 without, and the upstream 1,003 is what the sim uses.
+
+**The batch-mode prompt read is a named open term, not kept.** The same calibration pair reads its prompts at 759 tok/s
+with `--batch` and at 1,141 without (server prompt counters over each window): 1,141 / 759 = 1.50. Charging 1.50 on
+the sim's read rate moves card-b1 from +9.1 % to -3.6 %. It breaks hold-outs past their errors, though, so it is not
+kept:
+
+- on every point served in batch mode: card-b4 -5.8 % -> -15.1 %, both4 +1.2 / +0.7 % -> -8.9 / -9.3 %;
+- on lone-agent points only: both1 card b +3.3 % -> -8.8 %.
+
+At 4 agents the batch-mode read is not slower: 1,039 and 1,012-1,125 tok/s measured, against the 1,003 the sim uses.
+So the term is not a fixed factor of the mode. Its shape (by read size, by what else the engine holds) needs its own
+measurement.
+
+Open:
+
+- a Coder model row with its own output lengths;
+- the batch-mode prompt read above;
+- the lambda-scaled curve's two-row aggregate (35 tok/s), which is below its one-row point (72.7).
 
 ## Larger models (analytic, not ranked)
 

@@ -89,7 +89,7 @@
   "replica_floor": {
    "v": null,
    "tag": "READ",
-   "src": "a setting: the coding rung every replica must meet (models.*.coding_rung). null = the split model's own rung, so a replica runs the same model or a better one; 0.75 = QFN, the owner coding floor (tps/candidate-score.json ladder (owner coding floor ladder 2026-10-27: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat))"
+   "src": "a setting: the coding rung every replica must meet (models.*.coding_rung). null = the split model's own rung, so a replica runs the same model or a better one; 0.75 = QFN, the owner coding floor (the owner coding-floor ladder of 2026-10-27, kept in our lab notes: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat)"
   },
   "replica_agents_per_card": {
    "v": [
@@ -140,7 +140,7 @@
    "coding_rung": {
     "v": 0.75,
     "tag": "READ",
-    "src": "READ tps/candidate-score.json ladder (owner coding floor ladder 2026-10-27: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat): QFN (Qwen3.8 Flash-Next) rung"
+    "src": "READ the owner coding-floor ladder (2026-10-27, kept in our lab notes: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat): QFN (Qwen3.8 Flash-Next) rung"
    },
    "hidden_stream": {
     "v": 10240,
@@ -371,7 +371,7 @@
    "coding_rung": {
     "v": 0.5,
     "tag": "READ",
-    "src": "READ tps/candidate-score.json ladder (owner coding floor ladder 2026-10-27: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat): qwen27 (Qwen3.8-27B) rung"
+    "src": "READ the owner coding-floor ladder (2026-10-27, kept in our lab notes: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat): qwen27 (Qwen3.8-27B) rung"
    },
    "hidden_stream": {
     "v": 5120,
@@ -458,7 +458,7 @@
    "coding_rung": {
     "v": 0.0,
     "tag": "READ",
-    "src": "READ tps/candidate-score.json ladder (owner coding floor ladder 2026-10-27: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat): never_coding: 1.72 B active <= active_b_max 3.5 (any 3B-active model is never a coding seat)"
+    "src": "READ the owner coding-floor ladder (2026-10-27, kept in our lab notes: DS4.1 Flash ~ GLM-5.3-Flash > QFN (the coding floor) > qwen27 > any 3B-active model, never a coding seat): never_coding: 1.72 B active <= active_b_max 3.5 (any 3B-active model is never a coding seat)"
    },
    "hidden_stream": {
     "v": 2048,
@@ -2015,6 +2015,152 @@
      "opts_from": "r8-door32-b40-1111",
      "override": {},
      "src": "MEASURED lab notes (lane conv-door-live f3701cabc59, merged to homelab master a87b3f98738) b40 (the client door straight to :8089, same hour as the lane arms; evict_branch_useful = the frozen r8-door32-b40-1111 record)"
+    },
+    {
+     "B": 1,
+     "kind": "fnc_batch4",
+     "label": "fnc card-b1 B 1",
+     "set": "fnc_coder",
+     "measured": {
+      "useful_tps": 24.93,
+      "b_eff": 0.65,
+      "F_server": 8.18,
+      "turns_per_agent_min": 5.0,
+      "per_stream_decode_tps": 40.62,
+      "prefill_tps": 759.2,
+      "stall_pct": 0.6,
+      "prefill_busy_pct": 26.8,
+      "turn_counted_if": "ended_by_window_end"
+     },
+     "opts_from": "fnc-coder-card-b1-1111",
+     "override": {},
+     "calibrates": [
+      "batch_mode_step"
+     ],
+     "src": "MEASURED lab notes card-b1 card b (one XeStrata copy of the ISTA GSQ-RCO Coder IQ1_M a B70, agent-long-16 replay straight to the card, 600 s warm-up + 600 s window; the replay counts only turns that end inside the window); the batch-mode side of the batch_mode_step calibration pair"
+    },
+    {
+     "B": 1,
+     "kind": "fnc_nobatch",
+     "label": "fnc card-b1-nobatch B 1",
+     "set": "fnc_coder",
+     "measured": {
+      "useful_tps": 37.06,
+      "b_eff": 0.55,
+      "F_server": 9.36,
+      "turns_per_agent_min": 7.4,
+      "per_stream_decode_tps": 69.3,
+      "prefill_tps": 1140.5,
+      "stall_pct": 0.4,
+      "prefill_busy_pct": 30.4,
+      "turn_counted_if": "ended_by_window_end"
+     },
+     "opts_from": "fnc-coder-card-b1-nobatch-1111",
+     "override": {},
+     "calibrates": [
+      "batch_mode_step"
+     ],
+     "src": "MEASURED lab notes card-b1-nobatch card b (one XeStrata copy of the ISTA GSQ-RCO Coder IQ1_M a B70, agent-long-16 replay straight to the card, 600 s warm-up + 600 s window; the replay counts only turns that end inside the window); the single-session side of the batch_mode_step calibration pair"
+    },
+    {
+     "B": 4,
+     "kind": "fnc_batch4",
+     "label": "fnc card-b4 B 4",
+     "set": "fnc_coder",
+     "measured": {
+      "useful_tps": 32.72,
+      "b_eff": 3.47,
+      "F_server": 11.49,
+      "turns_per_agent_min": 1.5,
+      "per_stream_decode_tps": 10.66,
+      "prefill_tps": 1039.1,
+      "stall_pct": 26.0,
+      "prefill_busy_pct": 36.2,
+      "turn_counted_if": "ended_by_window_end"
+     },
+     "opts_from": "fnc-coder-card-b4-1111",
+     "override": {},
+     "src": "MEASURED lab notes card-b4 card b (one XeStrata copy of the ISTA GSQ-RCO Coder IQ1_M a B70, agent-long-16 replay straight to the card, 600 s warm-up + 600 s window; the replay counts only turns that end inside the window)"
+    },
+    {
+     "B": 1,
+     "kind": "fnc_batch4",
+     "label": "fnc both1 card a B 1",
+     "set": "fnc_coder",
+     "measured": {
+      "useful_tps": 25.52,
+      "b_eff": 0.6,
+      "F_server": 8.21,
+      "turns_per_agent_min": 5.5,
+      "per_stream_decode_tps": 42.99,
+      "prefill_tps": 785.3,
+      "stall_pct": 0.5,
+      "prefill_busy_pct": 26.7,
+      "turn_counted_if": "ended_by_window_end"
+     },
+     "opts_from": "fnc-coder-card-b1-1111",
+     "override": {},
+     "src": "MEASURED lab notes both1 card a (one XeStrata copy of the ISTA GSQ-RCO Coder IQ1_M a B70, agent-long-16 replay straight to the card, 600 s warm-up + 600 s window; the replay counts only turns that end inside the window); both cards served one agent each at once"
+    },
+    {
+     "B": 1,
+     "kind": "fnc_batch4",
+     "label": "fnc both1 card b B 1",
+     "set": "fnc_coder",
+     "measured": {
+      "useful_tps": 26.34,
+      "b_eff": 0.63,
+      "F_server": 7.96,
+      "turns_per_agent_min": 5.5,
+      "per_stream_decode_tps": 42.46,
+      "prefill_tps": 873.7,
+      "stall_pct": 0.0,
+      "prefill_busy_pct": 24.0,
+      "turn_counted_if": "ended_by_window_end"
+     },
+     "opts_from": "fnc-coder-card-b1-1111",
+     "override": {},
+     "src": "MEASURED lab notes both1 card b (one XeStrata copy of the ISTA GSQ-RCO Coder IQ1_M a B70, agent-long-16 replay straight to the card, 600 s warm-up + 600 s window; the replay counts only turns that end inside the window); both cards served one agent each at once"
+    },
+    {
+     "B": 4,
+     "kind": "fnc_batch4",
+     "label": "fnc both4 card a B 4",
+     "set": "fnc_coder",
+     "measured": {
+      "useful_tps": 30.47,
+      "b_eff": 3.19,
+      "F_server": 12.99,
+      "turns_per_agent_min": 1.35,
+      "per_stream_decode_tps": 10.76,
+      "prefill_tps": 1012.1,
+      "stall_pct": 30.2,
+      "prefill_busy_pct": 39.1,
+      "turn_counted_if": "ended_by_window_end"
+     },
+     "opts_from": "fnc-coder-card-b4-1111",
+     "override": {},
+     "src": "MEASURED lab notes both4 card a (one XeStrata copy of the ISTA GSQ-RCO Coder IQ1_M a B70, agent-long-16 replay straight to the card, 600 s warm-up + 600 s window; the replay counts only turns that end inside the window); both cards served four agents each at once"
+    },
+    {
+     "B": 4,
+     "kind": "fnc_batch4",
+     "label": "fnc both4 card b B 4",
+     "set": "fnc_coder",
+     "measured": {
+      "useful_tps": 30.6,
+      "b_eff": 3.34,
+      "F_server": 14.49,
+      "turns_per_agent_min": 1.625,
+      "per_stream_decode_tps": 10.27,
+      "prefill_tps": 1125.1,
+      "stall_pct": 32.2,
+      "prefill_busy_pct": 39.4,
+      "turn_counted_if": "ended_by_window_end"
+     },
+     "opts_from": "fnc-coder-card-b4-1111",
+     "override": {},
+     "src": "MEASURED lab notes both4 card b (one XeStrata copy of the ISTA GSQ-RCO Coder IQ1_M a B70, agent-long-16 replay straight to the card, 600 s warm-up + 600 s window; the replay counts only turns that end inside the window); both cards served four agents each at once"
     }
    ],
    "calibration": {
@@ -2029,6 +2175,12 @@
     "cause": "the replay counted turns that ended after the window closed: R8 answers Connection: close, so http.client drops the socket after getresponse(), Run.cut() cannot shut a running stream, the 5 s joins per thread let it finish, and report() counted any turn with an end and no error (TRACED, homelab conv-door-live f3701cabc59, agent-replay.py per_turn/report)",
     "guard": "agentPointRescore marks a point whose measured block lacks turn_counted_if: ended_by_window_end as UNVERIFIED-COUNT, and a lambda solved on such a point carries count UNVERIFIED-COUNT (report.js --cardcurve prints it)",
     "not_recounted": "b_eff, F_server, stall_pct and prefill_busy_pct come from server /metrics deltas and client stalls, not the turn count; the after-snapshot was read after the joins, so the no-door and r8-admission server deltas include up to the late turns' post-window work (INFERRED, not recounted)"
+   },
+   "fnc_coder": {
+    "about": "The FNC screen points (set fnc_coder): the ISTA GSQ-RCO Coder IQ1_M, one XeStrata copy a B70 on odie, scored against the screen's frozen prediction records (data/predictions-roofline-fnc-coder-*.json, transcribed unchanged). Each card's replay is its own point, so the both-card points read a card at a time (both1, both4: cards a and b). The decode curve's one-row point stands for the single-session decode (72.7 against 69.3 MEASURED without --batch), and the batch-mode step term (workload.engines.strata.batch_mode_step, MEASURED) is solved from ONE named pair: card-b1 against card-b1-nobatch (use 'calibrates batch_mode_step'); card-b4 and the both-card points are its hold-outs. The lambda arm (scaled) carries R8's step increment, solved on R8 no-door B 8, so every FNC point is a hold-out for lambda too.",
+    "excluded": {
+     "both1-nobatch": "INVALID for useful tok/s and turns: the replay client's network to odie degraded during the window (TTFT p50 6.1-6.3 s against 1.4 s on card-b1-nobatch, B_eff 0.27-0.31, 'server not responding' in the replay log); its server decode counters (70.6 and 67.7 tok/s a stream) are valid but are not an agent point"
+    }
    }
   }
  }
