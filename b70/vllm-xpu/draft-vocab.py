@@ -58,9 +58,11 @@ new = """    def compute_logits(
                 logger.info("draft vocab: %d of %d tokens from %s", len(ids), self.config.vocab_size, f)
         return self._draft_vocab
 """
-assert s.count(old) == 1, "compute_logits not found as expected"
+if not (s.count(old) == 1):
+    raise RuntimeError("compute_logits not found as expected")
 s = s.replace(old, new)
-assert s.count("\nfrom collections.abc import Iterable\n") == 1 and "\nlogger = init_logger(__name__)\n" in s
+if not (s.count("\nfrom collections.abc import Iterable\n") == 1 and "\nlogger = init_logger(__name__)\n" in s):
+    raise RuntimeError('patch source drift')
 s = s.replace("\nfrom collections.abc import Iterable\n", "\nimport os\nfrom collections.abc import Iterable\n", 1)
 open(p, "w").write(s)
 print("patched", p)

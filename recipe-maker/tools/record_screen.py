@@ -210,6 +210,18 @@ def validate(row):
 
 
 def write(rows, path, replace):
+    # Lock the stable directory inode, not the file replaced at commit. This
+    # serializes concurrent read/merge/write without leaving a stale sidecar.
+    import fcntl
+    directory = os.open(os.path.dirname(os.path.abspath(path)), os.O_RDONLY)
+    try:
+        fcntl.flock(directory, fcntl.LOCK_EX)
+        return _write_locked(rows, path, replace)
+    finally:
+        os.close(directory)
+
+
+def _write_locked(rows, path, replace):
     old = [json.loads(x) for x in read(path).splitlines() if x.strip()] if os.path.exists(path) else []
     ids = {r['id'] for r in rows}
     clash = sorted(ids & {r['id'] for r in old})

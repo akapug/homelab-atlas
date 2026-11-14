@@ -1294,6 +1294,7 @@
     checks.push(cpuReserveCheck(data, r));
     const qChk = checks.find(c => c.id === 'quality');
     checks.push(earfCheck(data, r, Object.assign({}, opts || {}, { qualityStatus: qChk && qChk.status })));
+    checks.push(...seatSafetyChecks(data, r, opts));
     const kvh = kvHostCheck(data, r);
     if (kvh) checks.push(kvh);
     const hp = hostPinnedCheck(data, r);
@@ -1339,31 +1340,35 @@
   }
   function earfOf(data, r, opts) {
     const m = (opts && opts.measured) || {}, C = (data && data.checks && data.checks.earf) || {};
-    const num = x => { const y = v(x); return typeof y === 'number' && Number.isFinite(y) ? y : null; };
+    const num = x => { const y = v(x); return typeof y === 'number' && Number.isFinite(y) && y >= 0 && y <= 1 ? y : null; };
     if (m.earf !== undefined && m.earf !== null && num(m.earf) !== null)
       return { earf: num(m.earf), src: (m.earf && m.earf.src) || m.earf_src || 'measured.earf' };
     if (r && r.earf !== undefined && r.earf !== null && num(r.earf) !== null)
       return { earf: num(r.earf), src: (r.earf && r.earf.src) || r.earf_src || 'recipe.earf' };
     const { key, types } = earfStoreTypes(r), entries = C.entries || {};
     const cands = [key].concat(types).filter(Boolean);
+    const hits = [], covered = new Set();
     for (const k of cands) {
       for (const ek of [r.model + '|' + r.engine + '|' + k, r.model + '|' + k, k]) {
-        if (entries[ek] !== undefined && num(entries[ek]) !== null)
-          return { earf: num(entries[ek]), src: (entries[ek] && entries[ek].src) || ('checks.earf.entries.' + ek) };
+        if (entries[ek] !== undefined && num(entries[ek]) !== null) {
+          covered.add(k);
+          hits.push({ earf: num(entries[ek]), src: (entries[ek] && entries[ek].src) || ('checks.earf.entries.' + ek) });
+        }
       }
     }
     const MB = (data && data.multibox) || {}, M = (MB.models || {})[r && r.model], stores = (M && M.stores) || {};
-    const hits = [];
     for (const k of cands) {
       const f = stores[k] && stores[k].fidelity && stores[k].fidelity.arg_values_earf;
-      if (f && num(f) !== null) hits.push({ earf: num(f), src: f.src || ('multibox.models.' + r.model + '.stores.' + k) });
+      if (f && num(f) !== null) { covered.add(k); hits.push({ earf: num(f), src: f.src || ('multibox.models.' + r.model + '.stores.' + k) }); }
     }
     const T = v((MB.settings || {}).replica_type_earf) || {}, tSrc = ((MB.settings || {}).replica_type_earf || {}).src || 'multibox.settings.replica_type_earf';
     for (const q of types) {
-      if (T[q] !== undefined && num(T[q]) !== null) hits.push({ earf: num(T[q]), src: tSrc + ' (' + q + ')' });
+      if (T[q] !== undefined && num(T[q]) !== null) { covered.add(q); hits.push({ earf: num(T[q]), src: tSrc + ' (' + q + ')' }); }
     }
     if (!hits.length) return { earf: null, src: null };
-    return hits.reduce((a, b) => (b.earf < a.earf ? b : a));
+    return Object.assign({}, hits.reduce((a, b) => (b.earf < a.earf ? b : a)), {
+      unmeasured: key && covered.has(key) ? [] : types.filter(q => !covered.has(q))
+    });
   }
   function isSub4BitQuant(data, model, q) {
     const t = data && data.types && data.types[q];
@@ -1374,12 +1379,45 @@
     const note = S[q] && S[q].fidelity && S[q].fidelity.note;
     return !!(note && /iq[123]|sub-4|not a clean 4-bit/i.test(note));
   }
+  function requiresEarf(r, opts) {
+    const role = (opts && opts.role) || (r && r.role) || ((((r || {}).conditions || {}).workload || {}).role);
+    return !!(opts && opts.requireEarf) || ['coding', 'agent', 'agentic', 'agentic-coding', 'tool-calling', 'tool-use'].includes(role);
+  }
+  // Deployment budgets are distinct from a backend's advertised context capacity.
+  function seatSafetyChecks(data, r, opts) {
+    const c = r.conditions || {}, w = c.workload || {}, sv = r.serving || {};
+    const out = [], model = (data.models || {})[r.model] || {};
+    const name = [r.model, model.name, model.short].join(' ');
+    const size = name.match(/(?:^|[^0-9])(\d+(?:\.\d+)?)\s*b/i);
+    const smallQwen = /qwen|q27/i.test(name) && ((size && +size[1] < 32) || /(?:^| )q27(?: |$)/i.test(name));
+    const xpu = /xpu|sycl|strata/.test(r.engine || '') || r.box === 'odie';
+    const depth = w.context_tokens ?? c.context_tokens ?? r.ctx ?? sv.max_context;
+    if (smallQwen && xpu && firstInt(depth) > 23000)
+      out.push({ id: 'context_recall', status: 'UNKNOWN', detail: 'Qwen <32B context exceeds the measured ~23k recall cliff (10/36 vs 9/9 at 2–12k). Context capacity does not establish coding recall.' });
+    const startup = w.startup_tokens ?? r.startup_tokens;
+    if (requiresEarf(r, opts) && smallQwen && startup !== undefined)
+      out.push({ id: 'startup_context', status: Number.isInteger(startup) && startup >= 0 && startup <= 8000 ? 'PASS' : 'FAIL', detail: 'Local <32B pre-Turn-1 budget <= 8000 tokens; declared ' + startup });
+    const agents = w.agents ?? w.concurrency ?? r.agents, slots = w.slots ?? sv.batch;
+    const admission = w.admission || r.admission;
+    if (agents !== undefined && slots !== undefined && agents > slots) {
+      const door = admission && admission.policy === 'door' && Number.isInteger(admission.conversations) && admission.conversations > 0 && admission.conversations <= slots;
+      out.push({ id: 'slot_admission', status: door ? 'PASS' : 'FAIL', detail: agents + ' agents / ' + slots + ' slots: require a conversation door capped at slots. R8 B=33 on 32 slots collapsed from 79.1 to 9.7 useful tok/s; an engine queue is not stable admission.' });
+    }
+    return out;
+  }
   function earfCheck(data, r, opts) {
     const C = (data && data.checks && data.checks.earf) || {}, label = C.label || 'behavioral tool-argument fidelity gate (EARf)';
     const barDefault = C.bar_earf !== undefined ? v(C.bar_earf) : 0.98;
     const role = (opts && opts.role) || (r && r.role) || (((r && r.conditions) || {}).workload || {}).role || 'coding';
     const codingRole = role !== 'non-coding' && role !== 'chat';
-    const minEarf = opts && opts.minEarf !== undefined ? opts.minEarf : r && r.min_earf !== undefined ? r.min_earf : (codingRole ? barDefault : null);
+    const requestedMin = opts && opts.minEarf !== undefined ? opts.minEarf : r && r.min_earf !== undefined ? r.min_earf : (codingRole ? barDefault : null);
+    const strict = requiresEarf(r, opts);
+    const minEarf = strict ? Math.max(0.98, typeof requestedMin === 'number' && Number.isFinite(requestedMin) ? requestedMin : 0.98) : requestedMin;
+    if (minEarf !== null && (typeof minEarf !== 'number' || !Number.isFinite(minEarf) || minEarf < 0 || minEarf > 1))
+      return { id: 'earf', label, status: 'FAIL', detail: 'invalid EARf floor', earf: null, min_earf: minEarf };
+    const supplied = [(opts || {}).measured || {}, r || {}].find(x => x.earf !== undefined && x.earf !== null);
+    if (supplied && (typeof v(supplied.earf) !== 'number' || !Number.isFinite(v(supplied.earf)) || v(supplied.earf) < 0 || v(supplied.earf) > 1))
+      return { id: 'earf', label, status: 'FAIL', detail: 'invalid measured EARf (expected finite [0, 1])', earf: null, min_earf: minEarf };
     const { key, types } = earfStoreTypes(r), allQ = [...new Set([key].concat(types).filter(Boolean))];
     const sub4 = allQ.filter(q => isSub4BitQuant(data, r && r.model, q));
     const found = earfOf(data, r, opts);
@@ -1387,9 +1425,13 @@
       return { id: 'earf', label, status: 'PASS', detail: 'EARf gate disabled for role ' + role, earf: found.earf, min_earf: null, sub4bit: sub4.length > 0 };
     if (found.earf !== null) {
       const ok = found.earf >= minEarf;
+      if (ok && strict && found.unmeasured && found.unmeasured.length)
+        return { id: 'earf', label, status: 'UNKNOWN', earf: null, min_earf: minEarf, detail: 'Mixed-layout EARf incomplete: unmeasured ' + found.unmeasured.join(', ') };
       return { id: 'earf', label, status: ok ? 'PASS' : 'FAIL', earf: found.earf, min_earf: minEarf, sub4bit: sub4.length > 0,
         detail: 'EARf ' + found.earf.toFixed(3) + (ok ? ' >= ' : ' < ') + minEarf.toFixed(2) + ' bar (' + found.src + ')' };
     }
+    if (strict)
+      return { id: 'earf', label, status: 'UNKNOWN', earf: null, min_earf: minEarf, detail: 'Measured EARf >= ' + minEarf.toFixed(2) + ' required for agentic tool-calling; KL and quant bit width do not establish argument fidelity' };
     if (sub4.length) {
       const nonSub4 = allQ.filter(q => sub4.indexOf(q) < 0 && data && data.types && data.types[q] && Number.isFinite(v(data.types[q].bpw)) && v(data.types[q].bpw) >= 4);
       const MB = (data && data.multibox && data.multibox.models) || {};
@@ -3721,7 +3763,18 @@
     }
     return fc < fd ? [c, fc] : [d, fd];
   }
+  const calibrationCache = new WeakMap();
   function calibrate(data) {
+    // A content key catches in-place knob/catalog edits; never cache merely by
+    // object identity. Return a fresh result because applyCal enriches it.
+    const key = JSON.stringify(['anchors', 'boxes', 'models', 'types', 'engines', 'assume', 'overrides', 'knobs', 'draft_twins'].map(k => data[k]));
+    const cached = calibrationCache.get(data);
+    if (cached && cached.key === key) return JSON.parse(cached.result);
+    const result = calibrateUncached(data);
+    calibrationCache.set(data, {key, result: JSON.stringify(result)});
+    return result;
+  }
+  function calibrateUncached(data) {
     const cal = { boxes: {}, types: {}, rows: [] };
     const anchors = data.anchors;
     Object.keys(data.boxes).forEach(bk => {
@@ -5366,29 +5419,54 @@
       uncalibrated: unc.map(t => t.box + ' ' + t.gpu + ': no ' + t.needs.join(', ') + ' (dense ' + t.kernels.dense + (t.kernels.moe ? '; MoE ' + t.kernels.moe : '') + ')') };
   }
   // ---------- solving the card-curve constants from their named calibration points, and the hold-out rescore ----------
-  // card_curves.anchors, in list order: each point marked use 'calibrates' names ONE constant; with every constant solved before
-  // it held, the constant is set so the anchor's predicted step equals its measured step (bisection: col, mmq, grp, overhead
-  // raise the step, a rate lowers it). A point whose step the model reaches with the constant at 0 leaves it 0 (AT_FLOOR: the
-  // class is read-bound there). Nothing else is fitted; every other point is scored, never absorbed
+  // Fit only points marked 'calibrates', jointly within physical bounds. Residuals
+  // and convergence are reported; holdouts remain independent of the fit.
   const CC_RANGE = { col: [0, 50], mmq: [0, 200], grp: [0, 200], rate: [5, 5000], overhead: [0, 20] };
   function cardCurveFit(data) {
     const CCs = (data.multibox || {}).card_curves, consts = {}, solved = [];
     if (!CCs) return { consts, solved };
+    const rows = [];
     for (const a of CCs.anchors || []) for (const p of a.points) {
       if (p.use !== 'calibrates') continue;
-      const plan = pipelinePlan(data, a.plan);
-      if (plan.status !== 'OK') { solved.push({ anchor: a.id, B: p.B, constant: p.constant, status: 'REFUSED', why: plan.why }); continue; }
-      const term = p.constant.split('.').pop(), [lo0, hi0] = CC_RANGE[/^overhead/.test(p.constant) ? 'overhead' : term], want = p.B / p.tps;
-      const at = x => { consts[p.constant] = x; return pipelineRoof(data, plan, p.B, { ctx: a.ctx_read, consts }).step_s; };
-      const down = term === 'rate', fLo = at(lo0), fHi = at(hi0);
-      let status = 'SOLVED', x;
-      if (down ? want >= fLo : want <= fLo) { x = lo0; status = down ? 'AT_FLOOR (the anchor is slower than the slowest rate searched)' : 'AT_FLOOR (the model reaches the measured step with the constant at 0)'; }
-      else if (down ? want <= fHi : want >= fHi) { x = hi0; status = 'AT_CEILING'; }
-      else { let lo = lo0, hi = hi0; for (let i = 0; i < 100; i++) { const mid = (lo + hi) / 2, f = at(mid); if ((f < want) !== down) lo = mid; else hi = mid; } x = (lo + hi) / 2; }
-      consts[p.constant] = x;
-      solved.push({ anchor: a.id, arm: a.arm, B: p.B, measured_tps: p.tps, constant: p.constant, value: x, status, unit: (CCs.units || {})[/^overhead/.test(p.constant) ? 'overhead' : term] || null });
+      const plan = pipelinePlan(data, a.plan), term = /^overhead/.test(p.constant) ? 'overhead' : String(p.constant).split('.').pop();
+      if (plan.status !== 'OK' || !CC_RANGE[term] || !Number.isFinite(p.tps) || !(p.tps > 0) || !Number.isInteger(p.B) || p.B <= 0) {
+        solved.push({ anchor: a.id, B: p.B, constant: p.constant, status: 'REFUSED', why: plan.why || 'invalid calibration point' }); continue;
+      }
+      rows.push({a, p, plan, term});
     }
-    return { consts, solved };
+    // Deterministic initialization, then joint bounded least squares on calibration
+    // points only. Each sweep revisits all constants; a clamped early anchor cannot
+    // silently decide all later constants by JSON list order. Holdouts never fit.
+    rows.sort((a, b) => a.p.constant.localeCompare(b.p.constant) || a.a.id.localeCompare(b.a.id) || a.p.B - b.p.B);
+    const params = [...new Set(rows.map(x => x.p.constant))];
+    const range = k => CC_RANGE[rows.find(x => x.p.constant === k).term];
+    params.forEach(k => { consts[k] = range(k)[0]; });
+    const loss = () => rows.reduce((sum, r) => {
+      const predicted = pipelineRoof(data, r.plan, r.p.B, {ctx: r.a.ctx_read, consts}).step_s;
+      return sum + (predicted > 0 && Number.isFinite(predicted) ? Math.log(predicted / (r.p.B / r.p.tps)) ** 2 : Infinity);
+    }, 0);
+    let previous = loss(), converged = false, sweeps = 0;
+    for (; sweeps < 20; sweeps++) {
+      for (const k of params) {
+        const [lo, hi] = range(k), old = consts[k];
+        const objective = x => { consts[k] = x; return loss(); };
+        const [x, err] = golden(objective, lo, hi, 36);
+        const options = [[x, err], [lo, objective(lo)], [hi, objective(hi)], [old, objective(old)]];
+        options.sort((a, b) => a[1] - b[1]);
+        consts[k] = options[0][0];
+      }
+      const current = loss();
+      if (Math.abs(previous - current) < 1e-12) { converged = true; break; }
+      previous = current;
+    }
+    for (const {a, p, plan, term} of rows) {
+      const x = consts[p.constant], [lo, hi] = range(p.constant);
+      const predicted = pipelineRoof(data, plan, p.B, {ctx: a.ctx_read, consts}).aggregate_tps;
+      solved.push({anchor: a.id, arm: a.arm, B: p.B, measured_tps: p.tps, constant: p.constant, value: x,
+        status: !Number.isFinite(predicted) ? 'REFUSED' : x === lo ? 'AT_FLOOR' : x === hi ? 'AT_CEILING' : converged ? 'SOLVED' : 'ITERATION_LIMIT',
+        residual: predicted / p.tps - 1, unit: (CCs.units || {})[term] || null});
+    }
+    return { consts, solved, converged, sweeps: sweeps + 1, loss: loss() };
   }
   // every anchor point predicted with the solved constants: err = predicted / measured - 1; use 'calibrates' rows reproduce their
   // point (residual ~0 by construction), 'holdout' rows are the test, 'line' rows check the B 1 line on a model it was fitted on.
@@ -6087,6 +6165,6 @@
     return { id: 'phase_bound', label: 'prefill and decode bounds per phase, binding term named (data.roofline)', status: st, detail: detail + exd + ud, bound: pb, explain: ex, batch_curve: nMax > 1 ? (unc ? 'UNCALIBRATED' : 'MEASURED') : null };
   }
 
-  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, batchModeStep, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkSame, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, earfOf, earfCheck, mbEarf, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
+  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, batchModeStep, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkSame, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, earfOf, earfCheck, requiresEarf, seatSafetyChecks, mbEarf, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

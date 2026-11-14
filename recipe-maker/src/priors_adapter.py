@@ -2,11 +2,13 @@
 # Reads only explicit schema entries (`kld_priors` keyed by `{family: {type: value_or_kld_dict}}`),
 # never guessing unknown schemas recursively or matching generic `'err'` keys.
 
+import math
+
 _KLD_KEYS = ('kld', 'mean_kld', 'kl', 'kl_div', 'kld_mean', 'kld_prior')
 
 
 def _num(x):
-    return isinstance(x, (int, float)) and not isinstance(x, bool)
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) and x >= 0
 
 
 def _norm(q):

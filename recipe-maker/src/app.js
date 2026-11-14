@@ -15,7 +15,7 @@
   };
   const gradeChip = (g, title) => `<span class="chip ev-${esc(g)}" title="${esc(title || '')}">${esc(g)}</span>`;
   const tagChip = (tag, src) => chip({ tag, src });
-  const load = (k, d) => { try { const x = localStorage.getItem(LS + k); return x === null ? d : JSON.parse(x); } catch (e) { return d; } };
+  const load = (k, d) => { try { const raw = localStorage.getItem(LS + k), x = raw === null ? d : JSON.parse(raw); return d !== null && (typeof x !== typeof d || (typeof d === 'object' && (!x || Array.isArray(x)))) ? d : x; } catch (e) { return d; } };
   const save = (k, x) => { try { localStorage.setItem(LS + k, JSON.stringify(x)); } catch (e) { /* private mode */ } };
 
   // ---------- state ----------
@@ -36,7 +36,7 @@
   const parseSel = c => {
     if (c === 'owner') return { kind: 'owner', mk: 'v41', eng: 'ik' };
     const m = /^([a-z0-9]+)-([a-z0-9]+)-(t20|t25|fast|pt([0-9.]+))$/.exec(c || '');
-    return m && data.models[m[1]] ? { mk: m[1], eng: m[2], kind: m[4] ? 'pt' : m[3], tokps: m[4] ? +m[4] : undefined } : null;
+    return m && data.models[m[1]] && data.engines[m[2]] && (!m[4] || (Number.isFinite(+m[4]) && +m[4] > 0)) ? { mk: m[1], eng: m[2], kind: m[4] ? 'pt' : m[3], tokps: m[4] ? +m[4] : undefined } : null;
   };
   const qs = new URLSearchParams(location.search);
   if (data.boxes[qs.get('box')]) st.box = qs.get('box');

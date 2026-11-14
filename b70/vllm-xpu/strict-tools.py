@@ -33,10 +33,12 @@ new = """    # strict-tools patch (homelab-atlas b70/vllm-xpu/strict-tools.py): 
             return None
         return _strict_tools_tag(model, tools, reasoning)
 """
-assert s.count(old) == 1, "the auto/strict check was not found as expected"
+if not (s.count(old) == 1):
+    raise RuntimeError("the auto/strict check was not found as expected")
 s = s.replace(old, new)
 head = "\nfrom collections.abc import Callable, Sequence\n"
-assert s.count(head) == 1
+if not (s.count(head) == 1):
+    raise RuntimeError('patch source drift')
 s = s.replace(head, "\nimport os\nfrom collections.abc import Callable, Sequence\n", 1)
 s += '''
 

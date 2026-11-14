@@ -6,6 +6,12 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+### Fixed
+- Recipe Maker: require measured EARf >= 0.98 for explicit coding/tool-use profiles, warn at the small-Qwen
+  XPU context cliff, and require a conversation door when agents exceed batch slots. Joint card-curve fitting,
+  calibration caching, finite priors, concurrent screen-ledger writes, browser-state validation and benchmark/patch
+  failure handling are covered in the [Wave 3 audit](recipe-maker/docs/wave3-audit.md). No measured headline changed.
+
 ### Added
 - `b70/llama.cpp-sycl-fa-sinks/`: two commits to llama.cpp's SYCL backend on master `a34de8618b25`, published as the
   branch `sycl-mkl-fa-sinks` of akapug/llama.cpp. A fix: the MKL flash-attention path read a mask broadcast over heads

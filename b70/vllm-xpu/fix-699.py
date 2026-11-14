@@ -24,7 +24,8 @@ for msg in ("sym_int4 linear execution is using the guarded ESIMD path.",
             scope="local",
         )
 '''
-    assert s.count(call) == 1, msg
+    if not (s.count(call) == 1):
+        raise RuntimeError(msg)
     # the call's own indentation stays in front of the comment, and the next line keeps its own
     s = s.replace(call, f"# issue 699: no logging inside the traced apply() path ({msg})\n")
 open(p, "w").write(s)

@@ -95,7 +95,7 @@
       base.basis = ec.detail + ' [overrides ' + base.basis + ']';
     } else if (ec.status === 'UNKNOWN') {
       base.warning = ec.detail;
-      if (opts && opts.requireEarf) {
+      if (FM.requiresEarf(run.recipe, opts)) {
         base.status = 'UNKNOWN';
         base.basis = ec.detail + ' [was ' + base.basis + ']';
       } else if (base.status !== 'PASS') {
@@ -117,6 +117,8 @@
       if (out[k] && out[k].measured >= meas) return;
       const q = runQuality(data, run, runs, qOpts);
       if (q.status !== 'PASS') { why.push({ run: run.id, why: 'quality ' + q.status + ' (' + q.basis + ')' }); return; }
+      const unsafe = FM.seatSafetyChecks(data, r, opts).filter(c => c.status === 'FAIL' || (FM.requiresEarf(r, opts) && c.status === 'UNKNOWN'));
+      if (unsafe.length) { why.push({ run: run.id, why: unsafe.map(c => c.detail).join('; ') }); return; }
       const p = FM.predictRecipe(data, r);
       if (p.status !== 'PREDICTED' || !(p.decode_tps > 0)) { why.push({ run: run.id, why: p.status !== 'PREDICTED' ? 'UNMODELLED: ' + p.why : 'draft speed UNMODELLED: ' + p.draft_why }); return; }
       out[k] = { run, recipe: r, phase: ph, measured: meas, quality: q, pred: p };
