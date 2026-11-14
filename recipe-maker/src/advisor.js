@@ -44,15 +44,42 @@
     const g = m.kl_gate || {}, x = String(m.kl_verdict || g.verdict || '');
     return x ? { status: x.startsWith('PASS') ? 'PASS' : x.startsWith('FAIL') ? 'FAIL' : 'UNKNOWN', kl: m.kl !== undefined ? m.kl : g.kl_mean, top1: m.top1 !== undefined ? m.top1 : g.top1 } : null;
   }
+  function buildKlIndex(runs) {
+    const byKey = new Map(), keys = new WeakMap();
+    for (const x of (runs || [])) {
+      if (!x || typeof x !== 'object') continue;
+      const g = ownGate(x.measured || {});
+      if (!g) continue;
+      let k = keys.get(x);
+      if (k === undefined) { k = klEquivKey(x); keys.set(x, k); }
+      let list = byKey.get(k);
+      if (!list) { list = []; byKey.set(k, list); }
+      list.push({ run: x, gate: g });
+    }
+    for (const list of byKey.values()) {
+      if (list.length > 1) list.sort((a, b) => String(b.run.when).localeCompare(String(a.run.when)));
+    }
+    return { byKey, keys };
+  }
   function runQuality(data, run, runs, opts) {
     const own = ownGate(run.measured || {});
     let base;
     if (own) base = Object.assign({ basis: "this run's KL / top-1 gate (" + run.id + ')' }, own);
     else {
-      const key = klEquivKey(run);
-      const same = (runs || []).filter(x => x.id !== run.id && ownGate(x.measured || {}) && klEquivKey(x) === key)
-        .sort((a, b) => String(b.when).localeCompare(String(a.when)))[0];
-      if (same) base = Object.assign({ basis: 'KL / top-1 gate of the same store and build (' + same.id + ')' }, ownGate(same.measured));
+      const idx = opts && opts._klIndex;
+      let same = null, sameGate = null;
+      if (idx) {
+        let key = idx.keys.get(run);
+        if (key === undefined) { key = klEquivKey(run); idx.keys.set(run, key); }
+        const hit = (idx.byKey.get(key) || []).find(e => e.run.id !== run.id);
+        if (hit) { same = hit.run; sameGate = hit.gate; }
+      } else {
+        const key = klEquivKey(run);
+        same = (runs || []).filter(x => x.id !== run.id && ownGate(x.measured || {}) && klEquivKey(x) === key)
+          .sort((a, b) => String(b.when).localeCompare(String(a.when)))[0] || null;
+        if (same) sameGate = ownGate(same.measured);
+      }
+      if (same) base = Object.assign({ basis: 'KL / top-1 gate of the same store and build (' + same.id + ')' }, sameGate);
       else {
         const c = FM.checkRecipe(data, run.recipe, null, Object.assign({ predict: false, measured: run.measured }, opts || {})).checks.find(x => x.id === 'quality');
         base = { status: c ? c.status : 'UNKNOWN', kl: null, top1: null, basis: 'planner quality check: ' + (c ? c.detail : 'none') };
@@ -80,6 +107,7 @@
   // per box and model: the fastest measured run that went fine and carries no confounded caveat, is predicted by the planner and passes quality
   function bestPassing(data, runs, opts) {
     const skip = new Set(data.upgrade.settings.exclude_tags), out = {}, why = [];
+    const qOpts = Object.assign({}, opts || {}, { _klIndex: (opts && opts._klIndex) || buildKlIndex(runs) });
     runs.forEach(run => {
       const r = run.recipe || {};
       if (r.kind === 'dllm' || (run.tags || []).some(t => skip.has(t)) || ACC.wentBad(run).length || require('./ledger.js').caveated(run).length) return;
@@ -87,7 +115,7 @@
       if (!(meas > 0)) return;
       const k = run.box + '|' + run.model;
       if (out[k] && out[k].measured >= meas) return;
-      const q = runQuality(data, run, runs, opts);
+      const q = runQuality(data, run, runs, qOpts);
       if (q.status !== 'PASS') { why.push({ run: run.id, why: 'quality ' + q.status + ' (' + q.basis + ')' }); return; }
       const p = FM.predictRecipe(data, r);
       if (p.status !== 'PREDICTED' || !(p.decode_tps > 0)) { why.push({ run: run.id, why: p.status !== 'PREDICTED' ? 'UNMODELLED: ' + p.why : 'draft speed UNMODELLED: ' + p.draft_why }); return; }
@@ -208,9 +236,9 @@
       usd_per_tok_s: price && Math.max.apply(null, d) > 0 ? [price[0] / Math.max.apply(null, d), Math.min.apply(null, d) > 0 ? price[1] / Math.min.apply(null, d) : null] : null,
       bracket: br ? br.src : null, caveat: part.caveat || null };
   }
-  function upgradeAdvice(data, runs) {
+  function upgradeAdvice(data, runs, bp) {
     const U = data.upgrade, S = U.settings, min = S.suggest_min_gain, P = S.probe_scale;
-    const B = bestPassing(data, runs), boxes = {};
+    const B = bp || bestPassing(data, runs), boxes = {};
     Object.keys(data.boxes).forEach(bk => boxes[bk] = { box: bk, models: [], suggestions: [], unpriced: [] });
     B.best.forEach(b => {
       const r = b.recipe, one = l => {
@@ -234,11 +262,12 @@
     const all = [].concat.apply([], Object.values(boxes).map(x => x.suggestions));
     return { settings: S, built: data.meta.built, boxes, suggestions: all, skipped: B.skipped };
   }
-  function trimProposals(data, runs) {
-    return bestPassing(data, runs).best.map(b => proposeTrim(data, b)).filter(x => x.status !== 'none');
+  function trimProposals(data, runs, bp) {
+    return (bp || bestPassing(data, runs)).best.map(b => proposeTrim(data, b)).filter(x => x.status !== 'none');
   }
   function all(data, runs) {
-    return { layer_maps: mapSummary(data), trim: trimProposals(data, runs), upgrades: upgradeAdvice(data, runs) };
+    const bp = bestPassing(data, runs);
+    return { layer_maps: mapSummary(data), trim: trimProposals(data, runs, bp), upgrades: upgradeAdvice(data, runs, bp) };
   }
 
   const api = { ledger, klEquivKey, runQuality, bestPassing, mapSummary, recipeEff, keepBands, proposeTrim, probe, partEffect, upgradeAdvice, trimProposals, all, LANES };

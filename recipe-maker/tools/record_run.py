@@ -233,7 +233,7 @@ def parse_kit(text, src):
         r = re.match(r'^== (\S+) rc=(-?\d+) (\d\d:\d\d:\d\dZ)', ln)
         if r:
             js = [json.loads(x) for x in pre if x.startswith('{')]
-            js = [j for j in js if j.get('arm') == r.group(1)] or js[-1:]
+            js = [j for j in js if j.get('arm') == r.group(1)]
             prev_end = arms[-1]['end'] if arms and arms[-1]['kit'] is kit else kit['start']
             kit['clock'] = max(kit['clock'], _ts(kit['clock'], r.group(3)))
             cur = {'kit': kit, 'arm': r.group(1), 'rc': int(r.group(2)), 'end': kit['clock'],

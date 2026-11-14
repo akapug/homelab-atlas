@@ -21,6 +21,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -215,9 +216,19 @@ def write(rows, path, replace):
     if clash and not replace:
         raise SystemExit('already in %s: %s (--replace to rewrite them)' % (path, ', '.join(clash)))
     keep = [r for r in old if r['id'] not in ids]
-    with open(path, 'w') as f:
-        for r in keep + rows:
-            f.write(json.dumps(r, sort_keys=True) + '\n')
+    d = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(prefix='.tmp-screen-', dir=d)
+    try:
+        with os.fdopen(fd, 'w') as f:
+            for r in keep + rows:
+                f.write(json.dumps(r, sort_keys=True) + '\n')
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
     return len(keep), len(rows)
 
 
