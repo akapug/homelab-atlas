@@ -2,6 +2,8 @@
 // Units: bytes, seconds internally; GiB / ms / tok/s at the edges.
 (function (root) {
   'use strict';
+  const PHYSICS = typeof module !== 'undefined' && module.exports ? require('./physics_roofline.js') : root.PhysicsRoofline;
+  const physicsRoofline = input => PHYSICS.physicsRoofline(input);
   const GiB = 1073741824;
   const v = x => (x !== null && typeof x === 'object' && 'v' in x) ? x.v : x;
 
@@ -57,7 +59,10 @@
       m._heat[name] = out;
       return out;
     }
-    layers = spec.layers;
+    // Missing traces carry no invented expert IDs. Uniform is a labelled planning
+    // prior only; physicsRoofline refuses residency claims without telemetry.
+    if (!spec.layers && spec.trace_provenance === 'measured') throw new Error('measured heat is missing its counts');
+    layers = spec.layers || Array.from({length:m.L}, () => Array(m.E).fill(1));
     const out = new Float64Array(m.L * m.E);
     const eps = v(m.heat.floor) || 0; // pseudo-count so never-seen experts are not exactly free
     for (let l = 0; l < m.L; l++) {
@@ -68,6 +73,22 @@
     }
     m._heat[name] = out;
     return out;
+  }
+
+  // Measured counts only, without the legacy heat floor/pseudocount. No ordering
+  // is inferred from marginals, and a prefill map remains identified as that map.
+  function physicsTrace(data, mk, name) {
+    const m = data.models[mk], spec = m && m.heat && m.heat.sets[name];
+    if (!spec || spec.status !== 'measured' || spec.trace_provenance !== 'measured' || !spec.map || !spec.layers)
+      return {status:'unmeasured', trace_provenance:'unmeasured'};
+    const probabilities = spec.layers.map(row => {
+      const total = row.reduce((a, b) => a + b, 0);
+      return row.map(n => total > 0 ? n * m.k / total : NaN);
+    });
+    if (probabilities.some(row => row.some(p => !Number.isFinite(p) || p < 0 || p > 1)))
+      return {status:'unmeasured', trace_provenance:'unmeasured', why:'capture cannot establish per-token inclusion probabilities'};
+    return {status:'measured', trace_provenance:'measured', source:spec.map,
+      activation_probabilities:probabilities};
   }
 
   // ---------- types ----------
@@ -5130,6 +5151,18 @@
   // state grow with B and ctx. capacity: the streams whose KV + state fit the VRAM left beside the resident weights; past it the
   // overflow is read over the link every step (offload / eviction starts)
   function decodeRoof(data, q) {
+    if (q.physicsRoofline) {
+      const p = physicsRoofline(Object.assign({}, q.physicsRoofline, {batch:q.batch || 1}));
+      if (p.aggregate_tps === null) return {status:'UNMODELLED', why:p.why || p.status, physicsRoofline:p};
+      return {status:'OK', phase:'decode', batch:q.batch || 1, step_s:p.step_s,
+        tps_total:p.aggregate_tps, tps_per_stream:p.per_stream_tps, draft_mult:1,
+        physicsRoofline:p, trace_provenance:p.trace_provenance,
+        binding:{term:p.binding, resource:p.binding}, capacity_streams:q.physicsRoofline.capacity_streams ?? null,
+        compute_s:p.terms.compute, bandwidth_s:Math.max(p.terms.vram_bw,p.terms.pcie_transfer,p.terms.host_mem_bw),
+        terms:Object.entries(p.terms).map(([id,s]) => ({id,resource:id,s,share:s/p.step_s})),
+        shapes:[], unmodelled:['independent-token bound; ordered router/draft acceptance unmeasured'],
+        distinct_experts_per_layer:p.unique_experts, weight_bytes_per_step:null, kv_state_bytes_per_step:null};
+    }
     const I = rlInputs(data, q);
     if (I.why) return { status: 'UNMODELLED', why: I.why };
     if (I.pl.name !== 'gpu') return decodeRoofCpu(data, q, I);
@@ -5226,7 +5259,7 @@
     const o = opts || {}, Bs = o.batches || [1, 2, 4, 8, 16, 32, 64, 128];
     const W = data.workload, prof = W && W.profiles[v(W.settings.default_profile)];
     const F = o.fresh !== undefined ? o.fresh : prof ? v(prof.fresh_per_output) : null;
-    const df = decodeFit(data, q.engine), pf = rlEta(data, q.engine);
+    const df = q.physicsRoofline ? {status:'BOUND'} : decodeFit(data, q.engine), pf = rlEta(data, q.engine);
     const pq = Object.assign({}, q, o.prefill_query || {}, { tokens: (o.prefill_query || {}).tokens || q.read_tokens || 2048 });
     const pre = prefillRoof(data, pq, rlEtaFor(data, pq));
     const P = pre.status === 'OK' ? pre.tps : null;
@@ -5750,28 +5783,30 @@
     if (!TM.models[model]) return un('model ' + model + ' has no turn_model.models row');
     // opts.rates { prefill_tps, decode_curve, capacity_streams } (a multi-box plan, pipelineLandscape): the rates come from the
     // caller, not from a one-box roofline query
-    const R = o.rates || null, Bs = o.batches || [1, 2, 4, 8, 16, 32, 64, 128];
+    const R = q.physicsRoofline ? null : o.rates || null, Bs = o.batches || [1, 2, 4, 8, 16, 32, 64, 128];
     const L = R ? { prefill_tps: v(R.prefill_tps), rows: Bs.map(B => ({ B, status: 'OK', useful_tps: null, per_stream_tps: null })) } : batchLandscape(data, q, Object.assign({}, o, { batches: Bs }));
     if (!L.prefill_tps) return un('no prefill rate: ' + (L.prefill_why || 'unmodelled'));
     if (R) o = Object.assign({}, o, { decode_curve: R.decode_curve });
-    const df = R ? { status: 'NONE' } : decodeFit(data, q.engine), eta = df.status === 'FIT' ? df.eta : 1;
+    const df = R || q.physicsRoofline ? { status: 'NONE' } : decodeFit(data, q.engine), eta = df.status === 'FIT' ? df.eta : 1;
     // opts.decode_curve {v: [[n, aggregate tok/s], ...], tag, src}: a measured synthetic decode curve of the served build replaces the
     // roofline decode (log-log between neighbouring points, held flat past the last): the roofline's one decode eta is fitted at B 1
-    const curve = o.decode_curve ? v(o.decode_curve).slice().sort((a, b) => a[0] - b[0]) : null;
+    const curve = !q.physicsRoofline && o.decode_curve ? v(o.decode_curve).slice().sort((a, b) => a[0] - b[0]) : null;
     const curveAt = n => { const c = curve, i = c.findIndex(p => p[0] >= n); if (i === 0) return c[0][1] * n / c[0][0]; if (i < 0) return c[c.length - 1][1];
       const [a, b] = [c[i - 1], c[i]]; return Math.exp(Math.log(a[1]) + (Math.log(b[1]) - Math.log(a[1])) * (Math.log(n) - Math.log(a[0])) / (Math.log(b[0]) - Math.log(a[0]))); };
     // opts.decode_step_increment {v: lambda, tag, src}: the batched part of the curve's step scaled, the one-row step kept: a step of
     // n rows = s1 + lambda x (n / curve(n) - s1), s1 = 1 / curve(1) (the served build's per-row cost against the curve's build,
     // whose one-agent decode matched the served one: 68.8 vs 70.6 MEASURED). Solved from a named calibration point
     // (agentPointRescore), never from the point it is scored on
-    const lam = o.decode_step_increment ? v(o.decode_step_increment) : 1;
+    if (o.decode_step_increment && !o.frozen_calibration_replay && !q.physicsRoofline)
+      return un('post-hoc step scaling is historical only; supply physicsRoofline operands');
+    const lam = o.frozen_calibration_replay && o.decode_step_increment ? v(o.decode_step_increment) : 1;
     const inc = agg => n => { if (lam === 1 || n <= 1) return agg(n); const s1 = 1 / agg(1); return n / (s1 + lam * (n / agg(n) - s1)); };
     const curveAgg = inc(curveAt);
     const decRaw = n => { if (R) { const agg = curveAgg(n); return { per: agg / n, agg, fits: !v(R.capacity_streams) || n <= v(R.capacity_streams) }; } const d = decodeRoof(data, Object.assign({}, q, { batch: n })); if (d.status !== 'OK') return null; const step = d.step_s / eta, fits = d.capacity_streams === null || n <= d.capacity_streams;
       if (curve) { const agg = curveAgg(n); return { per: agg / n, agg, fits }; } return { per: d.draft_mult / step, agg: n * d.draft_mult / step, fits }; };
     // the serving mode's step term (batchModeStep): served in a batch mode, every forward step pays the mode's fixed extra
     // (m - 1) x the one-row step, so a lone stream steps m times slower and a step of n rows takes n / agg(n) + (m - 1) / agg(1)
-    const BM = batchModeStep(data, q, o), bmx = BM.applied ? v(BM.term) : 1;
+    const BM = q.physicsRoofline ? {applied:false, reason:"sync overhead is an explicit physical operand"} : batchModeStep(data, q, o), bmx = BM.applied ? v(BM.term) : 1;
     const decAt = n => { const d = decRaw(n); if (!d || bmx === 1) return d; const d1 = decRaw(1); if (!d1) return null; const agg = n / (n / d.agg + (bmx - 1) / d1.agg); return { per: agg / n, agg, fits: d.fits }; };
     const one = decAt(1);
     if (!one) return un('no decode bound at B 1');
@@ -5809,7 +5844,7 @@
         engine: sim.engine || null };
     });
     const ok = rows.filter(r => r.status === 'OK'), best = ok.slice().sort((a, b) => b.useful_tps - a.useful_tps)[0] || null;
-    return { status: 'OK', query: q, trace, server, model, decode_basis: (curve ? 'curve: ' + o.decode_curve.src : 'roofline decode at the fitted decode eta') + (o.decode_step_increment ? '; batched step increment x ' + lam.toFixed(3) + ' (' + o.decode_step_increment.src + ')' : '') + (BM.applied ? '; ' + BM.mode + ' mode step x ' + bmx.toFixed(3) + ' (' + BM.term.src + ')' : ''), batch_mode: BM, prefill_tps: L.prefill_tps, decode_eta: df.status === 'FIT' ? df.eta : null, slots: o.slots || null, cache_conversations: o.cache_conversations || null,
+    return { status: 'OK', query: q, trace, server, model, decode_basis: (q.physicsRoofline ? 'physical resource bound, independent router marginals' : curve ? 'curve: ' + o.decode_curve.src : 'roofline decode at the fitted decode eta') + (!q.physicsRoofline && o.decode_step_increment ? '; batched step increment x ' + lam.toFixed(3) + ' (' + o.decode_step_increment.src + ')' : '') + (BM.applied ? '; ' + BM.mode + ' mode step x ' + bmx.toFixed(3) + ' (' + BM.term.src + ')' : ''), batch_mode: BM, prefill_tps: L.prefill_tps, decode_eta: df.status === 'FIT' ? df.eta : null, slots: o.slots || null, cache_conversations: o.cache_conversations || null,
       mean_prompt_depth: depth, one_agent_reread: r1 ? r1.row : null, stall, admission: adm, read_batch_max: readMax, shared_prefix: sharedP, slot_groups: o.slot_groups || null, best: best ? { B: best.B, useful_tps: best.useful_tps, b_eff: best.b_eff } : null, rows };
   }
   // the R8 agent points (card_curves.agent_points) rescored with today's served-engine sim and the frozen records' own inputs
@@ -5826,7 +5861,7 @@
     const run = (x, ov) => {
       const rec = P.find(r => r.id === x.opts_from);
       if (!rec) return { L: { why: 'no prediction record ' + x.opts_from }, r: null };
-      const L = agentLandscape(data, rec.query, Object.assign({}, rec.agents, x.override || {}, ov || {}, { batches: [x.B] }));
+      const L = agentLandscape(data, rec.query, Object.assign({}, rec.agents, x.override || {}, ov || {}, { batches: [x.B], frozen_calibration_replay: true }));
       return { L, r: L.status === 'OK' ? L.rows[0] : null };
     };
     // the step-increment arm: one factor on the batched part of the frozen curve's step (decode_step_increment), solved (bisection)
@@ -6146,6 +6181,11 @@
     // where the GEMMs run (recipe roofline_placement, a name in data.roofline.settings.placements; none = the GPU placement), the
     // threads (the CPU core share) and the expert quants (the engine's cpu path). The recipe's own placement is the planner's
     // per-card expert placement (data.placements shape: gpu_layers, cards), never read here
+    if (r.physicsRoofline) {
+      q.physicsRoofline = Object.assign({}, r.physicsRoofline);
+      if (!q.physicsRoofline.router_trace && r.physicsRoofline.heat_set)
+        q.physicsRoofline.router_trace = physicsTrace(data, r.model, r.physicsRoofline.heat_set);
+    }
     if (r.roofline_placement !== undefined && r.roofline_placement !== null) q.placement = String(r.roofline_placement);
     if (Number(r.threads) > 0) q.threads = Number(r.threads);
     if (r.store && Array.isArray(r.store.types) && r.store.types.length) q.expert_quant = r.store.types.slice();
@@ -6169,7 +6209,7 @@
     // the guard: a recipe for many agents whose box / model / engine has no measured batch curve prints UNCALIBRATED and makes no
     // claim past one stream (the B 1 bounds still stand). A sweep (agents: [1, 4, 8]) asks for its largest count
     const nMax = Array.isArray(wl.agents) ? Math.max(1, ...wl.agents.map(Number).filter(Number.isFinite)) : nAg;
-    const unc = nMax > 1 && !batchCurveOf(data, q);
+    const unc = nMax > 1 && !q.physicsRoofline && !batchCurveOf(data, q);
     const ex = !unc && pb.prefill.bound.status === 'OK' && pb.decode.b1.status === 'OK' ? rooflineExplain(data, q, { agents: nAg }) : null;
     const p = pb.prefill.bound, d = pb.decode.b1;
     const st = p.status === 'OK' && d.status === 'OK' ? 'PASS' : 'FAIL';
@@ -6183,9 +6223,9 @@
     const exd = ex && ex.status === 'OK' ? '; explain (' + ex.agents + ' agent(s), the mix binds ' + ex.mix_binds + '): prefill ' + ex.prefill.binding + ' then ' + ex.prefill.next + ', decode ' + ex.decode.binding + ' then ' + ex.decode.next +
       (ex.relief ? '; ' + (ex.relief.relieves_binding ? 'relieve ' + ex.target + ' with ' : 'nothing in the search relieves ' + ex.target + '; best other gain: ') + ex.relief.change + ' (' + (ex.relief.gain >= 0 ? '+' : '') + (100 * ex.relief.gain).toFixed(1) + ' % predicted' + (ex.relief.needs_code ? ', NEEDS CODE: ' + ex.relief.needs_code : '') + ')' : '; no rearrangement in the search gains') : '';
     const ud = unc ? '; UNCALIBRATED at ' + nMax + ' agents: no measured batch curve for ' + r.box + ' ' + r.model + ' ' + r.engine + ' (data.curves), so no phase_bound claim at B > 1' : '';
-    return { id: 'phase_bound', label: 'prefill and decode bounds per phase, binding term named (data.roofline)', status: st, detail: detail + exd + ud, bound: pb, explain: ex, batch_curve: nMax > 1 ? (unc ? 'UNCALIBRATED' : 'MEASURED') : null };
+    return { id: 'phase_bound', label: 'prefill and decode bounds per phase, binding term named (data.roofline)', status: st, detail: detail + exd + ud, bound: pb, explain: ex, batch_curve: q.physicsRoofline ? 'PHYSICAL_BOUND_INFERRED' : nMax > 1 ? (unc ? 'UNCALIBRATED' : 'MEASURED') : null };
   }
 
-  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, batchModeStep, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkSame, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, earfOf, earfCheck, requiresEarf, seatSafetyChecks, mbEarf, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
+  const api = { physicsRoofline, physicsTrace, rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, batchModeStep, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkSame, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, earfOf, earfCheck, requiresEarf, seatSafetyChecks, mbEarf, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

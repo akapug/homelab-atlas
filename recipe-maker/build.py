@@ -2483,6 +2483,19 @@ upgrade = json.load(open(os.path.join(HERE, 'data', 'upgrades.json')))
 _lo = os.path.join(HERE, 'runs', 'left_out.json')
 left_out = json.load(open(_lo)) if os.path.exists(_lo) else {}
 
+# Count identity comes only from a captured map. Missing captures are explicit;
+# the old solver can use a uniform prior but cannot export it as telemetry.
+for model in models.values():
+    for heat in (model.get('heat') or {}).get('sets', {}).values():
+        if heat.get('sum'):
+            continue
+        measured = bool(heat.get('map')) and heat.get('tag') == M
+        heat['trace_provenance'] = 'measured' if measured else 'unmeasured'
+        heat['status'] = 'measured' if measured else 'unmeasured'
+        if heat.get('layers') is None:
+            heat.update(label='Routing unmeasured (uniform planning prior)',
+                        src='UNKNOWN: no measured per-layer expert activations', tag='UNKNOWN')
+
 data = {
     'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py', 'home': PUBLIC_HOME,
              'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}, 'left_out': left_out},
@@ -2576,7 +2589,7 @@ data['upgrade']['advice'] = _po.get('upgrades') or {'status': _po['status'], 'wh
 
 # Identity of the effective built bytes, not just a git tip (optional live inputs may refresh snapshots).
 # Only these exact self/clock/filesystem metadata paths are nonsemantic. Every prediction operand is hashed.
-CALIBRATION_EVALUATORS = ('build.py', 'report.js', 'src/model.js', 'src/accuracy.js', 'src/advisor.js', 'src/ledger.js',
+CALIBRATION_EVALUATORS = ('build.py', 'report.js', 'src/model.js', 'src/physics_roofline.js', 'src/heat_shape.py', 'src/accuracy.js', 'src/advisor.js', 'src/ledger.js',
                           'src/runs_tables.py', 'src/ledger.py', 'tools/heatmap.py', 'tools/record_run.py')
 
 
@@ -2594,7 +2607,7 @@ data['meta']['calibration'] = calibration_identity(data, _po.get('calibration_sp
 json.dump(data, open(os.path.join(HERE, 'data.json'), 'w'), separators=(',', ':'))
 PAGE_DIR = os.path.join(HERE, 'page')   # the page's data scripts (generated, never in git); index.html loads them
 PAGE_FILE_LIMIT = 1 << 20                # no page file is larger: a part over it is a build error, so split it further
-PAGE_CODE = ('src/model.js', 'src/app.js')
+PAGE_CODE = ('src/physics_roofline.js', 'src/model.js', 'src/app.js')
 
 
 def page_assignment_parts(name, target, value):

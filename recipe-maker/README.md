@@ -262,6 +262,52 @@ capture one for your model with `tools/heat-capture/` and convert it with `tools
 | `tests/` | `python3 build.py` first (several tests read the `data.json` it writes), then `python3 -m unittest discover -s tests`, `node tests/test_accuracy.js`, `node tests/test_advisor.js`, `node tests/test_decode_fit.js`, `node tests/test_batch.js`, `node tests/test_window.js`, `node tests/test_curve.js`, `node tests/test_workload.js`, `node tests/test_roofline.js` and `node tests/test_kv_host.js`; `node tests/test_screen.js` needs the private quality-round ledger and is not in the public copy |
 | `docs/how-it-works.md` | the reference: evidence tags, the gate's checks, recipe fields, the models behind each number, honest limits |
 
+## Physical batch and residency bounds
+
+`src/physics_roofline.js` exports `physicsRoofline`, `expectedUnion`, `hotBank`,
+`residency`, and `beladyLookahead`. The same bound is available as
+`FitModel.physicsRoofline(inputs)` and as `decodeRoof(data, {physicsRoofline: inputs,
+batch: B})`. Inputs use bytes, seconds and FLOPs, with explicit VRAM/PCIe/host
+bandwidths, compute rate, expert size, dense/KV bytes and synchronization time.
+The overlapped resource floor is `max(VRAM, PCIe, host memory, compute) + sync`.
+Independent per-token expert union is the sum of `1 - (1 - p_e)^B` over experts.
+Each resource time divided by B is nonincreasing under these assumptions, so
+aggregate throughput cannot fall before an explicit capacity limit. A missing
+required bandwidth is an error, never an infinite-speed resource.
+
+`router_trace` requires `status: "measured"`, `trace_provenance: "measured"`, a
+`source` and per-layer `activation_probabilities` (each p is the probability of
+that expert being selected, so a layer sums to its top-k). `hot_experts` lists
+resident IDs per layer; alternatively `hot_expert_capacity` selects each layer's
+hottest measured marginals. Without telemetry the bound reports unmeasured, or
+accepts an explicitly hypothetical `uniform_scenario` with layers, experts,
+top_k and resident_experts. A hypothetical speed does not make residency measured.
+
+A 16-token `lookahead_window_tokens` estimates how much `pcie_prefetch_latency_s`
+can overlap available step time. It never eliminates sustained PCIe bandwidth.
+Actual finite-horizon Belady cache replay additionally requires ordered
+`expert_tokens[token][layer]` ID lists; frequencies alone cannot predict future
+order. The replay reports inferred hits and uses LRU for equally distant uses.
+It does not assert that a speculative draft predicts those experts correctly.
+
+Missing router captures now have null layers and explicit unmeasured provenance.
+The legacy layout solver can use a uniform planning prior, never invented LCG
+expert identities. Historical calibrated replay remains scoped to its recorded
+operands; `decode_step_increment` is refused in new agent predictions unless
+physical inputs are supplied. The former post-hoc secant remains accessible only
+inside explicitly marked frozen calibration replay. New physical code and heat
+producers participate in `meta.calibration.evaluator_sha256` and page packaging.
+
+`python3 ../tools/check_atlas.py --provenance` checks active qualified/verified
+records in the atlas and recipe files. Missing weight SHA-256 or full Git OID
+produces `UNKNOWN` / `unpinned_provenance` and exit 3, without rewriting historical
+measurement status. Patch and empirical receipt hashes are optional slots, but
+must be immutable values when supplied. Existing measurement rows have null pins;
+no hardware qualification was inferred from documentation or mutable paths.
+
+Local tests: `node tests/test_physics_roofline.js` and
+`python3 -m unittest discover -s ../tests -p 'test_provenance_pins.py'`.
+
 ---
 
 -- Claude Opus 5.5 and GPT-6.1 Sol (Codex), working in [fleet](https://github.com/akapug/fleet) for [@akapug](https://github.com/akapug)

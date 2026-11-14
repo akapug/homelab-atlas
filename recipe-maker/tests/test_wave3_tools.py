@@ -10,13 +10,9 @@ from heat_shape import synth_heat
 from priors_adapter import _num
 
 class Wave3Tools(unittest.TestCase):
-    def test_heat_is_normalized_deterministic_and_explicitly_scale_invariant(self):
-        x = synth_heat(3, 128)
-        self.assertEqual(x, synth_heat(3, 128, .01))
-        self.assertNotEqual(x[0], x[1])
-        for row in x:
-            self.assertAlmostEqual(sum(row), 1e6, delta=.1)
-            self.assertTrue(all(math.isfinite(n) and n >= 0 for n in row))
+    def test_missing_heat_never_fabricates_expert_ids(self):
+        self.assertIsNone(synth_heat(3, 128))
+        self.assertIsNone(synth_heat(3, 128, .01, seed=29))
 
     def test_heat_invalid_inputs(self):
         for args in [(0, 128), (3, 0), (True, 5), (1, 2, 0), (1, 2, float('nan')), (1, 2, 2)]:

@@ -7,6 +7,7 @@ day). Results that change a headline number say so.
 ## [Unreleased]
 
 ### Fixed
+- Add an independent physical batch/residency bound, remove generated router identities, and refuse unpinned qualified serving provenance. Historical calibration replay remains explicitly scoped.
 - Recipe Maker: prefer executed authoring outcomes and model-relative EARf margins, retain UNKNOWN seats,
   scope recall warnings to measured model budgets, and require a conversation door when agents exceed batch slots.
   These are seat checks: a run that declares no coding/agent role keeps its KL verdict. Joint card-curve fitting,
