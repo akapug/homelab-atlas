@@ -12,23 +12,73 @@
   function ledger(file) {
     return require('./ledger.js').rows(file);
   }
-  // the KL / top-1 gate a run stands on (as the box map reads it): its own measured gate, else the newest gate measured on the
-  // same store (model, engine and recipe.store equal), else today's planner quality check on its recipe
+  // the KL / top-1 + EARf gate a run stands on: its own measured gate, else the newest gate measured on an arithmetically
+  // equivalent run (same model, engine, store, commit/build/package, patches, trim, -rtr, KV type and quant/attention mode),
+  // else today's planner quality check on its recipe, gated by behavioral tool-argument fidelity (EARf >= 0.98 by default).
+  function canon(x) {
+    if (x === undefined) return null;
+    if (x === null || typeof x !== 'object') return x;
+    if (Array.isArray(x)) return x.map(canon);
+    const out = {};
+    Object.keys(x).sort().forEach(k => { if (x[k] !== undefined) out[k] = canon(x[k]); });
+    return out;
+  }
+  function klEquivKey(run) {
+    const r = (run && run.recipe) || {}, c = r.conditions || {}, m = (run && run.measured) || {}, sv = r.serving || {}, lv = c.levers || {};
+    return JSON.stringify(canon({
+      model: (run && run.model) || r.model || null,
+      engine: (run && run.engine) || r.engine || null,
+      store: r.store || null,
+      commit: (run && (run.commit || run.engine_commit)) || r.commit || r.engine_commit || c.commit || c.engine_commit || null,
+      build: (run && run.build) || r.engine_build || r.engine_pkg || c.package || m.build || null,
+      patches: (run && run.patches) || r.patches || c.patches || null,
+      trim: Array.isArray(r.trim) && r.trim.length ? r.trim : [],
+      rtr: !!r.rtr,
+      kv_type: r.kv_type || sv.kv || c.kv_type || c.kv || null,
+      quant_mode: r.quant || r.quant_mode || c.quant_mode || null,
+      attn_mode: r.attn_mode || c.attn_mode || null,
+      expert_chunking: r.expert_chunking || lv.expert_chunking || null,
+    }));
+  }
   function ownGate(m) {
     const g = m.kl_gate || {}, x = String(m.kl_verdict || g.verdict || '');
     return x ? { status: x.startsWith('PASS') ? 'PASS' : x.startsWith('FAIL') ? 'FAIL' : 'UNKNOWN', kl: m.kl !== undefined ? m.kl : g.kl_mean, top1: m.top1 !== undefined ? m.top1 : g.top1 } : null;
   }
-  function runQuality(data, run, runs) {
+  function runQuality(data, run, runs, opts) {
     const own = ownGate(run.measured || {});
-    if (own) return Object.assign({ basis: "this run's KL / top-1 gate (" + run.id + ')' }, own);
-    const same = runs.filter(x => x.id !== run.id && x.model === run.model && x.engine === run.engine && ownGate(x.measured || {}) &&
-      JSON.stringify((x.recipe || {}).store) === JSON.stringify((run.recipe || {}).store)).sort((a, b) => String(b.when).localeCompare(String(a.when)))[0];
-    if (same) return Object.assign({ basis: 'KL / top-1 gate of the same store (' + same.id + ')' }, ownGate(same.measured));
-    const c = FM.checkRecipe(data, run.recipe, null, { predict: false }).checks.find(x => x.id === 'quality');
-    return { status: c ? c.status : 'UNKNOWN', kl: null, top1: null, basis: 'planner quality check: ' + (c ? c.detail : 'none') };
+    let base;
+    if (own) base = Object.assign({ basis: "this run's KL / top-1 gate (" + run.id + ')' }, own);
+    else {
+      const key = klEquivKey(run);
+      const same = (runs || []).filter(x => x.id !== run.id && ownGate(x.measured || {}) && klEquivKey(x) === key)
+        .sort((a, b) => String(b.when).localeCompare(String(a.when)))[0];
+      if (same) base = Object.assign({ basis: 'KL / top-1 gate of the same store and build (' + same.id + ')' }, ownGate(same.measured));
+      else {
+        const c = FM.checkRecipe(data, run.recipe, null, Object.assign({ predict: false, measured: run.measured }, opts || {})).checks.find(x => x.id === 'quality');
+        base = { status: c ? c.status : 'UNKNOWN', kl: null, top1: null, basis: 'planner quality check: ' + (c ? c.detail : 'none') };
+      }
+    }
+    const ec = FM.earfCheck(data, Object.assign({ model: run.model, engine: run.engine }, run.recipe || {}), Object.assign({ measured: run.measured, qualityStatus: base.status }, opts || {}));
+    base.earf = ec.earf;
+    base.min_earf = ec.min_earf;
+    base.earf_status = ec.status;
+    if (ec.warning) base.warning = ec.warning;
+    if (ec.status === 'FAIL') {
+      base.status = 'FAIL';
+      base.basis = ec.detail + ' [overrides ' + base.basis + ']';
+    } else if (ec.status === 'UNKNOWN') {
+      base.warning = ec.detail;
+      if (opts && opts.requireEarf) {
+        base.status = 'UNKNOWN';
+        base.basis = ec.detail + ' [was ' + base.basis + ']';
+      } else if (base.status !== 'PASS') {
+        base.basis += '; ' + ec.detail;
+      }
+    }
+    return base;
   }
   // per box and model: the fastest measured run that went fine and carries no confounded caveat, is predicted by the planner and passes quality
-  function bestPassing(data, runs) {
+  function bestPassing(data, runs, opts) {
     const skip = new Set(data.upgrade.settings.exclude_tags), out = {}, why = [];
     runs.forEach(run => {
       const r = run.recipe || {};
@@ -37,7 +87,7 @@
       if (!(meas > 0)) return;
       const k = run.box + '|' + run.model;
       if (out[k] && out[k].measured >= meas) return;
-      const q = runQuality(data, run, runs);
+      const q = runQuality(data, run, runs, opts);
       if (q.status !== 'PASS') { why.push({ run: run.id, why: 'quality ' + q.status + ' (' + q.basis + ')' }); return; }
       const p = FM.predictRecipe(data, r);
       if (p.status !== 'PREDICTED' || !(p.decode_tps > 0)) { why.push({ run: run.id, why: p.status !== 'PREDICTED' ? 'UNMODELLED: ' + p.why : 'draft speed UNMODELLED: ' + p.draft_why }); return; }
@@ -101,11 +151,14 @@
     const p = FM.predictRecipe(data, rec), t = FM.trimKl(data, mk, keep, miss), q = FM.mapQuality(data, mk, eff, t.kl);
     // scale from the measured run's own prediction: a base run that already trims must not count its trim twice
     const own = r.trim && r.trim.length ? FM.predictRecipe(data, r) : base;
-    const ck = FM.checkRecipe(data, rec, null, { predict: false }).checks.find(c => c.id === 'quality');
+    const checks = FM.checkRecipe(data, rec, null, { predict: false }).checks;
+    const ck = checks.find(c => c.id === 'quality'), ec = checks.find(c => c.id === 'earf');
+    if (ec && ec.status === 'FAIL') return Object.assign(head, { status: 'none', why: ec.detail });
     return Object.assign(head, { status: 'proposed', engine_support: ts, trim: bands, recipe: rec, budget, margin: mg,
       predicted: { label: 'PREDICTED (layer map; trim KL from CLAIMED + INFERRED map values)', decode_planner_before: base.decode_tps, decode_planner: p.decode_tps,
         decode_scaled: best.measured * p.decode_tps / own.decode_tps, gain: p.decode_tps / base.decode_tps - 1, kl: q.kl, top1: q.top1, trim_kl: t.kl, reads_dropped: p.trim.reads_dropped },
-      quality_check: ck && { status: ck.status, detail: ck.detail } });
+      quality_check: ck && { status: ck.status, detail: ck.detail },
+      earf_check: ec && { status: ec.status, detail: ec.detail, earf: ec.earf, min_earf: ec.min_earf } });
   }
 
   // ---------- upgrade advisor ----------
@@ -188,7 +241,7 @@
     return { layer_maps: mapSummary(data), trim: trimProposals(data, runs), upgrades: upgradeAdvice(data, runs) };
   }
 
-  const api = { ledger, runQuality, bestPassing, mapSummary, recipeEff, keepBands, proposeTrim, probe, partEffect, upgradeAdvice, trimProposals, all, LANES };
+  const api = { ledger, klEquivKey, runQuality, bestPassing, mapSummary, recipeEff, keepBands, proposeTrim, probe, partEffect, upgradeAdvice, trimProposals, all, LANES };
   module.exports = api;
   if (require.main === module) {
     const ROOT = path.join(__dirname, '..');
