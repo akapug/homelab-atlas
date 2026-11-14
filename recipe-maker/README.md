@@ -269,6 +269,8 @@ capture one for your model with `tools/heat-capture/` and convert it with `tools
 `FitModel.physicsRoofline(inputs)` and as `decodeRoof(data, {physicsRoofline: inputs,
 batch: B})`. Inputs use bytes, seconds and FLOPs, with explicit VRAM/PCIe/host
 bandwidths, compute rate, expert size, dense/KV bytes and synchronization time.
+KV is bytes read per stream per step: `kv_bytes_per_token` (per context token)
+times a required `context_tokens`, or `kv_read_bytes_per_stream` directly.
 The overlapped resource floor is `max(VRAM, PCIe, host memory, compute) + sync`.
 Independent per-token expert union is the sum of `1 - (1 - p_e)^B` over experts.
 Each resource time divided by B is nonincreasing under these assumptions, so
@@ -284,10 +286,14 @@ accepts an explicitly hypothetical `uniform_scenario` with layers, experts,
 top_k and resident_experts. A hypothetical speed does not make residency measured.
 
 A 16-token `lookahead_window_tokens` estimates how much `pcie_prefetch_latency_s`
-can overlap available step time. It never eliminates sustained PCIe bandwidth.
+can overlap available step time: a fetch issued W steps ahead overlaps W whole
+steps, so a stalled step is `(floor + latency) / (1 + W)` and never below the
+floor; `step_s` never falls as per-step work grows. No cold bytes means no
+latency. It never eliminates sustained PCIe bandwidth.
 Actual finite-horizon Belady cache replay additionally requires ordered
 `expert_tokens[token][layer]` ID lists; frequencies alone cannot predict future
-order. The replay reports inferred hits and uses LRU for equally distant uses.
+order. The replay reports inferred hits and uses LRU for equally distant uses;
+one token's picks at a layer are co-resident and never evict each other.
 It does not assert that a speculative draft predicts those experts correctly.
 
 Missing router captures now have null layers and explicit unmeasured provenance.

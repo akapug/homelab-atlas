@@ -63,6 +63,9 @@
       const cache = new Set(initial[l] || []);
       if (cache.size > n || [...cache].some(e => !Number.isInteger(e) || e < 0 || e >= ps.length)) throw new RangeError('initial bank');
       tokens.forEach((token, t) => {
+        // One token's picks at a layer execute in the same step, so they are
+        // co-resident: an expert this token still needs is never the victim.
+        const now = new Set(token[l]);
         for (const e of token[l]) {
           accesses++;
           if (cache.has(e)) { hits++; cache.delete(e); cache.add(e); continue; }
@@ -70,12 +73,15 @@
           if (cache.size === n) {
             let victim, farthest = -1;
             for (const resident of cache) {
+              if (now.has(resident)) continue;
               let next = Infinity;
               for (let future = t + 1; future < Math.min(tokens.length, t + 1 + window); future++) {
                 if (tokens[future][l].includes(resident)) { next = future - t; break; }
               }
               if (next > farthest) { victim = resident; farthest = next; }
             }
+            // Bank smaller than this token's picks: streamed, not admitted.
+            if (victim === undefined) continue;
             cache.delete(victim);
           }
           cache.add(e);
@@ -110,10 +116,17 @@
     const n = key => positive(input[key] ?? 0, key, true);
     const time = (amount, rate, name) => amount === 0 ? 0 : amount / positive(rate, name);
     const misses = cold * bytes;
+    // KV read per stream per step, in bytes. kv_bytes_per_token is bytes per
+    // *context* token, so it needs the attended depth; without one the product
+    // B * kv_bytes_per_token would be bytes of a single cached token, not a read.
+    const kvPerToken = n('kv_bytes_per_token');
+    if (input.kv_read_bytes_per_stream !== undefined && kvPerToken) throw new TypeError('kv_read_bytes_per_stream excludes kv_bytes_per_token');
+    if (kvPerToken && input.context_tokens === undefined) throw new TypeError('kv_bytes_per_token needs context_tokens');
+    const kvStream = input.kv_read_bytes_per_stream !== undefined ? n('kv_read_bytes_per_stream') : kvPerToken * n('context_tokens');
     // Both resident and uploaded weights are read by the GPU; uploaded bytes
     // also consume VRAM write bandwidth on their DMA path.
     const terms = {
-      vram_bw: time(n('dense_bytes') + unique * bytes + misses + B * n('kv_bytes_per_token'), input.vram_bytes_per_s, 'vram_bytes_per_s'),
+      vram_bw: time(n('dense_bytes') + unique * bytes + misses + B * kvStream, input.vram_bytes_per_s, 'vram_bytes_per_s'),
       pcie_transfer: time(misses, input.pcie_bytes_per_s, 'pcie_bytes_per_s'),
       host_mem_bw: time(misses, input.host_bytes_per_s, 'host_bytes_per_s'),
       compute: time(B * n('flops_per_token'), input.flops_per_s, 'flops_per_s'),
@@ -122,9 +135,13 @@
     // W steps of overlap can hide latency, never the sustained transfer bandwidth.
     // This is an optimistic speculative-prefetch bound, not Belady cache hits:
     // frequencies alone cannot establish future order or draft acceptance.
-    const latency = n('pcie_prefetch_latency_s');
-    const hidden = latency ? Math.min(1, W * floor / latency) : 0;
-    const step = floor + latency * (1 - hidden);
+    // A fetch issued W steps ahead overlaps W whole steps, stalls included, so
+    // the stalled step solves step = floor + latency - W * step. (Overlapping
+    // only W * floor made step_s fall as the per-step work grew.) No cold
+    // bytes means no fetch and no latency.
+    const latency = misses > 0 ? n('pcie_prefetch_latency_s') : (n('pcie_prefetch_latency_s'), 0);
+    const step = Math.max(floor, (floor + latency) / (1 + W));
+    const hidden = latency && W ? Math.min(1, Math.max(0, 1 - (step - floor) / latency)) : 0;
     const cap = input.capacity_streams;
     if (cap !== undefined) positive(cap, 'capacity_streams', true);
     if (cap !== undefined && B > cap) return {...base, status: 'capacity_exceeded', capacity_streams: cap};

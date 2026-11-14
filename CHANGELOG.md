@@ -8,6 +8,10 @@ day). Results that change a headline number say so.
 
 ### Fixed
 - Add an independent physical batch/residency bound, remove generated router identities, and refuse unpinned qualified serving provenance. Historical calibration replay remains explicitly scoped.
+- Physical bound: prefetch overlap is self-consistent (`step_s` no longer falls as per-step work grows; no cold bytes,
+  no latency), KV reads need an attended depth (`context_tokens` or `kv_read_bytes_per_stream`), and the Belady replay
+  keeps one token's picks co-resident. `check_atlas.py --provenance` also refuses duplicate JSON keys, placeholder or
+  repeated digests and case/whitespace variants of a qualifying status, and validates pins supplied in recipe files.
 - Recipe Maker: prefer executed authoring outcomes and model-relative EARf margins, retain UNKNOWN seats,
   scope recall warnings to measured model budgets, and require a conversation door when agents exceed batch slots.
   These are seat checks: a run that declares no coding/agent role keeps its KL verdict. Joint card-curve fitting,

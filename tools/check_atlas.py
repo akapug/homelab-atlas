@@ -58,8 +58,29 @@ PIN_RE = re.compile(r'[0-9a-fA-F]{64}')
 OID_RE = re.compile(r'(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})')
 
 
+QUALIFYING = ('qualified', 'verified')
+
+
 def pinned(value, pattern=PIN_RE):
-    return isinstance(value, str) and bool(pattern.fullmatch(value)) and set(value) != {'0'}
+    # One repeated digit (all zeros, all f) is a placeholder, not a digest.
+    return isinstance(value, str) and bool(pattern.fullmatch(value)) and len(set(value.lower())) > 1
+
+
+def load_json(path):
+    """A duplicated key lets one reader see "measured" and another "qualified"; refuse the file."""
+    def pairs(items):
+        keys = [k for k, _ in items]
+        repeated = sorted({k for k in keys if keys.count(k) > 1})
+        if repeated:
+            raise ValueError('duplicate JSON key(s): ' + ', '.join(repeated))
+        return dict(items)
+    with open(path) as source:
+        return json.load(source, object_pairs_hook=pairs)
+
+
+def qualifying(seat):
+    status = seat.get('status')
+    return isinstance(status, str) and status.strip().lower() in QUALIFYING
 
 
 def seats(document, path='$'):
@@ -87,12 +108,16 @@ def pin_errors(pins, required=False):
     receipt = pins.get('outcome_probe_receipt')
     if receipt is not None and not (pinned(receipt) or isinstance(receipt, dict) and pinned(receipt.get('sha256'))):
         errors.append('outcome_probe_receipt must pin a receipt sha256')
+    # Each pin names a different object; one digest pasted into two slots pins neither.
+    held = [(k, pins[k].lower()) for k in ('weights_sha256', 'engine_commit', 'patch_sha256') if isinstance(pins.get(k), str)]
+    for i, (a, x) in enumerate(held):
+        errors.extend(a + ' repeats ' + b for b, y in held[i + 1:] if x == y)
     return errors
 
 
-def validate_schema(document):
+def validate_schema(document, schema=True):
     errors = []
-    if document.get('schema') != 'homelab-atlas/1':
+    if schema and document.get('schema') != 'homelab-atlas/1':
         errors.append('unsupported atlas schema')
     for path, seat in seats(document):
         if 'provenance_pins' in seat:
@@ -104,19 +129,23 @@ def validate_schema(document):
 def provenance_checks(document):
     """Read-only admission projection: never rewrite historical measurement status."""
     for path, seat in seats(document):
-        if seat.get('status') not in ('qualified', 'verified') or seat.get('active') is False:
+        # Only the literal false retires a seat; "active": 0 / null / "no" stay under the gate.
+        if not qualifying(seat) or seat.get('active') is False:
             continue
         errors = pin_errors(seat.get('provenance_pins'), required=True)
         yield dict(path=path, claimed_status=seat['status'],
-                   admission_status='unpinned_provenance' if errors else seat['status'],
+                   admission_status='unpinned_provenance' if errors else seat['status'].strip().lower(),
                    status='UNKNOWN' if errors else 'PASS', reasons=errors)
 
 
 def main():
     misses = []
     unknown = []
-    with open(os.path.join(ROOT, 'atlas.json')) as source:
-        atlas = json.load(source)
+    try:
+        atlas = load_json(os.path.join(ROOT, 'atlas.json'))
+    except ValueError as error:
+        print('atlas.json: ' + str(error))
+        return 1
     misses.extend(validate_schema(atlas))
     if '--provenance' in sys.argv:
         documents = [('atlas.json', atlas)]
@@ -124,8 +153,15 @@ def main():
         if os.path.isdir(recipes):
             for name in sorted(os.listdir(recipes)):
                 if name.endswith('.json'):
-                    with open(os.path.join(recipes, name)) as source:
-                        documents.append(('recipe-maker/recipes/' + name, json.load(source)))
+                    relative = 'recipe-maker/recipes/' + name
+                    try:
+                        recipe = load_json(os.path.join(recipes, name))
+                    except ValueError as error:
+                        misses.append(relative + ': ' + str(error))
+                        continue
+                    # A supplied pin is malformed in a recipe exactly as it is in the atlas.
+                    misses.extend(relative + ' ' + e for e in validate_schema(recipe, schema=False))
+                    documents.append((relative, recipe))
         for source, document in documents:
             for result in provenance_checks(document):
                 result['source'] = source
