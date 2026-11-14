@@ -255,7 +255,7 @@
     const U = data.upgrade, S = U.settings, min = S.suggest_min_gain, P = S.probe_scale;
     const B = bp || bestPassing(data, runs), boxes = {};
     Object.keys(data.boxes).forEach(bk => boxes[bk] = { box: bk, models: [], suggestions: [], unpriced: [] });
-    B.best.forEach(b => {
+    B.best.filter(b => b.quality.status === 'PASS').forEach(b => {
       const r = b.recipe, one = l => {
         const x = probe(data, r, b.pred, l, P), p = x && FM.predictRecipe(data, x);
         return p && p.status === 'PREDICTED' ? { lane: l, gain: p.decode_tps / b.pred.decode_tps - 1 } : null;

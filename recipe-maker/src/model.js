@@ -1387,14 +1387,18 @@
     const out = [], model = (data.models || {})[r.model] || {};
     const name = [r.model, model.name, model.short].join(' ');
     const depth = w.context_tokens ?? c.context_tokens ?? r.ctx ?? sv.max_context;
-    const q27 = /(?:^|[^a-z0-9])qwen3\.8-27b(?:[^0-9]|$)/i.test(name);
-    const budget = r.measured_recall_budget_tokens ?? model.measured_recall_budget_tokens ?? (q27 ? 12288 : null);
-    if (depth !== undefined) {
-      const tokens = firstInt(depth), known = Number.isInteger(budget) && budget > 0;
-      const degraded = known && (q27 ? tokens > 23000 : tokens > budget);
-      out.push({ id: 'context_recall', status: known && tokens <= budget ? 'PASS' : 'UNKNOWN',
-        severity: degraded ? 'degraded' : known && tokens > budget ? 'warn' : null,
-        detail: !known ? 'No per-model depth-recall probe; context capacity does not establish recall.' :
+    // The only depth-recall probe we hold is on the int4 file of Qwen3.8-27B; another quant of it, or a declared budget, is its own case.
+    const declared = r.measured_recall_budget_tokens ?? model.measured_recall_budget_tokens ?? null;
+    const q27 = declared === null && /(?:^|[^a-z0-9])qwen3\.8-27b(?![0-9]).*int4/i.test(name);
+    const budget = q27 ? 12288 : declared;
+    // Judged for an agent seat, or wherever a recall budget is known; a plain decode run with no budget gets no row.
+    if (depth !== undefined && depth !== null && (budget !== null || requiresEarf(r, opts))) {
+      const tokens = firstInt(depth), known = Number.isInteger(budget) && budget > 0 && Number.isFinite(tokens);
+      const over = known && tokens > budget, degraded = over && (!q27 || tokens > 23000);
+      out.push({ id: 'context_recall', status: known && !over ? 'PASS' : 'UNKNOWN',
+        severity: degraded ? 'degraded' : over ? 'warn' : null,
+        detail: !Number.isFinite(tokens) ? 'Declared context ' + JSON.stringify(depth) + ' is not a token count; recall not judged.' :
+          !known ? 'No per-model depth-recall probe; context capacity does not establish recall.' :
           q27 ? 'Qwen3.8-27B int4: 9/9 at <=12k, 3/9 at ~23k; 12–23k unmeasured. Warn above 12288, degraded above 23000 tokens.' :
           'Explicit measured recall budget ' + budget + ' tokens; declared context ' + tokens });
     }
@@ -1402,9 +1406,11 @@
     if (startup !== undefined && startupLimit !== undefined)
       out.push({ id: 'startup_context', status: Number.isInteger(startup) && startup >= 0 && startup <= startupLimit ? 'PASS' : 'FAIL',
         detail: 'Configured startup budget ' + startupLimit + ' tokens; declared ' + startup });
-    const agents = w.agents ?? w.concurrency ?? r.agents, slots = w.slots ?? sv.batch;
+    // a workload may sweep agent counts ([1, 4, 8]) and tag its figures ({v, tag, src}): judge the largest count
+    const count = x => Array.isArray(x) ? Math.max(...x.map(v).filter(Number.isFinite)) : v(x);
+    const agents = count(w.agents ?? w.concurrency ?? r.agents), slots = count(w.slots ?? sv.batch);
     const admission = w.admission || r.admission;
-    if (agents !== undefined && slots !== undefined && agents > slots) {
+    if (Number.isFinite(agents) && Number.isFinite(slots) && agents > slots) {
       const door = admission && admission.policy === 'door' && Number.isInteger(admission.conversations) && admission.conversations > 0 && admission.conversations <= slots;
       out.push({ id: 'slot_admission', status: door ? 'PASS' : 'FAIL', detail: agents + ' agents / ' + slots + ' slots: require a conversation door capped at slots. R8 B=33 on 32 slots collapsed from 79.1 to 9.7 useful tok/s; an engine queue is not stable admission.' });
     }
@@ -1445,6 +1451,11 @@
     if (floor !== undefined && !valid(floor)) return result('FAIL', 'Invalid model perturbation floor');
     const min = floor === undefined ? null : floor - .015;
     const found = earfOf(data, r, opts);
+    // Admission is a property of an agent seat. A run that declares no coding/agent role and brings no behavioural
+    // evidence of its own (a decode benchmark, a hardware probe) is not a seat: it is not judged here, and its KL gate stands.
+    if (!requiresEarf(r, opts) && !supplied)
+      return result('PASS', 'Not an agent seat (no coding/agent role declared): behavioural admission not required',
+        { earf: found.earf, min_earf: min, admission_basis: 'not_required', required: false });
     if (found.earf === null || (found.unmeasured && found.unmeasured.length))
       return result('UNKNOWN', 'EARf unmeasured' + (sub4bit ? ' on sub-4-bit quant' : '') +
         (found.unmeasured?.length ? ': incomplete mixed layout (' + found.unmeasured.join(', ') + ')' : '') + '; outcome probe needed', { min_earf: min });
@@ -1496,7 +1507,7 @@
     else if (r.ctx !== undefined && firstInt(r.ctx) !== s.max_context) bad.push('serving.max_context ' + s.max_context + ' != ctx ' + r.ctx);
     ['max_context', 'batch', 'batch_groups', 'slot_context', 'big_slots', 'kv_resident', 'mtp_window'].concat(['max_t', 'cpu_pool_max_rows'].filter(k => k in D)).forEach(k => { if (!Number.isInteger(out[k]) || out[k] < 0) bad.push('serving.' + k + ' ' + JSON.stringify(out[k]) + ' is not a whole number >= 0'); });
     if (out.batch_mtp === null) out.batch_mtp = !!r.draft;
-    Object.keys(s).filter(k => !(k in D) && ['kv_host_reserve_gib', 'mem_available_gib', 'mem_available_src', 'host_reserve_gib', 'host_experts_gib'].indexOf(k) < 0).forEach(k => bad.push('serving.' + k + ' is not a serving field (' + Object.keys(D).join(', ') + ')'));
+    Object.keys(s).filter(k => !(k in D) && ['kv_host_reserve_gib', 'mem_available_gib', 'mem_available_src', 'host_reserve_gib', 'host_experts_gib', 'max_startup_tokens'].indexOf(k) < 0).forEach(k => bad.push('serving.' + k + ' is not a serving field (' + Object.keys(D).join(', ') + ')'));
     return { s: out, S, bad };
   }
   // KV streaming pins a host copy of each session's whole KV capacity (XeStrata --kv-resident), never reclaimed. Sessions: the

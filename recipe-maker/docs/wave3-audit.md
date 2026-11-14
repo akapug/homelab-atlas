@@ -26,6 +26,19 @@ UNKNOWN unless they declare `measured_recall_budget_tokens`; there is no generic
 Startup ceilings must be explicitly configured as `serving.max_startup_tokens`. An agent count exceeding
 `serving.batch` still requires a conversation door capped at the available slots.
 
+Pass-3 correction (deputy review, same day): admission and the recall row are **seat** checks. Wave 3.5 had
+dropped the role gate, so every ledger run with no EARf (all decode benchmarks) read quality UNKNOWN, the
+upgrade advisor could suggest no part, and each recipe gained an UNKNOWN `context_recall` row that
+`--check --strict` held. Now a recipe with no coding/agent role (`role`, `conditions.workload.role`, or the
+caller's `role`) and no behavioural evidence of its own returns `admission_basis: "not_required"` and keeps
+its KL verdict; evidence it does carry (a recipe/run `earf`, a battery) is still judged. `context_recall` is
+emitted for a seat or wherever a budget is known. The 12288/23000 budget applies to the **int4** file only
+(another quant of the 27B is UNKNOWN), a declared `measured_recall_budget_tokens` replaces it, and a context
+that is not a token count is UNKNOWN (it used to coerce to 0 and PASS). `slot_admission` reads agent sweeps
+(`[1, 4, 8]`) and tagged counts at their largest value (they used to compare as NaN and skip the check).
+`serving.max_startup_tokens` is accepted as a serving field (it failed the inputs check it was documented
+for). `build.py`'s `checks.earf` rule no longer states the 0.98 bar.
+
 ## Finding dispositions
 
 | Finding | Disposition |
@@ -55,7 +68,8 @@ Startup ceilings must be explicitly configured as `serving.max_startup_tokens`. 
 
 ## Verification and limits
 
-Wave 3.5: source inspection and syntax checks only; regression assertions updated for coordinator convergence.
+Wave 3.5 and the pass-3 correction: source inspection only (no shell in either pass); regression assertions
+updated for coordinator convergence and not yet run by their authors.
 The suite results below belong to the original Wave 3 run, not this correction pass.
 
 

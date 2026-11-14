@@ -63,6 +63,22 @@ try {
   const noRecall = {...probed,recipe:{...probed.recipe,ctx:24000}};
   assert.equal(ADV.bestPassing(data,[noRecall]).best.length,1);
 } finally { FM.predictRecipe = predict; }
+// A run that declares no agent role is not a seat: no behavioural admission and no recall row, so a decode
+// benchmark keeps its KL verdict. Evidence it does bring is still judged, and a caller can ask for the seat reading.
+const bench = {box:'odie',model:'fixture',engine:'strata',store:{types:['q4']}};
+assert.equal(FM.earfCheck(data, bench).status, 'PASS');
+assert.equal(FM.earfCheck(data, bench).admission_basis, 'not_required');
+assert.equal(FM.earfCheck(data, {...bench, earf:.9529}).status, 'FAIL');
+assert.equal(FM.earfCheck(data, bench, {role:'coding'}).status, 'UNKNOWN');
+const benchRun = {id:'bench',box:'odie',model:'fixture',recipe:bench,measured:{kl_verdict:'PASS',decode_tps:{single:100}}};
+assert.equal(ADV.runQuality(data, benchRun, [benchRun]).status, 'PASS');
+assert.equal(FM.seatSafetyChecks(D,{model:'other',ctx:131072}).length, 0);
+// The 12k/23k probe is the int4 file's: another quant of the 27B, or a context that is not a count, stays UNKNOWN.
+assert.equal(recall('Qwen3.8-27B-GSQ-IQ2_XS',8000).status,'UNKNOWN');
+assert.equal(recall(local.model,'deep').status,'UNKNOWN');
+// Agent sweeps and tagged counts are judged at their largest value, not coerced to NaN.
+assert.equal(FM.seatSafetyChecks(D,{model:'fnx',conditions:{workload:{agents:[1,16,40]}},serving:{batch:{v:32}}})[0].id,'slot_admission');
+assert.equal(FM.seatSafetyChecks(D,{model:'fnx',conditions:{workload:{agents:[1,16,32]}},serving:{batch:32}}).length,0);
 const original = FM.cardCurveFit(D);
 D.multibox.card_curves.anchors.reverse();
 const reordered = FM.cardCurveFit(D);
