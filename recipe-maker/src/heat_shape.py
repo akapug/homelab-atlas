@@ -1,8 +1,7 @@
-"""Synthetic routing heat for a MoE model with no routing counts: the cumulative share of routed reads C(x) = x^a over the
-expert fraction x, a fitted to GLM-5.3-Flash LIVE coding routing on snoopy (rs-1340: top2000 0.391 / top3000 0.501 /
-top4000 0.597 of 12,096 experts). Expert ids are permuted per layer (deterministic LCG) so layers differ.
+"""Legacy shape metadata; no measured routing means no per-expert counts.
 
-One owner for the shape: build.py (Flash-Next, Ornith families) and tools/harvest.py (the generic MoE path) both import it.
+The rank-law coefficients remain for interpreting historical calibration records.
+They are not telemetry for another model, workload, or checkpoint.
 """
 import math
 
@@ -13,16 +12,12 @@ SHAPE_SRC = ('ESTIMATE: synthetic heat, cumulative share = x^%.3f over the exper
 
 
 def synth_heat(L, E, frac_of=1.0, seed=17):
-    out, st = [], seed
-    for l in range(L):
-        perm = list(range(E))
-        for i in range(E - 1, 0, -1):  # Fisher-Yates with an LCG (deterministic)
-            st = (st * 1103515245 + 12345) % 2 ** 31
-            j = st % (i + 1)
-            perm[i], perm[j] = perm[j], perm[i]
-        C = lambda x: (x * frac_of) ** SHAPE_A / frac_of ** SHAPE_A
-        row = [0.0] * E
-        for r in range(E):
-            row[perm[r]] = round(1e6 * (C((r + 1) / E) - C(r / E)), 3)
-        out.append(row)
-    return out
+    if type(L) is not int or type(E) is not int or L <= 0 or E <= 0:
+        raise ValueError("layers and experts must be positive integers")
+    if not isinstance(frac_of, (int, float)) or isinstance(frac_of, bool) or not math.isfinite(frac_of) or not 0 < frac_of <= 1:
+        raise ValueError("frac_of must be finite and in (0, 1]")
+    if type(seed) is not int:
+        raise ValueError("seed must be an integer")
+    # Compatibility entry point: absence is data, never pseudo-random counts.
+    # Callers stamp status/trace_provenance and may use a uniform scenario prior.
+    return None

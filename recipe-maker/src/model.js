@@ -2,6 +2,8 @@
 // Units: bytes, seconds internally; GiB / ms / tok/s at the edges.
 (function (root) {
   'use strict';
+  const PHYSICS = typeof module !== 'undefined' && module.exports ? require('./physics_roofline.js') : root.PhysicsRoofline;
+  const physicsRoofline = input => PHYSICS.physicsRoofline(input);
   const GiB = 1073741824;
   const v = x => (x !== null && typeof x === 'object' && 'v' in x) ? x.v : x;
 
@@ -57,7 +59,10 @@
       m._heat[name] = out;
       return out;
     }
-    layers = spec.layers;
+    // Missing traces carry no invented expert IDs. Uniform is a labelled planning
+    // prior only; physicsRoofline refuses residency claims without telemetry.
+    if (!spec.layers && spec.trace_provenance === 'measured') throw new Error('measured heat is missing its counts');
+    layers = spec.layers || Array.from({length:m.L}, () => Array(m.E).fill(1));
     const out = new Float64Array(m.L * m.E);
     const eps = v(m.heat.floor) || 0; // pseudo-count so never-seen experts are not exactly free
     for (let l = 0; l < m.L; l++) {
@@ -68,6 +73,22 @@
     }
     m._heat[name] = out;
     return out;
+  }
+
+  // Measured counts only, without the legacy heat floor/pseudocount. No ordering
+  // is inferred from marginals, and a prefill map remains identified as that map.
+  function physicsTrace(data, mk, name) {
+    const m = data.models[mk], spec = m && m.heat && m.heat.sets[name];
+    if (!spec || spec.status !== 'measured' || spec.trace_provenance !== 'measured' || !spec.map || !spec.layers)
+      return {status:'unmeasured', trace_provenance:'unmeasured'};
+    const probabilities = spec.layers.map(row => {
+      const total = row.reduce((a, b) => a + b, 0);
+      return row.map(n => total > 0 ? n * m.k / total : NaN);
+    });
+    if (probabilities.some(row => row.some(p => !Number.isFinite(p) || p < 0 || p > 1)))
+      return {status:'unmeasured', trace_provenance:'unmeasured', why:'capture cannot establish per-token inclusion probabilities'};
+    return {status:'measured', trace_provenance:'measured', source:spec.map,
+      activation_probabilities:probabilities};
   }
 
   // ---------- types ----------
@@ -434,28 +455,39 @@
       // one type per layer (or per model): pick the type whose best-tier costs summed over the scope's groups are lowest
       const qs = ctx.qList;
       for (const gis of ctx.byLayer) {
-        let bc = Infinity, bsel = null;
+        let bc = Infinity, bsel = null, fsel = null;
         const sel = new Int32Array(gis.length);
         for (const q of qs) {
           const os = ctx.optsByQ[q];
+          if (!os || !os.length) continue;
           let c = 0;
           for (let i = 0; i < gis.length; i++) {
             const g = gis[i], n = groups[g].n, row = g * nO;
             let b = -1, cb = Infinity;
-            for (const o of os) { const x = base[row + o] + n * price[o]; if (x < cb) { cb = x; b = o; } }
+            for (const o of os) {
+              const x = base[row + o] + n * price[o];
+              if (Number.isFinite(x) ? (b < 0 || !Number.isFinite(cb) || x < cb) : b < 0) { cb = x; b = o; }
+            }
             c += cb; sel[i] = b;
-            if (c >= bc) break;
+            if (bsel !== null && !(c < bc)) break;
           }
-          if (c < bc) { bc = c; bsel = Int32Array.from(sel); }
+          if (!fsel) fsel = Int32Array.from(sel);
+          if (Number.isFinite(c) && c < bc) { bc = c; bsel = Int32Array.from(sel); }
         }
-        for (let i = 0; i < gis.length; i++) add(gis[i], bsel[i]);
+        const pick = bsel || fsel;
+        if (!pick) throw new Error('choose: no valid quant/tier options for layer group');
+        for (let i = 0; i < gis.length; i++) add(gis[i], pick[i]);
       }
       return use;
     }
+    if (!nO) throw new Error('choose: no valid quant/tier options');
     for (let g = 0; g < groups.length; g++) {
       const n = groups[g].n, row = g * nO;
       let best = -1, bc = Infinity;
-      for (let o = 0; o < nO; o++) { const c = base[row + o] + n * price[o]; if (c < bc) { bc = c; best = o; } }
+      for (let o = 0; o < nO; o++) {
+        const c = base[row + o] + n * price[o];
+        if (Number.isFinite(c) ? (best < 0 || !Number.isFinite(bc) || c < bc) : best < 0) { bc = c; best = o; }
+      }
       add(g, best);
     }
     return use;
@@ -1281,6 +1313,9 @@
     const checks = [{ id: 'inputs', label: 'recipe inputs (box, engine, types, row limits, threads)', status: worst, detail: inp.length ? inp.map(x => x[0] + ': ' + x[1]).join('; ') : 'consistent' }].concat(runChecks(data, facts));
     checks.push(conditionsCheck(data, r, kn.draft));
     checks.push(cpuReserveCheck(data, r));
+    const qChk = checks.find(c => c.id === 'quality');
+    checks.push(earfCheck(data, r, Object.assign({}, opts || {}, { qualityStatus: qChk && qChk.status })));
+    checks.push(...seatSafetyChecks(data, r, opts));
     const kvh = kvHostCheck(data, r);
     if (kvh) checks.push(kvh);
     const hp = hostPinnedCheck(data, r);
@@ -1312,6 +1347,145 @@
         detail: 'predicted pinned host peak ' + pk.toFixed(1) + ' GiB (pinned experts + host extra ' + prediction.host_extra_gib + ' FIT + driver extra ' + prediction.pinned_driver_extra_gib + ') + container anon ' + an + ' GiB; ceiling ' + top.toFixed(1) + ' GiB (' + v(box.dram.total_gib) + ' total - floor ' + floor + ' - margin ' + margin + '; a kill cannot land inside a driver allocation, so this ceiling is the containment); cap ' + (cap === undefined || cap === null ? 'not declared (mem_cap_gib)' : cap + ' GiB (holds anon + page cache, not the pinned buffer)') });
     }
     return { checks, facts, notes, bad_input: false, prediction, priors: priorsFor(data, r) };
+  }
+  // Behavioral admission: executed outcomes first, then EARf relative to the model perturbation floor.
+  function earfStoreTypes(r) {
+    const st = (r && r.store) || {};
+    if (typeof st === 'string') return { key: st, types: [st] };
+    const key = st.name || st.id || (!st.split && !st.layer_types && !st.read_share_by_type && !st.hot_type && (st.types || []).length === 1 ? st.types[0] : null);
+    const raw = [].concat(st.types || [], st.hot_type || [], st.cold_type || [], (st.layer_types || []).map(x => x && x.type),
+      Object.keys(st.read_share_by_type || {}), Object.values(st.tensor_types || {})).filter(Boolean);
+    return { key, types: [...new Set(raw)] };
+  }
+  function earfOf(data, r, opts) {
+    const m = (opts && opts.measured) || {}, C = (data && data.checks && data.checks.earf) || {};
+    const num = x => { const y = v(x); return typeof y === 'number' && Number.isFinite(y) && y >= 0 && y <= 1 ? y : null; };
+    if (m.earf !== undefined && m.earf !== null && num(m.earf) !== null)
+      return { earf: num(m.earf), src: (m.earf && m.earf.src) || m.earf_src || 'measured.earf' };
+    if (r && r.earf !== undefined && r.earf !== null && num(r.earf) !== null)
+      return { earf: num(r.earf), src: (r.earf && r.earf.src) || r.earf_src || 'recipe.earf' };
+    const { key, types } = earfStoreTypes(r), entries = C.entries || {};
+    const cands = [key].concat(types).filter(Boolean);
+    const hits = [], covered = new Set();
+    for (const k of cands) {
+      for (const ek of [r.model + '|' + r.engine + '|' + k, r.model + '|' + k, k]) {
+        if (entries[ek] !== undefined && num(entries[ek]) !== null) {
+          covered.add(k);
+          hits.push({ earf: num(entries[ek]), src: (entries[ek] && entries[ek].src) || ('checks.earf.entries.' + ek) });
+        }
+      }
+    }
+    const MB = (data && data.multibox) || {}, M = (MB.models || {})[r && r.model], stores = (M && M.stores) || {};
+    for (const k of cands) {
+      const f = stores[k] && stores[k].fidelity && stores[k].fidelity.arg_values_earf;
+      if (f && num(f) !== null) { covered.add(k); hits.push({ earf: num(f), src: f.src || ('multibox.models.' + r.model + '.stores.' + k) }); }
+    }
+    const T = v((MB.settings || {}).replica_type_earf) || {}, tSrc = ((MB.settings || {}).replica_type_earf || {}).src || 'multibox.settings.replica_type_earf';
+    for (const q of types) {
+      if (T[q] !== undefined && num(T[q]) !== null) { covered.add(q); hits.push({ earf: num(T[q]), src: tSrc + ' (' + q + ')' }); }
+    }
+    if (!hits.length) return { earf: null, src: null };
+    return Object.assign({}, hits.reduce((a, b) => (b.earf < a.earf ? b : a)), {
+      unmeasured: key && covered.has(key) ? [] : types.filter(q => !covered.has(q))
+    });
+  }
+  function isSub4BitQuant(data, model, q) {
+    const t = data && data.types && data.types[q];
+    if (t && Number.isFinite(v(t.bpw))) {
+      if (v(t.bpw) < 4) return true;
+    } else if (/^(?:gsq_)?iq[123]|^ud_iq[123]|^ud_q[23]|^q[23]_|^exl3_[123]\.|int[23]/i.test(String(q || ''))) return true;
+    const S = ((((data && data.multibox) || {}).models || {})[model] || {}).stores || {};
+    const note = S[q] && S[q].fidelity && S[q].fidelity.note;
+    return !!(note && /iq[123]|sub-4|not a clean 4-bit/i.test(note));
+  }
+  function requiresEarf(r, opts) {
+    const role = (opts && opts.role) || (r && r.role) || ((((r || {}).conditions || {}).workload || {}).role);
+    return !!(opts && opts.requireEarf) || ['coding', 'agent', 'agentic', 'agentic-coding', 'tool-calling', 'tool-use', 'author_under_judge', 'diff_review'].includes(role);
+  }
+  // Deployment budgets are distinct from a backend's advertised context capacity.
+  function seatSafetyChecks(data, r, opts) {
+    const c = r.conditions || {}, w = c.workload || {}, sv = r.serving || {};
+    const out = [], model = (data.models || {})[r.model] || {};
+    const name = [r.model, model.name, model.short].join(' ');
+    const depth = w.context_tokens ?? c.context_tokens ?? r.ctx ?? sv.max_context;
+    // The only depth-recall probe we hold is on the int4 file of Qwen3.8-27B; another quant of it, or a declared budget, is its own case.
+    const declared = r.measured_recall_budget_tokens ?? model.measured_recall_budget_tokens ?? null;
+    const q27 = declared === null && /(?:^|[^a-z0-9])qwen3\.8-27b(?![0-9]).*int4/i.test(name);
+    const budget = q27 ? 12288 : declared;
+    // Judged for an agent seat, or wherever a recall budget is known; a plain decode run with no budget gets no row.
+    if (depth !== undefined && depth !== null && (budget !== null || requiresEarf(r, opts))) {
+      const tokens = firstInt(depth), known = Number.isInteger(budget) && budget > 0 && Number.isFinite(tokens);
+      const over = known && tokens > budget, degraded = over && (!q27 || tokens > 23000);
+      out.push({ id: 'context_recall', status: known && !over ? 'PASS' : 'UNKNOWN',
+        severity: degraded ? 'degraded' : over ? 'warn' : null,
+        detail: !Number.isFinite(tokens) ? 'Declared context ' + JSON.stringify(depth) + ' is not a token count; recall not judged.' :
+          !known ? 'No per-model depth-recall probe; context capacity does not establish recall.' :
+          q27 ? 'Qwen3.8-27B int4: 9/9 at <=12k, 3/9 at ~23k; 12–23k unmeasured. Warn above 12288, degraded above 23000 tokens.' :
+          'Explicit measured recall budget ' + budget + ' tokens; declared context ' + tokens });
+    }
+    const startup = w.startup_tokens ?? r.startup_tokens, startupLimit = sv.max_startup_tokens;
+    if (startup !== undefined && startupLimit !== undefined)
+      out.push({ id: 'startup_context', status: Number.isInteger(startup) && startup >= 0 && startup <= startupLimit ? 'PASS' : 'FAIL',
+        detail: 'Configured startup budget ' + startupLimit + ' tokens; declared ' + startup });
+    // a workload may sweep agent counts ([1, 4, 8]) and tag its figures ({v, tag, src}): judge the largest count
+    const count = x => Array.isArray(x) ? Math.max(...x.map(v).filter(Number.isFinite)) : v(x);
+    const agents = count(w.agents ?? w.concurrency ?? r.agents), slots = count(w.slots ?? sv.batch);
+    const admission = w.admission || r.admission;
+    if (Number.isFinite(agents) && Number.isFinite(slots) && agents > slots) {
+      const door = admission && admission.policy === 'door' && Number.isInteger(admission.conversations) && admission.conversations > 0 && admission.conversations <= slots;
+      out.push({ id: 'slot_admission', status: door ? 'PASS' : 'FAIL', detail: agents + ' agents / ' + slots + ' slots: require a conversation door capped at slots. R8 B=33 on 32 slots collapsed from 79.1 to 9.7 useful tok/s; an engine queue is not stable admission.' });
+    }
+    return out;
+  }
+  function earfCheck(data, r, opts) {
+    const C = (data && data.checks && data.checks.earf) || {}, m = (opts && opts.measured) || {};
+    const model = ((data || {}).models || {})[r.model] || {};
+    const familyKey = model.kld_family || r.family || r.model;
+    const family = (C.families || {})[familyKey] || {};
+    const qualityFamily = (((data || {}).checks || {}).quality?.families || {})[familyKey] || {};
+    const sources = [m, r, model, family, qualityFamily];
+    const field = key => sources.find(x => x[key] !== undefined && x[key] !== null)?.[key];
+    const valid = x => typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 1;
+    const review = field('review_screen');
+    const reviewer = !!(review && review.executed === true && review.planted === true && review.clean === true &&
+      valid(review.false_alarm_rate) && review.false_alarm_rate <= .10 && valid(review.recall) && review.recall >= .50);
+    const { key, types } = earfStoreTypes(r);
+    const sub4bit = [key, ...types].filter(Boolean).some(q => isSub4BitQuant(data, r.model, q));
+    const base = { id: 'earf', label: 'bounded author admission under an executed Judge', role: 'author_under_judge',
+      diff_reviewer: reviewer, capabilities: { diff_review: reviewer ? 'screened' : 'advisory_excluded' },
+      earf: null, min_earf: null, sub4bit };
+    const result = (status, detail, extra) => Object.assign({}, base, { status, detail }, extra);
+    // Outcome probes concern executable authoring under a Judge, not self-review. A declared
+    // battery_pass_rate is already a measurement; structured probes must explicitly be executed.
+    const probe = field('authoring_probe');
+    const rate = field('battery_pass_rate') ?? (probe && probe.executed === true ?
+      (probe.pass_rate ?? (Number.isInteger(probe.passed) && Number.isInteger(probe.total) && probe.total > 0 ? probe.passed / probe.total : NaN)) : null);
+    if (rate !== null && rate !== undefined) {
+      const bar = field('battery_min_pass_rate') ?? .90;
+      if (!valid(v(rate)) || !valid(v(bar))) return result('FAIL', 'Invalid outcome battery rate or threshold');
+      return result(v(rate) >= v(bar) ? 'PASS' : 'FAIL', 'Executed authoring battery ' + v(rate) + ' (bar ' + v(bar) + '); requires an executed Judge',
+        { admission_basis: 'outcome_probe', battery_pass_rate: v(rate) });
+    }
+    const supplied = [m, r].find(x => x.earf !== undefined && x.earf !== null);
+    if (supplied && !valid(v(supplied.earf))) return result('FAIL', 'Invalid measured EARf (expected finite [0, 1])');
+    const floor = v(field('perturbation_floor'));
+    if (floor !== undefined && !valid(floor)) return result('FAIL', 'Invalid model perturbation floor');
+    const min = floor === undefined ? null : floor - .015;
+    const found = earfOf(data, r, opts);
+    // Admission is a property of an agent seat. A run that declares no coding/agent role and brings no behavioural
+    // evidence of its own (a decode benchmark, a hardware probe) is not a seat: it is not judged here, and its KL gate stands.
+    if (!requiresEarf(r, opts) && !supplied)
+      return result('PASS', 'Not an agent seat (no coding/agent role declared): behavioural admission not required',
+        { earf: found.earf, min_earf: min, admission_basis: 'not_required', required: false });
+    if (found.earf === null || (found.unmeasured && found.unmeasured.length))
+      return result('UNKNOWN', 'EARf unmeasured' + (sub4bit ? ' on sub-4-bit quant' : '') +
+        (found.unmeasured?.length ? ': incomplete mixed layout (' + found.unmeasured.join(', ') + ')' : '') + '; outcome probe needed', { min_earf: min });
+    const extra = { earf: found.earf, min_earf: min, admission_basis: min === null ? 'earf_screen' : 'perturbation_margin' };
+    if (min !== null) return result(found.earf >= min ? 'PASS' : 'FAIL',
+      'EARf ' + found.earf.toFixed(3) + ' vs perturbation floor minus 0.015 = ' + min.toFixed(3) + ' (' + found.src + ')', extra);
+    if (found.earf < .90) return result('UNKNOWN', 'Severe EARf degradation: ' + found.earf.toFixed(3) + ' < 0.90; model perturbation floor unmeasured',
+      Object.assign(extra, { severity: 'degraded', warning: 'Severe EARf degradation; run an outcome probe' }));
+    return result('PASS', 'Measured EARf ' + found.earf.toFixed(3) + '; no severe degradation, perturbation floor unknown (outcome probe preferred)', extra);
   }
   // the serving conditions of data.conditions: a run that leaves one undeclared still runs (UNKNOWN; --strict holds it), but its
   // numbers do not compare with a run that differs in it
@@ -1354,7 +1528,7 @@
     else if (r.ctx !== undefined && firstInt(r.ctx) !== s.max_context) bad.push('serving.max_context ' + s.max_context + ' != ctx ' + r.ctx);
     ['max_context', 'batch', 'batch_groups', 'slot_context', 'big_slots', 'kv_resident', 'mtp_window'].concat(['max_t', 'cpu_pool_max_rows'].filter(k => k in D)).forEach(k => { if (!Number.isInteger(out[k]) || out[k] < 0) bad.push('serving.' + k + ' ' + JSON.stringify(out[k]) + ' is not a whole number >= 0'); });
     if (out.batch_mtp === null) out.batch_mtp = !!r.draft;
-    Object.keys(s).filter(k => !(k in D) && ['kv_host_reserve_gib', 'mem_available_gib', 'mem_available_src', 'host_reserve_gib', 'host_experts_gib'].indexOf(k) < 0).forEach(k => bad.push('serving.' + k + ' is not a serving field (' + Object.keys(D).join(', ') + ')'));
+    Object.keys(s).filter(k => !(k in D) && ['kv_host_reserve_gib', 'mem_available_gib', 'mem_available_src', 'host_reserve_gib', 'host_experts_gib', 'max_startup_tokens'].indexOf(k) < 0).forEach(k => bad.push('serving.' + k + ' is not a serving field (' + Object.keys(D).join(', ') + ')'));
     return { s: out, S, bad };
   }
   // KV streaming pins a host copy of each session's whole KV capacity (XeStrata --kv-resident), never reclaimed. Sessions: the
@@ -1614,7 +1788,7 @@
       const o = r.observed || {};
       const f = Object.assign({}, res.facts, { numa: Object.assign({}, res.facts.numa || {}, o.numa || {}) });
       if (o.decode_kl !== undefined && o.decode_kl !== null) f.decode_kl = o.decode_kl;
-      const inp = res.checks.filter(c => (c.id === 'inputs' && c.status !== 'PASS') || c.id === 'expert_residency' || c.id === 'fallback' || c.id === 'cpu_pool_rows');
+      const inp = res.checks.filter(c => (c.id === 'inputs' && c.status !== 'PASS') || c.id === 'expert_residency' || c.id === 'fallback' || c.id === 'cpu_pool_rows' || c.id === 'earf');
       // a serving run keeps its host_pinned check with what it measured beside the prediction (end of run, or a guard stop's lower bound)
       const hp = res.checks.find(c => c.id === 'host_pinned'), end = o.pinned_gib, stop = o.pinned_at_stop_gib;
       const seen = !hp || !hp.pred ? '' : end !== undefined ? '; MEASURED pinned ' + end + ' GiB at the run end (predicted ' + hp.pred.pinned_gib.toFixed(2) + ', ' + (hp.pred.pinned_gib >= end ? '+' : '') + (100 * (hp.pred.pinned_gib / end - 1)).toFixed(1) + ' %)'
@@ -2790,6 +2964,18 @@
     return { eligible: !why.length, why, mode: v(p.mode) || null, evidence_config: v(p.evidence_config) || null, metric: v(p.metric) || null };
   }
   const networkCanonical = x => Array.isArray(x) ? x.map(networkCanonical) : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().map(k => [k, networkCanonical(x[k])])) : x;
+  function networkSame(a, b) {
+    if (typeof a === 'number' || typeof b === 'number') {
+      return typeof a === 'number' && typeof b === 'number' && Number.isFinite(a) && Number.isFinite(b) && a === b;
+    }
+    if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return a === b;
+    if (Array.isArray(a) || Array.isArray(b)) {
+      return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => networkSame(x, b[i]));
+    }
+    const ka = Object.keys(a).filter(k => a[k] !== undefined).sort();
+    const kb = Object.keys(b).filter(k => b[k] !== undefined).sort();
+    return ka.length === kb.length && ka.every((k, i) => k === kb[i] && networkSame(a[k], b[k]));
+  }
   // The browser may edit assumptions, never the measured baseline or the profile's captured costs.
   function networkAssumptions(data, key, x) {
     const W = data.window && data.window.configs[key], fields = ['mode', 'evidence_config', 'metric'];
@@ -2805,7 +2991,7 @@
     if (!basis || !Number.isInteger(basis.agents) || basis.agents < 1 || !['profile', 'ubench'].includes(basis.profile_source)) return { checks: [{ id: 'network_basis', status: 'FAIL', detail: 'priced positive integer agents and profile/ubench source required' }], facts: null, notes: [], bad_input: true, prediction: null };
     const candidate = winNetwork(data, r.network_window, { agents: basis.agents, source: basis.profile_source }).find(x => x.id === r.network_recipe);
     if (!candidate || r.box !== W.box || r.model !== W.model || r.engine !== W.engine) return { checks: [{ id: 'network_recipe', status: 'FAIL', detail: 'network recipe/window box, model and engine must match' }], facts: null, notes: [], bad_input: true, prediction: null };
-    const equal = r.network_prediction_identity && JSON.stringify(networkCanonical(r.network_prediction_identity)) === JSON.stringify(networkCanonical(candidate.prediction_identity));
+    const equal = !!(r.network_prediction_identity && networkSame(r.network_prediction_identity, candidate.prediction_identity));
     const checks = candidate.checks.concat([{ id: 'network_identity', status: equal ? 'PASS' : 'FAIL', detail: equal ? 'exact priced identity retained' : 'reprice after any input, source, mode or transfer change' }]);
     checks.push({ id: 'network_comparison', status: candidate.comparison.eligible ? 'PASS' : 'UNKNOWN', detail: candidate.comparison.why.join('; ') || 'same mode, metric and evidence configuration' });
     return { checks, facts: { box: r.box, model: r.model, engine: r.engine, kind: 'network' }, notes: ['Modeled network recipe; this gate does not run or qualify any remote engine.'], bad_input: false,
@@ -2979,9 +3165,8 @@
         frontier_identity: Object.fromEntries(['mode', 'evidence_config', 'metric'].map(k => [k, (W.frontier || {})[k] || null])), frontier: (W.frontier || {}).ledger, baseline_tps: base,
         backend_supported: r.backend_supported, fidelity: r.fidelity, boxes: r.boxes, stage_boxes: r.stage_boxes || null, remote_box: r.remote_box || null,
         transfers: (r.transfers || []).map((t, i) => ({ recipe: t, observation: transfers[i].observation || null, inputs: transfers[i].inputs })), inputs: r.params, resources: r.resources, resource_plans: resources.plans, power: r.power };
-      const canonical = x => JSON.stringify(networkCanonical(x));
       const attempts = (W.attempts || []).filter(a => a.network_recipe === r.id).map(a => {
-        const receipt = a.network_receipt, matches = !!(receipt && receipt.recipe === r.id && canonical(receipt.identity) === canonical(identity) && canonical(receipt.measured_identity) === canonical(identity));
+        const receipt = a.network_receipt, matches = !!(receipt && receipt.recipe === r.id && networkSame(receipt.identity, identity) && networkSame(receipt.measured_identity, identity));
         return Object.assign({}, a, { matches_priced_identity: matches, measurement_status: matches ? 'same priced identity' : 'historical or unqualified identity; no current recipe credit' });
       });
       return { id: r.id, lever: r.label, kind: 'network', shape: r.shape, boxes: r.boxes, status, checks, resources, inputs, transfers, metrics, power, comparison: compare, eligible,
@@ -3593,7 +3778,7 @@
     return out;
   }
   // sink (optional): gets .cpu, the CPU-side expert seconds of the token (the draft fit reads the anchor's CPU share)
-  function anchorTime(data, a, f, host, sink) {
+  function anchorTime(data, a, f, host, sink, pmemBw) {
     const box = data.boxes[a.box];
     const g = box.gpus[0];
     const eta = v(data.assume.gpu_eta);
@@ -3601,9 +3786,10 @@
     const Bd = v(box.dram.bw) * 1e9;
     const gbw = v(g.bw) * 1e9 * eta;
     let T = host / 1000 + B.dense_gb * 1e9 / gbw;
+    const pmBw = pmemBw !== undefined && pmemBw !== null ? pmemBw : (box.pmem && (box.pmem.bw_measured || box.pmem.bw));
     anchorParts(B).forEach(([t, q, gb]) => {
       const cpu = Bd * kappaOf(data, a.box, q) * f;
-      const r = t === 'gpu' ? gbw : t === 'dram' ? Math.min(Bd, cpu) : t === 'pmem' ? (box.pmem ? Math.min(v(box.pmem.bw) * 1e9, cpu) : 1) : v(box.nvme.bw) * 1e9; // box.pmem.bw is swapped to the fitted value by applyCal
+      const r = t === 'gpu' ? gbw : t === 'dram' ? Math.min(Bd, cpu) : t === 'pmem' ? (box.pmem ? Math.min(v(pmBw) * 1e9, cpu) : 1) : v(box.nvme.bw) * 1e9; // applyCal swaps box.pmem.bw to the fitted value
       T += gb * 1e9 / r;
       if (sink && t !== 'gpu') sink.cpu = (sink.cpu || 0) + gb * 1e9 / r;
     });
@@ -3619,10 +3805,20 @@
     }
     return fc < fd ? [c, fc] : [d, fd];
   }
+  const calibrationCache = new WeakMap();
   function calibrate(data) {
-    const cal = { boxes: {}, rows: [] };
+    // A content key catches in-place knob/catalog edits; never cache merely by
+    // object identity. Return a fresh result because applyCal enriches it.
+    const key = JSON.stringify(['anchors', 'boxes', 'models', 'types', 'engines', 'assume', 'overrides', 'knobs', 'draft_twins'].map(k => data[k]));
+    const cached = calibrationCache.get(data);
+    if (cached && cached.key === key) return JSON.parse(cached.result);
+    const result = calibrateUncached(data);
+    calibrationCache.set(data, {key, result: JSON.stringify(result)});
+    return result;
+  }
+  function calibrateUncached(data) {
+    const cal = { boxes: {}, types: {}, rows: [] };
     const anchors = data.anchors;
-    Object.keys(data.boxes).forEach(bk => { const b = data.boxes[bk]; if (b.pmem && b.pmem.bw_measured) b.pmem.bw = b.pmem.bw_measured; });
     Object.keys(data.boxes).forEach(bk => {
       const box = data.boxes[bk];
       const A = anchors.filter(a => a.box === bk && a.fit === 'speed' && !a.draft);
@@ -3632,26 +3828,24 @@
       if (A.length) {
         const fixF = box.cpu.f_fixed;
         const fitPm = box.pmem && box.pmem.fit_range && A.some(a => a.pmem);
-        const pmOrig = box.pmem ? box.pmem.bw : null;
+        const pmOrig = box.pmem ? (box.pmem.bw_measured || box.pmem.bw) : null;
         let best = null;
         const fGrid = fixF ? [v(box.cpu.f_default)] : (() => { const a = []; for (let x = 0.05; x <= 1.6; x += 0.005) a.push(x); return a; })();
         const pGrid = fitPm ? (() => { const a = []; for (let x = box.pmem.fit_range[0]; x <= box.pmem.fit_range[1] + 1e-9; x += 0.2) a.push(x); return a; })() : [null];
         for (const pb of pGrid) {
-          if (pb !== null) box.pmem.bw = { v: pb };
+          const pmVal = pb !== null ? { v: pb } : pmOrig;
           for (const f of fGrid) {
             let err = 0; const hosts = {};
             for (const mk of models) {
               const Am = A.filter(a => hg(a.model) === mk);
               const hFixed = box.host_fixed && box.host_fixed[mk] !== undefined ? v(box.host_fixed[mk]) : null;
-              const e2 = h => { let s2 = 0; for (const a of Am) { const d = Math.log(1 / anchorTime(data, a, f, h) / a.meas); s2 += d * d * (a.w || 1); } return s2; };
+              const e2 = h => { let s2 = 0; for (const a of Am) { const d = Math.log(1 / anchorTime(data, a, f, h, null, pmVal) / a.meas); s2 += d * d * (a.w || 1); } return s2; };
               const [bh, be] = hFixed !== null ? [hFixed, e2(hFixed)] : golden(e2, 0, 120, 36);
               hosts[mk] = bh; err += be;
             }
             if (!best || err < best.err) best = { f, hosts, err, pb };
           }
         }
-        if (pmOrig) box.pmem.bw = pmOrig;
-        if (fitPm) { box.pmem.bw_measured = pmOrig; box.pmem.bw = { v: best.pb, tag: 'FIT', src: 'fitted on ' + bk + ' within ' + box.pmem.fit_range.join('-') + ' GB/s; measured: ' + pmOrig.src }; }
         const nPar = models.length + (fixF ? 0 : 1) + (fitPm ? 1 : 0);
         res.f = { v: best.f, tag: fixF ? box.cpu.f_default.tag : 'FIT', src: fixF ? box.cpu.f_default.src : ('fit to ' + A.length + ' measured no-draft points on ' + bk + ' (' + models.join(', ') + '), ' + nPar + ' parameters, rms log error ' + Math.sqrt(best.err / A.length).toFixed(3)) };
         Object.keys(data.models).forEach(mk => {
@@ -3694,13 +3888,12 @@
       if (!t.kappa_from) return;
       const kf = t.kappa_from, box = data.boxes[kf.box];
       const base = kf.rate_gbs / (v(box.dram.bw) * v(cal.boxes[kf.box].f));
-      t.kappa = { v: base * (kf.mult || 1), tag: kf.tag || 'FIT', src: kf.src };
+      cal.types[q] = { v: base * (kf.mult || 1), tag: kf.tag || 'FIT', src: kf.src };
     });
     // residual rows (all anchors incl. draft ones and references)
     anchors.forEach(a => {
       const res = cal.boxes[a.box];
       if (a.engine && data.engines[a.engine] && data.engines[a.engine].host_ms) {
-        // engine with its own measured decomposition (glm-lite)
         // engine with its own measured decomposition (glm-lite); history rows carry their own measured rates (eng_over)
         const E = data.engines[a.engine], box = data.boxes[a.box], B = a.explicit, eo = a.eng_over || {};
         const Bd = v(box.dram.bw) * 1e9, gbw = v(box.gpus[0].bw) * 1e9 * v(data.assume.gpu_eta);
@@ -3708,7 +3901,10 @@
         let gpuT = B.dense_gb * 1e9 / gbw, cpuT = 0;
         anchorParts(B).forEach(([t, q, gb]) => {
           if (t === 'gpu') gpuT += gb * 1e9 / gbw;
-          else if (t === 'dram') cpuT += gb * 1e9 / ((eo.lane_gbs ? eo.lane_gbs * 1e9 * (data.types[q].kappa_from && data.types[q].kappa_from.mult || 1) : Math.min(Bd, Bd * kappaOf(data, a.box, q) * v(res.f))) + zc);
+          else if (t === 'dram') {
+            const kap = cal.types[q] !== undefined ? v(cal.types[q]) : kappaOf(data, a.box, q);
+            cpuT += gb * 1e9 / ((eo.lane_gbs ? eo.lane_gbs * 1e9 * (data.types[q].kappa_from && data.types[q].kappa_from.mult || 1) : Math.min(Bd, Bd * kap * v(res.f))) + zc);
+          }
           else cpuT += gb * 1e9 / (v(box.nvme.bw) * 1e9);
         });
         const p = 1 / ((eo.host_ms !== undefined ? eo.host_ms : v(E.host_ms)) / 1000 + Math.max(gpuT, cpuT));
@@ -3716,7 +3912,8 @@
         return;
       }
       const f = v(res.f), h = res.host[a.model] ? v(res.host[a.model]) : 0;
-      const sink = { cpu: 0 }, base = 1 / anchorTime(data, a, f, h, sink);
+      const pmVal = res.pmem_bw || (data.boxes[a.box].pmem && (data.boxes[a.box].pmem.bw_measured || data.boxes[a.box].pmem.bw));
+      const sink = { cpu: 0 }, base = 1 / anchorTime(data, a, f, h, sink, pmVal);
       cal.rows.push(Object.assign({}, a, { pred_nodraft: base, pred: base, resid: base / a.meas - 1, cpu_s: sink.cpu }));
     });
     // split-model overhead: a split GGUF builds a chain per partition per layer; the measured split run minus the fitted model = extra ms/token
@@ -3916,6 +4113,17 @@
 
   function applyCal(data) {
     data.cal = calibrate(data);
+    Object.keys(data.cal.boxes).forEach(bk => {
+      const box = data.boxes[bk], pb = data.cal.boxes[bk].pmem_bw;
+      if (box.pmem && pb) {
+        const meas = box.pmem.bw_measured || box.pmem.bw;
+        box.pmem.bw_measured = meas;
+        box.pmem.bw = Object.assign({}, pb, { src: pb.src + '; measured: ' + meas.src });
+      }
+    });
+    Object.keys(data.cal.types || {}).forEach(q => {
+      data.types[q].kappa = data.cal.types[q];
+    });
     ledgerHosts(data);
     borrowHostLists(data);
     ledgerHops(data);
@@ -4621,7 +4829,10 @@
     const u = g && g.firmware_unlock;
     if (q && q.unlock) return q.unlock;
     if (!u) return 'stock';
-    if (q && q.at && u.since && String(q.at) < String(u.since)) return 'stock';
+    if (q && q.at && u.since) {
+      const qa = Date.parse(String(q.at)), us = Date.parse(String(u.since));
+      if (Number.isFinite(qa) && Number.isFinite(us) ? qa < us : String(q.at) < String(u.since)) return 'stock';
+    }
     return v(u) || 'stock';
   }
   // one ceiling of a card or CPU (ceil = {class, values, unlock}): the unlock state's value, else the stock value, else the
@@ -4940,6 +5151,18 @@
   // state grow with B and ctx. capacity: the streams whose KV + state fit the VRAM left beside the resident weights; past it the
   // overflow is read over the link every step (offload / eviction starts)
   function decodeRoof(data, q) {
+    if (q.physicsRoofline) {
+      const p = physicsRoofline(Object.assign({}, q.physicsRoofline, {batch:q.batch || 1}));
+      if (p.aggregate_tps === null) return {status:'UNMODELLED', why:p.why || p.status, physicsRoofline:p};
+      return {status:'OK', phase:'decode', batch:q.batch || 1, step_s:p.step_s,
+        tps_total:p.aggregate_tps, tps_per_stream:p.per_stream_tps, draft_mult:1,
+        physicsRoofline:p, trace_provenance:p.trace_provenance,
+        binding:{term:p.binding, resource:p.binding}, capacity_streams:q.physicsRoofline.capacity_streams ?? null,
+        compute_s:p.terms.compute, bandwidth_s:Math.max(p.terms.vram_bw,p.terms.pcie_transfer,p.terms.host_mem_bw),
+        terms:Object.entries(p.terms).map(([id,s]) => ({id,resource:id,s,share:s/p.step_s})),
+        shapes:[], unmodelled:['independent-token bound; ordered router/draft acceptance unmeasured'],
+        distinct_experts_per_layer:p.unique_experts, weight_bytes_per_step:null, kv_state_bytes_per_step:null};
+    }
     const I = rlInputs(data, q);
     if (I.why) return { status: 'UNMODELLED', why: I.why };
     if (I.pl.name !== 'gpu') return decodeRoofCpu(data, q, I);
@@ -5036,7 +5259,7 @@
     const o = opts || {}, Bs = o.batches || [1, 2, 4, 8, 16, 32, 64, 128];
     const W = data.workload, prof = W && W.profiles[v(W.settings.default_profile)];
     const F = o.fresh !== undefined ? o.fresh : prof ? v(prof.fresh_per_output) : null;
-    const df = decodeFit(data, q.engine), pf = rlEta(data, q.engine);
+    const df = q.physicsRoofline ? {status:'BOUND'} : decodeFit(data, q.engine), pf = rlEta(data, q.engine);
     const pq = Object.assign({}, q, o.prefill_query || {}, { tokens: (o.prefill_query || {}).tokens || q.read_tokens || 2048 });
     const pre = prefillRoof(data, pq, rlEtaFor(data, pq));
     const P = pre.status === 'OK' ? pre.tps : null;
@@ -5250,29 +5473,54 @@
       uncalibrated: unc.map(t => t.box + ' ' + t.gpu + ': no ' + t.needs.join(', ') + ' (dense ' + t.kernels.dense + (t.kernels.moe ? '; MoE ' + t.kernels.moe : '') + ')') };
   }
   // ---------- solving the card-curve constants from their named calibration points, and the hold-out rescore ----------
-  // card_curves.anchors, in list order: each point marked use 'calibrates' names ONE constant; with every constant solved before
-  // it held, the constant is set so the anchor's predicted step equals its measured step (bisection: col, mmq, grp, overhead
-  // raise the step, a rate lowers it). A point whose step the model reaches with the constant at 0 leaves it 0 (AT_FLOOR: the
-  // class is read-bound there). Nothing else is fitted; every other point is scored, never absorbed
+  // Fit only points marked 'calibrates', jointly within physical bounds. Residuals
+  // and convergence are reported; holdouts remain independent of the fit.
   const CC_RANGE = { col: [0, 50], mmq: [0, 200], grp: [0, 200], rate: [5, 5000], overhead: [0, 20] };
   function cardCurveFit(data) {
     const CCs = (data.multibox || {}).card_curves, consts = {}, solved = [];
     if (!CCs) return { consts, solved };
+    const rows = [];
     for (const a of CCs.anchors || []) for (const p of a.points) {
       if (p.use !== 'calibrates') continue;
-      const plan = pipelinePlan(data, a.plan);
-      if (plan.status !== 'OK') { solved.push({ anchor: a.id, B: p.B, constant: p.constant, status: 'REFUSED', why: plan.why }); continue; }
-      const term = p.constant.split('.').pop(), [lo0, hi0] = CC_RANGE[/^overhead/.test(p.constant) ? 'overhead' : term], want = p.B / p.tps;
-      const at = x => { consts[p.constant] = x; return pipelineRoof(data, plan, p.B, { ctx: a.ctx_read, consts }).step_s; };
-      const down = term === 'rate', fLo = at(lo0), fHi = at(hi0);
-      let status = 'SOLVED', x;
-      if (down ? want >= fLo : want <= fLo) { x = lo0; status = down ? 'AT_FLOOR (the anchor is slower than the slowest rate searched)' : 'AT_FLOOR (the model reaches the measured step with the constant at 0)'; }
-      else if (down ? want <= fHi : want >= fHi) { x = hi0; status = 'AT_CEILING'; }
-      else { let lo = lo0, hi = hi0; for (let i = 0; i < 100; i++) { const mid = (lo + hi) / 2, f = at(mid); if ((f < want) !== down) lo = mid; else hi = mid; } x = (lo + hi) / 2; }
-      consts[p.constant] = x;
-      solved.push({ anchor: a.id, arm: a.arm, B: p.B, measured_tps: p.tps, constant: p.constant, value: x, status, unit: (CCs.units || {})[/^overhead/.test(p.constant) ? 'overhead' : term] || null });
+      const plan = pipelinePlan(data, a.plan), term = /^overhead/.test(p.constant) ? 'overhead' : String(p.constant).split('.').pop();
+      if (plan.status !== 'OK' || !CC_RANGE[term] || !Number.isFinite(p.tps) || !(p.tps > 0) || !Number.isInteger(p.B) || p.B <= 0) {
+        solved.push({ anchor: a.id, B: p.B, constant: p.constant, status: 'REFUSED', why: plan.why || 'invalid calibration point' }); continue;
+      }
+      rows.push({a, p, plan, term});
     }
-    return { consts, solved };
+    // Deterministic initialization, then joint bounded least squares on calibration
+    // points only. Each sweep revisits all constants; a clamped early anchor cannot
+    // silently decide all later constants by JSON list order. Holdouts never fit.
+    rows.sort((a, b) => a.p.constant.localeCompare(b.p.constant) || a.a.id.localeCompare(b.a.id) || a.p.B - b.p.B);
+    const params = [...new Set(rows.map(x => x.p.constant))];
+    const range = k => CC_RANGE[rows.find(x => x.p.constant === k).term];
+    params.forEach(k => { consts[k] = range(k)[0]; });
+    const loss = () => rows.reduce((sum, r) => {
+      const predicted = pipelineRoof(data, r.plan, r.p.B, {ctx: r.a.ctx_read, consts}).step_s;
+      return sum + (predicted > 0 && Number.isFinite(predicted) ? Math.log(predicted / (r.p.B / r.p.tps)) ** 2 : Infinity);
+    }, 0);
+    let previous = loss(), converged = false, sweeps = 0;
+    for (; sweeps < 20; sweeps++) {
+      for (const k of params) {
+        const [lo, hi] = range(k), old = consts[k];
+        const objective = x => { consts[k] = x; return loss(); };
+        const [x, err] = golden(objective, lo, hi, 36);
+        const options = [[x, err], [lo, objective(lo)], [hi, objective(hi)], [old, objective(old)]];
+        options.sort((a, b) => a[1] - b[1]);
+        consts[k] = options[0][0];
+      }
+      const current = loss();
+      if (Math.abs(previous - current) < 1e-12) { converged = true; break; }
+      previous = current;
+    }
+    for (const {a, p, plan, term} of rows) {
+      const x = consts[p.constant], [lo, hi] = range(p.constant);
+      const predicted = pipelineRoof(data, plan, p.B, {ctx: a.ctx_read, consts}).aggregate_tps;
+      solved.push({anchor: a.id, arm: a.arm, B: p.B, measured_tps: p.tps, constant: p.constant, value: x,
+        status: !Number.isFinite(predicted) ? 'REFUSED' : x === lo ? 'AT_FLOOR' : x === hi ? 'AT_CEILING' : converged ? 'SOLVED' : 'ITERATION_LIMIT',
+        residual: predicted / p.tps - 1, unit: (CCs.units || {})[term] || null});
+    }
+    return { consts, solved, converged, sweeps: sweeps + 1, loss: loss() };
   }
   // every anchor point predicted with the solved constants: err = predicted / measured - 1; use 'calibrates' rows reproduce their
   // point (residual ~0 by construction), 'holdout' rows are the test, 'line' rows check the B 1 line on a model it was fitted on.
@@ -5535,28 +5783,30 @@
     if (!TM.models[model]) return un('model ' + model + ' has no turn_model.models row');
     // opts.rates { prefill_tps, decode_curve, capacity_streams } (a multi-box plan, pipelineLandscape): the rates come from the
     // caller, not from a one-box roofline query
-    const R = o.rates || null, Bs = o.batches || [1, 2, 4, 8, 16, 32, 64, 128];
+    const R = q.physicsRoofline ? null : o.rates || null, Bs = o.batches || [1, 2, 4, 8, 16, 32, 64, 128];
     const L = R ? { prefill_tps: v(R.prefill_tps), rows: Bs.map(B => ({ B, status: 'OK', useful_tps: null, per_stream_tps: null })) } : batchLandscape(data, q, Object.assign({}, o, { batches: Bs }));
     if (!L.prefill_tps) return un('no prefill rate: ' + (L.prefill_why || 'unmodelled'));
     if (R) o = Object.assign({}, o, { decode_curve: R.decode_curve });
-    const df = R ? { status: 'NONE' } : decodeFit(data, q.engine), eta = df.status === 'FIT' ? df.eta : 1;
+    const df = R || q.physicsRoofline ? { status: 'NONE' } : decodeFit(data, q.engine), eta = df.status === 'FIT' ? df.eta : 1;
     // opts.decode_curve {v: [[n, aggregate tok/s], ...], tag, src}: a measured synthetic decode curve of the served build replaces the
     // roofline decode (log-log between neighbouring points, held flat past the last): the roofline's one decode eta is fitted at B 1
-    const curve = o.decode_curve ? v(o.decode_curve).slice().sort((a, b) => a[0] - b[0]) : null;
+    const curve = !q.physicsRoofline && o.decode_curve ? v(o.decode_curve).slice().sort((a, b) => a[0] - b[0]) : null;
     const curveAt = n => { const c = curve, i = c.findIndex(p => p[0] >= n); if (i === 0) return c[0][1] * n / c[0][0]; if (i < 0) return c[c.length - 1][1];
       const [a, b] = [c[i - 1], c[i]]; return Math.exp(Math.log(a[1]) + (Math.log(b[1]) - Math.log(a[1])) * (Math.log(n) - Math.log(a[0])) / (Math.log(b[0]) - Math.log(a[0]))); };
     // opts.decode_step_increment {v: lambda, tag, src}: the batched part of the curve's step scaled, the one-row step kept: a step of
     // n rows = s1 + lambda x (n / curve(n) - s1), s1 = 1 / curve(1) (the served build's per-row cost against the curve's build,
     // whose one-agent decode matched the served one: 68.8 vs 70.6 MEASURED). Solved from a named calibration point
     // (agentPointRescore), never from the point it is scored on
-    const lam = o.decode_step_increment ? v(o.decode_step_increment) : 1;
+    if (o.decode_step_increment && !o.frozen_calibration_replay && !q.physicsRoofline)
+      return un('post-hoc step scaling is historical only; supply physicsRoofline operands');
+    const lam = o.frozen_calibration_replay && o.decode_step_increment ? v(o.decode_step_increment) : 1;
     const inc = agg => n => { if (lam === 1 || n <= 1) return agg(n); const s1 = 1 / agg(1); return n / (s1 + lam * (n / agg(n) - s1)); };
     const curveAgg = inc(curveAt);
     const decRaw = n => { if (R) { const agg = curveAgg(n); return { per: agg / n, agg, fits: !v(R.capacity_streams) || n <= v(R.capacity_streams) }; } const d = decodeRoof(data, Object.assign({}, q, { batch: n })); if (d.status !== 'OK') return null; const step = d.step_s / eta, fits = d.capacity_streams === null || n <= d.capacity_streams;
       if (curve) { const agg = curveAgg(n); return { per: agg / n, agg, fits }; } return { per: d.draft_mult / step, agg: n * d.draft_mult / step, fits }; };
     // the serving mode's step term (batchModeStep): served in a batch mode, every forward step pays the mode's fixed extra
     // (m - 1) x the one-row step, so a lone stream steps m times slower and a step of n rows takes n / agg(n) + (m - 1) / agg(1)
-    const BM = batchModeStep(data, q, o), bmx = BM.applied ? v(BM.term) : 1;
+    const BM = q.physicsRoofline ? {applied:false, reason:"sync overhead is an explicit physical operand"} : batchModeStep(data, q, o), bmx = BM.applied ? v(BM.term) : 1;
     const decAt = n => { const d = decRaw(n); if (!d || bmx === 1) return d; const d1 = decRaw(1); if (!d1) return null; const agg = n / (n / d.agg + (bmx - 1) / d1.agg); return { per: agg / n, agg, fits: d.fits }; };
     const one = decAt(1);
     if (!one) return un('no decode bound at B 1');
@@ -5594,7 +5844,7 @@
         engine: sim.engine || null };
     });
     const ok = rows.filter(r => r.status === 'OK'), best = ok.slice().sort((a, b) => b.useful_tps - a.useful_tps)[0] || null;
-    return { status: 'OK', query: q, trace, server, model, decode_basis: (curve ? 'curve: ' + o.decode_curve.src : 'roofline decode at the fitted decode eta') + (o.decode_step_increment ? '; batched step increment x ' + lam.toFixed(3) + ' (' + o.decode_step_increment.src + ')' : '') + (BM.applied ? '; ' + BM.mode + ' mode step x ' + bmx.toFixed(3) + ' (' + BM.term.src + ')' : ''), batch_mode: BM, prefill_tps: L.prefill_tps, decode_eta: df.status === 'FIT' ? df.eta : null, slots: o.slots || null, cache_conversations: o.cache_conversations || null,
+    return { status: 'OK', query: q, trace, server, model, decode_basis: (q.physicsRoofline ? 'physical resource bound, independent router marginals' : curve ? 'curve: ' + o.decode_curve.src : 'roofline decode at the fitted decode eta') + (!q.physicsRoofline && o.decode_step_increment ? '; batched step increment x ' + lam.toFixed(3) + ' (' + o.decode_step_increment.src + ')' : '') + (BM.applied ? '; ' + BM.mode + ' mode step x ' + bmx.toFixed(3) + ' (' + BM.term.src + ')' : ''), batch_mode: BM, prefill_tps: L.prefill_tps, decode_eta: df.status === 'FIT' ? df.eta : null, slots: o.slots || null, cache_conversations: o.cache_conversations || null,
       mean_prompt_depth: depth, one_agent_reread: r1 ? r1.row : null, stall, admission: adm, read_batch_max: readMax, shared_prefix: sharedP, slot_groups: o.slot_groups || null, best: best ? { B: best.B, useful_tps: best.useful_tps, b_eff: best.b_eff } : null, rows };
   }
   // the R8 agent points (card_curves.agent_points) rescored with today's served-engine sim and the frozen records' own inputs
@@ -5611,7 +5861,7 @@
     const run = (x, ov) => {
       const rec = P.find(r => r.id === x.opts_from);
       if (!rec) return { L: { why: 'no prediction record ' + x.opts_from }, r: null };
-      const L = agentLandscape(data, rec.query, Object.assign({}, rec.agents, x.override || {}, ov || {}, { batches: [x.B] }));
+      const L = agentLandscape(data, rec.query, Object.assign({}, rec.agents, x.override || {}, ov || {}, { batches: [x.B], frozen_calibration_replay: true }));
       return { L, r: L.status === 'OK' ? L.rows[0] : null };
     };
     // the step-increment arm: one factor on the batched part of the frozen curve's step (decode_step_increment), solved (bisection)
@@ -5931,6 +6181,11 @@
     // where the GEMMs run (recipe roofline_placement, a name in data.roofline.settings.placements; none = the GPU placement), the
     // threads (the CPU core share) and the expert quants (the engine's cpu path). The recipe's own placement is the planner's
     // per-card expert placement (data.placements shape: gpu_layers, cards), never read here
+    if (r.physicsRoofline) {
+      q.physicsRoofline = Object.assign({}, r.physicsRoofline);
+      if (!q.physicsRoofline.router_trace && r.physicsRoofline.heat_set)
+        q.physicsRoofline.router_trace = physicsTrace(data, r.model, r.physicsRoofline.heat_set);
+    }
     if (r.roofline_placement !== undefined && r.roofline_placement !== null) q.placement = String(r.roofline_placement);
     if (Number(r.threads) > 0) q.threads = Number(r.threads);
     if (r.store && Array.isArray(r.store.types) && r.store.types.length) q.expert_quant = r.store.types.slice();
@@ -5954,7 +6209,7 @@
     // the guard: a recipe for many agents whose box / model / engine has no measured batch curve prints UNCALIBRATED and makes no
     // claim past one stream (the B 1 bounds still stand). A sweep (agents: [1, 4, 8]) asks for its largest count
     const nMax = Array.isArray(wl.agents) ? Math.max(1, ...wl.agents.map(Number).filter(Number.isFinite)) : nAg;
-    const unc = nMax > 1 && !batchCurveOf(data, q);
+    const unc = nMax > 1 && !q.physicsRoofline && !batchCurveOf(data, q);
     const ex = !unc && pb.prefill.bound.status === 'OK' && pb.decode.b1.status === 'OK' ? rooflineExplain(data, q, { agents: nAg }) : null;
     const p = pb.prefill.bound, d = pb.decode.b1;
     const st = p.status === 'OK' && d.status === 'OK' ? 'PASS' : 'FAIL';
@@ -5968,9 +6223,9 @@
     const exd = ex && ex.status === 'OK' ? '; explain (' + ex.agents + ' agent(s), the mix binds ' + ex.mix_binds + '): prefill ' + ex.prefill.binding + ' then ' + ex.prefill.next + ', decode ' + ex.decode.binding + ' then ' + ex.decode.next +
       (ex.relief ? '; ' + (ex.relief.relieves_binding ? 'relieve ' + ex.target + ' with ' : 'nothing in the search relieves ' + ex.target + '; best other gain: ') + ex.relief.change + ' (' + (ex.relief.gain >= 0 ? '+' : '') + (100 * ex.relief.gain).toFixed(1) + ' % predicted' + (ex.relief.needs_code ? ', NEEDS CODE: ' + ex.relief.needs_code : '') + ')' : '; no rearrangement in the search gains') : '';
     const ud = unc ? '; UNCALIBRATED at ' + nMax + ' agents: no measured batch curve for ' + r.box + ' ' + r.model + ' ' + r.engine + ' (data.curves), so no phase_bound claim at B > 1' : '';
-    return { id: 'phase_bound', label: 'prefill and decode bounds per phase, binding term named (data.roofline)', status: st, detail: detail + exd + ud, bound: pb, explain: ex, batch_curve: nMax > 1 ? (unc ? 'UNCALIBRATED' : 'MEASURED') : null };
+    return { id: 'phase_bound', label: 'prefill and decode bounds per phase, binding term named (data.roofline)', status: st, detail: detail + exd + ud, bound: pb, explain: ex, batch_curve: q.physicsRoofline ? 'PHYSICAL_BOUND_INFERRED' : nMax > 1 ? (unc ? 'UNCALIBRATED' : 'MEASURED') : null };
   }
 
-  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, batchModeStep, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
+  const api = { physicsRoofline, physicsTrace, rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, batchModeStep, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkSame, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, earfOf, earfCheck, requiresEarf, seatSafetyChecks, mbEarf, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

@@ -1387,6 +1387,9 @@ checks = {
                                {'share': 0.65, 'kl': 0.04036, 'top1': 0.9535, 'tag': M, 'run': 'droopy-v41-q3q2-kl-lassie',
                                 'src': 'v41kl var-q3q2.json (lassie 10-18 15:12Z, the same 1376 positions and reference ref-r1.json, same CPU build unpublished build): the 1017 NON-split requant, routed experts q3_K on layers 0-13 and q2_K on 14-39 (PLAN step 5 requant A; ik llama-quantize unpublished build, imatrix-1017-fixed 6a440a1c), non-experts as the source; share = the planner layer_types share 0.650. p99 0.639, max 3.23; groups std 0.0478 / 0.9442, code 0.0238 / 0.9742 (the coding prompts alone clear the bar); the 1-point line had predicted KL 0.0488 / top-1 0.927 here'}],
                     'note': 'V4.1 line through the measured reference floor (0) and TWO store points on one reference and one engine: the 1017 split (22.5 % of reads at q2_K) and the non-split q3_K L0-13 / q2_K requant (65 %). Both points sit near the line (the 65 % point slightly below it: KL 0.0404 measured vs 0.0488 predicted from the first point); the split point keeps MXFP4 hot experts, the requant has none, so share alone carries the fit'}}},
+    'earf': {
+        'label': 'bounded author admission under an executed Judge',
+        'rule': 'for coding/agent roles: an executed authoring battery (battery_pass_rate or authoring_probe) >= battery_min_pass_rate (default 0.90) decides; otherwise arg_values EARf >= the model family perturbation_floor - 0.015; with no floor, EARf < 0.90 is UNKNOWN (degraded) and an unmeasured seat is UNKNOWN. There is no absolute EARf bar: 0.98 sat above the measured perturbation floor of every non-identical file'},
 }
 checks['quality']['families'].update(FAMILY_QUALITY)
 # every family with measured points gets its own least-squares line through its base (share 0) and a max 2-bit share
@@ -2480,6 +2483,19 @@ upgrade = json.load(open(os.path.join(HERE, 'data', 'upgrades.json')))
 _lo = os.path.join(HERE, 'runs', 'left_out.json')
 left_out = json.load(open(_lo)) if os.path.exists(_lo) else {}
 
+# Count identity comes only from a captured map. Missing captures are explicit;
+# the old solver can use a uniform prior but cannot export it as telemetry.
+for model in models.values():
+    for heat in (model.get('heat') or {}).get('sets', {}).values():
+        if heat.get('sum'):
+            continue
+        measured = bool(heat.get('map')) and heat.get('tag') == M
+        heat['trace_provenance'] = 'measured' if measured else 'unmeasured'
+        heat['status'] = 'measured' if measured else 'unmeasured'
+        if heat.get('layers') is None:
+            heat.update(label='Routing unmeasured (uniform planning prior)',
+                        src='UNKNOWN: no measured per-layer expert activations', tag='UNKNOWN')
+
 data = {
     'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py', 'home': PUBLIC_HOME,
              'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}, 'left_out': left_out},
@@ -2573,7 +2589,7 @@ data['upgrade']['advice'] = _po.get('upgrades') or {'status': _po['status'], 'wh
 
 # Identity of the effective built bytes, not just a git tip (optional live inputs may refresh snapshots).
 # Only these exact self/clock/filesystem metadata paths are nonsemantic. Every prediction operand is hashed.
-CALIBRATION_EVALUATORS = ('build.py', 'report.js', 'src/model.js', 'src/accuracy.js', 'src/advisor.js', 'src/ledger.js',
+CALIBRATION_EVALUATORS = ('build.py', 'report.js', 'src/model.js', 'src/physics_roofline.js', 'src/heat_shape.py', 'src/accuracy.js', 'src/advisor.js', 'src/ledger.js',
                           'src/runs_tables.py', 'src/ledger.py', 'tools/heatmap.py', 'tools/record_run.py')
 
 
@@ -2591,7 +2607,7 @@ data['meta']['calibration'] = calibration_identity(data, _po.get('calibration_sp
 json.dump(data, open(os.path.join(HERE, 'data.json'), 'w'), separators=(',', ':'))
 PAGE_DIR = os.path.join(HERE, 'page')   # the page's data scripts (generated, never in git); index.html loads them
 PAGE_FILE_LIMIT = 1 << 20                # no page file is larger: a part over it is a build error, so split it further
-PAGE_CODE = ('src/model.js', 'src/app.js')
+PAGE_CODE = ('src/physics_roofline.js', 'src/model.js', 'src/app.js')
 
 
 def page_assignment_parts(name, target, value):

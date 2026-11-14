@@ -28,7 +28,8 @@ def patch(name, pairs):
         shutil.copy2(p, p + ".orig")
     s = open(p + ".orig").read()
     for old, new in pairs:
-        assert s.count(old) == 1, (name, old[:60])
+        if not (s.count(old) == 1):
+            raise RuntimeError((name, old[:60]))
         s = s.replace(old, new)
     open(p, "w").write(s)
     print("patched", p)

@@ -21,6 +21,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -209,15 +210,37 @@ def validate(row):
 
 
 def write(rows, path, replace):
+    # Lock the stable directory inode, not the file replaced at commit. This
+    # serializes concurrent read/merge/write without leaving a stale sidecar.
+    import fcntl
+    directory = os.open(os.path.dirname(os.path.abspath(path)), os.O_RDONLY)
+    try:
+        fcntl.flock(directory, fcntl.LOCK_EX)
+        return _write_locked(rows, path, replace)
+    finally:
+        os.close(directory)
+
+
+def _write_locked(rows, path, replace):
     old = [json.loads(x) for x in read(path).splitlines() if x.strip()] if os.path.exists(path) else []
     ids = {r['id'] for r in rows}
     clash = sorted(ids & {r['id'] for r in old})
     if clash and not replace:
         raise SystemExit('already in %s: %s (--replace to rewrite them)' % (path, ', '.join(clash)))
     keep = [r for r in old if r['id'] not in ids]
-    with open(path, 'w') as f:
-        for r in keep + rows:
-            f.write(json.dumps(r, sort_keys=True) + '\n')
+    d = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(prefix='.tmp-screen-', dir=d)
+    try:
+        with os.fdopen(fd, 'w') as f:
+            for r in keep + rows:
+                f.write(json.dumps(r, sort_keys=True) + '\n')
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
     return len(keep), len(rows)
 
 

@@ -181,4 +181,70 @@ t('lane probes move only their lane: ms_per_lane splits the token time before th
   assert.ok(Math.abs(nv.decode_tps - p.decode_tps) < 1e-9, 'no NVMe tier on this recipe');
 });
 
+t('runQuality KL borrowing: PASS borrows only on matching commit/build/patches/trim/kv_type, never across arithmetic changes', () => {
+  const baseRun = {
+    id: 'ref-kl-pass', when: '2026-10-20T12:00Z', box: 'snoopy', model: 'glm', engine: 'glmlite',
+    commit: 'f20ef3f', patches: ['p512-exact'],
+    recipe: {
+      box: 'snoopy', model: 'glm', engine: 'glmlite', engine_build: 'p512-lane', rtr: false, trim: [],
+      store: { split: false, types: ['exl3_3.05'] },
+      conditions: { kv_type: 'f16' },
+    },
+    measured: { outcome: 'ok', kl_verdict: 'PASS', kl: 0.0045, top1: 0.9914 },
+  };
+  const cloneCand = mut => {
+    const c = JSON.parse(JSON.stringify(baseRun));
+    c.id = 'cand-run';
+    c.when = '2026-10-21T12:00Z';
+    c.measured = { outcome: 'ok', decode_tps: { single: 25.0 } };
+    mut(c);
+    return c;
+  };
+  // Identical arithmetic metadata (even with reordered store keys) -> borrows PASS from ref-kl-pass
+  const exact = cloneCand(c => { c.recipe.store = { types: ['exl3_3.05'], split: false }; });
+  const qExact = ADV.runQuality(data, exact, [baseRun, exact]);
+  assert.strictEqual(qExact.status, 'PASS');
+  assert.ok(/same store and build \(ref-kl-pass\)/.test(qExact.basis), qExact.basis);
+
+  // Changing commit, engine_build, patches, trim, -rtr, kv_type, or package must NOT borrow ref-kl-pass
+  const mutations = [
+    ['commit', c => { c.commit = 'deadbeef'; }],
+    ['engine_commit', c => { delete c.commit; c.recipe.engine_commit = 'cafebabe'; }],
+    ['engine_build', c => { c.recipe.engine_build = 'avx2-lane'; }],
+    ['patches', c => { c.patches = ['p512-exact', 'unverified-fast-math']; }],
+    ['trim', c => { c.recipe.trim = [{ layers: [29, 44], keep: 4 }]; }],
+    ['rtr', c => { c.recipe.rtr = true; }],
+    ['kv_type', c => { c.recipe.conditions.kv_type = 'q4_0'; }],
+    ['package', c => { delete c.recipe.engine_build; c.recipe.conditions.package = 'optane-bin/custom-fork'; }],
+  ];
+  for (const [label, fn] of mutations) {
+    const cand = cloneCand(fn);
+    assert.notStrictEqual(ADV.klEquivKey(cand), ADV.klEquivKey(baseRun), 'equiv key must differ on ' + label);
+    const q = ADV.runQuality(data, cand, [baseRun, cand]);
+    assert.ok(!/ref-kl-pass/.test(q.basis), label + ' silently borrowed PASS: ' + q.basis);
+  }
+
+  // Real ledger regression check: untrimmed avx2-lane snoopy GLM run must not borrow trimmed p512-lane trim-c gate
+  const arma = runs.find(r => r.id === 'snoopy-glm-arma-0719');
+  if (arma) {
+    const qa = ADV.runQuality(data, arma, runs);
+    assert.ok(!/trim-c/.test(qa.basis), 'untrimmed avx2-lane borrowed trimmed p512-lane gate: ' + qa.basis);
+  }
+});
+
+t('EARf uses the perturbation margin; unmeasured and severe uncalibrated cases stay UNKNOWN', () => {
+  const recipe = {box:'odie',model:'fnx',engine:'strata',role:'coding',store:{types:['gsq_iq3xxs']}};
+  const check = FM.earfCheck(data,recipe);
+  assert.equal(check.status,'UNKNOWN');
+  assert.equal(check.earf,.894);
+  assert.equal(check.severity,'degraded');
+  assert.equal(check.min_earf,null);
+  const q4 = {...recipe,store:{name:'ud_q4kxl',types:['q4k_nl']},perturbation_floor:.968};
+  assert.equal(FM.earfCheck(data,q4).status,'PASS');
+  const run = {id:'margin-fail',box:'odie',model:'fnx',engine:'strata',recipe:{...recipe,perturbation_floor:.968},
+    measured:{outcome:'ok',kl_verdict:'PASS',decode_tps:{single:90}}};
+  assert.equal(ADV.runQuality(data,run,[run]).status,'FAIL');
+  assert.equal(ADV.bestPassing(data,[run]).best.length,0);
+});
+
 console.log(n + ' tests passed');

@@ -4,6 +4,7 @@ import json
 import hashlib
 import copy
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -97,6 +98,11 @@ class FreshClone(unittest.TestCase):
         split['decode'].clear()
         self.assertNotEqual(identity['split_sha256'], hashlib.sha256(json.dumps(split, sort_keys=True, separators=(',', ':')).encode()).hexdigest())
         self.assertIn('src/ledger.js', identity['evaluator_sha256'], 'the accuracy evaluator owns corrections and confounded eligibility')
+        with open(os.path.join(ROOT, 'src/model.js')) as f:
+            for required in re.findall(r"require\('\./([\w.\-]+)'\)", f.read()):
+                self.assertIn('src/' + required, identity['evaluator_sha256'], 'every module model.js loads is evaluator identity')
+        self.assertIn('src/physics_roofline.js', identity['evaluator_sha256'])
+        self.assertIn('src/heat_shape.py', identity['evaluator_sha256'])
         for relative, expected in identity['evaluator_sha256'].items():
             with open(os.path.join(ROOT, relative), 'rb') as f:
                 self.assertEqual(expected, hashlib.sha256(f.read()).hexdigest())

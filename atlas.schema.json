@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "homelab-atlas/1",
+  "description": "Structural schema. Active qualified/verified seat admission additionally requires non-null immutable pins; check_atlas.py --provenance reports UNKNOWN without rewriting claims.",
+  "type": "object",
+  "required": [
+    "schema",
+    "boxes",
+    "cards",
+    "results"
+  ],
+  "properties": {
+    "schema": {
+      "const": "homelab-atlas/1"
+    },
+    "boxes": {
+      "type": "array"
+    },
+    "cards": {
+      "type": "array"
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/seat"
+      }
+    },
+    "seats": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/seat"
+      }
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/seat"
+      }
+    }
+  },
+  "$defs": {
+    "provenance_pins": {
+      "type": "object",
+      "properties": {
+        "weights_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "engine_commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$"
+        },
+        "patch_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "outcome_probe_receipt": {
+          "oneOf": [
+            {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-fA-F]{64}$"
+            },
+            {
+              "type": "object",
+              "required": [
+                "sha256"
+              ],
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-fA-F]{64}$"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "seat": {
+      "type": "object",
+      "properties": {
+        "provenance_pins": {
+          "$ref": "#/$defs/provenance_pins"
+        },
+        "seats": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/seat"
+          }
+        },
+        "recipes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/seat"
+          }
+        }
+      }
+    }
+  }
+}

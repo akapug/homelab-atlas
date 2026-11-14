@@ -9,15 +9,21 @@
 # the script waits for an idle server and flags a run whose counters saw more tokens than it decoded.
 # Pause any health probe that sends the server requests meanwhile (its requests are counted too).
 #   spec-step-cost.sh <label> <corpus.jsonl> [port, default 8083]      Env: TOKENS (default 1024)
-set -u
+set -euo pipefail
 L=${1:?label}; C=${2:?corpus.jsonl}; P=${3:-8083}
-metric(){ curl -s -m 5 localhost:$P/metrics | awk -v k="$1" '$1 ~ "^"k"[{]" {s += $NF} END {printf "%d", s}'; }
-for i in $(seq 1 120); do [ "$(metric 'vllm:num_requests_(running|waiting)')" = 0 ] && break; sleep 5; done
+metric(){ curl -fsS -m 5 localhost:$P/metrics | awk -v k="$1" '$1 ~ "^"k"[{]" {s += $NF; seen=1} END {if (!seen) exit 1; printf "%d", s}'; }
+ready=0
+for i in $(seq 1 120); do
+  if [ "$(metric 'vllm:num_requests_(running|waiting)')" = 0 ]; then ready=1; break; fi
+  sleep 5
+done
+[ "$ready" = 1 ] || { echo 'server never became idle' >&2; exit 1; }
 d0=$(metric vllm:spec_decode_num_drafts_total); a0=$(metric vllm:spec_decode_num_accepted_tokens_total)
 out=$(STREAMS=1 CHARS=6000 TOKENS=${TOKENS:-1024} python3 "$(dirname "$0")/decode-vllm.py" "$L" "$C" "$P")
 d1=$(metric vllm:spec_decode_num_drafts_total); a1=$(metric vllm:spec_decode_num_accepted_tokens_total)
 echo "$out" | tail -1
 rate=$(echo "$out" | tail -1 | sed -n 's/.*decode aggregate *\([0-9.]*\) tok\/s.*/\1/p')
 awk -v l="$L" -v a=$((a1 - a0)) -v d=$((d1 - d0)) -v r="$rate" -v n="${TOKENS:-1024}" 'BEGIN {
+  if (d <= 0 || a < 0 || r <= 0) { print "invalid or missing decode counters/rate" > "/dev/stderr"; exit 1 }
   t = 1 + a / d; printf "%s: %d steps, %.2f tokens per step, %.1f tok/s, %.1f ms per step%s\n", l, d, t, r, 1000 * t / r,
     (d + a > 1.05 * (n + 9)) ? sprintf("  CONTAMINATED: the counters saw %d tokens for %d decoded", d + a, n + 9) : "" }'

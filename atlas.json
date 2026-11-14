@@ -1,4 +1,5 @@
 {
+ "$schema": "./atlas.schema.json",
  "schema": "homelab-atlas/1",
  "updated": "2026-10-30",
  "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). quality_on_this_build: false marks a result whose quality check ran on another build, card or configuration than the speed figure (its conditions and quality text say which); absent means the check ran on the configuration the result names. A result that needs several cards lists them all in cards; card is the one whose page it cites. workload: bench (fixed prompts, one request at a time), agent-served (per-request decode measured while serving a coding agent; the agent's wall time also holds prompt reading and tool time), synthetic-many-agents (every agent reads one prompt once, then writes: decode capacity, not what agents doing real work get), agent-replay (recorded coding-agent sessions replayed with their own prompts, outputs and tool time; agent_useful_tps is output tokens over the measured window, summed over agents). agent_useful_tps: what agents got, prompt reading and tool time included.",
@@ -135,7 +136,13 @@
    "date": "2026-10-07",
    "status": "measured",
    "source": "3090-ti/#qwen38-27b-on-vllm-cuda-about-104-toks",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "rtx-3090-ti",
@@ -149,7 +156,13 @@
    "date": "2026-10-20",
    "status": "unpublished-code",
    "source": "3090-ti/#glm-53-flash-a-route-trim-clears-25-toks",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "rtx-3090-ti",
@@ -164,7 +177,13 @@
    "date": "2026-10-18",
    "status": "measured",
    "source": "3090-ti/#qwen38-flash-next-agent-work-from-ram",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "rtx-3090-ti",
@@ -180,7 +199,13 @@
    "status": "unpublished-code",
    "source": "3090-ti/#deepseek-v41-flash-27-toks-on-a-gaming-card",
    "ledger_id": "snoopy-v41-gsq-iq2xs-strata-ramcopy-eval",
-   "workload": "agent-served"
+   "workload": "agent-served",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "quadro-rtx-6000",
@@ -200,7 +225,13 @@
    "public_fork_note": "public_fork_decode_tps is the same recipe on branch mixed-cuda-vulkan-expert-banks, without pre-binding, the tier split and #2712; every input of the 12.69 run: rtx-6000/v41-recipe/",
    "source": "rtx-6000/#deepseek-v41-flash-the-best-run",
    "ledger_id": "droopy-v41-v41fs-ts2-0127",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "quadro-rtx-6000",
@@ -215,7 +246,13 @@
    "date": "2026-10-21",
    "status": "measured",
    "source": "rtx-6000/#v41-at-189k-tokens-every-fact-recalled",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "quadro-rtx-6000",
@@ -230,7 +267,13 @@
    "date": "2026-10-20",
    "status": "measured",
    "source": "rtx-6000/#at-a-glance",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "quadro-rtx-6000",
@@ -244,7 +287,13 @@
    "date": "2026-10-20",
    "status": "measured",
    "source": "rtx-6000/#at-a-glance",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "quadro-rtx-6000",
@@ -258,7 +307,13 @@
    "date": "2026-10-24",
    "status": "measured",
    "source": "rtx-6000/#no-silent-fallback-experts-on-optane-by-accident",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "arc-pro-b70-1",
@@ -273,7 +328,13 @@
    "date": "2026-10-19",
    "status": "measured",
    "source": "b70/#at-a-glance",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "arc-pro-b70-1",
@@ -287,7 +348,13 @@
    "date": "2026-09",
    "status": "measured",
    "source": "b70/vllm-xpu/#3-a-smaller-vocabulary-for-the-mtp-drafter-draft-vocabpy",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "arc-pro-b70-1",
@@ -304,7 +371,13 @@
    "date": "2026-09",
    "status": "measured",
    "source": "b70/#results",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "arc-pro-b70-2",
@@ -318,7 +391,13 @@
    "date": "2026-10-04",
    "status": "measured",
    "source": "b70/ornith-35b-a3b.md#speed",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "arc-pro-b70-1",
@@ -337,7 +416,13 @@
    "status": "unpublished-code",
    "source": "b70/many-agents.md#at-a-glance",
    "quality_on_this_build": false,
-   "workload": "synthetic-many-agents"
+   "workload": "synthetic-many-agents",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "arc-pro-b70-1",
@@ -355,7 +440,13 @@
    "date": "2026-10-24",
    "status": "unpublished-code",
    "source": "b70/many-agents.md#at-a-glance",
-   "workload": "synthetic-many-agents"
+   "workload": "synthetic-many-agents",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "arc-pro-b70-1",
@@ -375,7 +466,13 @@
    "status": "unpublished-code",
    "source": "b70/many-agents.md#newer-build-3779-toks-at-32-agents",
    "ledger_id": "odie-fnx-iq3xxs-2xb70-sweep-served-c8-base-1024",
-   "workload": "synthetic-many-agents"
+   "workload": "synthetic-many-agents",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "mi25",
@@ -395,7 +492,13 @@
     "mi25",
     "gtx-1080-ti"
    ],
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "gtx-1080-ti",
@@ -412,7 +515,13 @@
    "status": "measured",
    "source": "1080-ti/#at-a-glance",
    "ledger_id": "lassie-v41-q8-fs3",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "gtx-1080-ti",
@@ -429,7 +538,13 @@
    "status": "measured",
    "source": "1080-ti/#one-kernel-47-",
    "ledger_id": "lassie-v41-q8-fs3dec",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "cpu-only",
@@ -446,7 +561,13 @@
    "status": "measured",
    "source": "epyc-cpu/#at-a-glance",
    "ledger_id": "lassie-v41-q8-rows8-dense-t64",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "arc-pro-b70-1",
@@ -468,7 +589,13 @@
    "quality": "none on this build",
    "date": "2026-10-26",
    "status": "measured",
-   "source": "b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with"
+   "source": "b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "arc-pro-b70-1",
@@ -487,7 +614,13 @@
    "quality": "none on this build",
    "date": "2026-10-26",
    "status": "measured",
-   "source": "b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with"
+   "source": "b70/many-agents.md#real-coding-agent-traffic-the-number-to-plan-with",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "arc-pro-b70-2",
@@ -510,7 +643,13 @@
    "date": "2026-09-27",
    "status": "measured",
    "source": "b70/bonsai-2-27b.md#speed",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "rtx-3090-ti",
@@ -525,7 +664,13 @@
    "date": "2026-10-30",
    "status": "measured",
    "source": "b70/llama.cpp-sycl-fa-sinks/#flint-on-two-b70s-and-on-an-rtx-3090-ti",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   },
   {
    "card": "arc-pro-b70-1",
@@ -540,7 +685,25 @@
    "date": "2026-10-30",
    "status": "measured",
    "source": "b70/llama.cpp-sycl-fa-sinks/#flint-on-two-b70s-and-on-an-rtx-3090-ti",
-   "workload": "bench"
+   "workload": "bench",
+   "provenance_pins": {
+    "weights_sha256": null,
+    "engine_commit": null,
+    "patch_sha256": null,
+    "outcome_probe_receipt": null
+   }
   }
- ]
+ ],
+ "provenance_contract": {
+  "required_for_active_qualified_seats": [
+   "weights_sha256",
+   "engine_commit"
+  ],
+  "optional_pins": [
+   "patch_sha256",
+   "outcome_probe_receipt"
+  ],
+  "missing_admission_status": "unpinned_provenance",
+  "missing_verdict": "UNKNOWN"
+ }
 }

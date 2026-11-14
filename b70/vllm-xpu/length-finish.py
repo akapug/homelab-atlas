@@ -38,7 +38,8 @@ for old, new, upstream in (
     if upstream and old not in s and s.count(upstream) == 1:
         print(f"already upstream: {old.strip()}")
         continue
-    assert s.count(old) == 1, f"not found exactly once: {old.strip()}"
+    if not (s.count(old) == 1):
+        raise RuntimeError(f"not found exactly once: {old.strip()}")
     s = s.replace(old, new)
 open(p, "w").write(s)
 print(f"patched {p}")
