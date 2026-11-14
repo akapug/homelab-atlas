@@ -52,12 +52,16 @@ test('solveLambda handles non-finite shadow prices without null bsel crash', () 
 });
 
 test('rooflineAttribute produces finite attribution terms on valid prefill input', () => {
-  if (typeof FM.rooflineAttribute === 'function') {
-    const pred = FM.prefillRoof(D, { box: 'droopy', model: 'v41', engine: 'ik', ctx: 16384, n_prompt: 4096 });
-    if (pred && pred.status === 'BOUNDED') {
-      const out = FM.rooflineAttribute(D, pred, 100);
-      assert.ok(out && typeof out === 'object');
-    }
+  const fit = FM.rooflineFit(D, 'tqllm');
+  assert.strictEqual(fit.status, 'FIT');
+  const q = { box: 'snoopy', model: 'fnx', engine: 'tqllm', store: 'gsq_iq3s', unlock: 'stock', tokens: 1000 };
+  const pred = FM.prefillRoof(D, q, fit.eta);
+  assert.strictEqual(pred.status, 'OK', pred.why);
+  const out = FM.rooflineAttribute(D, q, 100, fit.eta);
+  assert.strictEqual(out.status, 'OK');
+  assert.ok(Array.isArray(out.terms) && out.terms.length > 0);
+  for (const t of out.terms) {
+    assert.ok(t.k === null || Number.isFinite(t.k));
   }
 });
 
