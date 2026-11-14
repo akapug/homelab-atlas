@@ -1387,6 +1387,9 @@ checks = {
                                {'share': 0.65, 'kl': 0.04036, 'top1': 0.9535, 'tag': M, 'run': 'droopy-v41-q3q2-kl-lassie',
                                 'src': 'v41kl var-q3q2.json (lassie 10-18 15:12Z, the same 1376 positions and reference ref-r1.json, same CPU build unpublished build): the 1017 NON-split requant, routed experts q3_K on layers 0-13 and q2_K on 14-39 (PLAN step 5 requant A; ik llama-quantize unpublished build, imatrix-1017-fixed 6a440a1c), non-experts as the source; share = the planner layer_types share 0.650. p99 0.639, max 3.23; groups std 0.0478 / 0.9442, code 0.0238 / 0.9742 (the coding prompts alone clear the bar); the 1-point line had predicted KL 0.0488 / top-1 0.927 here'}],
                     'note': 'V4.1 line through the measured reference floor (0) and TWO store points on one reference and one engine: the 1017 split (22.5 % of reads at q2_K) and the non-split q3_K L0-13 / q2_K requant (65 %). Both points sit near the line (the 65 % point slightly below it: KL 0.0404 measured vs 0.0488 predicted from the first point); the split point keeps MXFP4 hot experts, the requant has none, so share alone carries the fit'}}},
+    'earf': {
+        'label': 'bounded author admission under an executed Judge',
+        'rule': 'for coding/agent roles: an executed authoring battery (battery_pass_rate or authoring_probe) >= battery_min_pass_rate (default 0.90) decides; otherwise arg_values EARf >= the model family perturbation_floor - 0.015; with no floor, EARf < 0.90 is UNKNOWN (degraded) and an unmeasured seat is UNKNOWN. There is no absolute EARf bar: 0.98 sat above the measured perturbation floor of every non-identical file'},
 }
 checks['quality']['families'].update(FAMILY_QUALITY)
 # every family with measured points gets its own least-squares line through its base (share 0) and a max 2-bit share

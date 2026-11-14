@@ -5,16 +5,23 @@
 # per-token MoE overhead. Prints one JSON line per arm: the arm, its kind, the model path and the llama-bench jsonl row.
 # usage: tools/bench_gpu.sh ARMS_FILE BENCH_CMD...   (BENCH_CMD = a llama-bench binary, or a docker run prefix ending in it)
 # ARMS_FILE: label <tab> kind (dense|moe) <tab> model path as BENCH_CMD sees it
-set -u
+set -uo pipefail
 GEN=${GEN:-128}   # decode tokens per repetition
 REPS=${REPS:-3}   # llama-bench repetitions
 ARMS=$1; shift
 rc=0
 while IFS=$'\t' read -r arm kind model; do
   [[ -z "$arm" || "$arm" == \#* ]] && continue
-  out=$("$@" -m "$model" -ngl 99 -p 0 -n "$GEN" -r "$REPS" -o jsonl 2>/dev/null | tail -n 1); r=$?
-  [[ -z "$out" ]] && { r=1; out=null; }
+  out=$("$@" -m "$model" -ngl 99 -p 0 -n "$GEN" -r "$REPS" -o jsonl 2>/dev/null | tail -n 1)
+  r=$?
+  [[ -z "$out" ]] && { [[ $r -eq 0 ]] && r=1; out=null; }
   [[ $r -ne 0 ]] && rc=$r
-  printf '{"arm":"%s","kind":"%s","model":"%s","rc":%d,"bench":%s}\n' "$arm" "$kind" "$model" "$r" "$out"
+  python3 -c 'import json, sys
+arm, kind, model, r_s, out_s = sys.argv[1:6]
+try:
+    bench = json.loads(out_s)
+except ValueError:
+    bench = None
+print(json.dumps({"arm": arm, "kind": kind, "model": model, "rc": int(r_s), "bench": bench}, separators=(",", ":")))' "$arm" "$kind" "$model" "$r" "$out"
 done <"$ARMS"
 exit $rc

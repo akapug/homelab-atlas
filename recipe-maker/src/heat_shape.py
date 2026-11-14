@@ -13,6 +13,12 @@ SHAPE_SRC = ('ESTIMATE: synthetic heat, cumulative share = x^%.3f over the exper
 
 
 def synth_heat(L, E, frac_of=1.0, seed=17):
+    if type(L) is not int or type(E) is not int or L <= 0 or E <= 0:
+        raise ValueError("layers and experts must be positive integers")
+    if not isinstance(frac_of, (int, float)) or isinstance(frac_of, bool) or not math.isfinite(frac_of) or not 0 < frac_of <= 1:
+        raise ValueError("frac_of must be finite and in (0, 1]")
+    if type(seed) is not int:
+        raise ValueError("seed must be an integer")
     out, st = [], seed
     for l in range(L):
         perm = list(range(E))
@@ -20,7 +26,9 @@ def synth_heat(L, E, frac_of=1.0, seed=17):
             st = (st * 1103515245 + 12345) % 2 ** 31
             j = st % (i + 1)
             perm[i], perm[j] = perm[j], perm[i]
-        C = lambda x: (x * frac_of) ** SHAPE_A / frac_of ** SHAPE_A
+        # The normalized power law is scale invariant: frac_of cancels. This is
+        # a synthetic rank distribution, never evidence about actual expert IDs.
+        C = lambda x: x ** SHAPE_A
         row = [0.0] * E
         for r in range(E):
             row[perm[r]] = round(1e6 * (C((r + 1) / E) - C(r / E)), 3)

@@ -89,13 +89,12 @@ for d, dirs, files in os.walk(ROOT):
                 misses.append(f'{os.path.relpath(md, ROOT)}: no heading for {link}')
 
 # --accuracy: the planner accuracy table in recipe-maker/README.md against what `node report.js --accuracy` prints
-# (builds data.json first if it is missing). Each cell "P % (N runs, bias B %)" must be a line of the matching section
+# (always rebuilds data.json first). Each cell "P % (N runs, bias B %)" must be a line of the matching section
 # for the row's box: column 1 the launch-time decode lines, 2 the no-draft lines, 3 the replay with today's planner.
 if '--accuracy' in sys.argv:
     import subprocess
     rm = os.path.join(ROOT, 'recipe-maker')
-    if not os.path.exists(os.path.join(rm, 'data.json')):
-        subprocess.run([sys.executable, 'build.py'], cwd=rm, check=True, capture_output=True)
+    subprocess.run([sys.executable, 'build.py'], cwd=rm, check=True, capture_output=True)
     out = subprocess.run(['node', 'report.js', '--accuracy'], cwd=rm, check=True, capture_output=True, text=True).stdout
     head, _, replay = out.partition("-- the same with today's planner")
     replay = replay.partition('\n-- ')[0]

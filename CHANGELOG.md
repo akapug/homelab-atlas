@@ -6,6 +6,13 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+### Fixed
+- Recipe Maker: prefer executed authoring outcomes and model-relative EARf margins, retain UNKNOWN seats,
+  scope recall warnings to measured model budgets, and require a conversation door when agents exceed batch slots.
+  These are seat checks: a run that declares no coding/agent role keeps its KL verdict. Joint card-curve fitting,
+  calibration caching, finite priors, concurrent screen-ledger writes, browser-state validation and benchmark/patch
+  failure handling are covered in the [Wave 3 audit](recipe-maker/docs/wave3-audit.md). No measured headline changed.
+
 ### Added
 - `b70/llama.cpp-sycl-fa-sinks/`: two commits to llama.cpp's SYCL backend on master `a34de8618b25`, published as the
   branch `sycl-mkl-fa-sinks` of akapug/llama.cpp. A fix: the MKL flash-attention path read a mask broadcast over heads
