@@ -434,28 +434,39 @@
       // one type per layer (or per model): pick the type whose best-tier costs summed over the scope's groups are lowest
       const qs = ctx.qList;
       for (const gis of ctx.byLayer) {
-        let bc = Infinity, bsel = null;
+        let bc = Infinity, bsel = null, fsel = null;
         const sel = new Int32Array(gis.length);
         for (const q of qs) {
           const os = ctx.optsByQ[q];
+          if (!os || !os.length) continue;
           let c = 0;
           for (let i = 0; i < gis.length; i++) {
             const g = gis[i], n = groups[g].n, row = g * nO;
             let b = -1, cb = Infinity;
-            for (const o of os) { const x = base[row + o] + n * price[o]; if (x < cb) { cb = x; b = o; } }
+            for (const o of os) {
+              const x = base[row + o] + n * price[o];
+              if (Number.isFinite(x) ? (b < 0 || !Number.isFinite(cb) || x < cb) : b < 0) { cb = x; b = o; }
+            }
             c += cb; sel[i] = b;
-            if (c >= bc) break;
+            if (bsel !== null && !(c < bc)) break;
           }
-          if (c < bc) { bc = c; bsel = Int32Array.from(sel); }
+          if (!fsel) fsel = Int32Array.from(sel);
+          if (Number.isFinite(c) && c < bc) { bc = c; bsel = Int32Array.from(sel); }
         }
-        for (let i = 0; i < gis.length; i++) add(gis[i], bsel[i]);
+        const pick = bsel || fsel;
+        if (!pick) throw new Error('choose: no valid quant/tier options for layer group');
+        for (let i = 0; i < gis.length; i++) add(gis[i], pick[i]);
       }
       return use;
     }
+    if (!nO) throw new Error('choose: no valid quant/tier options');
     for (let g = 0; g < groups.length; g++) {
       const n = groups[g].n, row = g * nO;
       let best = -1, bc = Infinity;
-      for (let o = 0; o < nO; o++) { const c = base[row + o] + n * price[o]; if (c < bc) { bc = c; best = o; } }
+      for (let o = 0; o < nO; o++) {
+        const c = base[row + o] + n * price[o];
+        if (Number.isFinite(c) ? (best < 0 || !Number.isFinite(bc) || c < bc) : best < 0) { bc = c; best = o; }
+      }
       add(g, best);
     }
     return use;
@@ -1281,6 +1292,8 @@
     const checks = [{ id: 'inputs', label: 'recipe inputs (box, engine, types, row limits, threads)', status: worst, detail: inp.length ? inp.map(x => x[0] + ': ' + x[1]).join('; ') : 'consistent' }].concat(runChecks(data, facts));
     checks.push(conditionsCheck(data, r, kn.draft));
     checks.push(cpuReserveCheck(data, r));
+    const qChk = checks.find(c => c.id === 'quality');
+    checks.push(earfCheck(data, r, Object.assign({}, opts || {}, { qualityStatus: qChk && qChk.status })));
     const kvh = kvHostCheck(data, r);
     if (kvh) checks.push(kvh);
     const hp = hostPinnedCheck(data, r);
@@ -1312,6 +1325,83 @@
         detail: 'predicted pinned host peak ' + pk.toFixed(1) + ' GiB (pinned experts + host extra ' + prediction.host_extra_gib + ' FIT + driver extra ' + prediction.pinned_driver_extra_gib + ') + container anon ' + an + ' GiB; ceiling ' + top.toFixed(1) + ' GiB (' + v(box.dram.total_gib) + ' total - floor ' + floor + ' - margin ' + margin + '; a kill cannot land inside a driver allocation, so this ceiling is the containment); cap ' + (cap === undefined || cap === null ? 'not declared (mem_cap_gib)' : cap + ' GiB (holds anon + page cache, not the pinned buffer)') });
     }
     return { checks, facts, notes, bad_input: false, prediction, priors: priorsFor(data, r) };
+  }
+  // Behavioral tool-argument fidelity gate (EARf): resolves measured EARf on the recipe/run, checks.earf.entries, or
+  // data.multibox (models.*.stores.*.fidelity.arg_values_earf and settings.replica_type_earf). Coding/agent roles default to
+  // minEarf = 0.98 (checks.earf.bar_earf), failing below bar and warning (UNKNOWN) when unmeasured on sub-4-bit quants.
+  function earfStoreTypes(r) {
+    const st = (r && r.store) || {};
+    if (typeof st === 'string') return { key: st, types: [st] };
+    const key = st.name || st.id || (!st.split && !st.layer_types && !st.read_share_by_type && !st.hot_type && (st.types || []).length === 1 ? st.types[0] : null);
+    const raw = [].concat(st.types || [], st.hot_type || [], st.cold_type || [], (st.layer_types || []).map(x => x && x.type),
+      Object.keys(st.read_share_by_type || {}), Object.values(st.tensor_types || {})).filter(Boolean);
+    return { key, types: [...new Set(raw)] };
+  }
+  function earfOf(data, r, opts) {
+    const m = (opts && opts.measured) || {}, C = (data && data.checks && data.checks.earf) || {};
+    const num = x => { const y = v(x); return typeof y === 'number' && Number.isFinite(y) ? y : null; };
+    if (m.earf !== undefined && m.earf !== null && num(m.earf) !== null)
+      return { earf: num(m.earf), src: (m.earf && m.earf.src) || m.earf_src || 'measured.earf' };
+    if (r && r.earf !== undefined && r.earf !== null && num(r.earf) !== null)
+      return { earf: num(r.earf), src: (r.earf && r.earf.src) || r.earf_src || 'recipe.earf' };
+    const { key, types } = earfStoreTypes(r), entries = C.entries || {};
+    const cands = [key].concat(types).filter(Boolean);
+    for (const k of cands) {
+      for (const ek of [r.model + '|' + r.engine + '|' + k, r.model + '|' + k, k]) {
+        if (entries[ek] !== undefined && num(entries[ek]) !== null)
+          return { earf: num(entries[ek]), src: (entries[ek] && entries[ek].src) || ('checks.earf.entries.' + ek) };
+      }
+    }
+    const MB = (data && data.multibox) || {}, M = (MB.models || {})[r && r.model], stores = (M && M.stores) || {};
+    const hits = [];
+    for (const k of cands) {
+      const f = stores[k] && stores[k].fidelity && stores[k].fidelity.arg_values_earf;
+      if (f && num(f) !== null) hits.push({ earf: num(f), src: f.src || ('multibox.models.' + r.model + '.stores.' + k) });
+    }
+    const T = v((MB.settings || {}).replica_type_earf) || {}, tSrc = ((MB.settings || {}).replica_type_earf || {}).src || 'multibox.settings.replica_type_earf';
+    for (const q of types) {
+      if (T[q] !== undefined && num(T[q]) !== null) hits.push({ earf: num(T[q]), src: tSrc + ' (' + q + ')' });
+    }
+    if (!hits.length) return { earf: null, src: null };
+    return hits.reduce((a, b) => (b.earf < a.earf ? b : a));
+  }
+  function isSub4BitQuant(data, model, q) {
+    const t = data && data.types && data.types[q];
+    if (t && Number.isFinite(v(t.bpw))) {
+      if (v(t.bpw) < 4) return true;
+    } else if (/^(?:gsq_)?iq[123]|^ud_iq[123]|^ud_q[23]|^q[23]_|^exl3_[123]\.|int[23]/i.test(String(q || ''))) return true;
+    const S = ((((data && data.multibox) || {}).models || {})[model] || {}).stores || {};
+    const note = S[q] && S[q].fidelity && S[q].fidelity.note;
+    return !!(note && /iq[123]|sub-4|not a clean 4-bit/i.test(note));
+  }
+  function earfCheck(data, r, opts) {
+    const C = (data && data.checks && data.checks.earf) || {}, label = C.label || 'behavioral tool-argument fidelity gate (EARf)';
+    const barDefault = C.bar_earf !== undefined ? v(C.bar_earf) : 0.98;
+    const role = (opts && opts.role) || (r && r.role) || (((r && r.conditions) || {}).workload || {}).role || 'coding';
+    const codingRole = role !== 'non-coding' && role !== 'chat';
+    const minEarf = opts && opts.minEarf !== undefined ? opts.minEarf : r && r.min_earf !== undefined ? r.min_earf : (codingRole ? barDefault : null);
+    const { key, types } = earfStoreTypes(r), allQ = [...new Set([key].concat(types).filter(Boolean))];
+    const sub4 = allQ.filter(q => isSub4BitQuant(data, r && r.model, q));
+    const found = earfOf(data, r, opts);
+    if (minEarf === null)
+      return { id: 'earf', label, status: 'PASS', detail: 'EARf gate disabled for role ' + role, earf: found.earf, min_earf: null, sub4bit: sub4.length > 0 };
+    if (found.earf !== null) {
+      const ok = found.earf >= minEarf;
+      return { id: 'earf', label, status: ok ? 'PASS' : 'FAIL', earf: found.earf, min_earf: minEarf, sub4bit: sub4.length > 0,
+        detail: 'EARf ' + found.earf.toFixed(3) + (ok ? ' >= ' : ' < ') + minEarf.toFixed(2) + ' bar (' + found.src + ')' };
+    }
+    if (sub4.length) {
+      const nonSub4 = allQ.filter(q => sub4.indexOf(q) < 0 && data && data.types && data.types[q] && Number.isFinite(v(data.types[q].bpw)) && v(data.types[q].bpw) >= 4);
+      const MB = (data && data.multibox && data.multibox.models) || {};
+      const hasPanel = !!(MB[r && r.model] && Object.values(MB[r.model].stores || {}).some(s => s && s.fidelity && s.fidelity.arg_values_earf));
+      const warn = 'WARNING: EARf unmeasured on sub-4-bit quant (' + sub4.join(', ') + '); minEarf ' + minEarf.toFixed(2) + ' required for ' + role + ' role';
+      if (!hasPanel && nonSub4.length && opts && opts.qualityStatus === 'PASS')
+        return { id: 'earf', label, status: 'PASS', earf: null, min_earf: minEarf, sub4bit: true, warning: warn,
+          detail: warn + ' (covered only by calibrated KL gate on mixed ' + nonSub4.join('/') + ' + ' + sub4.join('/') + ' split)' };
+      return { id: 'earf', label, status: 'UNKNOWN', earf: null, min_earf: minEarf, sub4bit: true, warning: warn, detail: warn };
+    }
+    return { id: 'earf', label, status: 'PASS', earf: null, min_earf: minEarf, sub4bit: false,
+      detail: 'EARf unmeasured (>= 4-bit store' + (allQ.length ? ': ' + allQ.join(', ') : '') + '; minEarf ' + minEarf.toFixed(2) + ' applies when measured)' };
   }
   // the serving conditions of data.conditions: a run that leaves one undeclared still runs (UNKNOWN; --strict holds it), but its
   // numbers do not compare with a run that differs in it
@@ -1614,7 +1704,7 @@
       const o = r.observed || {};
       const f = Object.assign({}, res.facts, { numa: Object.assign({}, res.facts.numa || {}, o.numa || {}) });
       if (o.decode_kl !== undefined && o.decode_kl !== null) f.decode_kl = o.decode_kl;
-      const inp = res.checks.filter(c => (c.id === 'inputs' && c.status !== 'PASS') || c.id === 'expert_residency' || c.id === 'fallback' || c.id === 'cpu_pool_rows');
+      const inp = res.checks.filter(c => (c.id === 'inputs' && c.status !== 'PASS') || c.id === 'expert_residency' || c.id === 'fallback' || c.id === 'cpu_pool_rows' || c.id === 'earf');
       // a serving run keeps its host_pinned check with what it measured beside the prediction (end of run, or a guard stop's lower bound)
       const hp = res.checks.find(c => c.id === 'host_pinned'), end = o.pinned_gib, stop = o.pinned_at_stop_gib;
       const seen = !hp || !hp.pred ? '' : end !== undefined ? '; MEASURED pinned ' + end + ' GiB at the run end (predicted ' + hp.pred.pinned_gib.toFixed(2) + ', ' + (hp.pred.pinned_gib >= end ? '+' : '') + (100 * (hp.pred.pinned_gib / end - 1)).toFixed(1) + ' %)'
@@ -2790,6 +2880,18 @@
     return { eligible: !why.length, why, mode: v(p.mode) || null, evidence_config: v(p.evidence_config) || null, metric: v(p.metric) || null };
   }
   const networkCanonical = x => Array.isArray(x) ? x.map(networkCanonical) : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().map(k => [k, networkCanonical(x[k])])) : x;
+  function networkSame(a, b) {
+    if (typeof a === 'number' || typeof b === 'number') {
+      return typeof a === 'number' && typeof b === 'number' && Number.isFinite(a) && Number.isFinite(b) && a === b;
+    }
+    if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return a === b;
+    if (Array.isArray(a) || Array.isArray(b)) {
+      return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => networkSame(x, b[i]));
+    }
+    const ka = Object.keys(a).filter(k => a[k] !== undefined).sort();
+    const kb = Object.keys(b).filter(k => b[k] !== undefined).sort();
+    return ka.length === kb.length && ka.every((k, i) => k === kb[i] && networkSame(a[k], b[k]));
+  }
   // The browser may edit assumptions, never the measured baseline or the profile's captured costs.
   function networkAssumptions(data, key, x) {
     const W = data.window && data.window.configs[key], fields = ['mode', 'evidence_config', 'metric'];
@@ -2805,7 +2907,7 @@
     if (!basis || !Number.isInteger(basis.agents) || basis.agents < 1 || !['profile', 'ubench'].includes(basis.profile_source)) return { checks: [{ id: 'network_basis', status: 'FAIL', detail: 'priced positive integer agents and profile/ubench source required' }], facts: null, notes: [], bad_input: true, prediction: null };
     const candidate = winNetwork(data, r.network_window, { agents: basis.agents, source: basis.profile_source }).find(x => x.id === r.network_recipe);
     if (!candidate || r.box !== W.box || r.model !== W.model || r.engine !== W.engine) return { checks: [{ id: 'network_recipe', status: 'FAIL', detail: 'network recipe/window box, model and engine must match' }], facts: null, notes: [], bad_input: true, prediction: null };
-    const equal = r.network_prediction_identity && JSON.stringify(networkCanonical(r.network_prediction_identity)) === JSON.stringify(networkCanonical(candidate.prediction_identity));
+    const equal = !!(r.network_prediction_identity && networkSame(r.network_prediction_identity, candidate.prediction_identity));
     const checks = candidate.checks.concat([{ id: 'network_identity', status: equal ? 'PASS' : 'FAIL', detail: equal ? 'exact priced identity retained' : 'reprice after any input, source, mode or transfer change' }]);
     checks.push({ id: 'network_comparison', status: candidate.comparison.eligible ? 'PASS' : 'UNKNOWN', detail: candidate.comparison.why.join('; ') || 'same mode, metric and evidence configuration' });
     return { checks, facts: { box: r.box, model: r.model, engine: r.engine, kind: 'network' }, notes: ['Modeled network recipe; this gate does not run or qualify any remote engine.'], bad_input: false,
@@ -2979,9 +3081,8 @@
         frontier_identity: Object.fromEntries(['mode', 'evidence_config', 'metric'].map(k => [k, (W.frontier || {})[k] || null])), frontier: (W.frontier || {}).ledger, baseline_tps: base,
         backend_supported: r.backend_supported, fidelity: r.fidelity, boxes: r.boxes, stage_boxes: r.stage_boxes || null, remote_box: r.remote_box || null,
         transfers: (r.transfers || []).map((t, i) => ({ recipe: t, observation: transfers[i].observation || null, inputs: transfers[i].inputs })), inputs: r.params, resources: r.resources, resource_plans: resources.plans, power: r.power };
-      const canonical = x => JSON.stringify(networkCanonical(x));
       const attempts = (W.attempts || []).filter(a => a.network_recipe === r.id).map(a => {
-        const receipt = a.network_receipt, matches = !!(receipt && receipt.recipe === r.id && canonical(receipt.identity) === canonical(identity) && canonical(receipt.measured_identity) === canonical(identity));
+        const receipt = a.network_receipt, matches = !!(receipt && receipt.recipe === r.id && networkSame(receipt.identity, identity) && networkSame(receipt.measured_identity, identity));
         return Object.assign({}, a, { matches_priced_identity: matches, measurement_status: matches ? 'same priced identity' : 'historical or unqualified identity; no current recipe credit' });
       });
       return { id: r.id, lever: r.label, kind: 'network', shape: r.shape, boxes: r.boxes, status, checks, resources, inputs, transfers, metrics, power, comparison: compare, eligible,
@@ -3593,7 +3694,7 @@
     return out;
   }
   // sink (optional): gets .cpu, the CPU-side expert seconds of the token (the draft fit reads the anchor's CPU share)
-  function anchorTime(data, a, f, host, sink) {
+  function anchorTime(data, a, f, host, sink, pmemBw) {
     const box = data.boxes[a.box];
     const g = box.gpus[0];
     const eta = v(data.assume.gpu_eta);
@@ -3601,9 +3702,10 @@
     const Bd = v(box.dram.bw) * 1e9;
     const gbw = v(g.bw) * 1e9 * eta;
     let T = host / 1000 + B.dense_gb * 1e9 / gbw;
+    const pmBw = pmemBw !== undefined && pmemBw !== null ? pmemBw : (box.pmem && (box.pmem.bw_measured || box.pmem.bw));
     anchorParts(B).forEach(([t, q, gb]) => {
       const cpu = Bd * kappaOf(data, a.box, q) * f;
-      const r = t === 'gpu' ? gbw : t === 'dram' ? Math.min(Bd, cpu) : t === 'pmem' ? (box.pmem ? Math.min(v(box.pmem.bw) * 1e9, cpu) : 1) : v(box.nvme.bw) * 1e9; // box.pmem.bw is swapped to the fitted value by applyCal
+      const r = t === 'gpu' ? gbw : t === 'dram' ? Math.min(Bd, cpu) : t === 'pmem' ? (box.pmem ? Math.min(v(pmBw) * 1e9, cpu) : 1) : v(box.nvme.bw) * 1e9; // applyCal swaps box.pmem.bw to the fitted value
       T += gb * 1e9 / r;
       if (sink && t !== 'gpu') sink.cpu = (sink.cpu || 0) + gb * 1e9 / r;
     });
@@ -3620,9 +3722,8 @@
     return fc < fd ? [c, fc] : [d, fd];
   }
   function calibrate(data) {
-    const cal = { boxes: {}, rows: [] };
+    const cal = { boxes: {}, types: {}, rows: [] };
     const anchors = data.anchors;
-    Object.keys(data.boxes).forEach(bk => { const b = data.boxes[bk]; if (b.pmem && b.pmem.bw_measured) b.pmem.bw = b.pmem.bw_measured; });
     Object.keys(data.boxes).forEach(bk => {
       const box = data.boxes[bk];
       const A = anchors.filter(a => a.box === bk && a.fit === 'speed' && !a.draft);
@@ -3632,26 +3733,24 @@
       if (A.length) {
         const fixF = box.cpu.f_fixed;
         const fitPm = box.pmem && box.pmem.fit_range && A.some(a => a.pmem);
-        const pmOrig = box.pmem ? box.pmem.bw : null;
+        const pmOrig = box.pmem ? (box.pmem.bw_measured || box.pmem.bw) : null;
         let best = null;
         const fGrid = fixF ? [v(box.cpu.f_default)] : (() => { const a = []; for (let x = 0.05; x <= 1.6; x += 0.005) a.push(x); return a; })();
         const pGrid = fitPm ? (() => { const a = []; for (let x = box.pmem.fit_range[0]; x <= box.pmem.fit_range[1] + 1e-9; x += 0.2) a.push(x); return a; })() : [null];
         for (const pb of pGrid) {
-          if (pb !== null) box.pmem.bw = { v: pb };
+          const pmVal = pb !== null ? { v: pb } : pmOrig;
           for (const f of fGrid) {
             let err = 0; const hosts = {};
             for (const mk of models) {
               const Am = A.filter(a => hg(a.model) === mk);
               const hFixed = box.host_fixed && box.host_fixed[mk] !== undefined ? v(box.host_fixed[mk]) : null;
-              const e2 = h => { let s2 = 0; for (const a of Am) { const d = Math.log(1 / anchorTime(data, a, f, h) / a.meas); s2 += d * d * (a.w || 1); } return s2; };
+              const e2 = h => { let s2 = 0; for (const a of Am) { const d = Math.log(1 / anchorTime(data, a, f, h, null, pmVal) / a.meas); s2 += d * d * (a.w || 1); } return s2; };
               const [bh, be] = hFixed !== null ? [hFixed, e2(hFixed)] : golden(e2, 0, 120, 36);
               hosts[mk] = bh; err += be;
             }
             if (!best || err < best.err) best = { f, hosts, err, pb };
           }
         }
-        if (pmOrig) box.pmem.bw = pmOrig;
-        if (fitPm) { box.pmem.bw_measured = pmOrig; box.pmem.bw = { v: best.pb, tag: 'FIT', src: 'fitted on ' + bk + ' within ' + box.pmem.fit_range.join('-') + ' GB/s; measured: ' + pmOrig.src }; }
         const nPar = models.length + (fixF ? 0 : 1) + (fitPm ? 1 : 0);
         res.f = { v: best.f, tag: fixF ? box.cpu.f_default.tag : 'FIT', src: fixF ? box.cpu.f_default.src : ('fit to ' + A.length + ' measured no-draft points on ' + bk + ' (' + models.join(', ') + '), ' + nPar + ' parameters, rms log error ' + Math.sqrt(best.err / A.length).toFixed(3)) };
         Object.keys(data.models).forEach(mk => {
@@ -3694,13 +3793,12 @@
       if (!t.kappa_from) return;
       const kf = t.kappa_from, box = data.boxes[kf.box];
       const base = kf.rate_gbs / (v(box.dram.bw) * v(cal.boxes[kf.box].f));
-      t.kappa = { v: base * (kf.mult || 1), tag: kf.tag || 'FIT', src: kf.src };
+      cal.types[q] = { v: base * (kf.mult || 1), tag: kf.tag || 'FIT', src: kf.src };
     });
     // residual rows (all anchors incl. draft ones and references)
     anchors.forEach(a => {
       const res = cal.boxes[a.box];
       if (a.engine && data.engines[a.engine] && data.engines[a.engine].host_ms) {
-        // engine with its own measured decomposition (glm-lite)
         // engine with its own measured decomposition (glm-lite); history rows carry their own measured rates (eng_over)
         const E = data.engines[a.engine], box = data.boxes[a.box], B = a.explicit, eo = a.eng_over || {};
         const Bd = v(box.dram.bw) * 1e9, gbw = v(box.gpus[0].bw) * 1e9 * v(data.assume.gpu_eta);
@@ -3708,7 +3806,10 @@
         let gpuT = B.dense_gb * 1e9 / gbw, cpuT = 0;
         anchorParts(B).forEach(([t, q, gb]) => {
           if (t === 'gpu') gpuT += gb * 1e9 / gbw;
-          else if (t === 'dram') cpuT += gb * 1e9 / ((eo.lane_gbs ? eo.lane_gbs * 1e9 * (data.types[q].kappa_from && data.types[q].kappa_from.mult || 1) : Math.min(Bd, Bd * kappaOf(data, a.box, q) * v(res.f))) + zc);
+          else if (t === 'dram') {
+            const kap = cal.types[q] !== undefined ? v(cal.types[q]) : kappaOf(data, a.box, q);
+            cpuT += gb * 1e9 / ((eo.lane_gbs ? eo.lane_gbs * 1e9 * (data.types[q].kappa_from && data.types[q].kappa_from.mult || 1) : Math.min(Bd, Bd * kap * v(res.f))) + zc);
+          }
           else cpuT += gb * 1e9 / (v(box.nvme.bw) * 1e9);
         });
         const p = 1 / ((eo.host_ms !== undefined ? eo.host_ms : v(E.host_ms)) / 1000 + Math.max(gpuT, cpuT));
@@ -3716,7 +3817,8 @@
         return;
       }
       const f = v(res.f), h = res.host[a.model] ? v(res.host[a.model]) : 0;
-      const sink = { cpu: 0 }, base = 1 / anchorTime(data, a, f, h, sink);
+      const pmVal = res.pmem_bw || (data.boxes[a.box].pmem && (data.boxes[a.box].pmem.bw_measured || data.boxes[a.box].pmem.bw));
+      const sink = { cpu: 0 }, base = 1 / anchorTime(data, a, f, h, sink, pmVal);
       cal.rows.push(Object.assign({}, a, { pred_nodraft: base, pred: base, resid: base / a.meas - 1, cpu_s: sink.cpu }));
     });
     // split-model overhead: a split GGUF builds a chain per partition per layer; the measured split run minus the fitted model = extra ms/token
@@ -3916,6 +4018,17 @@
 
   function applyCal(data) {
     data.cal = calibrate(data);
+    Object.keys(data.cal.boxes).forEach(bk => {
+      const box = data.boxes[bk], pb = data.cal.boxes[bk].pmem_bw;
+      if (box.pmem && pb) {
+        const meas = box.pmem.bw_measured || box.pmem.bw;
+        box.pmem.bw_measured = meas;
+        box.pmem.bw = Object.assign({}, pb, { src: pb.src + '; measured: ' + meas.src });
+      }
+    });
+    Object.keys(data.cal.types || {}).forEach(q => {
+      data.types[q].kappa = data.cal.types[q];
+    });
     ledgerHosts(data);
     borrowHostLists(data);
     ledgerHops(data);
@@ -4621,7 +4734,10 @@
     const u = g && g.firmware_unlock;
     if (q && q.unlock) return q.unlock;
     if (!u) return 'stock';
-    if (q && q.at && u.since && String(q.at) < String(u.since)) return 'stock';
+    if (q && q.at && u.since) {
+      const qa = Date.parse(String(q.at)), us = Date.parse(String(u.since));
+      if (Number.isFinite(qa) && Number.isFinite(us) ? qa < us : String(q.at) < String(u.since)) return 'stock';
+    }
     return v(u) || 'stock';
   }
   // one ceiling of a card or CPU (ceil = {class, values, unlock}): the unlock state's value, else the stock value, else the
@@ -5971,6 +6087,6 @@
     return { id: 'phase_bound', label: 'prefill and decode bounds per phase, binding term named (data.roofline)', status: st, detail: detail + exd + ud, bound: pb, explain: ex, batch_curve: nMax > 1 ? (unc ? 'UNCALIBRATED' : 'MEASURED') : null };
   }
 
-  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, batchModeStep, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
+  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, batchModeStep, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkSame, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, earfOf, earfCheck, mbEarf, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

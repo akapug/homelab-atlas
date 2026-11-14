@@ -182,7 +182,7 @@ t('vram regression: BE1-Q3 as launched 06:44Z (8.7 GiB banks) FAILs; the GLM ter
   assert.strictEqual(be1.checks.find(x => x.id === 'vram_peak').status, 'FAIL', 'MEASURED Q3c: MTP compute 2484 MiB cudaMalloc failed');
   const a2 = FM.checkRecipe(data, recipe('droopy-glm-be1-q3-arm2.json'));
   assert.strictEqual(a2.checks.find(x => x.id === 'vram_peak').status, 'FAIL', 'MEASURED a2b: main compute 4550 MiB cudaMalloc failed with offload on at -ub 4096');
-  assert.ok(a2.checks.filter(x => x.id !== 'vram_peak' && x.id !== 'quality' && x.id !== 'conditions' && x.id !== 'cpu_reserve' && !(x.id === 'placement' && x.status === 'UNKNOWN')).every(x => x.status === 'PASS'), 'arm 2 fails on VRAM (and the MEASURED UD-Q3_K_XL quality and its T40 without a CPU reserve) only; it predates the placement declaration: ' + a2.checks.map(x => x.id + ' ' + x.status).join('; '));
+  assert.ok(a2.checks.filter(x => x.id !== 'vram_peak' && x.id !== 'quality' && x.id !== 'conditions' && x.id !== 'cpu_reserve' && !(x.id === 'placement' && x.status === 'UNKNOWN') && !(x.id === 'earf' && x.status === 'UNKNOWN')).every(x => x.status === 'PASS'), 'arm 2 fails on VRAM (and the MEASURED UD-Q3_K_XL quality and its T40 without a CPU reserve) only; it predates the placement declaration: ' + a2.checks.map(x => x.id + ' ' + x.status).join('; '));
 });
 
 t('quality fit: P3, P4 S25 and P4 S15 points, least squares through the base', () => {

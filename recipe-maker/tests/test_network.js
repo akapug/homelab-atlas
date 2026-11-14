@@ -194,6 +194,19 @@ function tests() {
     assert.strictEqual(R.frontier.tps, FM.v(d.window.configs[d.window.default].frontier.tps)); assert.strictEqual(R.frontier.shared_rank.length, 0);
     assert(d.network.pcie.every(x => FM.v(x.h2d_gbs) === null && FM.v(x.d2h_gbs) === null));
   });
+  test('networkSame and networkCheck never match NaN or Infinity against null', () => {
+    assert.strictEqual(FM.networkSame({ x: NaN }, { x: null }), false);
+    assert.strictEqual(FM.networkSame({ x: Infinity }, { x: null }), false);
+    assert.strictEqual(FM.networkSame({ x: -Infinity }, { x: null }), false);
+    assert.strictEqual(FM.networkSame({ x: undefined }, { x: null }), false);
+    assert.strictEqual(FM.networkSame({ a: [1, { b: 'ok' }] }, { a: [1, { b: 'ok' }] }), true);
+    const d = fixture(), W = d.window.configs[d.window.default], x = result(d);
+    const badId = clone(x.prediction_identity);
+    badId.rounds = NaN;
+    const r = { id: 'fixture-nan', kind: 'network', box: W.box, model: W.model, engine: W.engine, network_window: W.key, network_recipe: x.id, network_prediction_identity: badId };
+    const chk = FM.checkRecipe(d, r);
+    assert(chk.checks.every(c => !(c.id === 'network_identity' && c.status === 'PASS')));
+  });
   console.log(passed + ' tests passed');
 }
 module.exports = { fixture, tag, clone };
