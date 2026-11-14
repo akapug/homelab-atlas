@@ -1327,9 +1327,7 @@
     }
     return { checks, facts, notes, bad_input: false, prediction, priors: priorsFor(data, r) };
   }
-  // Behavioral tool-argument fidelity gate (EARf): resolves measured EARf on the recipe/run, checks.earf.entries, or
-  // data.multibox (models.*.stores.*.fidelity.arg_values_earf and settings.replica_type_earf). Coding/agent roles default to
-  // minEarf = 0.98 (checks.earf.bar_earf), failing below bar and warning (UNKNOWN) when unmeasured on sub-4-bit quants.
+  // Behavioral admission: executed outcomes first, then EARf relative to the model perturbation floor.
   function earfStoreTypes(r) {
     const st = (r && r.store) || {};
     if (typeof st === 'string') return { key: st, types: [st] };
@@ -1381,22 +1379,29 @@
   }
   function requiresEarf(r, opts) {
     const role = (opts && opts.role) || (r && r.role) || ((((r || {}).conditions || {}).workload || {}).role);
-    return !!(opts && opts.requireEarf) || ['coding', 'agent', 'agentic', 'agentic-coding', 'tool-calling', 'tool-use'].includes(role);
+    return !!(opts && opts.requireEarf) || ['coding', 'agent', 'agentic', 'agentic-coding', 'tool-calling', 'tool-use', 'author_under_judge', 'diff_review'].includes(role);
   }
   // Deployment budgets are distinct from a backend's advertised context capacity.
   function seatSafetyChecks(data, r, opts) {
     const c = r.conditions || {}, w = c.workload || {}, sv = r.serving || {};
     const out = [], model = (data.models || {})[r.model] || {};
     const name = [r.model, model.name, model.short].join(' ');
-    const size = name.match(/(?:^|[^0-9])(\d+(?:\.\d+)?)\s*b/i);
-    const smallQwen = /qwen|q27/i.test(name) && ((size && +size[1] < 32) || /(?:^| )q27(?: |$)/i.test(name));
-    const xpu = /xpu|sycl|strata/.test(r.engine || '') || r.box === 'odie';
     const depth = w.context_tokens ?? c.context_tokens ?? r.ctx ?? sv.max_context;
-    if (smallQwen && xpu && firstInt(depth) > 23000)
-      out.push({ id: 'context_recall', status: 'UNKNOWN', detail: 'Qwen <32B context exceeds the measured ~23k recall cliff (10/36 vs 9/9 at 2–12k). Context capacity does not establish coding recall.' });
-    const startup = w.startup_tokens ?? r.startup_tokens;
-    if (requiresEarf(r, opts) && smallQwen && startup !== undefined)
-      out.push({ id: 'startup_context', status: Number.isInteger(startup) && startup >= 0 && startup <= 8000 ? 'PASS' : 'FAIL', detail: 'Local <32B pre-Turn-1 budget <= 8000 tokens; declared ' + startup });
+    const q27 = /(?:^|[^a-z0-9])qwen3\.8-27b(?:[^0-9]|$)/i.test(name);
+    const budget = r.measured_recall_budget_tokens ?? model.measured_recall_budget_tokens ?? (q27 ? 12288 : null);
+    if (depth !== undefined) {
+      const tokens = firstInt(depth), known = Number.isInteger(budget) && budget > 0;
+      const degraded = known && (q27 ? tokens > 23000 : tokens > budget);
+      out.push({ id: 'context_recall', status: known && tokens <= budget ? 'PASS' : 'UNKNOWN',
+        severity: degraded ? 'degraded' : known && tokens > budget ? 'warn' : null,
+        detail: !known ? 'No per-model depth-recall probe; context capacity does not establish recall.' :
+          q27 ? 'Qwen3.8-27B int4: 9/9 at <=12k, 3/9 at ~23k; 12–23k unmeasured. Warn above 12288, degraded above 23000 tokens.' :
+          'Explicit measured recall budget ' + budget + ' tokens; declared context ' + tokens });
+    }
+    const startup = w.startup_tokens ?? r.startup_tokens, startupLimit = sv.max_startup_tokens;
+    if (startup !== undefined && startupLimit !== undefined)
+      out.push({ id: 'startup_context', status: Number.isInteger(startup) && startup >= 0 && startup <= startupLimit ? 'PASS' : 'FAIL',
+        detail: 'Configured startup budget ' + startupLimit + ' tokens; declared ' + startup });
     const agents = w.agents ?? w.concurrency ?? r.agents, slots = w.slots ?? sv.batch;
     const admission = w.admission || r.admission;
     if (agents !== undefined && slots !== undefined && agents > slots) {
@@ -1406,44 +1411,49 @@
     return out;
   }
   function earfCheck(data, r, opts) {
-    const C = (data && data.checks && data.checks.earf) || {}, label = C.label || 'behavioral tool-argument fidelity gate (EARf)';
-    const barDefault = C.bar_earf !== undefined ? v(C.bar_earf) : 0.98;
-    const role = (opts && opts.role) || (r && r.role) || (((r && r.conditions) || {}).workload || {}).role || 'coding';
-    const codingRole = role !== 'non-coding' && role !== 'chat';
-    const requestedMin = opts && opts.minEarf !== undefined ? opts.minEarf : r && r.min_earf !== undefined ? r.min_earf : (codingRole ? barDefault : null);
-    const strict = requiresEarf(r, opts);
-    const minEarf = strict ? Math.max(0.98, typeof requestedMin === 'number' && Number.isFinite(requestedMin) ? requestedMin : 0.98) : requestedMin;
-    if (minEarf !== null && (typeof minEarf !== 'number' || !Number.isFinite(minEarf) || minEarf < 0 || minEarf > 1))
-      return { id: 'earf', label, status: 'FAIL', detail: 'invalid EARf floor', earf: null, min_earf: minEarf };
-    const supplied = [(opts || {}).measured || {}, r || {}].find(x => x.earf !== undefined && x.earf !== null);
-    if (supplied && (typeof v(supplied.earf) !== 'number' || !Number.isFinite(v(supplied.earf)) || v(supplied.earf) < 0 || v(supplied.earf) > 1))
-      return { id: 'earf', label, status: 'FAIL', detail: 'invalid measured EARf (expected finite [0, 1])', earf: null, min_earf: minEarf };
-    const { key, types } = earfStoreTypes(r), allQ = [...new Set([key].concat(types).filter(Boolean))];
-    const sub4 = allQ.filter(q => isSub4BitQuant(data, r && r.model, q));
+    const C = (data && data.checks && data.checks.earf) || {}, m = (opts && opts.measured) || {};
+    const model = ((data || {}).models || {})[r.model] || {};
+    const familyKey = model.kld_family || r.family || r.model;
+    const family = (C.families || {})[familyKey] || {};
+    const qualityFamily = (((data || {}).checks || {}).quality?.families || {})[familyKey] || {};
+    const sources = [m, r, model, family, qualityFamily];
+    const field = key => sources.find(x => x[key] !== undefined && x[key] !== null)?.[key];
+    const valid = x => typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 1;
+    const review = field('review_screen');
+    const reviewer = !!(review && review.executed === true && review.planted === true && review.clean === true &&
+      valid(review.false_alarm_rate) && review.false_alarm_rate <= .10 && valid(review.recall) && review.recall >= .50);
+    const { key, types } = earfStoreTypes(r);
+    const sub4bit = [key, ...types].filter(Boolean).some(q => isSub4BitQuant(data, r.model, q));
+    const base = { id: 'earf', label: 'bounded author admission under an executed Judge', role: 'author_under_judge',
+      diff_reviewer: reviewer, capabilities: { diff_review: reviewer ? 'screened' : 'advisory_excluded' },
+      earf: null, min_earf: null, sub4bit };
+    const result = (status, detail, extra) => Object.assign({}, base, { status, detail }, extra);
+    // Outcome probes concern executable authoring under a Judge, not self-review. A declared
+    // battery_pass_rate is already a measurement; structured probes must explicitly be executed.
+    const probe = field('authoring_probe');
+    const rate = field('battery_pass_rate') ?? (probe && probe.executed === true ?
+      (probe.pass_rate ?? (Number.isInteger(probe.passed) && Number.isInteger(probe.total) && probe.total > 0 ? probe.passed / probe.total : NaN)) : null);
+    if (rate !== null && rate !== undefined) {
+      const bar = field('battery_min_pass_rate') ?? .90;
+      if (!valid(v(rate)) || !valid(v(bar))) return result('FAIL', 'Invalid outcome battery rate or threshold');
+      return result(v(rate) >= v(bar) ? 'PASS' : 'FAIL', 'Executed authoring battery ' + v(rate) + ' (bar ' + v(bar) + '); requires an executed Judge',
+        { admission_basis: 'outcome_probe', battery_pass_rate: v(rate) });
+    }
+    const supplied = [m, r].find(x => x.earf !== undefined && x.earf !== null);
+    if (supplied && !valid(v(supplied.earf))) return result('FAIL', 'Invalid measured EARf (expected finite [0, 1])');
+    const floor = v(field('perturbation_floor'));
+    if (floor !== undefined && !valid(floor)) return result('FAIL', 'Invalid model perturbation floor');
+    const min = floor === undefined ? null : floor - .015;
     const found = earfOf(data, r, opts);
-    if (minEarf === null)
-      return { id: 'earf', label, status: 'PASS', detail: 'EARf gate disabled for role ' + role, earf: found.earf, min_earf: null, sub4bit: sub4.length > 0 };
-    if (found.earf !== null) {
-      const ok = found.earf >= minEarf;
-      if (ok && strict && found.unmeasured && found.unmeasured.length)
-        return { id: 'earf', label, status: 'UNKNOWN', earf: null, min_earf: minEarf, detail: 'Mixed-layout EARf incomplete: unmeasured ' + found.unmeasured.join(', ') };
-      return { id: 'earf', label, status: ok ? 'PASS' : 'FAIL', earf: found.earf, min_earf: minEarf, sub4bit: sub4.length > 0,
-        detail: 'EARf ' + found.earf.toFixed(3) + (ok ? ' >= ' : ' < ') + minEarf.toFixed(2) + ' bar (' + found.src + ')' };
-    }
-    if (strict)
-      return { id: 'earf', label, status: 'UNKNOWN', earf: null, min_earf: minEarf, detail: 'Measured EARf >= ' + minEarf.toFixed(2) + ' required for agentic tool-calling; KL and quant bit width do not establish argument fidelity' };
-    if (sub4.length) {
-      const nonSub4 = allQ.filter(q => sub4.indexOf(q) < 0 && data && data.types && data.types[q] && Number.isFinite(v(data.types[q].bpw)) && v(data.types[q].bpw) >= 4);
-      const MB = (data && data.multibox && data.multibox.models) || {};
-      const hasPanel = !!(MB[r && r.model] && Object.values(MB[r.model].stores || {}).some(s => s && s.fidelity && s.fidelity.arg_values_earf));
-      const warn = 'WARNING: EARf unmeasured on sub-4-bit quant (' + sub4.join(', ') + '); minEarf ' + minEarf.toFixed(2) + ' required for ' + role + ' role';
-      if (!hasPanel && nonSub4.length && opts && opts.qualityStatus === 'PASS')
-        return { id: 'earf', label, status: 'PASS', earf: null, min_earf: minEarf, sub4bit: true, warning: warn,
-          detail: warn + ' (covered only by calibrated KL gate on mixed ' + nonSub4.join('/') + ' + ' + sub4.join('/') + ' split)' };
-      return { id: 'earf', label, status: 'UNKNOWN', earf: null, min_earf: minEarf, sub4bit: true, warning: warn, detail: warn };
-    }
-    return { id: 'earf', label, status: 'PASS', earf: null, min_earf: minEarf, sub4bit: false,
-      detail: 'EARf unmeasured (>= 4-bit store' + (allQ.length ? ': ' + allQ.join(', ') : '') + '; minEarf ' + minEarf.toFixed(2) + ' applies when measured)' };
+    if (found.earf === null || (found.unmeasured && found.unmeasured.length))
+      return result('UNKNOWN', 'EARf unmeasured' + (sub4bit ? ' on sub-4-bit quant' : '') +
+        (found.unmeasured?.length ? ': incomplete mixed layout (' + found.unmeasured.join(', ') + ')' : '') + '; outcome probe needed', { min_earf: min });
+    const extra = { earf: found.earf, min_earf: min, admission_basis: min === null ? 'earf_screen' : 'perturbation_margin' };
+    if (min !== null) return result(found.earf >= min ? 'PASS' : 'FAIL',
+      'EARf ' + found.earf.toFixed(3) + ' vs perturbation floor minus 0.015 = ' + min.toFixed(3) + ' (' + found.src + ')', extra);
+    if (found.earf < .90) return result('UNKNOWN', 'Severe EARf degradation: ' + found.earf.toFixed(3) + ' < 0.90; model perturbation floor unmeasured',
+      Object.assign(extra, { severity: 'degraded', warning: 'Severe EARf degradation; run an outcome probe' }));
+    return result('PASS', 'Measured EARf ' + found.earf.toFixed(3) + '; no severe degradation, perturbation floor unknown (outcome probe preferred)', extra);
   }
   // the serving conditions of data.conditions: a run that leaves one undeclared still runs (UNKNOWN; --strict holds it), but its
   // numbers do not compare with a run that differs in it

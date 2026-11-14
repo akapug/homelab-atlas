@@ -14,7 +14,7 @@
   }
   // the KL / top-1 + EARf gate a run stands on: its own measured gate, else the newest gate measured on an arithmetically
   // equivalent run (same model, engine, store, commit/build/package, patches, trim, -rtr, KV type and quant/attention mode),
-  // else today's planner quality check on its recipe, gated by behavioral tool-argument fidelity (EARf >= 0.98 by default).
+  // else today's planner quality check on its recipe, with outcome-first behavioral admission and a model-relative EARf margin.
   function canon(x) {
     if (x === undefined) return null;
     if (x === null || typeof x !== 'object') return x;
@@ -86,6 +86,11 @@
       }
     }
     const ec = FM.earfCheck(data, Object.assign({ model: run.model, engine: run.engine }, run.recipe || {}), Object.assign({ measured: run.measured, qualityStatus: base.status }, opts || {}));
+    base.admission_basis = ec.admission_basis;
+    base.role = ec.role;
+    base.diff_reviewer = ec.diff_reviewer;
+    base.capabilities = ec.capabilities;
+    base.severity = ec.severity;
     base.earf = ec.earf;
     base.min_earf = ec.min_earf;
     base.earf_status = ec.status;
@@ -95,16 +100,16 @@
       base.basis = ec.detail + ' [overrides ' + base.basis + ']';
     } else if (ec.status === 'UNKNOWN') {
       base.warning = ec.detail;
-      if (FM.requiresEarf(run.recipe, opts)) {
+      if (base.status !== 'FAIL') {
         base.status = 'UNKNOWN';
         base.basis = ec.detail + ' [was ' + base.basis + ']';
-      } else if (base.status !== 'PASS') {
+      } else {
         base.basis += '; ' + ec.detail;
       }
     }
     return base;
   }
-  // per box and model: the fastest measured run that went fine and carries no confounded caveat, is predicted by the planner and passes quality
+  // Per box/model, prefer outcome evidence, then fidelity evidence, then speed; retain badged unknowns.
   function bestPassing(data, runs, opts) {
     const skip = new Set(data.upgrade.settings.exclude_tags), out = {}, why = [];
     const qOpts = Object.assign({}, opts || {}, { _klIndex: (opts && opts._klIndex) || buildKlIndex(runs) });
@@ -114,14 +119,22 @@
       const ph = ACC.primaryPhase(run), meas = ph && ((run.measured || {}).decode_tps || {})[ph];
       if (!(meas > 0)) return;
       const k = run.box + '|' + run.model;
-      if (out[k] && out[k].measured >= meas) return;
       const q = runQuality(data, run, runs, qOpts);
-      if (q.status !== 'PASS') { why.push({ run: run.id, why: 'quality ' + q.status + ' (' + q.basis + ')' }); return; }
-      const unsafe = FM.seatSafetyChecks(data, r, opts).filter(c => c.status === 'FAIL' || (FM.requiresEarf(r, opts) && c.status === 'UNKNOWN'));
+      if (q.status === 'FAIL') { why.push({ run: run.id, why: 'quality ' + q.status + ' (' + q.basis + ')' }); return; }
+      const role = (opts && opts.role) || r.role || r.conditions?.workload?.role;
+      if (role === 'diff_review' && !q.diff_reviewer) {
+        why.push({ run: run.id, why: 'diff_review excluded: no executed planted+clean review screen' }); return;
+      }
+      const safety = FM.seatSafetyChecks(data, r, opts);
+      const unsafe = safety.filter(c => c.status === 'FAIL');
       if (unsafe.length) { why.push({ run: run.id, why: unsafe.map(c => c.detail).join('; ') }); return; }
+      const degraded = q.severity === 'degraded' || safety.some(c => c.severity === 'degraded');
+      const rank = degraded ? 0 : q.status === 'UNKNOWN' ? 1 : q.admission_basis === 'outcome_probe' ? 4 : q.admission_basis === 'perturbation_margin' ? 3 : 2;
+      if (out[k] && (out[k].rank > rank || (out[k].rank === rank && out[k].measured >= meas))) return;
+      q.badge = degraded ? 'degraded' : q.status === 'UNKNOWN' || safety.some(c => c.status === 'UNKNOWN') ? 'unknown' : 'verified';
       const p = FM.predictRecipe(data, r);
       if (p.status !== 'PREDICTED' || !(p.decode_tps > 0)) { why.push({ run: run.id, why: p.status !== 'PREDICTED' ? 'UNMODELLED: ' + p.why : 'draft speed UNMODELLED: ' + p.draft_why }); return; }
-      out[k] = { run, recipe: r, phase: ph, measured: meas, quality: q, pred: p };
+      out[k] = { run, recipe: r, phase: ph, measured: meas, quality: q, safety, rank, pred: p };
     });
     return { best: Object.values(out), skipped: why };
   }

@@ -7,8 +7,8 @@ day). Results that change a headline number say so.
 ## [Unreleased]
 
 ### Fixed
-- Recipe Maker: require measured EARf >= 0.98 for explicit coding/tool-use profiles, warn at the small-Qwen
-  XPU context cliff, and require a conversation door when agents exceed batch slots. Joint card-curve fitting,
+- Recipe Maker: prefer executed authoring outcomes and model-relative EARf margins, retain UNKNOWN seats,
+  scope recall warnings to measured model budgets, and require a conversation door when agents exceed batch slots. Joint card-curve fitting,
   calibration caching, finite priors, concurrent screen-ledger writes, browser-state validation and benchmark/patch
   failure handling are covered in the [Wave 3 audit](recipe-maker/docs/wave3-audit.md). No measured headline changed.
 

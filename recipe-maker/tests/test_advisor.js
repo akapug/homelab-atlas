@@ -232,57 +232,19 @@ t('runQuality KL borrowing: PASS borrows only on matching commit/build/patches/t
   }
 });
 
-t('EARf behavioral fidelity gate: >= 0.98 default rejects GSQ IQ3_XXS (0.894) and cross-engine Q8_0 (0.975), warns on unmeasured sub-4-bit', () => {
-  const fnxRecipe = storeTypes => ({
-    box: 'odie', model: 'fnx', engine: 'strata', rtr: false, draft: false, files: [],
-    store: { split: false, types: storeTypes },
-  });
-  const earfChk = (r, opts) => FM.checkRecipe(data, r, null, Object.assign({ predict: false }, opts || {})).checks.find(c => c.id === 'earf');
-
-  // 1. GSQ IQ3_XXS collapses EARf to 0.894 -> hard FAIL
-  const iq3 = earfChk(fnxRecipe(['gsq_iq3xxs']));
-  assert.strictEqual(iq3.status, 'FAIL', iq3.detail);
-  assert.strictEqual(iq3.earf, 0.894);
-  assert.strictEqual(iq3.min_earf, 0.98);
-  assert.ok(/0\.894 < 0\.98/.test(iq3.detail), iq3.detail);
-
-  // 2. Unverified cross-engine Q8_0 port at 0.975 and UD-Q4_K_XL at 0.955 both FAIL the 0.98 bar
-  const q8 = earfChk(fnxRecipe(['q8_0']));
-  assert.strictEqual(q8.status, 'FAIL', q8.detail);
-  assert.strictEqual(q8.earf, 0.975);
-  const q4 = earfChk({ box: 'odie', model: 'fnx', engine: 'strata', rtr: false, draft: false, files: [], store: { name: 'ud_q4kxl', split: false, types: ['q4k_nl'] } });
-  assert.strictEqual(q4.status, 'FAIL', q4.detail);
-  assert.strictEqual(q4.earf, 0.955);
-  // Explicit looser minEarf option overrides the bar cleanly when requested
-  assert.strictEqual(earfChk(fnxRecipe(['q8_0']), { minEarf: 0.97 }).status, 'PASS');
-
-  // 3. Unmeasured sub-4-bit quant (UD-IQ4_XS mixes IQ3_XXS; V4.1 q2_K) -> UNKNOWN with explicit sub-4-bit warning
-  const iq4xs = earfChk({ box: 'odie', model: 'fnx', engine: 'strata', rtr: false, draft: false, files: [], store: { name: 'ud_iq4xs', split: false, types: ['q4k_nl'] } });
-  assert.strictEqual(iq4xs.status, 'UNKNOWN', iq4xs.detail);
-  assert.strictEqual(iq4xs.sub4bit, true);
-  assert.ok(/WARNING: EARf unmeasured on sub-4-bit/.test(iq4xs.detail), iq4xs.detail);
-
-  const v41Sub4 = earfChk({ box: 'droopy', model: 'v41', engine: 'ik', rtr: false, draft: false, files: [], store: { split: false, types: ['q2_K'] } });
-  assert.strictEqual(v41Sub4.status, 'UNKNOWN', v41Sub4.detail);
-  assert.ok(/sub-4-bit/.test(v41Sub4.detail), v41Sub4.detail);
-
-  // 4. Measured EARf >= 0.98 passes both checkRecipe and advisor.runQuality; EARf < 0.98 overrides even a PASS KL gate in advisor
-  const good = earfChk(Object.assign(fnxRecipe(['q8_0']), { earf: 0.985, earf_src: 'verified same-engine panel' }));
-  assert.strictEqual(good.status, 'PASS', good.detail);
-  assert.strictEqual(good.earf, 0.985);
-
-  const badRun = {
-    id: 'odie-fnx-iq3xxs-kl-pass-but-earf-fail', when: '2026-11-12T00:00Z', box: 'odie', model: 'fnx', engine: 'strata',
-    recipe: fnxRecipe(['gsq_iq3xxs']),
-    measured: { outcome: 'ok', kl_verdict: 'PASS', kl: 0.01, top1: 0.98, decode_tps: { single: 90.0 } },
-  };
-  const rq = ADV.runQuality(data, badRun, [badRun]);
-  assert.strictEqual(rq.status, 'FAIL', JSON.stringify(rq));
-  assert.strictEqual(rq.earf, 0.894);
-  assert.ok(/EARf 0\.894 < 0\.98/.test(rq.basis), rq.basis);
-  const bp = ADV.bestPassing(data, [badRun]);
-  assert.strictEqual(bp.best.length, 0, 'EARf FAIL run must never pass bestPassing');
-  assert.ok(bp.skipped.some(s => s.run === badRun.id && /EARf 0\.894 < 0\.98/.test(s.why)), JSON.stringify(bp.skipped));
+t('EARf uses the perturbation margin; unmeasured and severe uncalibrated cases stay UNKNOWN', () => {
+  const recipe = {box:'odie',model:'fnx',engine:'strata',role:'coding',store:{types:['gsq_iq3xxs']}};
+  const check = FM.earfCheck(data,recipe);
+  assert.equal(check.status,'UNKNOWN');
+  assert.equal(check.earf,.894);
+  assert.equal(check.severity,'degraded');
+  assert.equal(check.min_earf,null);
+  const q4 = {...recipe,store:{name:'ud_q4kxl',types:['q4k_nl']},perturbation_floor:.968};
+  assert.equal(FM.earfCheck(data,q4).status,'PASS');
+  const run = {id:'margin-fail',box:'odie',model:'fnx',engine:'strata',recipe:{...recipe,perturbation_floor:.968},
+    measured:{outcome:'ok',kl_verdict:'PASS',decode_tps:{single:90}}};
+  assert.equal(ADV.runQuality(data,run,[run]).status,'FAIL');
+  assert.equal(ADV.bestPassing(data,[run]).best.length,0);
 });
 
 console.log(n + ' tests passed');

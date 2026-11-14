@@ -1,5 +1,7 @@
 # `homelab-atlas` Full-Codebase Audit Rake (`2026-11-14`)
 
+Start with [AGENT-ORIENTATION.md](AGENT-ORIENTATION.md) for current dispositions and navigation.
+
 - **Repository**: `homelab-atlas` (`main` baseline @ `0deaf22`)
 - **Coverage**: **`10 / 10` shards (`100%`)** covering **`62` unique files** (`65` file slices, `18,322` lines)
 - **Total Findings**: **`105`** (`1` `CRITICAL`, `22` `HIGH`, `64` `MEDIUM`, `9` `LOW`; `15` `COSPLAY`-tagged)
@@ -8,7 +10,7 @@
 > [!IMPORTANT]
 > **Wave-1 (`PR #1` / `7b7b7ff`) & Wave-2 (`e3119f7` / `ember/wave2-fixes`) Status Note**
 > This rake audited `main` (`0deaf22`) across all `10/10` `homelab-atlas` shards (`62` files, `18,322 LoC`, `105` findings). High-priority findings already resolved in Wave-1 & Wave-2:
-> - **Already Landed in Wave-1 (`7b7b7ff`)**: Tightened `klEquivKey` arithmetic provenance borrowing and enforced the `EARf >= 0.98` coding-fidelity gate across `advisor.js`, `model.js`, and `report.js`.
+> - **Already Landed in Wave-1 (`7b7b7ff`)**: Tightened `klEquivKey` arithmetic provenance borrowing and added the coding-fidelity gate (Wave 3.5 corrects its unattainable 0.98 floor to outcome-first/model-relative admission) across `advisor.js`, `model.js`, and `report.js`.
 > - **Already Landed in Wave-2 (`5033862`, `e3119f7`)**: Separated `CAPACITY_EXCEEDED` (`!x.fits`) from `UNMODELLED BOTTLENECK` in `rlAttribute` + gated `COMPUTE CEILING MISSPECIFIED` on compute share; guarded `choose()` against `bsel === null` on `Infinity`/`NaN` shadow prices; fixed `networkCheck` `NaN`/`Infinity` -> `null` identity collision; memoized `klEquivKey` in `advisor.js`; removed `record_run.py` `or js[-1:]` cross-arm fallback; added `set -o pipefail` and safe JSON encoding to `bench_gpu.sh`; made `record_screen.py` writes atomic; forced fresh `build.py` execution in `check_atlas.py --accuracy`.
 > - **Remaining Open Backlog in This Pack**: Replacing schema-guessing `walk()` adapters (`priors_adapter.py`, `vitals_adapter.py`, `window_inputs.py`) with explicit versioned JSON readers, converting `b70/vllm-xpu/*.py` runtime `str.replace` monkey-patchers into a checked git patch series, and shard-level `MEDIUM`/`LOW` numerical/calibration refinements in `shards.jsonl`.
 
