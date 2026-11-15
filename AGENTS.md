@@ -22,6 +22,7 @@ GitHub Pages site built from `docs/`. No build step for the Markdown.
 | `b70/llama.cpp-sycl-fa-sinks/` | llama.cpp SYCL: attention sinks on the MKL flash-attention path and a broadcast-mask fault fix (branch on akapug/llama.cpp, patches, test logs); Flint on two B70s and an RTX 3090 Ti; Claude Code compaction poisoning | SYCL flash attention, Flint, gpt-oss |
 | `b70/many-agents.md` | both B70s serving many agents (Flash-Next, batched XeStrata): real-agent replays first, then the synthetic decode ladder, switches, losers, the experimental engine fork | many agents from one box |
 | `b70/split-modes-and-backends.md` | two B70s: `-sm tensor` vs `-sm layer` on MoE and dense, the `-ot` per-card rule, vLLM attention backend, arcint vs SYCL | splitting one model over two cards |
+| `tail-trainer/` | train a LoRA on the last blocks of a MoE GGUF in torch, gated against llama.cpp, exported as a llama.cpp adapter; dump tool, CLI, tests, results on RTX 6000 + MI25 and two cards at once | fine-tuning a quantized MoE GGUF |
 | `tail-portable/` | one PyTorch trainer on B70 (XPU), RTX 6000, MI25 (TheRock gfx900), 1080 Ti: install scripts, `probe_ops.py`, the XPU wrong-result repro, the trainer diff | torch on old or non-NVIDIA cards |
 | `behaviour-levers/README.md` | behaviour levers on the coding model: tail LoRA NULL, coder-myopia v3 grades | habit edits, negative results |
 | `network/README.md` | three ConnectX-3 cards as a 56 Gb/s triangle: flash, setup, per-link numbers | linking boxes |

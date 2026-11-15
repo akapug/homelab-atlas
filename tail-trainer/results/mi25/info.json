@@ -1,0 +1,37 @@
+{
+ "spec": {
+  "arch": "qwen3moe",
+  "n_layer": 48,
+  "n_embd": 2048,
+  "n_head": 32,
+  "n_head_kv": 4,
+  "head_dim": 128,
+  "n_rot": 128,
+  "rope_base": 1000000.0,
+  "rope": "neox",
+  "eps": 9.999999974752427e-07,
+  "n_expert": 128,
+  "n_expert_used": 8,
+  "norm_w": true,
+  "w_scale": 0.0,
+  "n_vocab": 151936,
+  "first": 47
+ },
+ "gate_measured_on_this_arch": true,
+ "last_block_and_head_types": {
+  "output.weight": "Q6_K",
+  "output_norm.weight": "F32",
+  "blk.47.attn_k.weight": "Q4_K",
+  "blk.47.attn_k_norm.weight": "F32",
+  "blk.47.attn_norm.weight": "F32",
+  "blk.47.attn_output.weight": "Q4_K",
+  "blk.47.attn_q.weight": "Q4_K",
+  "blk.47.attn_q_norm.weight": "F32",
+  "blk.47.attn_v.weight": "Q4_K",
+  "blk.47.ffn_down_exps.weight": "Q4_K",
+  "blk.47.ffn_gate_exps.weight": "Q4_K",
+  "blk.47.ffn_gate_inp.weight": "F32",
+  "blk.47.ffn_norm.weight": "F32",
+  "blk.47.ffn_up_exps.weight": "Q4_K"
+ }
+}

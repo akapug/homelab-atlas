@@ -1,0 +1,5 @@
+.tv/
+dump/bin/
+dump/build/
+dump/build.*.log
+__pycache__/

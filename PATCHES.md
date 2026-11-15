@@ -61,6 +61,7 @@ the rest of the repo, are in the [GLOSSARY](GLOSSARY.md).
 | [`bench/`](b70/bench/) | no GPU needed | llama-server or an OpenAI-compatible server | B70 | [section 6](#bench-the-measurements-behind-the-numbers) |
 | [`autoround-dequant-check.py`](b70/vllm-xpu/autoround-dequant-check.py) | no GPU needed | Python with numpy | CPU | [section 6](#autoround-dequant-checkpy-is-a-4-bit-checkpoint-sound) |
 | [`recipe-maker/`](recipe-maker/) | no GPU needed | Python 3 and node, standard library only | four boxes: RTX 3090 Ti, Quadro RTX 6000 + Optane, Arc Pro B70, EPYC CPU-only | [section 6](#recipe-maker-plan-a-moe-layout-before-you-run-it) |
+| [`tail-trainer/`](tail-trainer/): a LoRA on the last blocks of a MoE GGUF, checked against llama.cpp, exported as a llama.cpp adapter | per card (any torch backend) | stock llama.cpp (CPU, to dump), torch + gguf-py | RTX 6000, MI25 | [section 7](#tail-trainer-a-lora-on-the-last-blocks-of-any-moe-gguf) |
 | [`tail-portable/`](tail-portable/): torch builds and install scripts per card, an op probe, an XPU wrong-result repro | per card (Intel, NVIDIA, AMD) | torch 2.10-2.15+xpu, 2.9.1+cu126, TheRock 2.11 for gfx900 | B70, RTX 6000, MI25 (1080 Ti install only) | [section 7](#7-pytorch-on-older-and-other-cards-which-torch-build-works) |
 | `amdgpu` cold-boot wait (`psp_v3_1.c`) | AMD Vega 10 only | Ubuntu kernel 6.8 `amdgpu`, rebuilt | MI25 | [the MI25 entry](mi25/README.md#the-card-and-the-stack) |
 | ik_llama.cpp changes: expert and dense rows per NUMA node, no host weights, in-place ops follow their target, CUDA and Vulkan in one process, a bank device per layer, expert pre-binding, tier-concurrent expert reads, NUMA-local expert sharding, attention sinks on Pascal | [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp) branches | ik_llama.cpp, MoE models with experts on the CPU | 2x EPYC 7601 with a GTX 1080 Ti and an MI25; 2x Xeon Gold 5215 with an RTX 6000 | [moe-offload, engine changes](moe-offload/README.md#engine-changes) |
@@ -659,7 +660,30 @@ depend on the text.
 What it took to run one PyTorch trainer (a LoRA on the last five blocks of a MoE model, checked against llama.cpp's
 log-probabilities) on four card families. The install scripts, the op probe and the XPU repro stand alone; the trainer
 is not published, so [its patch](tail-portable/patches/0001-tail-trainer-device-portable.patch) is a record of the
-changes. Everything: [`tail-portable/`](tail-portable/).
+changes. Everything: [`tail-portable/`](tail-portable/). Its standalone successor, which reads any MoE GGUF's
+layout from the file, is published: [`tail-trainer/`](tail-trainer/), the first entry below.
+
+### `tail-trainer/`: a LoRA on the last blocks of any MoE GGUF
+
+- **What it is.** A trainer that leaves the model quantized in llama.cpp and trains only its last blocks in torch.
+  A small dump tool (stock llama.cpp, public API, CPU) saves the residual entering block L and llama.cpp's own
+  logits; torch rebuilds blocks L..n-1 and the head from the same GGUF (dims, experts, rope and tensor types from its
+  metadata), and a gate checks that this torch tail reproduces llama.cpp's next-token distribution before any
+  training (top-1 >= 0.97, mean KL <= 0.02 nats). The LoRA is written as a llama.cpp adapter GGUF
+  (`llama-server --lora`), and the dump tool runs with it, so the gate also checks the engine applies it as trained.
+- **For.** MoE GGUFs with softmax routing: `qwen3moe` measured; `qwen2moe`, `olmoe` and Mixtral-style `llama`
+  implemented, gate first. Any card torch runs on (the per-card builds are the entries below). Not for dense models,
+  DeepSeek-style routing or rope scaling (the tool refuses them).
+- **Measured.** Qwen3-30B-A3B Q4_K_S, blocks 44..47, from a clean directory with the README's steps: the gate passes
+  on a Quadro RTX 6000 (top-1 0.992, KL 0.00085) and on an MI25 (top-1 0.992, KL 0.00080); 20 training steps of 1024
+  tokens take 1.79 s and 2.46 s a step at about 6.4 GB; the adapter lowers held-out loss in the engine (1.144 to
+  1.091) and the engine with the adapter passes the gate against torch (KL 0.0008-0.0009). Two cards trained two
+  tails at the same time from one dump (1.33 s and 4.46 s a step); llama.cpp computes both adapters at once exactly
+  as torch does, but tails trained in parallel do not compose (the pair is worse than either alone); a second tail
+  trained with the first frozen does, in torch. [Results](tail-trainer/results/README.md)
+- **Run.** The [README](tail-trainer/README.md)'s steps 1-7. **Check.** `bash run_tests.sh` (CPU torch, a tiny random
+  GGUF, a token-by-token reference of the arithmetic); `gate` exits 0 on pass and 3 on fail. **Undo.** Delete the
+  venv and the dump directories.
 
 ### Intel Arc Pro B70 (XPU): driver and torch version together
 

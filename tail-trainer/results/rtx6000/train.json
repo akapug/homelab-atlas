@@ -1,0 +1,210 @@
+{
+ "arch": "qwen3moe",
+ "first": 44,
+ "targets": [
+  "blk.44.attn_q.weight",
+  "blk.44.attn_k.weight",
+  "blk.44.attn_v.weight",
+  "blk.44.attn_output.weight",
+  "blk.45.attn_q.weight",
+  "blk.45.attn_k.weight",
+  "blk.45.attn_v.weight",
+  "blk.45.attn_output.weight",
+  "blk.46.attn_q.weight",
+  "blk.46.attn_k.weight",
+  "blk.46.attn_v.weight",
+  "blk.46.attn_output.weight",
+  "blk.47.attn_q.weight",
+  "blk.47.attn_k.weight",
+  "blk.47.attn_v.weight",
+  "blk.47.attn_output.weight"
+ ],
+ "rank": 8,
+ "lr": 0.0005,
+ "steps": 20,
+ "match": "q8",
+ "tf32": false,
+ "load_s": 35.9,
+ "step_s_mean_after_first": 1.787,
+ "step_s_median": 1.845,
+ "step_s_first": 2.651,
+ "peak_gb": 6.33,
+ "loss_first": 2.0408220291137695,
+ "loss_last": 1.210113525390625,
+ "card": {
+  "device": "cuda",
+  "torch": "2.9.1+cu126",
+  "name": "Quadro RTX 6000",
+  "total_gb": 21.97,
+  "backend": "cuda",
+  "cuda": "12.6",
+  "sm": "75",
+  "notes": {
+   "offload_experts": false
+  },
+  "f64_on_card": true
+ },
+ "adapter": "adapter.gguf",
+ "per_step": [
+  {
+   "step": 0,
+   "window": "seq-00004",
+   "tokens": 1024,
+   "s": 2.651,
+   "loss": 2.0408220291137695,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 1,
+   "window": "seq-00030",
+   "tokens": 1024,
+   "s": 1.704,
+   "loss": 1.4821462631225586,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 2,
+   "window": "seq-00026",
+   "tokens": 1024,
+   "s": 1.848,
+   "loss": 2.124122142791748,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 3,
+   "window": "seq-00018",
+   "tokens": 1024,
+   "s": 1.881,
+   "loss": 1.574472188949585,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 4,
+   "window": "seq-00010",
+   "tokens": 1024,
+   "s": 1.931,
+   "loss": 1.3474169969558716,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 5,
+   "window": "seq-00013",
+   "tokens": 1024,
+   "s": 1.561,
+   "loss": 2.034621000289917,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 6,
+   "window": "seq-00027",
+   "tokens": 1024,
+   "s": 1.685,
+   "loss": 1.7244315147399902,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 7,
+   "window": "seq-00009",
+   "tokens": 1024,
+   "s": 1.803,
+   "loss": 2.278308391571045,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 8,
+   "window": "seq-00029",
+   "tokens": 1024,
+   "s": 1.596,
+   "loss": 0.6808449625968933,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 9,
+   "window": "seq-00012",
+   "tokens": 1024,
+   "s": 1.84,
+   "loss": 1.9898178577423096,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 10,
+   "window": "seq-00020",
+   "tokens": 1024,
+   "s": 1.845,
+   "loss": 1.9021296501159668,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 11,
+   "window": "seq-00016",
+   "tokens": 1024,
+   "s": 1.846,
+   "loss": 1.78664231300354,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 12,
+   "window": "seq-00008",
+   "tokens": 1024,
+   "s": 1.99,
+   "loss": 1.5355885028839111,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 13,
+   "window": "seq-00017",
+   "tokens": 1024,
+   "s": 1.444,
+   "loss": 1.8661493062973022,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 14,
+   "window": "seq-00002",
+   "tokens": 1024,
+   "s": 1.595,
+   "loss": 2.1830570697784424,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 15,
+   "window": "seq-00025",
+   "tokens": 1024,
+   "s": 1.669,
+   "loss": 2.7579007148742676,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 16,
+   "window": "seq-00007",
+   "tokens": 1024,
+   "s": 2.037,
+   "loss": 1.9104094505310059,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 17,
+   "window": "seq-00001",
+   "tokens": 1024,
+   "s": 1.787,
+   "loss": 1.7678437232971191,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 18,
+   "window": "seq-00003",
+   "tokens": 1024,
+   "s": 2.015,
+   "loss": 1.355354905128479,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 19,
+   "window": "seq-00006",
+   "tokens": 1024,
+   "s": 1.868,
+   "loss": 1.210113525390625,
+   "peak_gb": 6.33
+  }
+ ]
+}

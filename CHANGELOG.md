@@ -7,6 +7,12 @@ day). Results that change a headline number say so.
 ## [Unreleased]
 
 ### Added
+- `tail-trainer/`: a standalone tool that trains a LoRA on the last blocks of a MoE GGUF in torch while the rest stays
+  quantized in llama.cpp, from the file's own metadata. A stock-llama.cpp dump tool, a gate against llama.cpp's
+  logits, a llama.cpp adapter GGUF out. On Qwen3-30B-A3B Q4_K_S from a clean directory the gate passes on a Quadro
+  RTX 6000 and an MI25 (top-1 0.992, KL 0.0008), 20 steps lower held-out loss in the engine, and the engine with the
+  adapter matches torch. Two cards trained two tails at once: llama.cpp loads both adapters, but tails trained in
+  parallel do not compose; train the second with the first frozen.
 - `tail-portable/`: one PyTorch trainer (a LoRA on the last five blocks of Qwen3.8 Flash-Next, checked against
   llama.cpp's log-probabilities) run on an Arc Pro B70, a Quadro RTX 6000 and an MI25; it passes its 413-row check on
   each. Install scripts per card (torch 2.10.0+xpu; 2.9.1+cu126 for Turing and Pascal; AMD's TheRock wheels for gfx900,

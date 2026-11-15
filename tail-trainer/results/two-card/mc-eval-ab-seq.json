@@ -1,0 +1,31 @@
+{
+ "adapters": [
+  "adapter.gguf",
+  "adapter.gguf"
+ ],
+ "first": 40,
+ "windows": 8,
+ "match": "q8",
+ "torch_ce_all_positions": 1.3855309039354324,
+ "positions": 8184,
+ "logit_rows": 248,
+ "engine_ce_logit_rows": 1.1439167131741508,
+ "torch_ce_logit_rows": 1.0799658034820525,
+ "engine_vs_torch": {
+  "rows": 248,
+  "top1": 0.9395161290322581,
+  "kl_mean": 0.08136402859709008,
+  "kl_max": 0.760167459895226,
+  "top20_abs_mean": 2.654441661148787,
+  "top20_abs_max": 14.910437585891962
+ },
+ "card": {
+  "device": "cuda",
+  "torch": "2.9.1+cu126",
+  "name": "Quadro RTX 6000",
+  "total_gb": 21.97,
+  "backend": "cuda",
+  "cuda": "12.6",
+  "sm": "75"
+ }
+}

@@ -1,0 +1,370 @@
+{
+ "arch": "qwen3moe",
+ "first": 40,
+ "targets": [
+  "blk.40.attn_q.weight",
+  "blk.40.attn_k.weight",
+  "blk.40.attn_v.weight",
+  "blk.40.attn_output.weight",
+  "blk.41.attn_q.weight",
+  "blk.41.attn_k.weight",
+  "blk.41.attn_v.weight",
+  "blk.41.attn_output.weight",
+  "blk.42.attn_q.weight",
+  "blk.42.attn_k.weight",
+  "blk.42.attn_v.weight",
+  "blk.42.attn_output.weight",
+  "blk.43.attn_q.weight",
+  "blk.43.attn_k.weight",
+  "blk.43.attn_v.weight",
+  "blk.43.attn_output.weight"
+ ],
+ "rank": 8,
+ "lr": 0.0005,
+ "steps": 40,
+ "match": "q8",
+ "tf32": false,
+ "load_s": 71.4,
+ "step_s_mean_after_first": 4.458,
+ "step_s_median": 4.468,
+ "step_s_first": 8.158,
+ "peak_gb": 11.04,
+ "loss_first": 2.0383214950561523,
+ "loss_last": 1.7980538606643677,
+ "card": {
+  "device": "cuda",
+  "torch": "2.11.0+rocm7.13.0a20260515",
+  "name": "AMD Radeon Graphics",
+  "total_gb": 15.98,
+  "backend": "hip",
+  "hip": "7.13.0",
+  "arch": "gfx900:xnack-",
+  "notes": {
+   "offload_experts": false
+  },
+  "f64_on_card": true
+ },
+ "adapter": "adapter.gguf",
+ "per_step": [
+  {
+   "step": 0,
+   "window": "seq-00004",
+   "tokens": 1024,
+   "s": 8.158,
+   "loss": 2.0383214950561523,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 1,
+   "window": "seq-00030",
+   "tokens": 1024,
+   "s": 4.918,
+   "loss": 1.4832329750061035,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 2,
+   "window": "seq-00026",
+   "tokens": 1024,
+   "s": 5.272,
+   "loss": 2.124359369277954,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 3,
+   "window": "seq-00018",
+   "tokens": 1024,
+   "s": 4.917,
+   "loss": 1.5718307495117188,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 4,
+   "window": "seq-00010",
+   "tokens": 1024,
+   "s": 4.863,
+   "loss": 1.3434603214263916,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 5,
+   "window": "seq-00013",
+   "tokens": 1024,
+   "s": 4.884,
+   "loss": 2.035879611968994,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 6,
+   "window": "seq-00027",
+   "tokens": 1024,
+   "s": 4.665,
+   "loss": 1.7343171834945679,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 7,
+   "window": "seq-00009",
+   "tokens": 1024,
+   "s": 4.343,
+   "loss": 2.2972381114959717,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 8,
+   "window": "seq-00029",
+   "tokens": 1024,
+   "s": 4.002,
+   "loss": 0.6801754236221313,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 9,
+   "window": "seq-00012",
+   "tokens": 1024,
+   "s": 4.505,
+   "loss": 1.984108805656433,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 10,
+   "window": "seq-00020",
+   "tokens": 1024,
+   "s": 4.467,
+   "loss": 1.9186177253723145,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 11,
+   "window": "seq-00016",
+   "tokens": 1024,
+   "s": 4.87,
+   "loss": 1.7940748929977417,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 12,
+   "window": "seq-00008",
+   "tokens": 1024,
+   "s": 4.496,
+   "loss": 1.5590734481811523,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 13,
+   "window": "seq-00017",
+   "tokens": 1024,
+   "s": 4.544,
+   "loss": 1.8865978717803955,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 14,
+   "window": "seq-00002",
+   "tokens": 1024,
+   "s": 4.468,
+   "loss": 2.1773648262023926,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 15,
+   "window": "seq-00025",
+   "tokens": 1024,
+   "s": 4.369,
+   "loss": 2.7618839740753174,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 16,
+   "window": "seq-00007",
+   "tokens": 1024,
+   "s": 4.284,
+   "loss": 1.9242734909057617,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 17,
+   "window": "seq-00001",
+   "tokens": 1024,
+   "s": 4.111,
+   "loss": 1.7578767538070679,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 18,
+   "window": "seq-00003",
+   "tokens": 1024,
+   "s": 4.667,
+   "loss": 1.3475242853164673,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 19,
+   "window": "seq-00006",
+   "tokens": 1024,
+   "s": 4.309,
+   "loss": 1.2059110403060913,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 20,
+   "window": "seq-00014",
+   "tokens": 1024,
+   "s": 4.348,
+   "loss": 1.8019400835037231,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 21,
+   "window": "seq-00023",
+   "tokens": 1024,
+   "s": 4.047,
+   "loss": 2.0927329063415527,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 22,
+   "window": "seq-00011",
+   "tokens": 1024,
+   "s": 4.327,
+   "loss": 1.752166509628296,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 23,
+   "window": "seq-00005",
+   "tokens": 1024,
+   "s": 4.581,
+   "loss": 1.6562004089355469,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 24,
+   "window": "seq-00031",
+   "tokens": 1024,
+   "s": 4.361,
+   "loss": 1.12057626247406,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 25,
+   "window": "seq-00021",
+   "tokens": 1024,
+   "s": 4.151,
+   "loss": 2.364882707595825,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 26,
+   "window": "seq-00028",
+   "tokens": 1024,
+   "s": 3.839,
+   "loss": 0.49471035599708557,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 27,
+   "window": "seq-00024",
+   "tokens": 1024,
+   "s": 4.342,
+   "loss": 2.664418935775757,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 28,
+   "window": "seq-00022",
+   "tokens": 1024,
+   "s": 4.284,
+   "loss": 2.1028339862823486,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 29,
+   "window": "seq-00015",
+   "tokens": 1024,
+   "s": 4.372,
+   "loss": 1.579392910003662,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 30,
+   "window": "seq-00000",
+   "tokens": 1024,
+   "s": 4.263,
+   "loss": 1.706193447113037,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 31,
+   "window": "seq-00019",
+   "tokens": 1024,
+   "s": 4.228,
+   "loss": 1.7271162271499634,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 32,
+   "window": "seq-00004",
+   "tokens": 1024,
+   "s": 4.519,
+   "loss": 1.868899941444397,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 33,
+   "window": "seq-00014",
+   "tokens": 1024,
+   "s": 4.499,
+   "loss": 1.752843976020813,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 34,
+   "window": "seq-00016",
+   "tokens": 1024,
+   "s": 4.691,
+   "loss": 1.7007648944854736,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 35,
+   "window": "seq-00018",
+   "tokens": 1024,
+   "s": 4.617,
+   "loss": 1.4130351543426514,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 36,
+   "window": "seq-00008",
+   "tokens": 1024,
+   "s": 4.506,
+   "loss": 1.498947262763977,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 37,
+   "window": "seq-00028",
+   "tokens": 1024,
+   "s": 3.985,
+   "loss": 0.47865965962409973,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 38,
+   "window": "seq-00025",
+   "tokens": 1024,
+   "s": 4.464,
+   "loss": 2.681464195251465,
+   "peak_gb": 11.04
+  },
+  {
+   "step": 39,
+   "window": "seq-00020",
+   "tokens": 1024,
+   "s": 4.485,
+   "loss": 1.7980538606643677,
+   "peak_gb": 11.04
+  }
+ ]
+}

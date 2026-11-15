@@ -1,0 +1,20 @@
+2026-11-15T03:32:43Z clone
+2026-11-15T03:32:47Z build
+2026-11-15T03:33:48Z venv
+2026-11-15T03:35:16Z dump-train
+2026-11-15T03:48:16Z dump-held
+2026-11-15T03:52:37Z weights
+2026-11-15T03:54:32Z cpu-done
+2026-11-15T03:54:34Z gate
+2026-11-15T03:55:03Z gate rc=1
+2026-11-15T03:55:29Z gate-none rc=1
+2026-11-15T03:55:29Z train
+2026-11-15T03:57:05Z re-unpacked tail-trainer at the expandable_segments fix
+2026-11-15T03:57:05Z gate
+2026-11-15T03:58:22Z train
+2026-11-15T03:59:42Z eval
+2026-11-15T04:01:22Z dump-held-lora
+2026-11-15T04:34:16Z re-unpacked tail-trainer at 0130bfd924 (the earlier re-unpack had removed the built tail-dump); rebuild
+2026-11-15T04:34:21Z dump-held-lora
+2026-11-15T04:39:49Z gate-lora
+2026-11-15T04:41:12Z gpu-done

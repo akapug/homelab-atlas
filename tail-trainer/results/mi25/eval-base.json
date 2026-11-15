@@ -1,0 +1,28 @@
+{
+ "adapters": [],
+ "first": 44,
+ "windows": 8,
+ "match": "q8",
+ "torch_ce_all_positions": 1.5259394645690918,
+ "positions": 8184,
+ "logit_rows": 248,
+ "engine_ce_logit_rows": 1.1447411807307466,
+ "torch_ce_logit_rows": 1.142645776513497,
+ "engine_vs_torch": {
+  "rows": 248,
+  "top1": 0.9959677419354839,
+  "kl_mean": 0.0007624809703896003,
+  "kl_max": 0.023611616976471947,
+  "top20_abs_mean": 0.09160778352429405,
+  "top20_abs_max": 1.026887726346036
+ },
+ "card": {
+  "device": "cuda",
+  "torch": "2.11.0+rocm7.13.0a20260515",
+  "name": "AMD Radeon Graphics",
+  "total_gb": 15.98,
+  "backend": "hip",
+  "hip": "7.13.0",
+  "arch": "gfx900:xnack-"
+ }
+}

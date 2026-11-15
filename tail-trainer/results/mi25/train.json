@@ -1,0 +1,210 @@
+{
+ "arch": "qwen3moe",
+ "first": 44,
+ "targets": [
+  "blk.44.attn_q.weight",
+  "blk.44.attn_k.weight",
+  "blk.44.attn_v.weight",
+  "blk.44.attn_output.weight",
+  "blk.45.attn_q.weight",
+  "blk.45.attn_k.weight",
+  "blk.45.attn_v.weight",
+  "blk.45.attn_output.weight",
+  "blk.46.attn_q.weight",
+  "blk.46.attn_k.weight",
+  "blk.46.attn_v.weight",
+  "blk.46.attn_output.weight",
+  "blk.47.attn_q.weight",
+  "blk.47.attn_k.weight",
+  "blk.47.attn_v.weight",
+  "blk.47.attn_output.weight"
+ ],
+ "rank": 8,
+ "lr": 0.0005,
+ "steps": 20,
+ "match": "q8",
+ "tf32": false,
+ "load_s": 23.7,
+ "step_s_mean_after_first": 2.456,
+ "step_s_median": 2.455,
+ "step_s_first": 4.765,
+ "peak_gb": 6.39,
+ "loss_first": 2.0406129360198975,
+ "loss_last": 1.2035256624221802,
+ "card": {
+  "device": "cuda",
+  "torch": "2.11.0+rocm7.13.0a20260515",
+  "name": "AMD Radeon Graphics",
+  "total_gb": 15.98,
+  "backend": "hip",
+  "hip": "7.13.0",
+  "arch": "gfx900:xnack-",
+  "notes": {
+   "offload_experts": false
+  },
+  "f64_on_card": true
+ },
+ "adapter": "adapter.gguf",
+ "per_step": [
+  {
+   "step": 0,
+   "window": "seq-00004",
+   "tokens": 1024,
+   "s": 4.765,
+   "loss": 2.0406129360198975,
+   "peak_gb": 6.38
+  },
+  {
+   "step": 1,
+   "window": "seq-00030",
+   "tokens": 1024,
+   "s": 2.536,
+   "loss": 1.4813944101333618,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 2,
+   "window": "seq-00026",
+   "tokens": 1024,
+   "s": 2.455,
+   "loss": 2.1240856647491455,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 3,
+   "window": "seq-00018",
+   "tokens": 1024,
+   "s": 2.38,
+   "loss": 1.574426293373108,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 4,
+   "window": "seq-00010",
+   "tokens": 1024,
+   "s": 2.449,
+   "loss": 1.3514546155929565,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 5,
+   "window": "seq-00013",
+   "tokens": 1024,
+   "s": 2.396,
+   "loss": 2.0319106578826904,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 6,
+   "window": "seq-00027",
+   "tokens": 1024,
+   "s": 2.484,
+   "loss": 1.7170279026031494,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 7,
+   "window": "seq-00009",
+   "tokens": 1024,
+   "s": 2.348,
+   "loss": 2.275245428085327,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 8,
+   "window": "seq-00029",
+   "tokens": 1024,
+   "s": 2.38,
+   "loss": 0.6795942783355713,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 9,
+   "window": "seq-00012",
+   "tokens": 1024,
+   "s": 2.359,
+   "loss": 1.9822123050689697,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 10,
+   "window": "seq-00020",
+   "tokens": 1024,
+   "s": 2.468,
+   "loss": 1.9011155366897583,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 11,
+   "window": "seq-00016",
+   "tokens": 1024,
+   "s": 2.326,
+   "loss": 1.7845877408981323,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 12,
+   "window": "seq-00008",
+   "tokens": 1024,
+   "s": 2.461,
+   "loss": 1.5436819791793823,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 13,
+   "window": "seq-00017",
+   "tokens": 1024,
+   "s": 2.348,
+   "loss": 1.864043116569519,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 14,
+   "window": "seq-00002",
+   "tokens": 1024,
+   "s": 2.388,
+   "loss": 2.1852853298187256,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 15,
+   "window": "seq-00025",
+   "tokens": 1024,
+   "s": 2.398,
+   "loss": 2.7564096450805664,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 16,
+   "window": "seq-00007",
+   "tokens": 1024,
+   "s": 2.571,
+   "loss": 1.9147394895553589,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 17,
+   "window": "seq-00001",
+   "tokens": 1024,
+   "s": 2.461,
+   "loss": 1.7597376108169556,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 18,
+   "window": "seq-00003",
+   "tokens": 1024,
+   "s": 2.843,
+   "loss": 1.3580496311187744,
+   "peak_gb": 6.39
+  },
+  {
+   "step": 19,
+   "window": "seq-00006",
+   "tokens": 1024,
+   "s": 2.61,
+   "loss": 1.2035256624221802,
+   "peak_gb": 6.39
+  }
+ ]
+}
