@@ -134,8 +134,27 @@ tail_trainer.py train --dump dump-train --weights w40 --out run40 --device cuda 
 llama-server -m MODEL.gguf --lora run44/adapter.gguf --lora run40/adapter.gguf
 ```
 
-Measured in torch, this pair is a little better than either adapter alone (it was not checked against one adapter
-trained for as many steps).
+Measured in torch and in llama.cpp: the pair matches the first adapter alone in torch (1.3870 against 1.3866) and is
+slightly better in the engine (1.0747 against 1.0819), and it beats one adapter trained for as many steps (results
+README, "Follow-up").
+
+### One tail split across two cards
+
+When the tail does not fit one card, train it jointly over two: the last stage (blocks B..n-1 and the head) listens,
+the first stage (blocks L..B-1) connects; each box needs only its own blocks' weight files and the same dump.
+
+```sh
+# box 1 (card 1): blocks 44..47 + head
+tail_trainer.py train --dump dump-train --weights w44 --out split-last --steps 80 --device cuda \
+    --stage last --split-at 44 --peer 0.0.0.0:29561
+# box 2 (card 2): blocks 40..43 (weights --first 40; blk.44+ and the head need not be copied there)
+tail_trainer.py train --dump dump-train --weights w40 --out split-first --steps 80 --device rocm \
+    --stage first --split-at 44 --peer BOX1:29561
+llama-server -m MODEL.gguf --lora split-first/adapter.gguf --lora split-last/adapter.gguf
+```
+
+It computes what the whole tail on one card computes (measured: step losses within 0.0064 over 80 steps). One window
+is in flight at a time, so a step costs both cards' time plus the hand-off: the second card adds memory, not speed.
 
 ## Which torch, per card
 

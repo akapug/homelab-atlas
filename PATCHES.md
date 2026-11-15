@@ -680,7 +680,11 @@ layout from the file, is published: [`tail-trainer/`](tail-trainer/), the first 
   1.091) and the engine with the adapter passes the gate against torch (KL 0.0008-0.0009). Two cards trained two
   tails at the same time from one dump (1.33 s and 4.46 s a step); llama.cpp computes both adapters at once exactly
   as torch does, but tails trained in parallel do not compose (the pair is worse than either alone); a second tail
-  trained with the first frozen does, in torch. [Results](tail-trainer/results/README.md)
+  trained with the first frozen does, also in the engine (held-out 1.075 against 1.082 for the first alone). On this
+  32-window text more training overfits: an 80-step control and an 8-block joint tail are both worse than 40 steps on
+  one tail. `train --stage` splits one tail over two cards (MI25 blocks 40..43, RTX 6000 44..47 + head) and
+  reproduces one-card training (step loss within 0.0064 over 80 steps) at 3.38 s a step against 2.37 s on one card:
+  the second card adds memory (5-6 GB a card instead of 11), not speed. [Results](tail-trainer/results/README.md)
 - **Run.** The [README](tail-trainer/README.md)'s steps 1-7. **Check.** `bash run_tests.sh` (CPU torch, a tiny random
   GGUF, a token-by-token reference of the arithmetic); `gate` exits 0 on pass and 3 on fail. **Undo.** Delete the
   venv and the dump directories.

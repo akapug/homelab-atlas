@@ -8,6 +8,7 @@
                             [--lora A.gguf ...]
     tail_trainer.py train   --dump DUMP --weights WEIGHTS --out RUN [--steps 20] [--rank 8] [--lr 5e-4]
                             [--targets attn|o|attn+shexp] [--blocks A-B]       -> RUN/adapter.gguf, RUN/train.json
+                            [--stage first|last --split-at B --peer HOST:PORT]  one tail over two cards (below)
     tail_trainer.py eval    --dump DUMP --weights WEIGHTS --out eval.json [--lora A.gguf ...] [--seqs N]
 
 Why: the whole model never has to fit a card. llama.cpp runs blocks 0..L-1 once, quantized, on the CPU (tail-dump);
@@ -21,6 +22,16 @@ optimizer's steps (every reported number is exact f32); rope angles on the CPU w
 pinned host memory when the tail does not fit (--offload-experts auto); the MoE recompute reuses the forward's routing
 (non-deterministic atomics on ROCm and XPU otherwise flip near-tied experts); on NVIDIA the allocator defaults to
 expandable_segments:True (fragmentation on 11 GB cards), never on ROCm (gfx900: every allocation fails with it). Every file is read once and dropped from the page cache.
+
+train --stage: one tail split across two cards (two boxes, or two cards in one), trained jointly. The last stage
+(blocks B..n-1 and the head; WEIGHTS made with --first B) listens on --peer; the first stage (blocks L..B-1; WEIGHTS
+made with --first L, the rest of it is not loaded) connects to it. Per step the first stage sends the residual entering
+block B, the last stage computes the loss and sends back its gradient, and both clip by the norm over both stages'
+LoRA before the AdamW step, so the run is the same arithmetic as the whole tail on one card (same seed, same windows,
+each card's own kernels). Both stages read the same DUMP windows (the first needs the residual entering L, the last
+only the tokens) with the same --steps and --seed; each writes its blocks' adapter, and llama.cpp loads both with two
+--lora flags. One window is in flight at a time: the second card adds memory (a tail that fits neither card alone),
+not speed.
 
 gate (thresholds fixed in this file before any run): on the logit rows of the first --seqs windows of DUMP,
   top-1 agreement >= 0.97 and mean KL(engine || torch) <= 0.02 nats; mean |delta log p| over the engine's top 20
@@ -285,7 +296,7 @@ def peak_gb(torch, device, reset=False):
     return m.max_memory_allocated() / 2**30
 
 
-def want_offload(torch, mode, weights, device, headroom_gb=3.0):
+def want_offload(torch, mode, weights, device, headroom_gb=3.0, names=None):
     if mode in ("on", "off"):
         return mode == "on"
     m = accel(torch, device)
@@ -295,17 +306,26 @@ def want_offload(torch, mode, weights, device, headroom_gb=3.0):
         free = m.mem_get_info(torch.device(device))[0]
     except (AttributeError, RuntimeError):
         free = m.get_device_properties(torch.device(device)).total_memory
-    size = sum(os.path.getsize(os.path.join(weights, k + ".npy")) for k in json.load(open(os.path.join(weights, "index.json"))))
+    if names is None:
+        names = json.load(open(os.path.join(weights, "index.json")))
+    size = sum(os.path.getsize(os.path.join(weights, k + ".npy")) for k in names)
     return size + headroom_gb * 2**30 > free
 
 
-def load_tail(a, lora_targets=(), rank=8):
+def block_of(name):
+    return int(name.split(".")[1]) if name.startswith("blk.") else None
+
+
+def load_tail(a, lora_targets=(), rank=8, stop=None):
+    """stop: keep blocks below it only, no head (a first pipeline stage)."""
     import numpy as np
     import torch
     import tail_arch as ta
     spec = ta.Spec.from_json(json.load(open(os.path.join(a.weights, "spec.json"))))
     index = json.load(open(os.path.join(a.weights, "index.json")))
-    offload = want_offload(torch, a.offload_experts, a.weights, a.device)
+    if stop is not None:            # the files of the other stage's blocks need not be on this box
+        index = {k: v for k, v in index.items() if block_of(k) is not None and block_of(k) < stop}
+    offload = want_offload(torch, a.offload_experts, a.weights, a.device, names=index)
     W = {}
     for k in index:
         p = os.path.join(a.weights, k + ".npy")
@@ -387,10 +407,10 @@ def cmd_gate(a):
     return 0 if ok else 3
 
 
-def seq_loss(torch, tail, d, s, first, chunk):
-    """Mean next-token cross-entropy over every position of window s."""
+def seq_loss(torch, tail, d, s, first, chunk, x=None):
+    """Mean next-token cross-entropy over every position of window s (x: the tail's input, else the dump's)."""
     tok = torch.from_numpy(d.tokens(s).astype("int64")).to(tail.device)
-    x = torch.from_numpy(d.resid(s, first))
+    x = torch.from_numpy(d.resid(s, first)) if x is None else x
     hn = tail.hidden(x, None, checkpoint=torch.is_grad_enabled())
     n = hn.shape[0] - 1
     total = 0.0
@@ -403,26 +423,33 @@ def seq_loss(torch, tail, d, s, first, chunk):
     return total / n, n
 
 
+def train_order(d, steps, seed):
+    rng = random.Random(seed)
+    order = []
+    while len(order) < steps:
+        ep = d.seqs[:]
+        rng.shuffle(ep)
+        order += ep
+    return order[:steps]
+
+
 def cmd_train(a):
     import torch
+    if a.stage:
+        return train_stage(a)
     d = Dump(a.dump)
     t0 = time.time()
     tail, spec, targets = load_tail(a, a.targets, a.rank)
     load_s = time.time() - t0
     params = list(tail.lora.parameters())
     opt = torch.optim.AdamW(params, lr=a.lr, weight_decay=0.0)
-    rng = random.Random(a.seed)
-    order = []
-    while len(order) < a.steps:
-        ep = d.seqs[:]
-        rng.shuffle(ep)
-        order += ep
+    order = train_order(d, a.steps, a.seed)
     tf32 = {"auto": tf32_ok(torch, a.device), "on": True, "off": False}[a.tf32]
     set_tf32(torch, tf32)
     os.makedirs(a.out, exist_ok=True)
     peak_gb(torch, a.device, reset=True)
     steps = []
-    for i, s in enumerate(order[:a.steps]):
+    for i, s in enumerate(order):
         t1 = time.time()
         loss, n = seq_loss(torch, tail, d, s, spec.first, a.chunk)
         opt.zero_grad()
@@ -446,6 +473,148 @@ def cmd_train(a):
            "match": a.match, "tf32": tf32, "load_s": round(load_s, 1),
            "step_s_mean_after_first": round(sum(warm) / len(warm), 3), "step_s_median": sorted(sec)[len(sec) // 2],
            "step_s_first": sec[0], "peak_gb": max(r["peak_gb"] for r in steps),
+           "loss_first": steps[0]["loss"], "loss_last": steps[-1]["loss"],
+           "card": device_info(torch, a.device) | {"notes": tail.notes, "f64_on_card": tail.f64},
+           "adapter": "adapter.gguf", "per_step": steps}
+    write_json(os.path.join(a.out, "train.json"), out)
+    print(json.dumps({k: v for k, v in out.items() if k != "per_step"}))
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ two-card pipeline
+def send_msg(sock, head, arr=None):
+    """A JSON header and an optional float32 array, each length-prefixed."""
+    import numpy as np
+    if arr is not None:
+        arr = np.ascontiguousarray(arr, np.float32)
+        head = dict(head, shape=list(arr.shape))
+    h = json.dumps(head).encode()
+    body = b"" if arr is None else arr.tobytes()
+    sock.sendall(len(h).to_bytes(8, "little") + h + len(body).to_bytes(8, "little") + body)
+
+
+def recv_exact(sock, n):
+    buf = bytearray(n)
+    view, got = memoryview(buf), 0
+    while got < n:
+        k = sock.recv_into(view[got:], n - got)
+        if not k:
+            raise SystemExit("the peer stage closed the connection")
+        got += k
+    return bytes(buf)
+
+
+def recv_msg(sock):
+    import numpy as np
+    head = json.loads(recv_exact(sock, int.from_bytes(recv_exact(sock, 8), "little")))
+    body = recv_exact(sock, int.from_bytes(recv_exact(sock, 8), "little"))
+    return head, (np.frombuffer(body, np.float32).reshape(head["shape"]) if "shape" in head else None)
+
+
+def connect_peer(stage, peer, wait_s):
+    import socket
+    host, port = peer.rsplit(":", 1)
+    if stage == "last":
+        srv = socket.create_server((host, int(port)))
+        srv.settimeout(wait_s)
+        conn = srv.accept()[0]
+        srv.close()
+    else:
+        t_end = time.time() + wait_s
+        while True:
+            try:
+                conn = socket.create_connection((host, int(port)), timeout=10)
+                break
+            except OSError:
+                if time.time() > t_end:
+                    raise SystemExit(f"no last stage listening on {peer} after {wait_s} s")
+                time.sleep(2)
+    conn.settimeout(None)
+    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    return conn
+
+
+def grad_sq(params):
+    return sum(float(p.grad.detach().double().pow(2).sum()) for p in params if p.grad is not None)
+
+
+def train_stage(a):
+    import torch
+    if a.split_at is None or not a.peer:
+        raise SystemExit("--stage needs --split-at and --peer")
+    d = Dump(a.dump)
+    t0 = time.time()
+    first = a.stage == "first"
+    tail, spec, targets = load_tail(a, a.targets, a.rank, stop=a.split_at if first else None)
+    if first and not spec.first < a.split_at < spec.n_layer:
+        raise SystemExit(f"--split-at {a.split_at} is not inside this tail ({spec.first}..{spec.n_layer - 1})")
+    if not first and spec.first != a.split_at:
+        raise SystemExit(f"the last stage's weights start at block {spec.first}, not --split-at {a.split_at}")
+    load_s = time.time() - t0
+    params = list(tail.lora.parameters())
+    opt = torch.optim.AdamW(params, lr=a.lr, weight_decay=0.0)
+    order = train_order(d, a.steps, a.seed)
+    tf32 = {"auto": tf32_ok(torch, a.device), "on": True, "off": False}[a.tf32]
+    set_tf32(torch, tf32)
+    os.makedirs(a.out, exist_ok=True)
+    conn = connect_peer(a.stage, a.peer, a.peer_wait)
+    send_msg(conn, {"stage": a.stage, "split_at": a.split_at, "order": order, "lr": a.lr, "rank": a.rank})
+    other = recv_msg(conn)[0]
+    if other["stage"] == a.stage or other["order"] != order or other["split_at"] != a.split_at:
+        raise SystemExit(f"the peer stage does not match: {other['stage']}, split {other['split_at']}, "
+                         f"same windows {other['order'] == order}")
+    peak_gb(torch, a.device, reset=True)
+    steps = []
+    for i, s in enumerate(order):
+        t1 = time.time()
+        opt.zero_grad()
+        if first:
+            h = tail.run(torch.from_numpy(d.resid(s, spec.first)), spec.first, a.split_at, checkpoint=True)
+            hc = h.detach().cpu().numpy()
+            t2 = time.time()
+            send_msg(conn, {"step": i, "window": s}, hc)
+            back, g = recv_msg(conn)
+            t3 = time.time()
+            h.backward(torch.from_numpy(g.copy()).to(h.device))
+            sq = grad_sq(params)
+            send_msg(conn, {"sq": sq})
+            total, loss = sq + back["sq"], back["loss"]
+            compute = (t2 - t1) + (time.time() - t3)
+        else:
+            head, hc = recv_msg(conn)
+            if head["window"] != s:
+                raise SystemExit(f"step {i}: the first stage sent window {head['window']}, expected {s}")
+            t2 = time.time()
+            x = torch.from_numpy(hc.copy()).to(tail.device).requires_grad_()
+            lt, n = seq_loss(torch, tail, d, s, spec.first, a.chunk, x=x)
+            lt.backward()
+            sq, loss = grad_sq(params), float(lt.detach())
+            t3 = time.time()
+            send_msg(conn, {"sq": sq, "loss": loss}, x.grad.cpu().numpy())
+            total = sq + recv_msg(conn)[0]["sq"]
+            compute = t3 - t2
+        coef = min(1.0, 1.0 / (math.sqrt(total) + 1e-6))       # clip_grad_norm_(max_norm=1) over both stages
+        for p in params:
+            if p.grad is not None:
+                p.grad.mul_(coef)
+        opt.step()
+        sync(torch, a.device)
+        row = {"step": i, "window": s, "s": round(time.time() - t1, 3), "compute_s": round(compute, 3), "loss": loss,
+               "peak_gb": round(peak_gb(torch, a.device), 2)}
+        steps.append(row)
+        print(json.dumps(row), flush=True)
+    conn.close()
+    set_tf32(torch, False)
+    state = {n: (tail.lora[n.replace(".", "_") + "_A"].detach().cpu().numpy(),
+                 tail.lora[n.replace(".", "_") + "_B"].detach().cpu().numpy()) for n in targets}
+    write_adapter(state, os.path.join(a.out, "adapter.gguf"), spec.arch)
+    sec, comp = [r["s"] for r in steps], [r["compute_s"] for r in steps]
+    warm, cw = sec[1:] or sec, comp[1:] or comp
+    out = {"arch": spec.arch, "stage": a.stage, "split_at": a.split_at, "first": spec.first,
+           "blocks": [spec.first, a.split_at - 1] if first else [a.split_at, spec.n_layer - 1], "targets": targets,
+           "rank": a.rank, "lr": a.lr, "steps": len(steps), "match": a.match, "tf32": tf32, "load_s": round(load_s, 1),
+           "step_s_mean_after_first": round(sum(warm) / len(warm), 3), "step_s_first": sec[0],
+           "compute_s_mean_after_first": round(sum(cw) / len(cw), 3), "peak_gb": max(r["peak_gb"] for r in steps),
            "loss_first": steps[0]["loss"], "loss_last": steps[-1]["loss"],
            "card": device_info(torch, a.device) | {"notes": tail.notes, "f64_on_card": tail.f64},
            "adapter": "adapter.gguf", "per_step": steps}
@@ -577,6 +746,10 @@ def main(argv=None):
             p.add_argument("--blocks", help="train only the targets in blocks A-B (inclusive)")
             p.add_argument("--tf32", choices=("auto", "on", "off"), default="auto")
             p.add_argument("--seed", type=int, default=20261115)
+            p.add_argument("--stage", choices=("first", "last"), help="one stage of a tail split across two cards")
+            p.add_argument("--split-at", type=int, help="the first block of the last stage")
+            p.add_argument("--peer", help="HOST:PORT the last stage listens on and the first stage connects to")
+            p.add_argument("--peer-wait", type=float, default=900, help="seconds to wait for the other stage")
     a = ap.parse_args(argv)
     sys.path.insert(0, HERE)
     if a.cmd in ("gate", "train", "eval"):

@@ -317,6 +317,46 @@ class TorchTail(unittest.TestCase):
         self.assertEqual(rc, 3)                         # random engine logits: the gate must fail
         self.assertFalse(json.load(open(g))["pass"])
 
+    def test_a_tail_split_over_two_stages_trains_as_the_whole_tail(self):
+        """first stage blocks 1..1 (in a subprocess), last stage block 2 + head, over a localhost socket: the same
+        losses and adapters as training blocks 1..2 on one card."""
+        import socket
+        dump = os.path.join(self.d, "dump-split")
+        tiny_dump(dump, 1)
+        w2 = os.path.join(self.d, "w2")
+        tt.main(["weights", self.path, "--first", "2", "--out", w2])
+        common = ["--dump", dump, "--device", "cpu", "--steps", "4", "--lr", "1e-2", "--match", "none"]
+        joint = os.path.join(self.d, "joint")
+        self.assertEqual(tt.main(["train", "--weights", self.w, "--out", joint] + common), 0)
+        with socket.socket() as so:
+            so.bind(("127.0.0.1", 0))
+            peer = f"127.0.0.1:{so.getsockname()[1]}"
+        s1, s2 = os.path.join(self.d, "s1"), os.path.join(self.d, "s2")
+        w1 = os.path.join(self.d, "w1")         # the first stage's box holds only its blocks' files
+        os.makedirs(w1)
+        for f in os.listdir(self.w):
+            if f.endswith(".json") or f.startswith("blk.1."):
+                os.link(os.path.join(self.w, f), os.path.join(w1, f))
+        pipe = ["--split-at", "2", "--peer", peer, "--peer-wait", "60"]
+        firstp = subprocess.Popen([sys.executable, os.path.join(HERE, "tail_trainer.py"), "train", "--weights", w1,
+                                   "--out", s1, "--stage", "first"] + common + pipe, stdout=subprocess.DEVNULL)
+        rc = tt.main(["train", "--weights", w2, "--out", s2, "--stage", "last"] + common + pipe)
+        self.assertEqual((rc, firstp.wait(timeout=120)), (0, 0))
+        j = json.load(open(os.path.join(joint, "train.json")))
+        a, b = (json.load(open(os.path.join(x, "train.json"))) for x in (s1, s2))
+        self.assertEqual(a["blocks"], [1, 1])
+        self.assertTrue(all(n.startswith("blk.1.") for n in a["targets"]))
+        self.assertEqual(a["targets"] + b["targets"], j["targets"])
+        for r, ra, rb in zip(j["per_step"], a["per_step"], b["per_step"]):
+            self.assertAlmostEqual(r["loss"], rb["loss"], places=4)
+            self.assertEqual(ra["loss"], rb["loss"])
+        sj = tt.read_adapter(os.path.join(joint, "adapter.gguf"))
+        ss = tt.read_adapter(os.path.join(s1, "adapter.gguf")) | tt.read_adapter(os.path.join(s2, "adapter.gguf"))
+        self.assertEqual(sorted(ss), sorted(sj))
+        for n in sj:
+            for x, y in zip(sj[n], ss[n]):
+                self.assertLess(float(np.abs(x - y).max()), 1e-4, n)
+
 
 class Source(unittest.TestCase):
     def test_gate_thresholds_are_the_preregistered_ones(self):

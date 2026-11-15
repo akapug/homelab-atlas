@@ -1,0 +1,690 @@
+{
+ "arch": "qwen3moe",
+ "first": 44,
+ "targets": [
+  "blk.44.attn_q.weight",
+  "blk.44.attn_k.weight",
+  "blk.44.attn_v.weight",
+  "blk.44.attn_output.weight",
+  "blk.45.attn_q.weight",
+  "blk.45.attn_k.weight",
+  "blk.45.attn_v.weight",
+  "blk.45.attn_output.weight",
+  "blk.46.attn_q.weight",
+  "blk.46.attn_k.weight",
+  "blk.46.attn_v.weight",
+  "blk.46.attn_output.weight",
+  "blk.47.attn_q.weight",
+  "blk.47.attn_k.weight",
+  "blk.47.attn_v.weight",
+  "blk.47.attn_output.weight"
+ ],
+ "rank": 8,
+ "lr": 0.0005,
+ "steps": 80,
+ "match": "q8",
+ "tf32": false,
+ "load_s": 39.3,
+ "step_s_mean_after_first": 1.395,
+ "step_s_median": 1.39,
+ "step_s_first": 1.983,
+ "peak_gb": 6.33,
+ "loss_first": 2.0408220291137695,
+ "loss_last": 1.0336203575134277,
+ "card": {
+  "device": "cuda",
+  "torch": "2.9.1+cu126",
+  "name": "Quadro RTX 6000",
+  "total_gb": 21.97,
+  "backend": "cuda",
+  "cuda": "12.6",
+  "sm": "75",
+  "notes": {
+   "offload_experts": false
+  },
+  "f64_on_card": true
+ },
+ "adapter": "adapter.gguf",
+ "per_step": [
+  {
+   "step": 0,
+   "window": "seq-00004",
+   "tokens": 1024,
+   "s": 1.983,
+   "loss": 2.0408220291137695,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 1,
+   "window": "seq-00030",
+   "tokens": 1024,
+   "s": 1.411,
+   "loss": 1.4818035364151,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 2,
+   "window": "seq-00026",
+   "tokens": 1024,
+   "s": 1.468,
+   "loss": 2.122180700302124,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 3,
+   "window": "seq-00018",
+   "tokens": 1024,
+   "s": 1.37,
+   "loss": 1.577608585357666,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 4,
+   "window": "seq-00010",
+   "tokens": 1024,
+   "s": 1.373,
+   "loss": 1.3444570302963257,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 5,
+   "window": "seq-00013",
+   "tokens": 1024,
+   "s": 1.43,
+   "loss": 2.0345098972320557,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 6,
+   "window": "seq-00027",
+   "tokens": 1024,
+   "s": 1.417,
+   "loss": 1.7217035293579102,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 7,
+   "window": "seq-00009",
+   "tokens": 1024,
+   "s": 1.54,
+   "loss": 2.2771103382110596,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 8,
+   "window": "seq-00029",
+   "tokens": 1024,
+   "s": 1.35,
+   "loss": 0.6797640919685364,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 9,
+   "window": "seq-00012",
+   "tokens": 1024,
+   "s": 1.398,
+   "loss": 1.9893285036087036,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 10,
+   "window": "seq-00020",
+   "tokens": 1024,
+   "s": 1.391,
+   "loss": 1.9052371978759766,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 11,
+   "window": "seq-00016",
+   "tokens": 1024,
+   "s": 1.434,
+   "loss": 1.7854266166687012,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 12,
+   "window": "seq-00008",
+   "tokens": 1024,
+   "s": 1.493,
+   "loss": 1.5370303392410278,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 13,
+   "window": "seq-00017",
+   "tokens": 1024,
+   "s": 1.33,
+   "loss": 1.8670649528503418,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 14,
+   "window": "seq-00002",
+   "tokens": 1024,
+   "s": 1.327,
+   "loss": 2.180514097213745,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 15,
+   "window": "seq-00025",
+   "tokens": 1024,
+   "s": 1.391,
+   "loss": 2.760406255722046,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 16,
+   "window": "seq-00007",
+   "tokens": 1024,
+   "s": 1.546,
+   "loss": 1.9116170406341553,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 17,
+   "window": "seq-00001",
+   "tokens": 1024,
+   "s": 1.339,
+   "loss": 1.7646286487579346,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 18,
+   "window": "seq-00003",
+   "tokens": 1024,
+   "s": 1.442,
+   "loss": 1.3551853895187378,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 19,
+   "window": "seq-00006",
+   "tokens": 1024,
+   "s": 1.427,
+   "loss": 1.2086609601974487,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 20,
+   "window": "seq-00014",
+   "tokens": 1024,
+   "s": 1.371,
+   "loss": 1.809330701828003,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 21,
+   "window": "seq-00023",
+   "tokens": 1024,
+   "s": 1.414,
+   "loss": 2.1133229732513428,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 22,
+   "window": "seq-00011",
+   "tokens": 1024,
+   "s": 1.349,
+   "loss": 1.7495205402374268,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 23,
+   "window": "seq-00005",
+   "tokens": 1024,
+   "s": 1.382,
+   "loss": 1.6571358442306519,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 24,
+   "window": "seq-00031",
+   "tokens": 1024,
+   "s": 1.406,
+   "loss": 1.1148735284805298,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 25,
+   "window": "seq-00021",
+   "tokens": 1024,
+   "s": 1.29,
+   "loss": 2.358440399169922,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 26,
+   "window": "seq-00028",
+   "tokens": 1024,
+   "s": 1.371,
+   "loss": 0.5108544826507568,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 27,
+   "window": "seq-00024",
+   "tokens": 1024,
+   "s": 1.315,
+   "loss": 2.6706931591033936,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 28,
+   "window": "seq-00022",
+   "tokens": 1024,
+   "s": 1.336,
+   "loss": 2.1109442710876465,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 29,
+   "window": "seq-00015",
+   "tokens": 1024,
+   "s": 1.344,
+   "loss": 1.576366662979126,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 30,
+   "window": "seq-00000",
+   "tokens": 1024,
+   "s": 1.343,
+   "loss": 1.7070590257644653,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 31,
+   "window": "seq-00019",
+   "tokens": 1024,
+   "s": 1.511,
+   "loss": 1.7264050245285034,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 32,
+   "window": "seq-00004",
+   "tokens": 1024,
+   "s": 1.39,
+   "loss": 1.8775626420974731,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 33,
+   "window": "seq-00014",
+   "tokens": 1024,
+   "s": 1.477,
+   "loss": 1.7527533769607544,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 34,
+   "window": "seq-00016",
+   "tokens": 1024,
+   "s": 1.476,
+   "loss": 1.7171313762664795,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 35,
+   "window": "seq-00018",
+   "tokens": 1024,
+   "s": 1.384,
+   "loss": 1.4306249618530273,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 36,
+   "window": "seq-00008",
+   "tokens": 1024,
+   "s": 1.518,
+   "loss": 1.4821670055389404,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 37,
+   "window": "seq-00028",
+   "tokens": 1024,
+   "s": 1.27,
+   "loss": 0.48527398705482483,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 38,
+   "window": "seq-00025",
+   "tokens": 1024,
+   "s": 1.367,
+   "loss": 2.6897494792938232,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 39,
+   "window": "seq-00020",
+   "tokens": 1024,
+   "s": 1.406,
+   "loss": 1.8107537031173706,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 40,
+   "window": "seq-00005",
+   "tokens": 1024,
+   "s": 1.382,
+   "loss": 1.6122103929519653,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 41,
+   "window": "seq-00021",
+   "tokens": 1024,
+   "s": 1.426,
+   "loss": 2.310840129852295,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 42,
+   "window": "seq-00029",
+   "tokens": 1024,
+   "s": 1.271,
+   "loss": 0.6163747310638428,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 43,
+   "window": "seq-00007",
+   "tokens": 1024,
+   "s": 1.363,
+   "loss": 1.8593116998672485,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 44,
+   "window": "seq-00015",
+   "tokens": 1024,
+   "s": 1.338,
+   "loss": 1.540541172027588,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 45,
+   "window": "seq-00022",
+   "tokens": 1024,
+   "s": 1.295,
+   "loss": 2.061563014984131,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 46,
+   "window": "seq-00026",
+   "tokens": 1024,
+   "s": 1.409,
+   "loss": 1.9361531734466553,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 47,
+   "window": "seq-00001",
+   "tokens": 1024,
+   "s": 1.306,
+   "loss": 1.7022868394851685,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 48,
+   "window": "seq-00003",
+   "tokens": 1024,
+   "s": 1.419,
+   "loss": 1.3133965730667114,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 49,
+   "window": "seq-00006",
+   "tokens": 1024,
+   "s": 1.364,
+   "loss": 1.1637545824050903,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 50,
+   "window": "seq-00031",
+   "tokens": 1024,
+   "s": 1.525,
+   "loss": 1.0741053819656372,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 51,
+   "window": "seq-00023",
+   "tokens": 1024,
+   "s": 1.261,
+   "loss": 2.0428647994995117,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 52,
+   "window": "seq-00012",
+   "tokens": 1024,
+   "s": 1.344,
+   "loss": 1.9105557203292847,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 53,
+   "window": "seq-00027",
+   "tokens": 1024,
+   "s": 1.365,
+   "loss": 1.612644076347351,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 54,
+   "window": "seq-00030",
+   "tokens": 1024,
+   "s": 1.358,
+   "loss": 1.2908058166503906,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 55,
+   "window": "seq-00010",
+   "tokens": 1024,
+   "s": 1.486,
+   "loss": 1.1891132593154907,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 56,
+   "window": "seq-00024",
+   "tokens": 1024,
+   "s": 1.32,
+   "loss": 2.598057270050049,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 57,
+   "window": "seq-00009",
+   "tokens": 1024,
+   "s": 1.389,
+   "loss": 2.157968282699585,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 58,
+   "window": "seq-00017",
+   "tokens": 1024,
+   "s": 1.323,
+   "loss": 1.7503243684768677,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 59,
+   "window": "seq-00011",
+   "tokens": 1024,
+   "s": 1.49,
+   "loss": 1.7095893621444702,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 60,
+   "window": "seq-00000",
+   "tokens": 1024,
+   "s": 1.629,
+   "loss": 1.671345829963684,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 61,
+   "window": "seq-00013",
+   "tokens": 1024,
+   "s": 1.48,
+   "loss": 1.8995766639709473,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 62,
+   "window": "seq-00019",
+   "tokens": 1024,
+   "s": 1.441,
+   "loss": 1.6620807647705078,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 63,
+   "window": "seq-00002",
+   "tokens": 1024,
+   "s": 1.397,
+   "loss": 2.114992380142212,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 64,
+   "window": "seq-00015",
+   "tokens": 1024,
+   "s": 1.422,
+   "loss": 1.4818964004516602,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 65,
+   "window": "seq-00028",
+   "tokens": 1024,
+   "s": 1.477,
+   "loss": 0.45234179496765137,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 66,
+   "window": "seq-00002",
+   "tokens": 1024,
+   "s": 1.325,
+   "loss": 2.0885584354400635,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 67,
+   "window": "seq-00003",
+   "tokens": 1024,
+   "s": 1.44,
+   "loss": 1.288083791732788,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 68,
+   "window": "seq-00011",
+   "tokens": 1024,
+   "s": 1.335,
+   "loss": 1.6709257364273071,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 69,
+   "window": "seq-00006",
+   "tokens": 1024,
+   "s": 1.481,
+   "loss": 1.1283279657363892,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 70,
+   "window": "seq-00023",
+   "tokens": 1024,
+   "s": 1.492,
+   "loss": 1.9888497591018677,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 71,
+   "window": "seq-00012",
+   "tokens": 1024,
+   "s": 1.412,
+   "loss": 1.8654983043670654,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 72,
+   "window": "seq-00017",
+   "tokens": 1024,
+   "s": 1.282,
+   "loss": 1.6951723098754883,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 73,
+   "window": "seq-00013",
+   "tokens": 1024,
+   "s": 1.338,
+   "loss": 1.849469780921936,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 74,
+   "window": "seq-00007",
+   "tokens": 1024,
+   "s": 1.312,
+   "loss": 1.8105831146240234,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 75,
+   "window": "seq-00014",
+   "tokens": 1024,
+   "s": 1.472,
+   "loss": 1.6900492906570435,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 76,
+   "window": "seq-00001",
+   "tokens": 1024,
+   "s": 1.314,
+   "loss": 1.6586543321609497,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 77,
+   "window": "seq-00016",
+   "tokens": 1024,
+   "s": 1.446,
+   "loss": 1.6195019483566284,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 78,
+   "window": "seq-00027",
+   "tokens": 1024,
+   "s": 1.382,
+   "loss": 1.5507681369781494,
+   "peak_gb": 6.33
+  },
+  {
+   "step": 79,
+   "window": "seq-00031",
+   "tokens": 1024,
+   "s": 1.334,
+   "loss": 1.0336203575134277,
+   "peak_gb": 6.33
+  }
+ ]
+}

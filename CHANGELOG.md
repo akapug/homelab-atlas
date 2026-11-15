@@ -13,6 +13,11 @@ day). Results that change a headline number say so.
   RTX 6000 and an MI25 (top-1 0.992, KL 0.0008), 20 steps lower held-out loss in the engine, and the engine with the
   adapter matches torch. Two cards trained two tails at once: llama.cpp loads both adapters, but tails trained in
   parallel do not compose; train the second with the first frozen.
+- `tail-trainer/`: `train --stage first|last` trains one tail split across two cards (on two boxes), the same
+  arithmetic as on one card; the follow-up arms measured in llama.cpp: the sequential pair composes in the engine
+  (held-out 1.075 against 1.082), an 80-step control and an 8-block joint tail overfit this text, and the split over an
+  RTX 6000 and an MI25 runs 3.38 s a step against 2.37 s on one card (memory, not speed). LoRA init is now seeded per
+  target, so runs from before this change do not repeat bit for bit.
 - `tail-portable/`: one PyTorch trainer (a LoRA on the last five blocks of Qwen3.8 Flash-Next, checked against
   llama.cpp's log-probabilities) run on an Arc Pro B70, a Quadro RTX 6000 and an MI25; it passes its 413-row check on
   each. Install scripts per card (torch 2.10.0+xpu; 2.9.1+cu126 for Turing and Pascal; AMD's TheRock wheels for gfx900,

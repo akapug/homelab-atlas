@@ -29,9 +29,11 @@ match="none" is plain f32. The gate (tail_trainer.py gate) says which one matche
 
 LoRA: W x + B (A x) per target tensor (GGUF name), A [r, n_in], B [n_out, r]; the adapter GGUF holds NAME.lora_a = A
 and NAME.lora_b = B with no alpha, which llama.cpp applies at --lora scale 1 exactly so. A target sees the raw
-activation (llama.cpp's build_lora_mm: only the base matmul reads the rounded one).
+activation (llama.cpp's build_lora_mm: only the base matmul reads the rounded one). Each target's A starts from its
+own seed (seed + crc32 of its name), so a tail split across cards starts exactly as the same tail on one card.
 """
 import math
+import zlib
 
 import torch
 import torch.nn.functional as F
@@ -159,13 +161,14 @@ class Tail(torch.nn.Module):
                 self.w[k] = t.to(device)
             if loaded is not None:
                 loaded(k)
-        self.head_name = "output.weight" if "output.weight" in self.w else "token_embd.weight"
-        if self.w[self.head_name].dtype != torch.float32:
+        # a first pipeline stage (train --stage first) holds blocks only, no head
+        self.head_name = next((n for n in ("output.weight", "token_embd.weight") if n in self.w), None)
+        if self.head_name and self.w[self.head_name].dtype != torch.float32:
             self.w[self.head_name] = self.w[self.head_name].float()   # the head is read per chunk: keep one f32 copy
         self.lora = torch.nn.ParameterDict()
-        g = torch.Generator().manual_seed(seed)
         for name in lora:
             n_out, n_in = W[name].shape
+            g = torch.Generator().manual_seed((seed + zlib.crc32(name.encode())) % (1 << 62))
             self.lora[key(name) + "_A"] = torch.nn.Parameter((torch.randn(rank, n_in, generator=g) / math.sqrt(n_in)).to(device))
             self.lora[key(name) + "_B"] = torch.nn.Parameter(torch.zeros(n_out, rank, device=device))
         self.frozen = {}          # name -> [(A, B)] of loaded adapters, summed
@@ -307,19 +310,24 @@ class Tail(torch.nn.Module):
         x = (x[rows] if rows is not None else x) + a
         return x + self.moe(il, self.rms(x, self.vec(p + "ffn_norm.weight")))
 
-    def hidden(self, x, rows=None, checkpoint=False):
-        """x [T, n_embd], the input of block spec.first -> the normed head input at rows (all rows when None)."""
+    def run(self, x, lo, hi, rows=None, checkpoint=False):
+        """Blocks lo..hi-1 on x [T, n_embd], the input of block lo -> the residual leaving block hi-1 (only rows of it
+        when rows is given, which the last block alone may cut)."""
         x = x.to(self.device, torch.float32)
         self.routes = {} if checkpoint else None
         pos = torch.arange(x.shape[0], device=self.device)
         rows = None if rows is None else torch.as_tensor(rows, device=self.device)
-        last = self.spec.n_layer - 1
-        for il in range(self.spec.first, self.spec.n_layer):
-            r = rows if il == last else None
+        for il in range(lo, hi):
+            r = rows if il == hi - 1 else None
             if checkpoint and torch.is_grad_enabled():
                 x = torch.utils.checkpoint.checkpoint(self.block, il, x, pos, r, use_reentrant=False)
             else:
                 x = self.block(il, x, pos, r)
+        return x
+
+    def hidden(self, x, rows=None, checkpoint=False):
+        """x [T, n_embd], the input of block spec.first -> the normed head input at rows (all rows when None)."""
+        x = self.run(x, self.spec.first, self.spec.n_layer, rows, checkpoint)
         return self.rms(x, self.vec("output_norm.weight"))
 
     def logits(self, hn):

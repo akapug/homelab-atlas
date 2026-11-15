@@ -95,7 +95,7 @@ is a llama.cpp dump made with the same `--lora` set; the gate compares that dump
 | A (blocks 44..47) | 1.3874 | 1.0852 | 1.0854 | PASS, top-1 0.996, KL 0.00141 |
 | B (blocks 40..43) | 1.3883 | 1.0843 | 1.0818 | PASS, top-1 0.984, KL 0.00124 |
 | A + B, trained in parallel | **1.4579** | **1.1635** | 1.1643 | PASS, top-1 0.980, KL 0.00159 |
-| A + B', B' trained with A frozen (`--lora A`) | **1.3855** | not dumped | 1.0800 | not run |
+| A + B', B' trained with A frozen (`--lora A`) | **1.3855** | not dumped (see the follow-up) | 1.0800 | not run (see the follow-up) |
 
 (`two-card/mc-eval-{base,a,b,ab}.json`, `two-card/mc-gate-{a,b,ab}.json`, `two-card/mc-eval-ab-seq.json`,
 `two-card/train-b-after-a-rtx6000.json`.)
@@ -107,10 +107,51 @@ is a llama.cpp dump made with the same `--lora` set; the gate compares that dump
   learned to correct the same error, so stacking them corrects it twice.
 - **Training the second tail with the first frozen does compose**, measured in torch only: B' (40 steps, blocks
   40..43, `--lora A` frozen, 2.70 s a step on the RTX 6000, loss 1.855 to 1.733) gives 1.3855 with A, a little better
-  than either adapter alone. The engine dump for A + B' was not made. B' also adds 40 more steps of training, and no
-  80-step single-adapter control was run, so this shows that sequential training does not break composition. It
-  does not show that two tails beat one.
+  than either adapter alone. The engine dump for A + B' and an 80-step single-adapter control are in the follow-up
+  below: the engine confirms it, and the control shows it is not more training that helps.
 - So multi-card training is fast as a sweep (two tails, two cards, one dump, each adapter usable alone), and for one
   combined model the protocol is sequential: train A, then B with `--lora A`. Parallel training of composable
   tails would need a shared objective (for example cards exchanging their adapters every k steps), which this tool
   does not do.
+
+## Follow-up: does a second card add training capacity?
+
+Same model, llama.cpp commit (`e574a17`), text and windows as above; dumps remade from scratch (`compose/cpu.steps`);
+the tool with `--stage`, whose LoRA init is seeded per target, so `a40` here is not bit-identical to `A`
+above (its held-out CE agrees: 1.3866 against 1.3874). Every arm trains on the same 32 windows, rank 8, attn q/k/v/o,
+lr 5e-4. Every eval is on the RTX 6000 over the 8 held-out windows with the `--first 40` tail, so every adapter set
+applies; "engine" is a fresh llama.cpp dump of the held-out text made with that arm's `--lora` set (5 dumps), and
+the gate compares that dump with torch carrying the same set.
+
+| arm | trained | card(s) | step s (mean after first) | peak GB | torch CE, all 8,184 positions | engine CE, 248 logit rows | engine vs torch gate |
+|---|---|---|---|---|---|---|---|
+| base | none | - | - | - | 1.5284 | 1.1439 | top-1 0.992, KL 0.00131 |
+| a40 | 44..47, 40 steps | RTX 6000 | 1.37 | 6.33 | **1.3866** | 1.0819 | PASS, top-1 0.988, KL 0.00132 |
+| a80 | 44..47, 80 steps | RTX 6000 | 1.40 | 6.33 | 1.4090 | 1.0979 | PASS, top-1 0.977, KL 0.00126 |
+| seq = a40 + b' | 40..43, 40 steps, `--lora a40` frozen | RTX 6000 | 3.03 | 10.99 | **1.3870** | **1.0747** | PASS, top-1 0.996, KL 0.00134 |
+| j80 | 40..47 jointly, 80 steps | RTX 6000 | 2.37 | 11.02 | 1.4203 | 1.1055 | PASS, top-1 0.977, KL 0.00140 |
+| split | 40..47 jointly, 80 steps: 40..43 on the MI25, 44..47 + head on the RTX 6000 | both, two boxes | 3.38 | MI25 5.24, RTX 6000 6.33 | 1.4194 | 1.1079 | PASS, top-1 0.984, KL 0.00154 |
+
+(`compose/train-*.json`, `compose/ev-*.json`, `compose/gate-*.json`, `compose/arms.steps`.)
+
+- **The engine confirms the sequential compose.** With a40 and b' loaded together, llama.cpp's held-out CE at its
+  logit rows is 1.0747, the lowest of every arm and below a40 alone (1.0819); the gate passes at the same KL as one
+  adapter. In torch over every position the pair ties a40 (1.3870 against 1.3866). So sequential training composes
+  in the engine, and it does not hurt; whether its 0.007 at 248 rows is more than noise this run cannot say.
+- **More training on this text overfits.** a80 (the 80-step control on one tail) is worse than a40 on held-out text
+  (1.4090 against 1.3866), and so is the 8-block joint tail (j80, 1.4203), although both end with the lowest training
+  loss (mean of the last 8 steps: a40 1.656, a80 1.613, j80 1.547). With 32 windows, 80 steps is 2.5 passes. So at
+  this data size a second tail's capacity buys nothing on held-out loss; seq beats its same-step control a80
+  (1.3870 against 1.4090) because b' trains on a40's residual error, not because it adds capacity.
+- **The two-card split is the one-card joint run, at the cost of speed.** Over 80 steps on the same windows, split and
+  j80 differ by at most 0.0064 in step loss and in held-out CE by 0.0009 (torch) and 0.0024 (engine) (the MI25 runs its own kernels). One window is
+  in flight at a time, so a step is the sum of both cards: MI25 1.82 s of compute for 4 blocks, RTX 6000 1.53 s for 4
+  blocks + head, plus the hand-off (8 MB each way over a 56 Gb/s link); 3.38 s a step against 2.37 s for the same
+  tail on the RTX 6000 alone. What the second card adds is memory: each card peaks at 5-6 GB where one card needs 11
+  GB. That is training capacity only for a tail that does not fit one card (more blocks, a larger model, or 11 GB
+  cards); for this tail one card is faster.
+- **What would make the second card add speed:** a pipeline with two or more windows in flight (the MI25 computes
+  window i+1 while the RTX 6000 runs window i), which at these stage times could approach max(1.82, 1.53) s a step
+  for the split. The tool does not do this; it is a scheduler change inside `train_stage`, not engine work.
+- b' (3.03 s a step) ran slower than the 8-block j80 (2.37 s) although it trains half the blocks; it overlapped a CPU
+  test job on the same box (05:59-06:02Z), which is the likely cause. Not rerun.
