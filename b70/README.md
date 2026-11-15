@@ -87,9 +87,14 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
   and a broadcast mask no longer faults the GPU. Also Flint on both cards and on an RTX 3090 Ti, and how Claude
   Code's compaction summary can stop a local model from calling tools.
 - [`split-modes-and-backends.md`](split-modes-and-backends.md): one model over both cards: llama.cpp SYCL's tensor split
-  decodes MoE models 41-54 % slower than layer split (the cross-card reduce goes through host memory), a rule for
+  decodes MoE models 41-54 % slower than layer split (host kernel submission, not the reduce: see
+  [`host-submission-bound-decode.md`](host-submission-bound-decode.md)), a rule for
   `-ot` with layer split, and three outside claims checked (vLLM `FLASH_ATTN` is already the default; arcint's OpenCL
   kernels +26 % prefill over SYCL on a dense 27B).
+- [`host-submission-bound-decode.md`](host-submission-bound-decode.md): why tensor split decoded at half speed: one CPU
+  thread submits ~7,300 kernels a token while the cards idle two thirds of it. Per-device SYCL graphs
+  ([patch](sycl-graph-multi-device.patch)) take tensor-split decode from 16.9 to 39.0 tok/s, past layer split, with
+  identical output; how to tell if your setup is host-bound; the same wall in another engine.
 - [`many-agents.md`](many-agents.md): both cards serving many agents at once with Qwen3.8 Flash-Next: 80-86 tok/s in
   total over 16 replayed real agent sessions, against 377.9 decode over 32 agents on a synthetic load, with every
   switch we tried on each, the losers, and the engine code as an experimental fork.

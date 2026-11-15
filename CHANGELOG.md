@@ -7,6 +7,11 @@ day). Results that change a headline number say so.
 ## [Unreleased]
 
 ### Added
+- `b70/host-submission-bound-decode.md` and `b70/sycl-graph-multi-device.patch`: on two B70s, llama.cpp SYCL's tensor
+  split was limited by one CPU thread submitting ~7,300 kernels a token (cards busy 34 % of it), not by the cross-card
+  reduce. The patch lets each GPU record SYCL graphs with more than one GPU active: tensor-split decode of Qwen3.8
+  Flash-Next 16.9 -> 39.0 tok/s, past layer split (32.2), identical output; one stream only (2-8 streams unchanged).
+  With the host/GPU split, the env settings that do not help, a host-bound recipe and the same wall in XeStrata.
 - `tail-trainer/`: a standalone tool that trains a LoRA on the last blocks of a MoE GGUF in torch while the rest stays
   quantized in llama.cpp, from the file's own metadata. A stock-llama.cpp dump tool, a gate against llama.cpp's
   logits, a llama.cpp adapter GGUF out. On Qwen3-30B-A3B Q4_K_S from a clean directory the gate passes on a Quadro

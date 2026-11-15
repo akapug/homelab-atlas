@@ -1,0 +1,32 @@
+sycl: allow SYCL graphs with more than one active device (-sm layer, -sm tensor)
+
+Base: ggml-org/llama.cpp master e574a17b0 (2026-11-15). Apply with `git apply sycl-graph-multi-device.patch` or
+`patch -p1 < sycl-graph-multi-device.patch` from the llama.cpp root; graphs need -DGGML_SYCL_GRAPH=ON at build time
+and GGML_SYCL_ENABLE_GRAPH=1 at run time.
+
+check_graph_compatibility() refused graphs whenever more than one SYCL device was active, so with two cards neither
+-sm layer nor -sm tensor could record graphs. Each backend context records its graphs on its own in-order queue from
+the subgraph the scheduler (or the meta backend of -sm tensor) gives it, and the same function already refuses any
+node whose buffers or sources are not this device's, so a graph never spans devices. The patch drops the blanket
+refusal and keeps it behind GGML_SYCL_GRAPH_SINGLE_DEVICE=1. CUDA has no such refusal.
+
+diff --git a/ggml/src/ggml-sycl/ggml-sycl.cpp b/ggml/src/ggml-sycl/ggml-sycl.cpp
+index 3bcbad6f8..c74a042f4 100644
+--- a/ggml/src/ggml-sycl/ggml-sycl.cpp
++++ b/ggml/src/ggml-sycl/ggml-sycl.cpp
+@@ -6933,8 +6933,13 @@ static bool graph_node_is_in_local_device(ggml_backend_buffer_type_t device_buft
+ }
+ 
+ static bool check_graph_compatibility(ggml_backend_sycl_context * ctx, ggml_cgraph * cgraph) {
+-    if (ggml_sycl_info().active_device_count > 1) {
+-        // A sycl_ex::command_graph object can only be created for a single device
++    // A sycl_ex::command_graph is recorded on one device's queue. With several devices active (-sm layer and
++    // -sm tensor) each backend context records its own graphs from the subgraphs it is given, so a graph stays on
++    // one device as long as every node and source is in this device's buffers, which the loop below checks.
++    // GGML_SYCL_GRAPH_SINGLE_DEVICE=1 keeps the old refusal whenever more than one device is active.
++    static const bool single_device_only = getenv("GGML_SYCL_GRAPH_SINGLE_DEVICE") != nullptr &&
++                                           atoi(getenv("GGML_SYCL_GRAPH_SINGLE_DEVICE")) != 0;
++    if (single_device_only && ggml_sycl_info().active_device_count > 1) {
+         GGML_LOG_DEBUG("%s: disabling SYCL graphs due to multiple devices\n", __func__);
+         return false;
+     }

@@ -33,7 +33,7 @@ the rest of the repo, are in the [GLOSSARY](GLOSSARY.md).
 | kind | what it means for you | entries |
 |---|---|---|
 | **Any GPU** | It changes the serving software's own code or a model's chat template, not GPU code, so your GPU does not decide whether it applies: your software version does. We measured every one on Intel only. | `strict-tools`, `length-finish`, `effort-template`, `draft-vocab`, llama.cpp `0015` and `0016` |
-| **Intel only** | It changes Intel GPU kernels, an Intel-only code path, or works around Intel's `xe` kernel driver. | `fix-699`, `inc-q40`, llama.cpp `0001`-`0014`, `0017`, `0018`, two driver settings, the DeltaNet check |
+| **Intel only** | It changes Intel GPU kernels, an Intel-only code path, or works around Intel's `xe` kernel driver. | `fix-699`, `inc-q40`, llama.cpp `0001`-`0014`, `0017`, `0018`, `sycl-graph-multi-device`, two driver settings, the DeltaNet check |
 | **Host CPU** | It depends on the CPU the model server runs beside, not on the GPU. | `serving-cpu-guard` |
 | **No GPU needed** | Tools that measure or check: they talk to a server over HTTP or read files. | `agent-eval`, `bench/`, `autoround-dequant-check`, `draft-vocab-build` |
 
@@ -56,6 +56,7 @@ the rest of the repo, are in the [GLOSSARY](GLOSSARY.md).
 | llama.cpp SYCL for ternary Bonsai: [`patches/`](b70/llama.cpp-sycl-bonsai/patches/) 0001-0019 or [`patches-hybrid/`](b70/llama.cpp-sycl-bonsai/patches-hybrid/) 0001-0022 | Intel only | PrismML's llama.cpp fork at PR #235's head or at PR #294's merge, a PTQ1_0 GGUF | B70 | [section 3](#ternary-bonsai-on-prismmls-fork) |
 | llama.cpp SYCL attention sinks and broadcast-mask fix: [`patches/`](b70/llama.cpp-sycl-fa-sinks/patches/) 0001-0002, branch [akapug/llama.cpp `sycl-mkl-fa-sinks`](https://github.com/akapug/llama.cpp/tree/sycl-mkl-fa-sinks) | Intel only | upstream llama.cpp `a34de8618b25` with SYCL; a model with attention sinks (Flint, gpt-oss) for the speed-up | B70 | [section 3](#attention-sinks-on-upstream-llamacpp) |
 | `-sm layer` and `-ot` balanced per card | Intel only (measured) | llama.cpp SYCL b12004 on two cards, a MoE model | two B70s | [section 3](#setting-two-b70s-keep-layer-split-and-balance--ot-per-card) |
+| [`sycl-graph-multi-device.patch`](b70/sycl-graph-multi-device.patch) | Intel only | llama.cpp `e574a17b0` with SYCL, two or more Intel GPUs | two B70s | [section 3](#sycl-graph-multi-devicepatch-sycl-graphs-on-two-or-more-gpus) |
 | [`serving-cpu-guard.sh`](b70/vllm-xpu/serving-cpu-guard.sh) | host CPU | a CPU with two CCDs, vLLM in Docker, systemd | Ryzen 9 9950X3D | [section 4](#serving-cpu-guard-keep-other-work-off-the-servers-ccd) |
 | [`agent-eval/`](b70/agent-eval/) | no GPU needed | an OpenAI-compatible server, a proxy, Docker | two B70s | [section 6](#agent-eval-can-a-local-model-finish-real-repository-work) |
 | [`bench/`](b70/bench/) | no GPU needed | llama-server or an OpenAI-compatible server | B70 | [section 6](#bench-the-measurements-behind-the-numbers) |
@@ -485,11 +486,29 @@ Two commits on upstream master `a34de8618b25` (b12015), not on the 18 above. Not
   with `GGML_SYCL_MKL_FA_DEBUG=1`, the new sinks cases print `MKL`.
 - **Undo.** Build without the commits, or set `GGML_SYCL_ENABLE_MKL_FA=0` (sinks then take the kernels they took before).
 
+### `sycl-graph-multi-device.patch`: SYCL graphs on two or more GPUs
+
+Notes and numbers: [`b70/host-submission-bound-decode.md`](b70/host-submission-bound-decode.md).
+
+- **Symptom.** With two or more Intel GPUs, `GGML_SYCL_ENABLE_GRAPH=1` does nothing (the `-v` log says `disabling SYCL
+  graphs due to multiple devices`), and `-sm tensor` decodes a MoE at about half of `-sm layer`: one host thread submits
+  ~7,300 kernels a token and the GPUs wait for it.
+- **For.** llama.cpp's SYCL backend across two or more Intel GPUs, `-sm tensor` most of all. Measured on two B70s with
+  Qwen3.8 Flash-Next: tensor-split decode 16.93 -> 38.96 tok/s, layer split 32.20 -> 33.18; prefill and batched decode
+  (two or more streams) unchanged.
+- **Apply.** `git apply` [the patch](b70/sycl-graph-multi-device.patch) on `e574a17b0`, build with `-DGGML_SYCL_GRAPH=ON`,
+  run with `GGML_SYCL_ENABLE_GRAPH=1`.
+- **Check.** `-v` logs `enabling SYCL graphs` once a GPU; decode against the same build with graphs off. Our output
+  check: KL divergence 0.00000, same top token 63 of 63.
+- **Undo.** Unset `GGML_SYCL_ENABLE_GRAPH`, or `GGML_SYCL_GRAPH_SINGLE_DEVICE=1`.
+
 ### Setting: two B70s, keep layer split and balance `-ot` per card
 
 Notes and numbers: [`b70/split-modes-and-backends.md`](b70/split-modes-and-backends.md).
 
-- **Symptom.** `-sm tensor` (PR 24152) across two B70s decodes a MoE model 41-54 % slower than `-sm layer`. With layer
+- **Symptom.** `-sm tensor` (PR 24152) across two B70s decodes a MoE model 41-54 % slower than `-sm layer` (with
+  [`sycl-graph-multi-device.patch`](#sycl-graph-multi-devicepatch-sycl-graphs-on-two-or-more-gpus) it decodes one stream
+  21 % faster; layer split still wins from two streams up). With layer
   split, an `-ot` that moves only the last layers' experts to the CPU leaves card 1 with the full-weight half: VRAM
   overcommit, prefill near 24 tok/s, decode stalled.
 - **For.** llama.cpp SYCL across two cards (measured: stock b12004 on two B70s, Qwen3.8 Flash-Next and

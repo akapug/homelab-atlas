@@ -9,7 +9,7 @@ Every number is measured here unless it says CLAIMED (someone else's) or not mea
 
 | question | answer | details |
 |---|---|---|
-| Does llama.cpp SYCL's `-sm tensor` (PR 24152) beat `-sm layer` on a MoE model that needs both cards? | **No: decode -41 % to -54 %.** Prefill -21 % (all on the GPUs) to +23 % (experts partly on the CPU) | [tensor split on MoE](#tensor-split-on-moe-models-that-need-both-cards) |
+| Does llama.cpp SYCL's `-sm tensor` (PR 24152) beat `-sm layer` on a MoE model that needs both cards? | **Stock, no: decode -41 % to -54 %.** With per-device SYCL graphs, one stream decodes +21 % over layer split ([host-submission-bound-decode.md](host-submission-bound-decode.md)). Prefill -21 % (all on the GPUs) to +23 % (experts partly on the CPU) | [tensor split on MoE](#tensor-split-on-moe-models-that-need-both-cards) |
 | Does the split cover the expert matmuls (`MUL_MAT_ID`)? | Yes, already: every card holds a slice of every expert. The cost is the cross-card reduce, staged through host memory | [why decode loses](#why-decode-loses) |
 | Tensor split on a dense 27B that fits one card? | Nothing gained: prefill within 3 %, decode -11 % | [dense 27B](#tensor-split-on-a-dense-27b-that-fits-one-card) |
 | vLLM XPU: is `FLASH_ATTN` 8-11x faster to first token than `TRITON_ATTN`? | Larger here (9.8x at 4k, 61x at 64k), but `FLASH_ATTN` is already the default on llm-scaler 0.26.0-b2. Never force `TRITON_ATTN` | [attention backend](#vllm-xpu-flash_attn-against-triton_attn) |
@@ -61,6 +61,10 @@ Side findings:
 Not measured: other prompt lengths, more than one stream, tensor split with `-ub` above 512, Flash-Next with `-ot`.
 
 ### Why decode loses
+
+Update 2026-11-15: profiled since, the reduce is about 10 % of a token; the cost is host kernel submission, and
+per-device SYCL graphs remove it ([host-submission-bound-decode.md](host-submission-bound-decode.md)). GLM-5.3-Flash's
+`-sm tensor` refusal below was removed upstream in PR 30499 (b12077 and later). The reading as first written:
 
 Read from the source at b12004 (not profiled):
 
