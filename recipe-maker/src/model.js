@@ -1186,6 +1186,7 @@
   function checkRecipe(data, r, resolve, opts) {
     if (r && r.kind === 'network') return networkCheck(data, r);
     if (r && r.kind === 'dllm') return dllmCheck(data, r);
+    if (r && r.kind === 'behaviour') return behaviourCheck(data, r);
     const inp = [], notes = [];
     const box = data.boxes[r.box], m = data.models[r.model], E = data.engines[r.engine];
     if (!box || !m || !E) return { checks: [{ id: 'inputs', status: 'FAIL', detail: 'unknown ' + [!box && 'box ' + r.box, !m && 'model ' + r.model, !E && 'engine ' + r.engine].filter(Boolean).join(', ') + ' (boxes: ' + Object.keys(data.boxes).join(' ') + '; models: ' + Object.keys(data.models).join(' ') + '; engines: ' + Object.keys(data.engines).join(' ') + ')' }], facts: null, notes, bad_input: true };
@@ -1287,6 +1288,7 @@
     if (hp) checks.push(hp);
     const er = expertResidencyCheck(data, r);
     if (er) checks.push(er);
+    if (r.levers) leverChecks(data, r).forEach(c => checks.push(c));
     const fb = fallbackCheck(data, r, opts && opts.measured);
     if (fb) checks.push(fb);
     const cp = cpuPoolCheck(data, r);
@@ -1312,6 +1314,144 @@
         detail: 'predicted pinned host peak ' + pk.toFixed(1) + ' GiB (pinned experts + host extra ' + prediction.host_extra_gib + ' FIT + driver extra ' + prediction.pinned_driver_extra_gib + ') + container anon ' + an + ' GiB; ceiling ' + top.toFixed(1) + ' GiB (' + v(box.dram.total_gib) + ' total - floor ' + floor + ' - margin ' + margin + '; a kill cannot land inside a driver allocation, so this ceiling is the containment); cap ' + (cap === undefined || cap === null ? 'not declared (mem_cap_gib)' : cap + ' GiB (holds anon + page cache, not the pinned buffer)') });
     }
     return { checks, facts, notes, bad_input: false, prediction, priors: priorsFor(data, r) };
+  }
+  // ---------- behaviour levers (data.behaviour_levers, build.py from data/behaviour-levers.json) ----------
+  // A lever changes what the model does: a prompt, a LoRA weight edit, a control vector or a neuron edit. recipe.levers holds
+  // {ref: catalog id, ...overrides} or inline levers; the serving a recipe launches with (lever.serving) is the recipe's own and
+  // never inherited from the catalog (whose measured_under.serving is a record). Four checks:
+  //   lever_fit        the lever was fit on this recipe's model file (recipe.model_file): another file needs a refit, never a reuse
+  //   lever_lora_zero  a llama-server base arm whose server has an adapter loaded sends a non-empty lora list at scale 0
+  //   lever_measured   a prompt + lever vs prompt row (prompt vs base for a prompt lever) on this model, else UNMEASURED-ON-THIS-MODEL;
+  //                    prompt-only and lever-only rows are references, never the label
+  //   lever_noise      a difference inside the session noise, or a CI through 0, is NULL, never a win; a claimed win needs a WIN row
+  const LEVER_KINDS = ['prompt', 'lora-edit', 'control-vector', 'neuron'];
+  const LEVER_LABELS = {
+    lever_fit: 'behaviour lever fit on this recipe\'s model file (an adapter is per model: refit, never reuse)',
+    lever_lora_zero: 'llama-server base arms zero every loaded LoRA adapter explicitly',
+    lever_measured: 'behaviour lever measured as prompt + lever vs prompt on this model',
+    lever_noise: 'behaviour lever gain outside session noise (inside it is null, not a win)',
+  };
+  const aggStatus = xs => xs.some(x => x[0] === 'FAIL') ? 'FAIL' : xs.some(x => x[0] === 'UNKNOWN') ? 'UNKNOWN' : 'PASS';
+  const leverCheck = (id, xs) => ({ id, label: LEVER_LABELS[id], status: aggStatus(xs), detail: xs.map(x => x[0] + ': ' + x[1]).join('; ') });
+  function leverResolve(data, item) {
+    const cat = (data.behaviour_levers && data.behaviour_levers.levers) || [];
+    if (!item || typeof item !== 'object') return { bad: 'a lever is an object ({ref} or an inline lever)' };
+    let base = {};
+    if (item.ref !== undefined) {
+      const hit = cat.find(x => x.id === item.ref);
+      if (!hit) return { bad: 'lever ref ' + item.ref + ' is not in data.behaviour_levers (' + (cat.map(x => x.id).join(' ') || 'none: this copy has no data/behaviour-levers.json') + ')' };
+      base = JSON.parse(JSON.stringify(hit));
+      delete base.serving;
+    }
+    const lv = Object.assign(base, item);
+    lv.id = lv.id || item.ref || '(no id)';
+    return { lv };
+  }
+  // the same model file? a sha256 on both sides decides; otherwise the file name and every identity field both sides give
+  function leverFileMatch(a, b) {
+    const low = x => String(x).toLowerCase(), base = x => String(x.name || '').split('/').pop();
+    if (a.sha256 && b.sha256) return low(a.sha256) === low(b.sha256) ? ['PASS', 'sha256 ' + low(a.sha256).slice(0, 12) + '...'] : ['FAIL', 'sha256 ' + low(a.sha256).slice(0, 12) + '... != ' + low(b.sha256).slice(0, 12) + '...'];
+    if (base(a) !== base(b)) return ['FAIL', 'file ' + base(a) + ' != ' + base(b)];
+    const keys = ['size_bytes', 'hf_revision'].filter(k => a[k] !== undefined && b[k] !== undefined);
+    const diff = keys.filter(k => low(a[k]) !== low(b[k]));
+    if (diff.length) return ['FAIL', diff.map(k => k + ' ' + a[k] + ' != ' + b[k]).join(', ')];
+    if (!keys.length) return ['UNKNOWN', 'file name ' + base(a) + ' matches, but no sha256, size_bytes or hf_revision on both sides confirms it is the same file'];
+    return ['PASS', 'file ' + base(a) + ', ' + keys.map(k => k + ' ' + a[k]).join(', ')];
+  }
+  // one measured row's label: NULL inside the metric's session noise or with a CI through 0 (or with neither to judge by)
+  function leverLabel(data, row) {
+    const B = data.behaviour_levers, nz = B && B.noise && B.noise[row.metric], noise = nz ? v(nz) : null;
+    const d = row.diff, ci = Array.isArray(row.ci) && row.ci.length === 2 ? row.ci : null, lower = row.better === 'lower';
+    let label, why;
+    if (typeof d !== 'number') { label = 'NULL'; why = 'no difference given'; }
+    else if (noise !== null && Math.abs(d) <= noise) { label = 'NULL'; why = 'inside the ' + row.metric + ' session noise ' + noise + ' (' + nz.tag + ', ' + String(nz.src).split(' (')[0] + ')'; }
+    else if (ci && ci[0] <= 0 && ci[1] >= 0) { label = 'NULL'; why = 'CI [' + ci.join(', ') + '] spans 0'; }
+    else if (noise === null && !ci) { label = 'NULL'; why = 'no session-noise figure for ' + row.metric + ' and no CI'; }
+    else { label = (lower ? d < 0 : d > 0) ? 'WIN' : 'LOSS'; why = (ci ? 'CI [' + ci.join(', ') + ']' : 'no CI') + (noise !== null ? ', outside noise ' + noise : ''); }
+    return { label: label + (row.correction ? ' (CORRECTED)' : ''), plain: label, why, corrected: !!row.correction };
+  }
+  const fmtDiff = d => typeof d === 'number' ? (d > 0 ? '+' : '') + d : '?';
+  function leverRow(row) {
+    return (row.prompt ? row.prompt + ' ' : '') + row.metric + ' ' + fmtDiff(row.diff) + (row.ci ? ' [' + row.ci.join(', ') + ']' : '') +
+      (row.won !== undefined ? ' ' + row.won + '/' + row.lost : '') + (row.normal_change !== undefined ? ', NORMAL ' + fmtDiff(row.normal_change) : '') +
+      (row.extra_output_tokens !== undefined ? ', ' + fmtDiff(row.extra_output_tokens) + ' output tokens' : '') + (row.dose !== undefined ? ' at dose ' + row.dose : '') + ' (' + row.src + ')';
+  }
+  // llama-server b12015 applies every loaded adapter at its load scale to a request with no lora field (data.behaviour_levers.lora_zero)
+  function leverLoraZero(data, lv, r) {
+    const sv = lv.serving, eng = String((sv && sv.engine) || r.engine || ''), Z = data.behaviour_levers && data.behaviour_levers.lora_zero;
+    const src = Z ? Z.tag + ' ' + Z.src : 'llama-server b12015';
+    if (!sv || !Array.isArray(sv.arms) || !sv.arms.length) return [['UNKNOWN', lv.id + ': no serving.arms: give each arm its role (base | lever) and request body, so the gate can see that a base arm zeroes every loaded adapter']];
+    if (!/llama/i.test(eng)) return [['UNKNOWN', lv.id + ': engine ' + (eng || '(none)') + ': how it treats a loaded adapter for a request that names none is unmeasured']];
+    const loaded = Array.isArray(sv.adapters) ? sv.adapters : [0];
+    return sv.arms.map(a => {
+      const ld = Array.isArray(a.adapters_loaded) ? a.adapters_loaded : loaded, lora = a.request ? a.request.lora : undefined, tag = lv.id + ' arm ' + (a.id || '?');
+      if (a.role === 'lever') return ['PASS', tag + ' (lever): ' + (Array.isArray(lora) && lora.length ? 'lora ' + JSON.stringify(lora) : 'no lora field: takes the load scale')];
+      if (a.role !== 'base') return ['FAIL', tag + ': role ' + a.role + ' is not base or lever'];
+      if (!ld.length) return ['PASS', tag + ' (base): no adapter loaded on its server'];
+      const want = '"lora":[' + ld.map(i => '{"id":' + i + ',"scale":0}').join(',') + ']';
+      if (!Array.isArray(lora) || !lora.length)
+        return ['FAIL', tag + ' (base): its server has adapter ' + ld.join(', ') + ' loaded and the request sends ' + (lora === undefined ? 'no lora field' : 'an empty lora list') +
+                ', so llama-server applies every loaded adapter at its load scale (1.0) and the base is an edited model (' + src + '); send ' + want];
+      const on = lora.filter(x => Number(x.scale) !== 0);
+      if (on.length) return ['FAIL', tag + ' (base): sets adapter ' + on.map(x => x.id + ' at scale ' + x.scale).join(', ') + '; a base arm sends ' + want];
+      return ['PASS', tag + ' (base): ' + JSON.stringify(lora)];
+    });
+  }
+  function leverChecks(data, r) {
+    const B = data.behaviour_levers, items = Array.isArray(r.levers) ? r.levers : [], mf = r.model_file;
+    const fit = [], zero = [], meas = [], noi = [];
+    if (!items.length) fit.push(['FAIL', 'recipe.levers is empty or not a list']);
+    items.forEach(it => {
+      const res = leverResolve(data, it);
+      if (res.bad) { fit.push(['FAIL', res.bad]); meas.push(['UNKNOWN', res.bad]); return; }
+      const lv = res.lv, id = lv.id;
+      if (LEVER_KINDS.indexOf(lv.kind) < 0) fit.push(['FAIL', id + ': kind ' + lv.kind + ' is not one of ' + LEVER_KINDS.join(' | ')]);
+      let on = false;
+      if (!mf || !mf.name) fit.push(['FAIL', id + ': the recipe declares no model_file {name, sha256 or size_bytes}: a lever is per model file, so the gate cannot tell whether it was fit on the served one']);
+      else if (!lv.fit_model || !lv.fit_model.name) fit.push(['FAIL', id + ': the lever names no fit_model']);
+      else {
+        const [st, why] = leverFileMatch(lv.fit_model, mf);
+        on = st === 'PASS';
+        fit.push([st, id + (st === 'FAIL' ? ': fit on ' + lv.fit_model.name + ', the recipe serves ' + mf.name + ' (' + why + '). An adapter is per model: this model needs a refit' +
+                  (B && B.port ? ' (' + B.port.doc + '; ' + B.port.script + ')' : '') + ', never a reuse' : ': ' + why)]);
+      }
+      if (lv.kind === 'lora-edit') leverLoraZero(data, lv, r).forEach(x => zero.push(x));
+      const prim = (B && B.primary_compare && (B.primary_compare[lv.kind] || B.primary_compare.default)) || (lv.kind === 'prompt' ? 'prompt vs base' : 'prompt+X vs prompt');
+      const rows = lv.measured || [], sourced = x => /\S+:\d+/.test(String(x.src || ''));
+      rows.filter(x => x.tag === 'MEASURED' && !sourced(x)).forEach(x => meas.push(['FAIL', id + ': a MEASURED ' + x.compare + ' row gives no source path:line']));
+      let primary = rows.filter(x => x.compare === prim && x.role !== 'reference' && x.tag === 'MEASURED' && sourced(x));
+      const under = lv.prompt !== undefined ? ' under prompt ' + lv.prompt : '';
+      if (lv.prompt !== undefined) primary = primary.filter(x => x.prompt === lv.prompt);
+      const refs = rows.filter(x => primary.indexOf(x) < 0 && x.compare !== prim);
+      const refTxt = refs.length ? '; references only: ' + refs.map(x => x.compare + ' ' + leverRow(x)).join('; ') : '';
+      if (!on || !primary.length) {
+        const why = !on ? 'the rows were measured on ' + ((lv.fit_model && lv.fit_model.name) || 'an unnamed model') + ', not confirmed as this file' : 'no ' + prim + ' row' + under;
+        meas.push(['UNKNOWN', id + ': UNMEASURED-ON-THIS-MODEL (' + why + ')' + refTxt]);
+        noi.push([lv.claim === 'win' ? 'FAIL' : 'UNKNOWN', id + ': nothing to label' + (lv.claim === 'win' ? ', yet the recipe claims a win' : '')]);
+        return;
+      }
+      meas.push(['PASS', id + ': MEASURED ' + prim + ': ' + primary.map(leverRow).join('; ') + refTxt]);
+      const labels = primary.map(x => Object.assign({ row: x }, leverLabel(data, x)));
+      const clean = labels.some(x => x.plain === 'WIN' && !x.corrected);
+      const txt = labels.map(x => x.label + ' ' + leverRow(x.row) + ': ' + x.why + (x.corrected ? '; ' + x.row.correction : '')).join('; ');
+      if (lv.claim === 'win' && !clean) noi.push(['FAIL', id + ': the recipe claims a win, but no ' + prim + ' row is an uncorrected WIN: ' + txt]);
+      else noi.push([clean ? 'PASS' : 'UNKNOWN', id + ': ' + txt]);
+    });
+    const out = [leverCheck('lever_fit', fit)];
+    if (zero.length) out.push(leverCheck('lever_lora_zero', zero));
+    out.push(leverCheck('lever_measured', meas), leverCheck('lever_noise', noi));
+    return out;
+  }
+  // a recipe with kind 'behaviour': a model file and its levers, judged by the lever checks alone (no speed prediction)
+  function behaviourCheck(data, r) {
+    const inp = [];
+    if (!r.model_file || !r.model_file.name) inp.push(['FAIL', 'model_file {name, sha256 or size_bytes} not given: a behaviour recipe is per model file']);
+    if (!Array.isArray(r.levers) || !r.levers.length) inp.push(['FAIL', 'levers: a behaviour recipe carries at least one lever']);
+    if (r.box !== undefined && !data.boxes[r.box]) inp.push(['UNKNOWN', 'box ' + r.box + ' is not in the box table']);
+    if (!data.behaviour_levers) inp.push(['UNKNOWN', 'this copy has no data/behaviour-levers.json: lever refs cannot resolve']);
+    const checks = [{ id: 'inputs', label: 'behaviour recipe inputs (model file, levers)', status: aggStatus(inp), detail: inp.length ? inp.map(x => x[0] + ': ' + x[1]).join('; ') : 'consistent' }];
+    if (Array.isArray(r.levers) && r.levers.length) leverChecks(data, r).forEach(c => checks.push(c));
+    return { checks, facts: { box: r.box, model: r.model, kind: 'behaviour' }, notes: [], bad_input: false, prediction: null };
   }
   // the serving conditions of data.conditions: a run that leaves one undeclared still runs (UNKNOWN; --strict holds it), but its
   // numbers do not compare with a run that differs in it
@@ -5971,6 +6111,6 @@
     return { id: 'phase_bound', label: 'prefill and decode bounds per phase, binding term named (data.roofline)', status: st, detail: detail + exd + ud, bound: pb, explain: ex, batch_curve: nMax > 1 ? (unc ? 'UNCALIBRATED' : 'MEASURED') : null };
   }
 
-  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, batchModeStep, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
+  const api = { rlEta, rlPlacement, shapeRate, shapeTime, rooflinePredict, rooflineScore, rooflineAttribute, rooflineAttributeFrozen, rlInstant, rlAfterRecord, rooflineRearrange, rooflineExplain, decodeFit, batchLandscape, agentLandscape, batchModeStep, pipelinePlan, pipelineRoof, pipelinePrefill, pipelineLandscape, replicaRecipes, replicaBaseline, replicaGate, replicaMeasured, replicaRank, cardStage, cardConsts, cardCurveFit, cardCurveRescore, agentPointRescore, batchCurveOf, ceilingOf, unlockState, prefillRoof, decodeRoof, rooflineFit, phaseBound, rooflineChecks, recipeRoofQuery, phaseBoundCheck, RL_SHAPE_A, RESIDENT_LEVERS, residentTerms, residentAgentPlan, agentTurns, agentReplaySim, agentEngineSim, agentTurnPredict, agentTurnRescore, prefillPass, prefillFit, prefillPassChecks, chunksPerRead, predictionFirstCheck, priorFacts, priorsFor, priorValue, fmtPrior, freshReference, replayArtifactCheck, steadyStateCheck, replayChecks, agentThroughput, agentReference, agentEvidence, agentProfile, agentPlan, agentPlans, agentWorkloadCheck, cpuPoolCheck, buildKey, fallbackCheck, expertResidencyCheck, networkAssumptions, networkCanonical, networkCheck, networkTransfer, networkPower, networkResources, winComparison, winNetwork, hostPinnedBudget, curveFit, curveHost, curveWatts, curveReport, curveReports, winInterp, winClassMs, winFloorMs, winLayerMs, winStageMs, winPointSplit, winLaw, winStep, winRebalance, winFit, winAnchor, winLevers, winProfCompile, winProfFit, winProfLevers, winEvidence, winFrontier, winProposals, winProposalTemplate, winReport, batchDistinct, batchWeights, batchRowGiB, batchStep, batchFit, batchTable, verdictReady, screenChecks, layerMap, layerWeights, layerDamage, recipeDamage, trimKl, trimKeeps, trimSupport, mapQuality, lsq, dllmTerms, dllmValidation, predictDllm, dllmCheck, dllmCover, dllmLine, evidenceOf, term, rollup, fmtRollup, predictionEvidence, predictExternal, predictDense, predictDenseAll, addModels, denseCards, denseCal, denseCalReport, densePointMs, numaGain, externalSummary, externalDerived, fmtExternal, quantType, hostSrc, draftSrc, splitSrc, kappaSrc, checkRecipe, cpuReserveCheck, leverChecks, leverLabel, behaviourCheck, servingOf, kvHostPlan, kvHostCheck, hostPinnedPlan, hostPinnedCheck, placeCheck, predictRecipe, prefillModel, heatCite, storeTypes, recipeLowShare, recipeQuality, mountKind, vramGiB, kappaOf, marginOf, lowShare, gateOf, gateRepair, layoutFacts, runChecks, checksFor, checkRecipes, GiB, v, qualityOf, heatSet, typeBytes, typeKld, context, prepare, solveLambda, expand, evaluate, fill, frontier, bestAt, layoutAt, calibrate, applyCal, anchorBytes, anchorTime, ownerLayout, routingSkew, exportMap, LAMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FitModel = api;
 })(this);

@@ -238,6 +238,25 @@ The JSON keeps the old fluid fields under `legacy_server` and as compatible alia
 A recipe with no real-agent run of its build still receives the existing `--check` warning.
 [How it works](docs/how-it-works.md#agent-workload---workload) gives the model, source tags and limits.
 
+### Behaviour levers (`levers`)
+
+A recipe can carry behaviour levers in its `levers` list: a prompt, a LoRA weight edit, a control vector or a neuron
+edit. Each lever is fit on one model file. It is listed by `ref` from `data/behaviour-levers.json` or written inline,
+with its layers, dose, the system prompt and harness it was measured under, and its measured rows (source as
+`path:line`). A recipe with `kind: "behaviour"` holds only a `model_file` and its levers. `--check` adds four checks:
+
+- `lever_fit` refuses a lever fit on another model file than `model_file` (by sha256, else by name and size). An
+  adapter is per model: a different file needs a refit, never a reuse.
+- `lever_lora_zero` refuses a llama-server base arm that has an adapter loaded and does not send
+  `"lora":[{"id":0,"scale":0}]`. We measured on llama-server b12015 that a request with no lora field gets every
+  loaded adapter at scale 1.
+- `lever_measured` labels a lever with no prompt + lever vs prompt row on this model UNMEASURED-ON-THIS-MODEL. Rows of
+  the prompt alone or the lever alone are references only.
+- `lever_noise` labels a gain inside the metric's session noise (0.06 CTO), or with a CI through 0, null, not a win.
+  A recipe that claims a win on such a row is refused.
+
+The catalog is not in the public copy yet: its rows point into our private lab repo.
+
 ### Hot-expert maps
 
 The planner keeps the experts a model routes to most in the fastest tier. It reads that from hot-expert maps

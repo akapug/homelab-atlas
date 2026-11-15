@@ -1523,6 +1523,41 @@ def load_cards(d):
 
 
 cards = load_cards(CARDS_DIR)
+
+# behaviour levers (data/behaviour-levers.json): a prompt, LoRA weight edit, control vector or neuron edit, each fit on one
+# model file, with its measured rows (prompt + lever vs prompt is the label; prompt-only and lever-only rows are references).
+# A recipe carries one in recipe.levers (by ref or inline); src/model.js leverChecks judges it. A copy without the file has none.
+BL_SRC = 'data/behaviour-levers.json'
+_SRC_LINE = re.compile(r'\S+:\d+')
+
+
+def load_behaviour_levers(path):
+    if not os.path.exists(path):
+        return None
+    d = json.load(open(path))
+    seen = set()
+    for x in [d.get('lora_zero')] + list(d.get('noise', {}).values()) + [d.get('port', {}).get('card_hours')]:
+        if x:
+            x['evidence'] = evidence_of(x['tag'], x['src'])
+    for lv in d['levers']:
+        where = '%s lever %s' % (BL_SRC, lv.get('id'))
+        if not lv.get('id') or lv['id'] in seen:
+            raise ValueError('%s: a lever needs a unique id' % where)
+        seen.add(lv['id'])
+        if lv.get('kind') not in d['kinds']:
+            raise ValueError('%s: kind %r is not one of %s' % (where, lv.get('kind'), d['kinds']))
+        fm = lv.get('fit_model') or {}
+        if not fm.get('name') or not (fm.get('sha256') or fm.get('size_bytes') or fm.get('hf_revision')):
+            raise ValueError('%s: fit_model needs the file name and its sha256, size_bytes or hf_revision (a lever is per model file)' % where)
+        fm['evidence'] = evidence_of(fm['tag'], fm['src'])
+        for row in lv.get('measured', []):
+            if row.get('tag') == M and not _SRC_LINE.search(str(row.get('src', ''))):
+                raise ValueError('%s: a MEASURED row needs its source as path:line (%r)' % (where, row.get('src')))
+            row['evidence'] = evidence_of(row['tag'], row['src'])
+    return d
+
+
+behaviour_levers = load_behaviour_levers(os.path.join(HERE, BL_SRC))
 _sp = os.path.join(HERE, SCREEN_SRC)
 screen = {'file': SCREEN_SRC, 'rows': [json.loads(x) for x in open(_sp) if x.strip()] if os.path.exists(_sp) else []}
 _nocard = sorted({r['card'] for r in screen['rows']} - set(cards))
@@ -2484,7 +2519,7 @@ data = {
     'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py', 'home': PUBLIC_HOME,
              'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}, 'left_out': left_out},
     'types': types, 'engines': engines, 'models': models, 'boxes': boxes, 'b70move': b70move, 'anchors': anchors, 'assume': assume, 'knobs': knobs, 'conditions': conditions, 'accuracy': accuracy, 'causes': causes, 'external': external, 'bench': bench,
-    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'multibox': MULTIBOX, 'curves': curves, 'workload': workload, 'priors': priors, 'dense_cal': dense_cal, 'moe_cal': moe_cal, 'layer_maps': layer_maps, 'upgrade': upgrade, 'roofline': roofline,
+    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'behaviour_levers': behaviour_levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'multibox': MULTIBOX, 'curves': curves, 'workload': workload, 'priors': priors, 'dense_cal': dense_cal, 'moe_cal': moe_cal, 'layer_maps': layer_maps, 'upgrade': upgrade, 'roofline': roofline,
     'routing_skew': [HM.skew_evidence(HEAT_MAPS, spec) for spec in HM.jload(os.path.join(HERE, 'tools', 'heat_sources.json')).get('skew', [])],
     'alloc3': {'src': 'homelab dsv41/skew/results/2026-10-08-alloc-3bpw.json (' + alloc['rule'] + ')', 'layers': alloc_layers, 'count': sum(len(x) for x in alloc_layers)} if alloc else None,
     'siblings': {'quant_priors': sibling('quant-priors.json'), 'quant_recipes': sibling('quant-recipes.json'),

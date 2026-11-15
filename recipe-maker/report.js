@@ -89,9 +89,10 @@ if (ci >= 0) {
       (res.priors || []).forEach(p => console.log(`  prior   ${p.id}: ${FM.fmtPrior(p)} [${p.tag}] ${p.src}`));
       res.notes.forEach(n => console.log('  note: ' + n));
     }
-    // what the gate could not judge: UNKNOWN checks and speeds it has no number for; GO never covers them
+    // what the gate could not judge: UNKNOWN checks and speeds it has no number for; GO never covers them (a behaviour recipe
+    // predicts no speed: its levers are judged, its speed is the base recipe's)
     const gap = [...res.checks.filter(c => c.status === 'UNKNOWN').map(c => c.id),
-      ...(!pr || pr.status !== 'PREDICTED' ? ['speed UNMODELLED'] : Number.isFinite(pr.prefill_tps) ? [] : ['prefill UNMODELLED'])];
+      ...(r.kind === 'behaviour' ? [] : !pr || pr.status !== 'PREDICTED' ? ['speed UNMODELLED'] : Number.isFinite(pr.prefill_tps) ? [] : ['prefill UNMODELLED'])];
     gaps.push(...gap);
     // --strict holds on anything unjudged: an UNKNOWN check or a speed the planner has no number for
     const s = res.bad_input ? 2 : res.checks.some(c => c.status === 'FAIL') ? 1 : (args.includes('--strict') && gap.length) ? 3 : 0;
