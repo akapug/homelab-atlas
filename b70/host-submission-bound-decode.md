@@ -179,6 +179,12 @@ experts page in.
 - **Rule of thumb:** with experts on the host, use layer split plus graphs; with every expert on the cards, use
   tensor split plus graphs.
 - We did not repeat the output check for this model; on Flash-Next the graph arms gave identical output.
+- **These numbers are bound by the host's memory, not the B70s.** The 14 CPU-side layers live in 4-channel DDR4
+  (a Threadripper 3960X with four DIMMs). A rough estimate: about 6 GB read per token at Q4_K_M with 10B active,
+  roughly 1.5 GB of it from host RAM at about 80 GB/s, which is about 19 ms. The B70 side is about 4.5 GB at
+  608 GB/s, about 7 ms. That puts most of each token on the CPU side, and 37 tok/s sits near that ceiling. This
+  estimate is INFERRED, not profiled. A quant small enough to put every expert on the two cards (about 3 bits)
+  is the test that shows what the B70s themselves can do.
 
 ## Batching: several streams at once
 

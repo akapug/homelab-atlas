@@ -9,8 +9,9 @@ day). Results that change a headline number say so.
 ### Added
 - `b70/host-submission-bound-decode.md`: Ornith-1.5-122B with 14 of 49 layers' experts on the CPU, on two B70s.
   Graphs lift tensor split 21.6 -> 34.5 tok/s, but layer split + graphs leads at 37.2 (layer alone 36.0). It is
-  the new best Ornith-1.5-122B decode, ahead of 31.6 on the RTX 6000. Rule: experts on the host -> layer + graphs; all
-  experts on the cards -> tensor + graphs.
+  the fastest Ornith-1.5-122B decode we have measured, but the 31.6 on the RTX 6000 is not a like-for-like
+  comparison: that run had 40 of 49 layers' experts in DRAM and a draft (27.2 without one). Both runs are limited
+  by host memory, not the GPU. Rule: experts on the host -> layer + graphs; all experts on the cards -> tensor + graphs.
 - README "Where it stands": research resumed; the two-B70 host-submission lesson; GLM-5.3-Flash at 2 bits misses
   our agent screen while 3.05 bits passes the items it missed.
 - `b70/host-submission-bound-decode.md` and `b70/sycl-graph-multi-device.patch`: on two B70s, llama.cpp SYCL's tensor
