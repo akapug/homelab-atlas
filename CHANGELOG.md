@@ -6,6 +6,13 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+### Changed
+- `recipe-maker/`: refreshed from the Recipe Maker. The SYCL launch-bound serving prior now carries the
+  Ornith-1.5-122B window-4 numbers (layer 36.0, tensor 21.6 -> 34.5 with graphs, layer + graphs 37.2, all with
+  host-side experts) and its rule: experts on the host -> layer split + graphs; all experts on the cards -> tensor
+  split + graphs. The GLM-5.3-Flash batched path notes that pure UD-IQ2_XXS failed the agent screen while 3.05 bpw
+  passed, so the all-VRAM layout now means a mixed quant (hot experts at IQ3_XXS).
+
 ### Added
 - `b70/host-submission-bound-decode.md`: Ornith-1.5-122B with 14 of 49 layers' experts on the CPU, on two B70s.
   Graphs lift tensor split 21.6 -> 34.5 tok/s, but layer split + graphs leads at 37.2 (layer alone 36.0). It is

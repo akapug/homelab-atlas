@@ -466,7 +466,7 @@
    ],
    "verdict": {
     "state": "open",
-    "why": "the only layout predicted to meet 15-20+ each at 4-8 agents; needs RDMA and the trunk card's 9 GB read cut"
+    "why": "the only layout predicted to meet 15-20+ each at 4-8 agents; needs RDMA and the trunk card's 9 GB read cut; quality: pure UD-IQ2_XXS missed the agent screen (3/5 planted, every miss out of the 32k budget while second-guessing) while EXL3 3.05 bpw answered both misses, so d3 now means d3-mixed (hot experts at IQ3_XXS, 108-111 GB) pending its KL and re-screen (lab notes)"
    }
   }
  ]
