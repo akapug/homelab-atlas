@@ -7,6 +7,12 @@ day). Results that change a headline number say so.
 ## [Unreleased]
 
 ### Added
+- `b70/host-submission-bound-decode.md`: Ornith-1.5-122B with 14 of 49 layers' experts on the CPU, on two B70s.
+  Graphs lift tensor split 21.6 -> 34.5 tok/s, but layer split + graphs leads at 37.2 (layer alone 36.0). It is
+  the new best Ornith-1.5-122B decode, ahead of 31.6 on the RTX 6000. Rule: experts on the host -> layer + graphs; all
+  experts on the cards -> tensor + graphs.
+- README "Where it stands": research resumed; the two-B70 host-submission lesson; GLM-5.3-Flash at 2 bits misses
+  our agent screen while 3.05 bits passes the items it missed.
 - `b70/host-submission-bound-decode.md` and `b70/sycl-graph-multi-device.patch`: on two B70s, llama.cpp SYCL's tensor
   split was limited by one CPU thread submitting ~7,300 kernels a token (cards busy 34 % of it), not by the cross-card
   reduce. The patch lets each GPU record SYCL graphs with more than one GPU active: tensor-split decode of Qwen3.8

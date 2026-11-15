@@ -160,6 +160,26 @@ decode step (the path graphs replay), the same build with graphs off as the refe
   (`disabling SYCL graphs due to MUL_MAT using oneDNN`). Layer split keeps the faster prefill.
 - The first repetition with graphs is slower (31.6 against ~39): graphs are recorded after two identical calls.
 
+### A second model: Ornith-1.5-122B with experts on the CPU
+
+Ornith-1.5-122B (a Qwen3.5-122B-A10B fine-tune), Q4_K_M, with the routed experts of 14 of its 49 layers (18-24 and
+42-48) on the host CPU, so the model fits two 32 GB cards. Same build and settings as above, run on a quiet box (no
+builds or other engines); median of three after one warm-up repetition, which is slow (8-10 tok/s) while the CPU
+experts page in.
+
+| arm | decode tg128 | prefill pp4096 |
+|---|---|---|
+| layer split | 36.00 | 249.1 |
+| layer split, graphs | **37.23** (+3 %) | 261.3 |
+| tensor split | 21.61 | 244.9 |
+| tensor split, graphs | 34.46 (+59 %) | 238.8 |
+
+- Graphs lift tensor split by 59 % here too, but layer split stays ahead. With experts on the CPU, part of every
+  token is CPU work that graphs do not touch, so tensor split's head start on the GPU side is smaller.
+- **Rule of thumb:** with experts on the host, use layer split plus graphs; with every expert on the cards, use
+  tensor split plus graphs.
+- We did not repeat the output check for this model; on Flash-Next the graph arms gave identical output.
+
 ## Batching: several streams at once
 
 `llama-batched-bench -ngl 99 -fa on -kvu -c 8192 -npp 512 -ntg 128 -npl 1,2,4,8`, the box under other load (22-34).

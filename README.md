@@ -16,9 +16,20 @@ were measured in tokens per second, and some in pages of confident garbage text.
 Pick one of our four boxes and see which layouts of a big MoE model fit it, how fast each should run, and how
 the predictions compare with our measured runs. Nothing to install.
 
-## Where it stands (2026-10-26)
+## Where it stands (2026-11-15)
 
-The research is paused here. Two lessons from the last week shape how to read everything below:
+Research resumed on 11-10. The current target is several coding agents at once from the boxes that run around the
+clock: GLM-5.3-Flash at 15-20+ tok/s each for 4-8 agents, over the 56 Gb/s links. Two new lessons:
+
+- **On Intel GPUs, count kernel launches before tuning kernels.** Two B70s splitting a MoE by tensor spent most of
+  each token waiting on one CPU thread sending ~7,300 small kernels. Recording them as SYCL graphs took decode from
+  16.9 to 39.0 tok/s. [Host-bound decode](b70/host-submission-bound-decode.md)
+- **2 bits is too few for GLM-5.3-Flash as a coding agent.** At UD-IQ2_XXS it found 3 of 5 planted bugs in our
+  code-review screen, then kept second-guessing correct answers until it ran out of a 32k-token budget. At 3.05 bits
+  it answered both of the bugs it had missed and finished on its own. The screen is 8 private items, one sample each,
+  so this shows a direction, not a rate.
+
+Older lessons that still shape how to read everything below:
 
 - **Decode speed is not agent speed.** Real coding agents read 4 to 5 new prompt tokens for every token they write.
   On the two B70s, the batched decode reaches 377.9 tok/s over 32 agents on a synthetic load, but recorded agent
@@ -49,7 +60,8 @@ measured it, what agents doing real work get. The card pages hold every conditio
 | Flint (39.8B MoE, about 2.5B active) | **148.9** on an RTX 3090 Ti (UD-Q3_K_XL); 92.3 on one B70 (Q4_K_M) | 4,052 (3090 Ti); 1,922 on the B70, 2,087 with our attention-sinks change | [RTX 3090 Ti and Arc Pro B70](b70/llama.cpp-sycl-fa-sinks/#flint-on-two-b70s-and-on-an-rtx-3090-ti), llama.cpp b12004; the B70 prompt figure needs [our published SYCL change](b70/llama.cpp-sycl-fa-sinks/) | replayed coding-agent sessions, one agent: 15.9 turns a minute at 87.3 tok/s decode (3090 Ti), 10.8 at 66.1 (B70 with the change) | a few short prompts correct; coding quality not measured | 2026-10-30 |
 | Ornith-1.5-35B-A3B | **198** with MTP 3; we serve with MTP off (about 118 on the same architecture) after MTP garbled 3 of 106 replies under mixed load | not measured | [one Arc Pro B70](b70/ornith-35b-a3b.md#speed) | not measured | 17 of 24 agent tasks | 2026-10-04 |
 | the same, on retired cards | 59-60 | 331 | [GTX 1080 Ti + MI25](mi25/); 59.6 on the [RTX 6000](rtx-6000/#no-silent-fallback-experts-on-optane-by-accident) | not measured | code-review screen 1 of 2 | 2026-10-21 |
-| Ornith-1.5-122B | **31.6** | 165.5 | [Quadro RTX 6000](rtx-6000/) + DDR4 | 0 of 3 agent tasks in a limited setup | both planted defects found | 2026-10-20 |
+| Ornith-1.5-122B (122B MoE, 10B active) | **37.2** | 261 at 4k | [two Arc Pro B70](b70/host-submission-bound-decode.md#a-second-model-ornith-15-122b-with-experts-on-the-cpu), layer split + our SYCL graphs patch, 14 of 49 layers' experts on the CPU | not measured | none on this build | 2026-11-15 |
+| the same, one card | **31.6** | 165.5 | [Quadro RTX 6000](rtx-6000/) + DDR4 | 0 of 3 agent tasks in a limited setup | both planted defects found | 2026-10-20 |
 
 "Not measured" means exactly that; it is not a zero. Decode is tokens per second for one request once it is
 writing. Real agents also wait for prompt reading and tool time, so they get less: on Flash-Next, one agent got 32.6
