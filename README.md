@@ -167,6 +167,7 @@ with the symptom it fixes and how to apply it, check it and undo it. Start from 
 | NVIDIA with vLLM: our RTX 3090 Ti (Ampere) | two of the any-GPU patches on vLLM's official 0.31.0 image, in one Dockerfile | [3090 Ti](PATCHES.md#nvidia-rtx-3090-ti-ampere-24-gb) |
 | NVIDIA with big MoE models: our Quadro RTX 6000 (Turing) and GTX 1080 Ti (Pascal) | our ik_llama.cpp fork's engine changes, a Turing fix sent to another project | [RTX 6000](PATCHES.md#nvidia-quadro-rtx-6000-turing-24-gb), [1080 Ti](PATCHES.md#nvidia-gtx-1080-ti-pascal-11-gb) |
 | AMD or Apple GPUs | the fixes not tied to a GPU (untested there), the tools | [other GPUs](PATCHES.md#amd-apple-and-other-nvidia-gpus) |
+| PyTorch (training) on a B70, a Turing or Pascal card, or an MI25 | which torch build works on each, install scripts, an op probe | [PyTorch per card](PATCHES.md#7-pytorch-on-older-and-other-cards-which-torch-build-works) |
 | A Ryzen with two CCDs that serves a model and also runs builds | a CPU guard | [host CPU](PATCHES.md#4-the-host-cpu-a-ryzen-with-two-ccds) |
 | A used AMD Radeon Instinct MI25 (Vega 10, 16 GB HBM2) | a cold-boot fix for `amdgpu`, llama.cpp Vulkan numbers, heat; a MoE model's experts split between it and a CUDA card | [MI25](mi25/) |
 | A MoE model too big for your VRAM, on any box | a planner that places it across VRAM, DRAM, PMem and disk before you run it | [Recipe Maker](PATCHES.md#recipe-maker-plan-a-moe-layout-before-you-run-it) |
@@ -188,7 +189,9 @@ Before you start:
 |---|---|
 | [`3090-ti/`](3090-ti/) | RTX 3090 Ti: Qwen3.8-27B on vLLM CUDA, GLM-5.3-Flash with a route trim, Flash-Next agent runs, four models reviewing code |
 | [`rtx-6000/`](rtx-6000/) | Quadro RTX 6000 + Optane: DeepSeek V4.1 Flash best run and its full command, 189k-token recall, GLM, Ornith-1.5-122B |
-| [`b70/`](b70/) | Arc Pro B70: [many agents on two cards](b70/many-agents.md), vLLM and llama.cpp patches, Qwen3.8-27B, [Qwen3.6-35B-A3B](b70/qwen36-35b-a3b.md), [Ornith-1.5-35B-A3B](b70/ornith-35b-a3b.md) serving a household assistant and a coding agent from one card, [Ternary Bonsai 2 27B](b70/bonsai-2-27b.md) on PrismML's llama.cpp fork, [Flint and attention sinks on llama.cpp SYCL](b70/llama.cpp-sycl-fa-sinks/), [the agent eval](b70/agent-eval/), [benchmarks](b70/bench/) |
+| [`b70/`](b70/) | Arc Pro B70: [many agents on two cards](b70/many-agents.md), vLLM and llama.cpp patches, Qwen3.8-27B, [Qwen3.6-35B-A3B](b70/qwen36-35b-a3b.md), [Ornith-1.5-35B-A3B](b70/ornith-35b-a3b.md) serving a household assistant and a coding agent from one card, [Ternary Bonsai 2 27B](b70/bonsai-2-27b.md) on PrismML's llama.cpp fork, [Flint and attention sinks on llama.cpp SYCL](b70/llama.cpp-sycl-fa-sinks/), [tensor against layer split on two cards and three outside claims](b70/split-modes-and-backends.md), [the agent eval](b70/agent-eval/), [benchmarks](b70/bench/) |
+| [`tail-portable/`](tail-portable/) | one PyTorch trainer on a B70, an RTX 6000, an MI25 and a 1080 Ti: which torch build works on each, an op probe, a B70 wrong-result repro (driver 26.05 with torch 2.13-2.15) |
+| [`behaviour-levers/`](behaviour-levers/) | changing a local coding model's habits: a trained LoRA that changes nothing (NULL), and the habit a harder task set exposes |
 | [`network/`](network/) | three used ConnectX-3 cards as a 56 Gb/s triangle between three boxes: flash, setup, every link measured |
 | [`1080-ti/`](1080-ti/) | GTX 1080 Ti: V4.1 attention on a card with no kernel for it, and the fix |
 | [`mi25/`](mi25/) | Radeon Instinct MI25: a $50 card under Vulkan, a cold-boot fix, experts banked beside a CUDA card, heat |

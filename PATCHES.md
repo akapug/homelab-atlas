@@ -55,11 +55,13 @@ the rest of the repo, are in the [GLOSSARY](GLOSSARY.md).
 | llama.cpp [`0001`-`0014`, `0017`, `0018`](b70/llama.cpp-sycl/patches/) (`0009` adds tests only) | Intel only | llama.cpp `94256114c2` with SYCL, a GGUF model | B70 | [section 3](#3-intel-arc-pro-b70-with-llamacpp) |
 | llama.cpp SYCL for ternary Bonsai: [`patches/`](b70/llama.cpp-sycl-bonsai/patches/) 0001-0019 or [`patches-hybrid/`](b70/llama.cpp-sycl-bonsai/patches-hybrid/) 0001-0022 | Intel only | PrismML's llama.cpp fork at PR #235's head or at PR #294's merge, a PTQ1_0 GGUF | B70 | [section 3](#ternary-bonsai-on-prismmls-fork) |
 | llama.cpp SYCL attention sinks and broadcast-mask fix: [`patches/`](b70/llama.cpp-sycl-fa-sinks/patches/) 0001-0002, branch [akapug/llama.cpp `sycl-mkl-fa-sinks`](https://github.com/akapug/llama.cpp/tree/sycl-mkl-fa-sinks) | Intel only | upstream llama.cpp `a34de8618b25` with SYCL; a model with attention sinks (Flint, gpt-oss) for the speed-up | B70 | [section 3](#attention-sinks-on-upstream-llamacpp) |
+| `-sm layer` and `-ot` balanced per card | Intel only (measured) | llama.cpp SYCL b12004 on two cards, a MoE model | two B70s | [section 3](#setting-two-b70s-keep-layer-split-and-balance--ot-per-card) |
 | [`serving-cpu-guard.sh`](b70/vllm-xpu/serving-cpu-guard.sh) | host CPU | a CPU with two CCDs, vLLM in Docker, systemd | Ryzen 9 9950X3D | [section 4](#serving-cpu-guard-keep-other-work-off-the-servers-ccd) |
 | [`agent-eval/`](b70/agent-eval/) | no GPU needed | an OpenAI-compatible server, a proxy, Docker | two B70s | [section 6](#agent-eval-can-a-local-model-finish-real-repository-work) |
 | [`bench/`](b70/bench/) | no GPU needed | llama-server or an OpenAI-compatible server | B70 | [section 6](#bench-the-measurements-behind-the-numbers) |
 | [`autoround-dequant-check.py`](b70/vllm-xpu/autoround-dequant-check.py) | no GPU needed | Python with numpy | CPU | [section 6](#autoround-dequant-checkpy-is-a-4-bit-checkpoint-sound) |
 | [`recipe-maker/`](recipe-maker/) | no GPU needed | Python 3 and node, standard library only | four boxes: RTX 3090 Ti, Quadro RTX 6000 + Optane, Arc Pro B70, EPYC CPU-only | [section 6](#recipe-maker-plan-a-moe-layout-before-you-run-it) |
+| [`tail-portable/`](tail-portable/): torch builds and install scripts per card, an op probe, an XPU wrong-result repro | per card (Intel, NVIDIA, AMD) | torch 2.10-2.15+xpu, 2.9.1+cu126, TheRock 2.11 for gfx900 | B70, RTX 6000, MI25 (1080 Ti install only) | [section 7](#7-pytorch-on-older-and-other-cards-which-torch-build-works) |
 | `amdgpu` cold-boot wait (`psp_v3_1.c`) | AMD Vega 10 only | Ubuntu kernel 6.8 `amdgpu`, rebuilt | MI25 | [the MI25 entry](mi25/README.md#the-card-and-the-stack) |
 | ik_llama.cpp changes: expert and dense rows per NUMA node, no host weights, in-place ops follow their target, CUDA and Vulkan in one process, a bank device per layer, expert pre-binding, tier-concurrent expert reads, NUMA-local expert sharding, attention sinks on Pascal | [akapug/ik_llama.cpp](https://github.com/akapug/ik_llama.cpp) branches | ik_llama.cpp, MoE models with experts on the CPU | 2x EPYC 7601 with a GTX 1080 Ti and an MI25; 2x Xeon Gold 5215 with an RTX 6000 | [moe-offload, engine changes](moe-offload/README.md#engine-changes) |
 
@@ -482,6 +484,22 @@ Two commits on upstream master `a34de8618b25` (b12015), not on the 18 above. Not
   with `GGML_SYCL_MKL_FA_DEBUG=1`, the new sinks cases print `MKL`.
 - **Undo.** Build without the commits, or set `GGML_SYCL_ENABLE_MKL_FA=0` (sinks then take the kernels they took before).
 
+### Setting: two B70s, keep layer split and balance `-ot` per card
+
+Notes and numbers: [`b70/split-modes-and-backends.md`](b70/split-modes-and-backends.md).
+
+- **Symptom.** `-sm tensor` (PR 24152) across two B70s decodes a MoE model 41-54 % slower than `-sm layer`. With layer
+  split, an `-ot` that moves only the last layers' experts to the CPU leaves card 1 with the full-weight half: VRAM
+  overcommit, prefill near 24 tok/s, decode stalled.
+- **For.** llama.cpp SYCL across two cards (measured: stock b12004 on two B70s, Qwen3.8 Flash-Next and
+  Ornith-1.5-122B). `-sm row` loads neither model.
+- **Apply.** `-sm layer`; when experts go to the CPU, move the same number of layers' experts off each card's half
+  (our Ornith-1.5-122B run, 49 layers: `-ot 'blk\.(1[89]|2[0-4]|4[2-8])\.ffn_(up|gate|down)_exps\.weight=CPU'`, not
+  layers 37-48).
+- **Check.** Both cards' VRAM in use ends near equal at load; decode at the second `llama-bench` repetition (the first
+  one stalls on SYCL).
+- **Undo.** Drop the flags.
+
 ## 4. The host CPU: a Ryzen with two CCDs
 
 ### `serving-cpu-guard`: keep other work off the server's CCD
@@ -635,6 +653,57 @@ depend on the text.
   relative error 10-11 %. That showed its garbage output in compiled mode was the serving path, not the
   checkpoint.
 - **Run.** `python3 autoround-dequant-check.py <quantized dir> <bf16 dir> <layer name> ...`
+
+## 7. PyTorch on older and other cards: which torch build works
+
+What it took to run one PyTorch trainer (a LoRA on the last five blocks of a MoE model, checked against llama.cpp's
+log-probabilities) on four card families. The install scripts, the op probe and the XPU repro stand alone; the trainer
+is not published, so [its patch](tail-portable/patches/0001-tail-trainer-device-portable.patch) is a record of the
+changes. Everything: [`tail-portable/`](tail-portable/).
+
+### Intel Arc Pro B70 (XPU): driver and torch version together
+
+- **Symptom.** No error: `torch.nonzero`, boolean-mask indexing and `scatter_` with a Python scalar return wrong
+  results for small and medium shapes; later a device assertion "index out of bounds" when a wrong `nonzero` is used
+  as an index. A model forward that uses none of them still drifts (top-20 |delta log p| 0.223 against 0.046).
+- **For.** torch 2.13.0, 2.14.1 and 2.15.0+xpu on compute-runtime 26.05.37020 (Level Zero), Arc Pro B70.
+- **Measured.** 2.10.0, 2.11.0 and 2.12.1+xpu correct on that driver; 2.13.0 to 2.15.0 wrong (60 of 60 random-mask
+  cases, 9 `scatter_` shapes). On compute-runtime 26.40.40196.15, 2.15.0+xpu passes the trainer's 413-row check; the
+  op-level repro on that driver is pending. Also: `torch.linalg.solve_triangular` falls back to the CPU on XPU (26 s a
+  call against 0.24 s for an on-card block inverse). [Details](tail-portable/#intel-arc-pro-b70-battlemage-use-the-latest-driver-with-the-latest-torch)
+- **Apply.** Use the latest compute-runtime with the latest torch. On driver 26.05, `install-b70-xpu.sh` pins
+  2.10.0+xpu.
+- **Check.** `python3 repro_xpu_nonzero_scatter.py` exits 0 when every case matches the CPU; `probe_ops.py --device xpu`
+  covers every op the trainer uses.
+- **Undo.** Delete the venv.
+
+### NVIDIA Quadro RTX 6000 (Turing, sm_75): torch cu126, f32
+
+- **Symptom.** None beyond a CUDA-only trainer that assumes TF32: Turing has none.
+- **For.** sm_75 cards. torch 2.9.1+cu126.
+- **Measured.** The 413-row check passes (top-1 0.993, mean KL 0.00036); 18.2 s a training step at 15.4 GB peak with
+  `--fine 2 --save-on-cpu`. [Details](tail-portable/#nvidia-quadro-rtx-6000-turing-sm_75-torch-291cu126-f32)
+- **Apply.** `install-cuda-legacy.sh`. **Undo.** Delete the venv.
+
+### NVIDIA GTX 1080 Ti (Pascal, sm_61): torch cu126, untested past the install
+
+- **Symptom.** torch's cu128 and later wheels carry no sm_61 kernels.
+- **For.** Pascal cards. torch 2.9.1+cu126, the last wheels with them.
+- **Measured.** The venv installs and sees the card. The check and training are **untested** on it: the card was busy.
+  11 GB will need `--offload-activations` for 14k-token sequences.
+- **Apply.** `install-cuda-legacy.sh`. **Undo.** Delete the venv.
+
+### AMD Radeon Instinct MI25 (gfx900): TheRock wheels
+
+- **Symptom.** The stable `torch==2.9.1+rocm6.4` wheel lists `gfx900` but its rocBLAS has no gfx900 kernels; the first
+  matmul fails with "Cannot read ... TensileLibrary.dat: Illegal seek for GPU arch : gfx900".
+- **For.** Vega 10 (gfx900) cards on the stock kernel `amdgpu` driver, no ROCm on the host.
+- **Measured.** AMD's TheRock multi-arch staging wheels (`torch==2.11.0+rocm7.13.0a20260515` with
+  `amd-torch-device-gfx900`) work: the 413-row check passes (top-1 0.993, mean KL 0.00035) and training runs with
+  `--offload-activations` (9.9 GB peak). rocBLAS on gfx900 is not bitwise repeatable, which breaks checkpoint recompute
+  of a MoE router unless the forward's routing is reused. We checked the 2.9.1 stable wheel only.
+  [Details](tail-portable/#amd-radeon-instinct-mi25-vega-10-gfx900-therock-wheels-not-the-stable-rocm-wheel)
+- **Apply.** `install-mi25-gfx900.sh`. **Undo.** Delete the venv.
 
 ---
 

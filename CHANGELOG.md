@@ -7,6 +7,26 @@ day). Results that change a headline number say so.
 ## [Unreleased]
 
 ### Added
+- `tail-portable/`: one PyTorch trainer (a LoRA on the last five blocks of Qwen3.8 Flash-Next, checked against
+  llama.cpp's log-probabilities) run on an Arc Pro B70, a Quadro RTX 6000 and an MI25; it passes its 413-row check on
+  each. Install scripts per card (torch 2.10.0+xpu; 2.9.1+cu126 for Turing and Pascal; AMD's TheRock wheels for gfx900,
+  since the stable ROCm wheel's rocBLAS has no gfx900 kernels), an op probe, and a repro for wrong `nonzero`, mask
+  indexing and scalar `scatter_` on the B70 with torch 2.13-2.15+xpu on compute-runtime 26.05 (on 26.40, 2.15 passes the
+  model check; the op repro there is pending). The 1080 Ti is installed but not yet run. PATCHES.md section 7 has one
+  entry per card family.
+- `b70/split-modes-and-backends.md`: on two B70s, llama.cpp SYCL's `-sm tensor` (PR 24152) decodes Qwen3.8 Flash-Next
+  54 % and Ornith-1.5-122B 41 % slower than `-sm layer` (prefill -21 % to +23 %); the expert matmuls are already split,
+  the cost is the host-staged reduce. A per-card balance rule for `-ot` with layer split (PATCHES.md section 3). Three
+  outside claims checked: vLLM XPU `FLASH_ATTN` against `TRITON_ATTN` (9.8x to 61x to first token; `FLASH_ATTN` is
+  already the default), arcint's OpenCL kernels (+26 % prefill, +9 % decode on a dense 27B), tensor split on a dense
+  27B (decode -11 %).
+- `rtx-6000/`: DeepSeek V4.1 Flash compressed prefill (CED), CPU only: 1.67-1.71x faster to the first token at 4k and
+  12k with matched controls, no added error against its full-depth control, a decode cost of about -5 % not resolved.
+  The engine branches are not published.
+- `behaviour-levers/`: two results on the coding model. A trained LoRA for a review-verdict habit is NULL (0 of 12
+  folds at the preregistered floor; mean held-out closure -0.017), and an overfit smoke on its training items is NULL
+  too. With no file list, the base model patches the symptom on 4 of 4 items where a short prompt fixes the cause on 4
+  of 4. Grades only; the items are private.
 - `b70/llama.cpp-sycl-fa-sinks/`: two commits to llama.cpp's SYCL backend on master `a34de8618b25`, published as the
   branch `sycl-mkl-fa-sinks` of akapug/llama.cpp. A fix: the MKL flash-attention path read a mask broadcast over heads
   or batches out of bounds (GPU page fault with f16 K/V, NaN with q8_0). A feature: attention sinks on the MKL path,
@@ -16,6 +36,11 @@ day). Results that change a headline number say so.
   a local model from calling tools. New model in the README's best-result table and in `atlas.json`.
 
 ### Changed
+- Recipe Maker export at fit-viz eaa20b3: behaviour levers in recipes (`levers`: a prompt, LoRA edit, control vector or
+  neuron edit, each fit on one model file) with four `--check` checks: the lever's model file, a llama-server base arm
+  that zeroes loaded adapters, prompt + lever measured against the prompt on this model, and a gain outside session
+  noise (the lever catalog itself is not public yet). Two serving priors from the two-B70 split runs (tensor split loses
+  MoE decode; balance `-ot` per card with layer split), and two held-out CPU prefill cells from the CED repeats.
 - Recipe Maker export at fit-viz 86bf77b: `node report.js --workload` and the Agents tab now replay whole agent turns
   (each turn's prompt read, the server's prefix re-read, the answer, then the recorded tool gap) and lead with turns
   per agent-minute; useful tok/s comes second. `docs/how-it-works.md` re-scores the seven retained prediction entries

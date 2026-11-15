@@ -1,0 +1,738 @@
+diff --git a/b70-rig/bench/coder-falsealarm/verdict/tail_model.py b/b70-rig/bench/coder-falsealarm/verdict/tail_model.py
+index eae5bb52af..5a5b752193 100644
+--- a/b70-rig/bench/coder-falsealarm/verdict/tail_model.py
++++ b/b70-rig/bench/coder-falsealarm/verdict/tail_model.py
+@@ -48,6 +48,29 @@ FULL_ATTN = (43, 47)
+ LAYERS = (43, 44, 45, 46, 47)
+ 
+ 
++def backend(device):
++    """'cuda' (NVIDIA CUDA, or AMD ROCm/HIP: both are torch.cuda), 'xpu' (Intel), or 'cpu'."""
++    return torch.device(device).type
++
++
++def has_fp64(device):
++    """Intel Arc (B70 included) has no native f64: such a device gets its few f64 pieces (rope angles) on the CPU."""
++    if backend(device) == "xpu":
++        return bool(getattr(torch.xpu.get_device_properties(torch.device(device)), "has_fp64", False))
++    return True
++
++
++def pin(t, notes):
++    """Page-locked host memory for an offloaded expert stack, so each copy to the card is a fast async DMA. A backend
++    that cannot pin keeps the stack in pageable memory (slower copies, same numbers) and says so in notes."""
++    try:
++        return t.pin_memory()
++    except (RuntimeError, NotImplementedError) as e:
++        if "pin" not in notes:
++            notes["pin"] = f"pageable host memory: {type(e).__name__}: {str(e)[:120]}"
++        return t
++
++
+ def ste(x, y):
+     """y forward, gradient of x."""
+     return x + (y - x).detach()
+@@ -88,19 +111,27 @@ def q8_1(x):
+ 
+ class Tail(torch.nn.Module):
+     def __init__(self, W, types, device="cuda", match=True, lora=None, rank=8, store=torch.float16,
+-                 offload_experts=False):
++                 offload_experts=False, fine=False):
+         """W: {gguf name: numpy array}; types: {gguf name: source type} (tail_weights.py index.json).
+         offload_experts: the routed expert stacks (11.7 GB in f16) stay in pinned host memory and each expert is
+-        copied to the card when it is read, so training has the card's memory for activations."""
++        copied to the card when it is read, so training has the card's memory for activations.
++        fine: in training, 1: each block checkpoints its token-mixer half and its MoE half apart, so the backward holds
++        one half's activations at a time (the same arithmetic; for cards under 24 GB); 2: also each hyper-connection
++        mixer and each group of 32 routed experts (their outputs are summed per group, then across groups: the last
++        bits of the MoE sum differ from 0 and 1; for 11-16 GB cards)."""
+         super().__init__()
+-        self.device, self.match, self.types = device, match, types
++        self.device, self.match, self.types, self.fine = device, match, types, int(fine)
++        self.notes = {}
++        self.routes = None
++        self.offload = False   # training: no recompute; the caller keeps autograd's saved tensors in host memory
++        self.f64 = has_fp64(device)
+         self.w = {}
+         for k, v in W.items():
+             t = torch.from_numpy(v)
+             if t.dtype == torch.float32 and t.numel() > 1 << 20:
+                 t = t.to(store) if types.get(k) != "BF16" else t.to(torch.bfloat16)
+-            if offload_experts and "_exps." in k and str(device).startswith("cuda"):
+-                self.w[k] = t.contiguous().pin_memory()
++            if offload_experts and "_exps." in k and backend(device) != "cpu":
++                self.w[k] = pin(t.contiguous(), self.notes)
+             else:
+                 self.w[k] = t.to(device)
+         self.lora = torch.nn.ParameterDict()
+@@ -111,7 +142,8 @@ class Tail(torch.nn.Module):
+             b = torch.nn.Parameter(torch.zeros(n_out, rank, device=device))
+             self.lora[name.replace(".", "_") + "_A"] = a
+             self.lora[name.replace(".", "_") + "_B"] = b
+-        inv = ROPE_BASE ** (-torch.arange(0, N_ROT, 2, dtype=torch.float64, device=device) / N_ROT)
++        inv = ROPE_BASE ** (-torch.arange(0, N_ROT, 2, dtype=torch.float64, device=device if self.f64 else "cpu")
++                            / N_ROT)
+         self.inv_freq = inv
+ 
+     # ------------------------------------------------------------------------------------------- arithmetic
+@@ -143,8 +175,8 @@ class Tail(torch.nn.Module):
+ 
+     def rope(self, x, pos):
+         """NeoX rope on the first N_ROT dims of the last axis. x [T, H, D], pos [T]."""
+-        ang = pos.double()[:, None] * self.inv_freq[None, :]
+-        cos, sin = ang.cos().float()[:, None, :], ang.sin().float()[:, None, :]
++        ang = (pos if self.f64 else pos.cpu()).double()[:, None] * self.inv_freq[None, :]
++        cos, sin = ang.cos().float().to(x.device)[:, None, :], ang.sin().float().to(x.device)[:, None, :]
+         h = N_ROT // 2
+         x0, x1, rest = x[..., :h], x[..., h:N_ROT], x[..., N_ROT:]
+         return torch.cat([x0 * cos - x1 * sin, x0 * sin + x1 * cos, rest], -1)
+@@ -174,12 +206,11 @@ class Tail(torch.nn.Module):
+         p = f"blk.{il}.indexer."
+         n_pool = T // KPOOL
+         rows = pos[q_rows]
+-        keep = torch.zeros(len(q_rows), T, dtype=torch.bool, device=x.device)
+-        # the incomplete tail of the token's own pool: (p + 1) % 4 cells ending at p
++        # the incomplete tail of the token's own pool: (p + 1) % 4 cells ending at p, i.e. p - n_tail < cell <= p.
++        # A comparison, not nonzero/mask indexing (torch 2.15+xpu's nonzero is wrong: b70-rig/tail-portable/README.md)
+         n_tail = (rows + 1) % KPOOL
+-        for k in range(KPOOL - 1):
+-            m = k < n_tail
+-            keep[torch.nonzero(m).squeeze(1), (rows - k)[m]] = True
++        cell = torch.arange(T, device=x.device)[None, :]
++        keep = (cell <= rows[:, None]) & (cell > (rows - n_tail)[:, None])
+         n_vis = (rows + 1) // KPOOL
+         if n_pool == 0:
+             return keep
+@@ -201,7 +232,8 @@ class Tail(torch.nn.Module):
+             score = score.masked_fill(torch.arange(n_pool, device=x.device)[None, :] >= n_vis[:, None], float("-inf"))
+             top = score.topk(min(n_top, n_pool), dim=1).indices
+             vis = torch.zeros(len(q_rows), n_pool, dtype=torch.bool, device=x.device)
+-            vis.scatter_(1, top, True)
++            vis.scatter_(1, top, torch.ones_like(top, dtype=torch.bool))   # a tensor source: torch 2.15+xpu's
++            #                    scatter_ with a scalar value drops writes on some shapes (b70-rig/tail-portable/README.md)
+             vis &= torch.arange(n_pool, device=x.device)[None, :] < n_vis[:, None]
+         cells = vis[:, :, None].expand(-1, -1, KPOOL).reshape(len(q_rows), n_pool * KPOOL)
+         keep[:, : n_pool * KPOOL] |= cells
+@@ -261,18 +293,40 @@ class Tail(torch.nn.Module):
+         T = x.shape[0]
+         logits = self.mm(p + "ffn_gate_inp.weight", x)
+         probs = torch.softmax(logits, -1)
+-        wt, ex = probs.topk(N_USED, dim=-1)
++        # A checkpoint's recompute routes as its forward did (self.routes): atomic sums (rocBLAS split-K, oneDNN,
++        # index_add_) differ in the last bits and flip near-tied experts. The weights are gathered on both passes, so
++        # the forward and the recompute run the same ops (topk's values are the gathered ones, with the same gradient).
++        ex = self.routes.get(il) if self.routes is not None else None
++        if ex is None:
++            ex = probs.detach().topk(N_USED, dim=-1).indices
++            if self.routes is not None:
++                self.routes[il] = ex
++        wt = probs.gather(-1, ex)
+         wt = wt / wt.sum(-1, keepdim=True).clamp(min=6.103515625e-5)
+-        out = torch.zeros(T, N_EMBD, device=x.device)
+         xq = ste(x, q8_1(x)) if self.match else x
+-        Wg, Wu, Wd = (self.w[p + f"ffn_{n}_exps.weight"] for n in ("gate", "up", "down"))
+         flat_e = ex.reshape(-1)
+         order = torch.argsort(flat_e)
+         counts = torch.bincount(flat_e, minlength=N_EXP).tolist()
+         tok = (order // N_USED)
+         slot_w = wt.reshape(-1)[order]
+-        at = 0
+-        for e, n in enumerate(counts):
++        if self.fine >= 2 and torch.is_grad_enabled():
++            out, group = 0, 32
++            for e0 in range(0, N_EXP, group):
++                out = out + self.ck(2, self.experts, il, xq, tok, slot_w, counts, e0, min(N_EXP, e0 + group))
++        else:
++            out = self.experts(il, xq, tok, slot_w, counts, 0, N_EXP)
++        sh = F.silu(self.mm(p + "ffn_gate_shexp.weight", x)) * self.mm(p + "ffn_up_shexp.weight", x)
++        sh = self.mm(p + "ffn_down_shexp.weight", sh)
++        sg = torch.sigmoid(self._gate_vec(p + "ffn_gate_inp_shexp.weight", x))
++        return out + sh * sg
++
++    def experts(self, il, xq, tok, slot_w, counts, e0, e1):
++        """Sum of routed experts e0..e1-1 over their tokens ([T, N_EMBD]); tok and slot_w are sorted by expert."""
++        Wg, Wu, Wd = (self.w[f"blk.{il}.ffn_{n}_exps.weight"] for n in ("gate", "up", "down"))
++        out = torch.zeros(xq.shape[0], N_EMBD, device=xq.device)
++        at = sum(counts[:e0])
++        for e in range(e0, e1):
++            n = counts[e]
+             if n == 0:
+                 continue
+             t = tok[at:at + n]
+@@ -282,10 +336,7 @@ class Tail(torch.nn.Module):
+                 h = ste(h, q8_1(h))
+             out.index_add_(0, t, frozen_mm(h, Wd[e]) * slot_w[at:at + n, None])
+             at += n
+-        sh = F.silu(self.mm(p + "ffn_gate_shexp.weight", x)) * self.mm(p + "ffn_up_shexp.weight", x)
+-        sh = self.mm(p + "ffn_down_shexp.weight", sh)
+-        sg = torch.sigmoid(self._gate_vec(p + "ffn_gate_inp_shexp.weight", x))
+-        return out + sh * sg
++        return out
+ 
+     def _gate_vec(self, name, x):
+         w = self.vec(name)
+@@ -294,10 +345,20 @@ class Tail(torch.nn.Module):
+         return (x @ w)[:, None]
+ 
+     # ------------------------------------------------------------------------------------------- forward
++    def ck(self, level, fn, *a):
++        """fn(*a), checkpointed in training when self.fine >= level (level 0: the trainer's block checkpoints), never
++        with self.offload (the activations go to host memory instead: torch.autograd.graph.save_on_cpu)."""
++        if self.fine >= level and torch.is_grad_enabled() and not self.offload:
++            return torch.utils.checkpoint.checkpoint(fn, *a, use_reentrant=False)
++        return fn(*a)
++
+     def block(self, il, res, pos, rows=None, attn_out=None):
+         """One block. rows: for the last block, the read rows (it is cropped after its attention)."""
++        return self.ck(1, self.ffn_half, il, self.ck(1, self.mixer_half, il, res, pos, rows))
++
++    def mixer_half(self, il, res, pos, rows=None):
+         p = f"blk.{il}."
+-        mixed, inj = self.hc_mix(res, p + "hc_attn")
++        mixed, inj = self.ck(2, self.hc_mix, res, p + "hc_attn")
+         if il in FULL_ATTN:
+             q_rows = rows if rows is not None else torch.arange(res.shape[0], device=res.device)
+             out = self.attn(il, mixed, pos, q_rows)
+@@ -305,8 +366,10 @@ class Tail(torch.nn.Module):
+             out = self.gdn(il, mixed)
+         if rows is not None:
+             res, inj = res[rows], inj[rows]
+-        res = self.hc_combine(res, out, inj)
+-        mixed, inj = self.hc_mix(res, p + "hc_ffn")
++        return self.hc_combine(res, out, inj)
++
++    def ffn_half(self, il, res):
++        mixed, inj = self.ck(2, self.hc_mix, res, f"blk.{il}.hc_ffn")
+         return self.hc_combine(res, self.moe(il, mixed), inj)
+ 
+     def head(self, res):
+@@ -316,12 +379,13 @@ class Tail(torch.nn.Module):
+     def forward(self, resid42, rows, checkpoint=False):
+         """resid42 [T, 4, 2560] (llama-habit-dump l_last-42); rows: positions whose next-token log-probs are read."""
+         res = resid42.to(self.device, torch.float32)
++        self.routes = {} if checkpoint else None
+         pos = torch.arange(res.shape[0], device=self.device)
+         rows = torch.as_tensor(rows, device=self.device)
+         for il in LAYERS:
+             last = il == LAYERS[-1]
+             if checkpoint and not last:
+-                res = torch.utils.checkpoint.checkpoint(self.block, il, res, pos, use_reentrant=False)
++                res = self.ck(0, self.block, il, res, pos)
+             else:
+                 res = self.block(il, res, pos, rows if last else None)
+         return self.head(res)
+@@ -359,7 +423,7 @@ def delta_rule_chunked(q, k, v, g, beta, C=64):
+     kb, vb = k * beta[..., None], v * beta[..., None]
+     L = torch.tril((kb @ k.transpose(-1, -2)) * decay, -1)
+     eye = torch.eye(C, dtype=v.dtype, device=v.device)
+-    Tm = torch.linalg.solve_triangular(L + eye, eye.expand_as(L), upper=False)   # (I + L)^-1
++    Tm = unit_lower_inverse(L, eye)                                # (I + L)^-1
+     u = Tm @ vb                                                    # [H, n, C, D]
+     w = Tm @ (kb * G.exp()[..., None])
+     qk = torch.tril(q @ k.transpose(-1, -2)) * decay
+@@ -378,6 +442,29 @@ def delta_rule_chunked(q, k, v, g, beta, C=64):
+     return o.permute(1, 0, 2)
+ 
+ 
++def unit_lower_inverse(L, eye):
++    """(I + L)^-1 for a strictly lower triangular L [..., C, C]. torch.linalg.solve_triangular where the backend has
++    it; on XPU (torch 2.10: a CPU fallback, about 26 s per call of the tail's size) the recursive block inverse on the
++    card (block_unit_lower_inverse)."""
++    if L.device.type != "xpu" or L.shape[-1] & (L.shape[-1] - 1):
++        return torch.linalg.solve_triangular(L + eye, eye.expand_as(L), upper=False)
++    return block_unit_lower_inverse(L + eye)
++
++
++def block_unit_lower_inverse(M):
++    """M^-1 for a unit lower triangular M [..., n, n], n a power of 2: [[A, 0], [B, D]]^-1 =
++    [[A^-1, 0], [-D^-1 B A^-1, D^-1]], A and D inverted together, log2 n levels of batched matmuls (as stable as
++    substitution; a power series in L is not: its partial powers overflow f32)."""
++    n = M.shape[-1]
++    if n == 1:
++        return torch.ones_like(M)
++    h = n // 2
++    inv = block_unit_lower_inverse(torch.stack([M[..., :h, :h], M[..., h:, h:]]))
++    Ai, Di = inv[0], inv[1]
++    top = torch.cat([Ai, torch.zeros_like(M[..., :h, h:])], -1)
++    return torch.cat([top, torch.cat([-(Di @ M[..., h:, :h] @ Ai), Di], -1)], -2)
++
++
+ def _delta_segment(S, u, w, q, G, qk, k):
+     """Chunks of one segment of delta_rule_chunked: [H, m, C, *] in, ([H, m, C, D], S) out."""
+     outs = []
+diff --git a/b70-rig/bench/coder-falsealarm/verdict/tail_train.py b/b70-rig/bench/coder-falsealarm/verdict/tail_train.py
+index b665794ef5..7d8b32ae40 100644
+--- a/b70-rig/bench/coder-falsealarm/verdict/tail_train.py
++++ b/b70-rig/bench/coder-falsealarm/verdict/tail_train.py
+@@ -6,6 +6,11 @@
+     tail_train.py lofo    --rows DIR --weights DIR --out DIR [--rank 8] [--lam 1] [--epochs 4]
+     tail_train.py export  --run DIR --out DIR --plan PLAN.json --site TENSOR [--closure LOFO.json] [--gate GATE.json]
+     tail_train.py random-lora --weights DIR --out DIR [--b-std 1e-3]   then  gate --keys K --lora DIR/lora.pt --lp DUMP
++    tail_train.py bench   --rows DIR --weights DIR --out bench.json [--steps 24] [--fine] [--save-on-cpu]
++
++--device: cuda (NVIDIA, and AMD ROCm: HIP is torch.cuda; rocm is an alias), xpu (Intel), cpu. Every reported number
++runs exact f32 (TF32 off); the optimizer's steps use TF32 only where the card has it (--tf32 auto: CUDA sm_80+).
++--offload-experts auto keeps the routed experts in pinned host memory when the tail does not fit the card.
+ 
+ Data: tail_rows.py (rows.json and its dumps). Model: tail_model.py on the dequantized tail (tail_weights.py).
+ 
+@@ -116,13 +121,92 @@ class Data:
+         return np.asarray(self.lpt.t["logprobs"][a:b], np.float32)
+ 
+ 
+-def model(weights, device, match=True, lora=None, rank=8, offload_experts=False):
++def norm_device(device):
++    """rocm -> cuda: torch's ROCm build serves AMD cards through torch.cuda (HIP)."""
++    return "cuda" + device[4:] if device.startswith("rocm") else device
++
++
++def accel(device):
++    """The torch backend module of an accelerator (torch.cuda or torch.xpu), None for the CPU."""
++    import torch
++    kind = torch.device(device).type
++    return {"cuda": torch.cuda, "xpu": getattr(torch, "xpu", None)}.get(kind)
++
++
++def device_info(device):
++    """What the card and the torch build are, for the receipt."""
++    import torch
++    info = {"device": device, "torch": torch.__version__}
++    m = accel(device)
++    if m is None:
++        return info | {"backend": "cpu"}
++    p = m.get_device_properties(torch.device(device))
++    info |= {"name": p.name, "total_gb": round(p.total_memory / 2**30, 2)}
++    if torch.device(device).type == "xpu":
++        return info | {"backend": "xpu", "has_fp64": bool(getattr(p, "has_fp64", False)),
++                       "driver": getattr(p, "driver_version", None)}
++    if torch.version.hip:
++        return info | {"backend": "hip", "hip": torch.version.hip, "arch": getattr(p, "gcnArchName", None)}
++    return info | {"backend": "cuda", "cuda": torch.version.cuda, "sm": f"{p.major}{p.minor}"}
++
++
++def tf32_ok(device):
++    """TF32 exists on NVIDIA sm_80+ only among our cards (not Turing/Pascal, not HIP on Vega)."""
++    import torch
++    if torch.device(device).type != "cuda" or torch.version.hip:
++        return False
++    return torch.cuda.get_device_capability(torch.device(device))[0] >= 8
++
++
++def set_tf32(on):
++    import torch
++    torch.backends.cuda.matmul.allow_tf32 = on
++    torch.backends.cudnn.allow_tf32 = on
++
++
++def sync(device):
++    m = accel(device)
++    if m is not None:
++        m.synchronize()
++
++
++def peak_gb(device, reset=False):
++    m = accel(device)
++    if m is None:
++        return 0.0
++    if reset:
++        m.reset_peak_memory_stats()
++        return 0.0
++    return m.max_memory_allocated() / 2**30
++
++
++def tail_bytes(weights):
++    return sum(os.path.getsize(os.path.join(weights, k + ".npy")) for k in json.load(open(os.path.join(weights, "index.json"))))
++
++
++def want_offload(mode, weights, device, headroom_gb=4.0):
++    """auto: offload the experts when the whole tail plus headroom does not fit the card's free memory (a shared card:
++    another server's weights stay where they are)."""
++    if mode in ("on", "off"):
++        return mode == "on"
++    m = accel(device)
++    if m is None:
++        return False
++    import torch
++    try:
++        free = m.mem_get_info(torch.device(device))[0]
++    except (AttributeError, RuntimeError):
++        free = m.get_device_properties(torch.device(device)).total_memory
++    return tail_bytes(weights) + headroom_gb * 2**30 > free
++
++
++def model(weights, device, match=True, lora=None, rank=8, offload_experts=False, fine=False):
+     tm = load("tail_model", os.path.join(HERE, "tail_model.py"))
+     index = json.load(open(os.path.join(weights, "index.json")))
+     W = {k: np.load(os.path.join(weights, k + ".npy"), mmap_mode="r") for k in index}
+     W = {k: np.ascontiguousarray(v) for k, v in W.items()}
+     return tm.Tail(W, {k: v["type"] for k, v in index.items()}, device=device, match=match, lora=lora, rank=rank,
+-                   offload_experts=offload_experts), tm
++                   offload_experts=offload_experts, fine=fine), tm
+ 
+ 
+ def compare(dump_lp, torch_lp):
+@@ -145,7 +229,7 @@ def gate(a):
+     lines, in rows.json order, with --lora-scaled. Its KL to the unedited dump is reported beside it, so the edited
+     comparison shows the adapter moved the distribution."""
+     import torch
+-    torch.backends.cuda.matmul.allow_tf32 = False
++    set_tf32(False)
+     data = Data(a.rows)
+     keys = a.keys.split(",") if a.keys else None
+     seqs = [s for s in data.seqs if (s["key"] in keys if keys else
+@@ -153,8 +237,9 @@ def gate(a):
+     if keys and len(seqs) != len(keys):
+         raise SystemExit("--keys names a sequence rows.json does not hold")
+     lora = torch.load(a.lora) if a.lora else None
++    offload = want_offload(a.offload_experts, a.weights, a.device)
+     tail, _ = model(a.weights, a.device, match=not a.no_match, lora=targets() if lora else None,
+-                    rank=next(iter(lora.values())).shape[0] if lora else 8)
++                    rank=next(iter(lora.values())).shape[0] if lora else 8, offload_experts=offload)
+     if lora:
+         with torch.no_grad():
+             for k, v in lora.items():
+@@ -163,7 +248,8 @@ def gate(a):
+     if edited and edited.n != sum(len(s["decisions"]) for s in seqs):
+         raise SystemExit("--lp rows are not the selected sequences' decision rows")
+     out = {"set": [s["key"] for s in seqs], "preregistered": keys is None, "match": not a.no_match,
+-           "lora": bool(lora), "thresholds": GATE, "per_seq": {}}
++           "lora": bool(lora), "thresholds": GATE, "per_seq": {},
++           "card": device_info(a.device) | {"offload_experts": offload, "notes": tail.notes}}
+     D, T, at = [], [], 0
+     with torch.no_grad():
+         for s in seqs:
+@@ -173,6 +259,7 @@ def gate(a):
+             t0 = time.time()
+             rows = data.rows(s)
+             lp = tail(torch.from_numpy(x), rows).cpu().numpy()
++            sync(a.device)
+             base = data.student_lp(s)
+             n = len(rows)
+             if edited:
+@@ -199,9 +286,11 @@ def gate(a):
+                m["top20_abs_mean"] <= GATE["top20_abs"] and m["break_abs_mean"] <= GATE["break_abs"])
+     out["thresholds_met"] = met
+     out["pass"] = met and out["preregistered"] and len(seqs) == 2 * len(GATE_FAMILIES)
++    out["card"]["peak_gb"] = round(peak_gb(a.device), 2)
+     with open(a.out, "w") as f:
+         json.dump(out, f, indent=1)
+-    print(json.dumps({"all": m, "coverage": out["coverage"], "thresholds_met": met, "pass": out["pass"]}))
++    print(json.dumps({"all": m, "coverage": out["coverage"], "thresholds_met": met, "pass": out["pass"],
++                      "card": out["card"]}))
+     return 0 if met else 3
+ 
+ 
+@@ -245,11 +334,11 @@ class Cache:
+             x = torch.from_numpy(self.data.resid(s)).to(tail.device)
+             pos = torch.arange(x.shape[0], device=tail.device)
+             tf32 = torch.backends.cuda.matmul.allow_tf32
+-            torch.backends.cuda.matmul.allow_tf32 = False     # the cache feeds evaluate too: exact f32 only
++            set_tf32(False)                                   # the cache feeds evaluate too: exact f32 only
+             with torch.no_grad():
+                 mixed, inj = tail.hc_mix(x, "blk.43.hc_attn")
+                 pre = tail.attn(43, mixed, pos, pos, pre_only=True)
+-            torch.backends.cuda.matmul.allow_tf32 = tf32
++            set_tf32(tf32)
+             np.savez(path + ".tmp.npz", pre=pre.cpu().numpy(), inj=inj.cpu().numpy())
+             os.rename(path + ".tmp.npz", path)
+         z = np.load(path)
+@@ -264,12 +353,13 @@ def ffn43(tail, res):
+ def forward_cached(tail, x, pre43, inj43, rows):
+     """The tail with block 43's attention read from the cache (LoRA enters at its attn_output)."""
+     import torch
++    tail.routes = {}
+     pos = torch.arange(x.shape[0], device=tail.device)
+     out = tail.mm("blk.43.attn_output.weight", pre43)
+     res = tail.hc_combine(x, out, inj43)
+-    res = torch.utils.checkpoint.checkpoint(ffn43, tail, res, use_reentrant=False)
++    res = tail.ck(0, ffn43, tail, res)
+     for il in (44, 45, 46):
+-        res = torch.utils.checkpoint.checkpoint(tail.block, il, res, pos, use_reentrant=False)
++        res = tail.ck(0, tail.block, il, res, pos)
+     res = tail.block(47, res, pos, rows)
+     return tail.head(res)
+ 
+@@ -292,8 +382,7 @@ def step_loss(tail, data, cache, s, lam):
+ def evaluate(tail, data, cache, seqs):
+     """Closure on clean rows, KL to the unedited model on planted rows, paragraph-break probabilities."""
+     import torch
+-    torch.backends.cuda.matmul.allow_tf32 = False
+-    torch.backends.cudnn.allow_tf32 = False
++    set_tf32(False)
+     num = den = 0.0
+     kb, pb = [], {"base": [], "teacher": [], "edit": []}
+     with torch.no_grad():
+@@ -331,13 +420,11 @@ def train(a, hold=None, tail=None, data=None):
+         order = fit[:]
+         rng.shuffle(order)
+         tot = {"habit": [], "normal": []}
+-        torch.backends.cuda.matmul.allow_tf32 = True       # the optimizer's steps only: every reported number
+-        torch.backends.cudnn.allow_tf32 = True             # (evaluate) runs the exact f32 forward the gate admitted
+-        for i, s in enumerate(order):
++        set_tf32(tf32_ok(a.device))   # the optimizer's steps only: every reported number (evaluate) runs the exact
++        for i, s in enumerate(order):  # f32 forward the gate admitted
+             if i % 12 == 0:
+                 print(f"hold={hold} epoch={ep} step={i}/{len(order)} s={round(time.time() - t0)}"
+-                      f" gpu_peak_gb={torch.cuda.max_memory_allocated() / 2**30 if torch.cuda.is_available() else 0:.1f}",
+-                      flush=True)
++                      f" gpu_peak_gb={peak_gb(a.device):.1f}", flush=True)
+             loss, _ = step_loss(tail, data, cache, s, a.lam)
+             opt.zero_grad()
+             loss.backward()
+@@ -360,6 +447,71 @@ def train(a, hold=None, tail=None, data=None):
+     return result, tail, data
+ 
+ 
++def bench(a):
++    """Step time and peak memory of --steps optimizer steps of train (one sequence per step, the same loss, rank and
++    targets) on the sequences whose residual is dumped here, in train's shuffled order. Block 43's cache is built (and
++    timed) before the first step; step seconds are synchronized wall time. Writes --out (JSON)."""
++    import torch
++    data = Data(a.rows)
++    fit = [s for s in data.seqs if data.resid(s) is not None]
++    if not fit:
++        raise SystemExit("no sequence of rows.json has its residual dumped here")
++    tf32 = {"auto": tf32_ok(a.device), "on": True, "off": False}[a.tf32]
++    offload = want_offload(a.offload_experts, a.weights, a.device)
++    t0 = time.time()
++    tail, _ = model(a.weights, a.device, lora=targets(), rank=a.rank, offload_experts=offload, fine=a.fine)
++    tail.offload = a.offload_activations
++    load_s = time.time() - t0
++    cache = Cache(tail, data, a.cache or os.path.join(a.rows, "cache43"))
++    t0 = time.time()
++    for s in fit:
++        cache.get(s)
++    sync(a.device)
++    cache_s = time.time() - t0
++    params = list(tail.lora.parameters())
++    opt = torch.optim.AdamW(params, lr=a.lr, weight_decay=0.0)
++    rng = random.Random(20261114)
++    order = []
++    while len(order) < a.steps:
++        ep = fit[:]
++        rng.shuffle(ep)
++        order += ep
++    peak_gb(a.device, reset=True)
++    steps = []
++    set_tf32(tf32)
++    import contextlib
++    for i, s in enumerate(order[:a.steps]):
++        t1 = time.time()
++        with (torch.autograd.graph.save_on_cpu(pin_memory=True) if a.save_on_cpu or a.offload_activations
++              else contextlib.nullcontext()):
++            loss, _ = step_loss(tail, data, cache, s, a.lam)
++        opt.zero_grad()
++        loss.backward()
++        torch.nn.utils.clip_grad_norm_(params, 1.0)
++        opt.step()
++        sync(a.device)
++        row = {"step": i, "key": s["key"], "tokens": s["n_student"], "s": round(time.time() - t1, 3),
++               "loss": float(loss.detach()), "peak_gb": round(peak_gb(a.device), 2)}
++        steps.append(row)
++        print(json.dumps(row), flush=True)
++    set_tf32(False)
++    sec = [r["s"] for r in steps]
++    warm = sec[1:] or sec
++    out = {"card": device_info(a.device) | {"offload_experts": offload, "fine": a.fine, "save_on_cpu": a.save_on_cpu,
++                                            "offload_activations": a.offload_activations,
++                                            "tf32": tf32, "f64_on_card": tail.f64,
++                                            "notes": tail.notes},
++           "steps": len(steps), "seqs": len(fit), "rank": a.rank, "lam": a.lam, "lr": a.lr,
++           "load_s": round(load_s, 1), "cache43_s": round(cache_s, 1),
++           "step_s_mean_after_first": round(sum(warm) / len(warm), 3), "step_s_median": sorted(sec)[len(sec) // 2],
++           "step_s_first": sec[0], "tokens_mean": round(sum(r["tokens"] for r in steps) / len(steps)),
++           "peak_gb": max(r["peak_gb"] for r in steps), "loss_first": steps[0]["loss"], "per_step": steps}
++    with open(a.out, "w") as f:
++        json.dump(out, f, indent=1)
++    print(json.dumps({k: v for k, v in out.items() if k != "per_step"}))
++    return 0
++
++
+ def reset_lora(tail, rank):
+     import torch
+     g = torch.Generator(device="cpu").manual_seed(20261114)
+@@ -451,23 +603,34 @@ def export(a):
+ def main(argv=None):
+     ap = argparse.ArgumentParser()
+     sub = ap.add_subparsers(dest="cmd", required=True)
+-    for name in ("gate", "train", "lofo"):
++    for name in ("gate", "train", "lofo", "bench"):
+         p = sub.add_parser(name)
+         p.add_argument("--rows", required=True)
+         p.add_argument("--weights", required=True)
+         p.add_argument("--out", required=True)
+-        p.add_argument("--device", default="cuda")
++        p.add_argument("--device", default="cuda", type=norm_device)
+         if name == "gate":
+             p.add_argument("--keys")
+             p.add_argument("--no-match", action="store_true")
+             p.add_argument("--lora")
+             p.add_argument("--lp")
++            p.add_argument("--offload-experts", choices=("auto", "on", "off"), default="auto")
+         else:
+             p.add_argument("--rank", type=int, default=8)
+             p.add_argument("--lam", type=float, default=1.0)
+             p.add_argument("--epochs", type=int, default=4)
+             p.add_argument("--lr", type=float, default=1e-3)
+             p.add_argument("--hold")
++        if name == "bench":
++            p.add_argument("--steps", type=int, default=24)
++            p.add_argument("--tf32", choices=("auto", "on", "off"), default="auto")
++            p.add_argument("--offload-experts", choices=("auto", "on", "off"), default="on")
++            p.add_argument("--fine", type=int, nargs="?", const=1, default=0,
++                           help="1: checkpoint each block's two halves apart; 2: also each mixer and expert group")
++            p.add_argument("--save-on-cpu", action="store_true", help="keep autograd's saved tensors in host memory")
++            p.add_argument("--offload-activations", action="store_true",
++                           help="no block recompute: every saved activation goes to host memory (cards under 16 GB)")
++            p.add_argument("--cache", help="block-43 cache dir (default ROWS/cache43)")
+     e = sub.add_parser("export")
+     e.add_argument("--run", required=True)
+     e.add_argument("--rows", required=True)
+@@ -489,6 +652,8 @@ def main(argv=None):
+         return export(a)
+     if a.cmd == "gate":
+         return gate(a)
++    if a.cmd == "bench":
++        return bench(a)
+     if a.cmd == "train":
+         train(a, a.hold)
+         return 0
+diff --git a/b70-rig/bench/coder-falsealarm/verdict/test_tail.py b/b70-rig/bench/coder-falsealarm/verdict/test_tail.py
+index 6687720a27..6777c6a59b 100644
+--- a/b70-rig/bench/coder-falsealarm/verdict/test_tail.py
++++ b/b70-rig/bench/coder-falsealarm/verdict/test_tail.py
+@@ -89,6 +89,24 @@ class Receipt(unittest.TestCase):
+         json.dumps(r)
+ 
+ 
++class Portable(unittest.TestCase):
++    def test_rocm_is_torch_cuda_and_other_devices_pass_through(self):
++        tt = load("tail_train")
++        self.assertEqual([tt.norm_device(d) for d in ("rocm", "rocm:1", "cuda:0", "xpu", "cpu")],
++                         ["cuda", "cuda:1", "cuda:0", "xpu", "cpu"])
++
++    def test_bench_parses_and_explicit_offload_needs_no_card(self):
++        tt = load("tail_train")
++        self.assertTrue(tt.want_offload("on", "/nonexistent", "cuda"))
++        self.assertFalse(tt.want_offload("off", "/nonexistent", "cuda"))
++        src = open(os.path.join(HERE, "tail_train.py")).read()
++        for flag in ('"--steps"', '"--fine"', '"--save-on-cpu"', '"--tf32"', '"--offload-experts"', '"--offload-activations"'):
++            self.assertIn(flag, src)
++        # every reported number is exact f32: TF32 goes on only inside train's and bench's optimizer steps
++        self.assertEqual(src.count("set_tf32(tf32_ok(a.device))"), 1)
++        self.assertIn("set_tf32(tf32)\n    import contextlib", src)
++
++
+ @unittest.skipUnless(HAVE_TORCH, "torch is not importable here (run in the habit-edit venv)")
+ class Torch(unittest.TestCase):
+     def setUp(self):
+@@ -147,6 +165,109 @@ class Torch(unittest.TestCase):
+             want = self.tm.q8_1(x) @ Wf.t() + (x @ t.lora["m_weight_A"].t()) @ t.lora["m_weight_B"].t()
+             self.assertTrue(torch.allclose(t.mm("m.weight", x), want, atol=1e-5))
+ 
++    def test_rope_on_a_card_without_f64_is_the_f64_rope(self):
++        import numpy as np
++        W = {"m.weight": np.zeros((2, 32), np.float16)}
++        a = self.tm.Tail(W, {}, device="cpu")
++        b = self.tm.Tail(W, {}, device="cpu")
++        b.f64 = False                      # as on Intel Arc: the angles are computed on the CPU
++        x, pos = torch.randn(9, 3, 256), torch.arange(9) * 1500
++        self.assertTrue(torch.equal(a.rope(x, pos), b.rope(x, pos)))
++
++    def test_fine_checkpoint_is_the_same_block(self):
++        import numpy as np
++        t = self.tm.Tail({"m.weight": np.zeros((2, 32), np.float16)}, {}, device="cpu")
++        calls = []
++        t.mixer_half = lambda il, res, pos, rows=None: calls.append("mix") or res * 2
++        t.ffn_half = lambda il, res: calls.append("ffn") or res + 1
++        res = torch.randn(3, 4, requires_grad=True)
++        plain = t.block(44, res, None)
++        t.fine = True
++        fine = t.block(44, res, None)
++        self.assertTrue(torch.equal(plain, fine))
++        fine.sum().backward()
++        self.assertTrue(torch.equal(res.grad, torch.full_like(res, 2.0)))
++        self.assertEqual(calls[:4], ["mix", "ffn", "mix", "ffn"])
++
++    def test_own_pool_tail_is_the_indexed_form(self):
++        import numpy as np
++        t = self.tm.Tail({"m.weight": np.zeros((2, 32), np.float16)}, {}, device="cpu")
++        T = 7                                      # one whole pool: dense, no indexer weights read
++        pos = torch.arange(T)
++        q = torch.tensor([0, 1, 2, 3, 4, 5, 6])
++        got = t.qsa_keep(43, torch.zeros(T, 4), pos, q)
++        want = torch.zeros(len(q), T, dtype=torch.bool)
++        n_tail = (pos[q] + 1) % 4
++        for k in range(3):                         # the form before 2026-11-14 (nonzero + mask indexing)
++            m = k < n_tail
++            want[torch.nonzero(m).squeeze(1), (pos[q] - k)[m]] = True
++        want[:, :4] |= (torch.arange(1)[None, :] < ((pos[q] + 1) // 4)[:, None]).repeat_interleave(4, 1)
++        self.assertTrue(torch.equal(got, want))
++        self.assertTrue(bool(got[6, 4] and got[6, 5] and got[6, 6] and got[6, :4].all() and not got[2, 3]))
++
++    def test_recompute_routes_as_its_forward_did(self):
++        import numpy as np
++        tm = self.tm
++        tm.N_EMBD, tm.N_EXP, tm.N_USED, tm.N_FF = 32, 8, 2, 32       # a toy MoE (this module copy only)
++        rng = np.random.default_rng(0)
++        f = lambda *s: rng.standard_normal(s).astype(np.float32)
++        W = {"blk.44.ffn_gate_inp.weight": f(8, 32), "blk.44.ffn_gate_exps.weight": f(8, 32, 32),
++             "blk.44.ffn_up_exps.weight": f(8, 32, 32), "blk.44.ffn_down_exps.weight": f(8, 32, 32),
++             "blk.44.ffn_gate_shexp.weight": f(32, 32), "blk.44.ffn_up_shexp.weight": f(32, 32),
++             "blk.44.ffn_down_shexp.weight": f(32, 32), "blk.44.ffn_gate_inp_shexp.weight": f(32)}
++        t = tm.Tail(W, {}, device="cpu", match=False)
++        x1, x2 = torch.randn(6, 32), torch.randn(6, 32)
++        t.routes = {}
++        y1 = t.moe(44, x1)
++        self.assertTrue(torch.equal(t.routes[44], torch.softmax(x1 @ torch.from_numpy(W["blk.44.ffn_gate_inp.weight"]).t(), -1).topk(2, -1).indices))
++        self.assertTrue(torch.equal(t.moe(44, x1), y1))           # same input, cached routes: the same output
++        cached = t.moe(44, x2)                                     # other input: the forward's experts, its own weights
++        t.routes = None
++        fresh = t.moe(44, x2)
++        self.assertFalse(torch.equal(cached, fresh))
++        self.assertEqual(cached.shape, fresh.shape)
++
++    def test_expert_groups_are_the_same_moe(self):
++        import numpy as np
++        tm = self.tm
++        tm.N_EMBD, tm.N_EXP, tm.N_USED, tm.N_FF = 32, 64, 4, 32      # 64 experts: two checkpointed groups of 32
++        rng = np.random.default_rng(1)
++        f = lambda *s: rng.standard_normal(s).astype(np.float32)
++        W = {"blk.44.ffn_gate_inp.weight": f(64, 32), "blk.44.ffn_gate_exps.weight": f(64, 32, 32),
++             "blk.44.ffn_up_exps.weight": f(64, 32, 32), "blk.44.ffn_down_exps.weight": f(64, 32, 32),
++             "blk.44.ffn_gate_shexp.weight": f(32, 32), "blk.44.ffn_up_shexp.weight": f(32, 32),
++             "blk.44.ffn_down_shexp.weight": f(32, 32), "blk.44.ffn_gate_inp_shexp.weight": f(32)}
++        x = torch.randn(40, 32)
++        ys, gs = [], []
++        for fine in (0, 2):
++            t = tm.Tail(W, {"blk.44.ffn_gate_exps.weight": "Q4_K"}, device="cpu", fine=fine)
++            xi = x.clone().requires_grad_()
++            y = t.moe(44, xi)
++            y.pow(2).sum().backward()
++            ys.append(y.detach())
++            gs.append(xi.grad)
++        self.assertTrue(torch.allclose(ys[0], ys[1], atol=1e-5, rtol=1e-5))
++        self.assertTrue(torch.allclose(gs[0], gs[1], atol=1e-4, rtol=1e-4))
++
++    def test_block_inverse_is_the_triangular_solve(self):
++        torch.manual_seed(0)
++        for C, scale in ((4, 0.3), (16, 0.3), (64, 0.3), (64, 1.0)):   # entries up to ~1: the tail's (beta k.k decay)
++            L = torch.tril(torch.randn(3, 5, C, C, dtype=torch.float64) * scale, -1)
++            eye = torch.eye(C, dtype=torch.float64)
++            want = torch.linalg.solve_triangular(L + eye, eye.expand_as(L), upper=False)
++            got = self.tm.block_unit_lower_inverse(L + eye)
++            self.assertLess(float(((got - want).abs() / want.abs().clamp(min=1)).max()), 1e-9)
++            self.assertTrue(torch.equal(self.tm.unit_lower_inverse(L, eye), want))   # the CPU keeps the solve
++
++    def test_pin_falls_back_to_pageable_memory_and_says_so(self):
++        notes = {}
++        t = torch.ones(4)
++        if torch.cuda.is_available():
++            self.skipTest("a card is present: pin works here")
++        out = self.tm.pin(t, notes)
++        self.assertTrue(torch.equal(out, t))
++        self.assertIn("pin", notes)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

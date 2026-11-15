@@ -176,6 +176,38 @@ The lesson we now apply to every recipe: the plan declares where each part lives
 was not logged counts as unknown, never as fine. We keep this case, with the buffer placement before and after,
 as a test for the planner.
 
+## V4.1 prompt reading: a compressed prefill, 1.7x faster to the first token (CPU only, unpublished)
+
+A change to how DeepSeek V4.1 Flash reads a prompt ("CED", compressed encoder-decoder prefill): layers 0-19 run on every prompt token, layers 20-39 only on the
+last 128 prompt tokens with the bounded sliding-window replay the model was trained with, and the global KV comes from
+the hidden state entering layer 20. It is a switch in our ik_llama.cpp branches, default off; a second setting
+("mask") runs full depth with the same clipped window, as the control for whether skipping rows is exact. The engine
+branches are not published yet, so these are results only.
+
+All runs on this box, CPU only (38 threads, batch and micro-batch 4096, flash attention), a V4.1 store with q3_K and
+q2_K experts (not the best run's MXFP4 store), greedy. The prompts are recorded coding-agent prompts (not published); "4k prefix" is the first 4,096 tokens
+of a longer one. The absolute speeds are a measurement condition (about 1 tok/s decode with no GPU), not a serving
+recipe: only the ratios between arms carry over.
+
+| run | prompt | time to first token, off -> on | speed-up | quality, on against off |
+|---|---|---|---|---|
+| first gate, 2026-11-11 | whole 11,569-token prompt | 1495.6 -> 792.5 s | 1.89x | 62 of 64 top-1, mean KL 0.00073 |
+| first gate, 2026-11-11 | whole 30,381-token prompt | 4276.4 -> 2285.4 s | 1.87x | 63 of 64, mean KL 0.0061 |
+| matched repeats, 2026-11-14 | 4k prefix, 128 decode tokens, 2-3 warm arms each | median 459.7 -> 268.6 s | **1.71x** | 126 of 128, mean KL 0.0167 (mask: 123 of 128, 0.0193) |
+| state-handling gate, 2026-11-14 | whole 11,569-token prompt, one arm each | mask 3446.0 -> on 2067.3 s | **1.67x** (against mask; the cold first off arm read 4235.7 s) | 63 of 64, mean KL 0.00039 (mask 63 of 64, 0.00040) |
+
+What the 2026-11-14 runs settled:
+
+- **Skipping rows adds no error of its own.** The engine is deterministic (repeat arms reproduce exactly), and "on" sits
+  as close to "off" as the full-depth "mask" control does, or closer. The small drift comes from the clipped replay
+  window both share. A unit test on the real model passes the switch through state save and restore, truncation,
+  several sequences at once and sequence shift (top-1 16 of 16 or 32 of 32 in every case, KL at most 2.0e-4).
+- **Decode cost: about -5 %, not resolved.** The first gate read -5 to -10 % with no matched controls. With repeats, "on"
+  averaged 0.949 tok/s against 0.995 off (-4.6 %; its three arms 0.908-1.013), and "mask" 1.002. Any real cost is in
+  the skip path, not the window. On the whole 12k prompt the "on" arm decoded fastest of the three (one arm each).
+  Against 1.7x on the first token, this is no reason to hold the switch.
+- Still open: the 64k point, the port to the serving engine, and an n = 6 decode comparison on one warm load.
+
 ## What did not work
 
 - **Qwen3.8 Flash-Next on this card with llama.cpp**: IQ3_S with 44 of its 48 expert layers in RAM decoded 11.7 tok/s
