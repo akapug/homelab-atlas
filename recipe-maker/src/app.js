@@ -623,6 +623,7 @@
     ['box', 'Plan', 'Pick a box, then a large marker on the chart. The layout card sums that layout up.', ['box', 'whatif', 'chart', 'layout']],
     ['network', 'Kernel + network', 'What a kernel rewrite or a plan that spans boxes would pay, from the same batch-window report. Needs measured links between your boxes; anything unmeasured is listed but not ranked.', ['network']],
     ['agents', 'Agents at once', 'How many agents one box can serve at the same time, and how fast each one goes. The curves are decode speed on a synthetic load from measured runs; real coding agents also read new prompt text every turn and get less (see the note under the headline).', ['agents']],
+    ['paths', 'Summit paths', 'Each target we climb toward (a model, an agent count, a speed each agent must get) as a lineage of layouts: what each one composed, where it landed on tok/s each against tok/s in total, and which pairs of levers were never tried together.', ['paths']],
     ['bytes', 'Where it lives', 'The loaded layout, byte by byte: one bar per memory tier, then how many bits each expert gets by how often it is used.', ['bytes', 'bits']],
     ['trust', 'Trust', 'How far each number goes: its evidence class, the hard checks each recorded run met or failed, whether each screening round may give a verdict, and how close the model came to every measured run. Each card opens one level deeper.', ['trust', 'checks', 'screen', 'calibration']],
     ['types', 'Edit', 'Change the quant type numbers the model uses, and write down an idea to download with the current view.', ['types', 'idea']],
@@ -705,6 +706,7 @@
     h += '</section><section class="card" id="layout" aria-labelledby="layout-h">' + selectionHTML(sel) + '</section></div></div>';
     h += page('network') + '<section class="card" id="network" aria-labelledby="network-h">' + networkHTML() + '</section></div>';
     h += page('agents') + '<section class="card" id="agents" aria-labelledby="agents-h">' + curveHTML() + '</section></div>';
+    h += page('paths') + '<section class="card" id="paths" aria-labelledby="paths-h">' + window.FitPaths.html(data, { width: Math.round(Math.max(300, Math.min(760, (app.clientWidth || 720) - 40))) }) + '</section></div>';
     // waterfall
     h += page('bytes') + '<section class="card" id="bytes" aria-labelledby="bytes-h"><h2 id="bytes-h">Where every byte sits</h2>' + (sel ? `<div class="sub">${esc(sel.label)}</div>` : '') + wfLegend(sel) + `<p class="small muted">One bar per memory tier, to scale within the tier. Hover a segment, or tab to a bar and use the arrow keys, for its full name and size.</p>` + waterfallHTML(sel) + '</section>';
     if (sel) {

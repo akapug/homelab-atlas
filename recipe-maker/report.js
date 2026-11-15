@@ -11,6 +11,7 @@
 // Batch window (bottom-up kernel cost per pipeline stage, data.window; lever table): node report.js --window [CONFIG] [--agents N] [--xfloor K] [--bw GBS] [--stages S] [--anchor ID | --no-anchor] [--source ubench] [--propose LEVER] [--json]
 // Agent turns (data.workload.turn_model): node report.js --workload [RUN_ID | all] [--profile NAME] [--trace NAME] [--server NAME] [--n 1,16] [--prefill P] [--decode-one D1] [--fresh F] [--warmup-s S] [--window-s S] [--gap-scale X] [--stagger-scale X] [--json]
 // Serving priors (data/priors-serving.json; the ones that apply to a recipe): node report.js --priors [recipe.json] [--json]
+// Summit paths per target (data/paths: lineage, composed levers, never-composed pairs): node report.js --paths [--json]
 // Layer map + trim proposals + upgrade advisor only (src/advisor.js; also part of the full and --quick reports): node report.js --advice [--json]
 'use strict';
 const fs = require('fs'), path = require('path');
@@ -106,6 +107,14 @@ if (ci >= 0) {
 }
 
 FM.applyCal(data);
+
+// ---------- summit paths: node report.js --paths [--json] ----------
+if (args.includes('--paths')) {
+  const FP = require('./src/paths.js');
+  if (args.includes('--json')) { fs.writeSync(1, JSON.stringify(data.paths, null, 1) + '\n'); process.exit(0); }
+  console.log(FP.text(data));
+  process.exit(0);
+}
 
 // ---------- external validation: node report.js --external [--json] ----------
 // our physics on each community row (runs/external.jsonl, MEASURED-BY-THEM = inferred) and the gap per hardware class

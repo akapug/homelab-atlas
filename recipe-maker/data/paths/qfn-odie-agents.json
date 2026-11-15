@@ -1,0 +1,596 @@
+{
+ "about": "Summit path: Qwen3.8 Flash-Next serving many real coding agents from odie's two Arc Pro B70s (the batched XeStrata build served since 10-24). Per-agent and aggregate are useful output tok/s on a replay of 16 recorded coding-agent sessions (tool gaps included; 600 s warm-up, 600 s window, counted inside the window); TTFT is the client's median. Prompt reading, not decode, sets the total: at 40 agents prefill is 75 % busy.",
+ "id": "qfn-odie-agents",
+ "label": "Qwen3.8 Flash-Next: 16-40 real coding agents on odie's two B70s",
+ "model": "Qwen3.8 Flash-Next (GSQ-RCO IQ3_XXS)",
+ "metric": "useful tok/s",
+ "goal": {
+  "agents": [
+   16,
+   40
+  ],
+  "per_agent_min": null,
+  "src": "lab notes:346",
+  "note": "no per-agent bar is declared: 16 agents at about 10 tok/s each was judged not that interesting unless the model beats near-SOTA ones; the head is the best total at 16-40 agents"
+ },
+ "candidates": [
+  "prefill-node",
+  "mtp"
+ ],
+ "nodes": [
+  {
+   "id": "comp1",
+   "label": "the comp1 set without GDN, both B70s layer-split, 32 slots",
+   "parents": [],
+   "box": "odie",
+   "levers": [
+    "engine-xestrata",
+    "quant-gsq-iq3xxs",
+    "layer-split-2card",
+    "superbatch",
+    "comp1-set"
+   ],
+   "recipe": "odie-fnx-iq3xxs-2xb70-real-comp1-no-gdn-ss16-n16-1026",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 32.6,
+      "tag": "MEASURED",
+      "src": "lab notes:31"
+     },
+     "aggregate": {
+      "v": 32.6,
+      "tag": "MEASURED",
+      "src": "lab notes:31"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 16,
+     "per_agent": {
+      "v": 5.21,
+      "tag": "MEASURED",
+      "src": "lab notes:34 (total / 16)"
+     },
+     "aggregate": {
+      "v": 83.4,
+      "tag": "MEASURED",
+      "src": "lab notes:34"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "kept",
+    "why": "the served build: +11.5 % over the set before it at 16 agents"
+   }
+  },
+  {
+   "id": "sweep-nodoor",
+   "label": "the same build at 1-33 agents, no admission door (11-11 sweep)",
+   "parents": [
+    "comp1"
+   ],
+   "box": "odie",
+   "levers": [
+    "engine-xestrata",
+    "quant-gsq-iq3xxs",
+    "layer-split-2card",
+    "superbatch",
+    "comp1-set"
+   ],
+   "recipe": "data/predictions-roofline-r8-agents-b24-1111.json",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 30.25,
+      "tag": "MEASURED",
+      "src": "lab notes:146"
+     },
+     "aggregate": {
+      "v": 30.25,
+      "tag": "MEASURED",
+      "src": "lab notes:146"
+     },
+     "ttft_s": {
+      "v": 2.25,
+      "tag": "MEASURED",
+      "src": "lab notes:71"
+     }
+    },
+    {
+     "agents": 16,
+     "per_agent": {
+      "v": 4.03,
+      "tag": "MEASURED",
+      "src": "lab notes:148"
+     },
+     "aggregate": {
+      "v": 64.47,
+      "tag": "MEASURED",
+      "src": "lab notes:148"
+     },
+     "ttft_s": {
+      "v": 4.0,
+      "tag": "MEASURED",
+      "src": "lab notes:73"
+     }
+    },
+    {
+     "agents": 24,
+     "per_agent": {
+      "v": 2.67,
+      "tag": "MEASURED",
+      "src": "lab notes:149"
+     },
+     "aggregate": {
+      "v": 64.19,
+      "tag": "MEASURED",
+      "src": "lab notes:149"
+     },
+     "ttft_s": {
+      "v": 3.4,
+      "tag": "MEASURED",
+      "src": "lab notes:74"
+     }
+    },
+    {
+     "agents": 33,
+     "per_agent": {
+      "v": 0.17,
+      "tag": "MEASURED",
+      "src": "lab notes:150"
+     },
+     "aggregate": {
+      "v": 5.68,
+      "tag": "MEASURED",
+      "src": "lab notes:150"
+     },
+     "ttft_s": {
+      "v": 89.6,
+      "tag": "MEASURED",
+      "src": "lab notes:75"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "dropped",
+    "why": "past the engine's 32 slots agents evict each other and re-read their prompts: 64 tok/s at 24 falls to 5.7 at 33"
+   }
+  },
+  {
+   "id": "door32",
+   "label": "+ an admission door holding agents to the 32 slots",
+   "parents": [
+    "sweep-nodoor"
+   ],
+   "box": "odie",
+   "levers": [
+    "engine-xestrata",
+    "quant-gsq-iq3xxs",
+    "layer-split-2card",
+    "superbatch",
+    "comp1-set",
+    "door32"
+   ],
+   "recipe": "data/predictions-roofline-r8-door32-b40-1111.json",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 33,
+     "per_agent": {
+      "v": 1.91,
+      "tag": "MEASURED",
+      "src": "lab notes:109"
+     },
+     "aggregate": {
+      "v": 63.02,
+      "tag": "MEASURED",
+      "src": "lab notes:109"
+     },
+     "ttft_s": {
+      "v": 3.9,
+      "tag": "MEASURED",
+      "src": "lab notes:68"
+     }
+    },
+    {
+     "agents": 40,
+     "per_agent": {
+      "v": 1.67,
+      "tag": "MEASURED",
+      "src": "lab notes:108"
+     },
+     "aggregate": {
+      "v": 66.82,
+      "tag": "MEASURED",
+      "src": "lab notes:108"
+     },
+     "ttft_s": {
+      "v": 3.8,
+      "tag": "MEASURED",
+      "src": "lab notes:67"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "kept",
+    "why": "holds 63-67 tok/s at 33-40 agents (11-19x the no-door run); agents past 32 wait"
+   }
+  },
+  {
+   "id": "conv-door",
+   "label": "+ conversation door (a conversation keeps its slot until 60 s idle)",
+   "parents": [
+    "door32"
+   ],
+   "box": "odie",
+   "levers": [
+    "engine-xestrata",
+    "quant-gsq-iq3xxs",
+    "layer-split-2card",
+    "superbatch",
+    "comp1-set",
+    "door32",
+    "conv-door"
+   ],
+   "recipe": "none: the served lane's door settings (results notes)",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 40,
+     "per_agent": {
+      "v": 1.55,
+      "tag": "MEASURED",
+      "src": "lab notes:23 (total / 40)"
+     },
+     "aggregate": {
+      "v": 62.05,
+      "tag": "MEASURED",
+      "src": "lab notes:23"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "kept",
+    "why": "no prompt re-reads (F 7.3), but 8 of 40 agents never get a turn in 20 min"
+   }
+  },
+  {
+   "id": "lease300",
+   "label": "conversation door with a 300 s lease (fairness)",
+   "parents": [
+    "conv-door"
+   ],
+   "box": "odie",
+   "levers": [
+    "engine-xestrata",
+    "quant-gsq-iq3xxs",
+    "layer-split-2card",
+    "superbatch",
+    "comp1-set",
+    "door32",
+    "conv-door"
+   ],
+   "recipe": "none: the same lane with REQLOG_DOOR_MAX_LEASE_S=300",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 40,
+     "per_agent": {
+      "v": 0.06,
+      "tag": "MEASURED",
+      "src": "lab notes:24 (total / 40)"
+     },
+     "aggregate": {
+      "v": 2.53,
+      "tag": "MEASURED",
+      "src": "lab notes:24"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "dropped",
+    "why": "every agent served, but yielded slots re-read their prompts: 25x less useful output"
+   }
+  },
+  {
+   "id": "sycl-layer",
+   "label": "upstream llama.cpp SYCL, layer split, both B70s: decode tok/s from llama-batched-bench (512-token prompts, 128 decode tokens; B=1 from the quiet A/B, B=2-8 under box load 22-34), not replay useful tok/s",
+   "parents": [],
+   "box": "odie",
+   "levers": [
+    "engine-llamacpp-sycl",
+    "quant-ud-iq3xxs",
+    "layer-split-2card"
+   ],
+   "recipe": "none: the SYCL launch-bound A/B (results notes)",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 32.2,
+      "tag": "MEASURED",
+      "src": "lab notes:60"
+     },
+     "aggregate": {
+      "v": 32.2,
+      "tag": "MEASURED",
+      "src": "lab notes:60"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 2,
+     "per_agent": {
+      "v": 16.14,
+      "tag": "MEASURED",
+      "src": "lab notes:161 (total / 2)"
+     },
+     "aggregate": {
+      "v": 32.27,
+      "tag": "MEASURED",
+      "src": "lab notes:161"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 4,
+     "per_agent": {
+      "v": 11.21,
+      "tag": "MEASURED",
+      "src": "lab notes:161 (total / 4)"
+     },
+     "aggregate": {
+      "v": 44.86,
+      "tag": "MEASURED",
+      "src": "lab notes:161"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 8,
+     "per_agent": {
+      "v": 6.56,
+      "tag": "MEASURED",
+      "src": "lab notes:161 (total / 8)"
+     },
+     "aggregate": {
+      "v": 52.47,
+      "tag": "MEASURED",
+      "src": "lab notes:161"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "kept",
+    "why": "the faster SYCL split for several agents: 52.5 aggregate at B=8 against tensor's 32-33"
+   }
+  },
+  {
+   "id": "sycl-tensor",
+   "label": "upstream llama.cpp SYCL, tensor split (the control): decode tok/s from llama-batched-bench (512-token prompts, 128 decode tokens; B=1 from the quiet A/B, B=2-8 under box load 22-34), not replay useful tok/s",
+   "parents": [],
+   "box": "odie",
+   "levers": [
+    "engine-llamacpp-sycl",
+    "quant-ud-iq3xxs",
+    "tensor-split-2card"
+   ],
+   "recipe": "none: the SYCL launch-bound A/B (results notes)",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 16.93,
+      "tag": "MEASURED",
+      "src": "lab notes:53"
+     },
+     "aggregate": {
+      "v": 16.93,
+      "tag": "MEASURED",
+      "src": "lab notes:53"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 2,
+     "per_agent": {
+      "v": 7.67,
+      "tag": "MEASURED",
+      "src": "lab notes:163 (total / 2)"
+     },
+     "aggregate": {
+      "v": 15.34,
+      "tag": "MEASURED",
+      "src": "lab notes:163"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 4,
+     "per_agent": {
+      "v": 5.68,
+      "tag": "MEASURED",
+      "src": "lab notes:163 (total / 4)"
+     },
+     "aggregate": {
+      "v": 22.74,
+      "tag": "MEASURED",
+      "src": "lab notes:163"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 8,
+     "per_agent": {
+      "v": 4.01,
+      "tag": "MEASURED",
+      "src": "lab notes:163 (total / 8)"
+     },
+     "aggregate": {
+      "v": 32.12,
+      "tag": "MEASURED",
+      "src": "lab notes:163"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "dropped",
+    "why": "host-submission bound: 7,270 kernels a token, one host thread at 100 %"
+   }
+  },
+  {
+   "id": "sycl-tensor-graphs",
+   "label": "+ SYCL graphs (multi-device patch): decode tok/s from llama-batched-bench (512-token prompts, 128 decode tokens; B=1 from the quiet A/B, B=2-8 under box load 22-34), not replay useful tok/s",
+   "parents": [
+    "sycl-tensor"
+   ],
+   "box": "odie",
+   "levers": [
+    "engine-llamacpp-sycl",
+    "quant-ud-iq3xxs",
+    "tensor-split-2card",
+    "sycl-graphs"
+   ],
+   "recipe": "none: the SYCL launch-bound A/B (results notes)",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 38.96,
+      "tag": "MEASURED",
+      "src": "lab notes:54"
+     },
+     "aggregate": {
+      "v": 38.96,
+      "tag": "MEASURED",
+      "src": "lab notes:54"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 2,
+     "per_agent": {
+      "v": 7.91,
+      "tag": "MEASURED",
+      "src": "lab notes:164 (total / 2)"
+     },
+     "aggregate": {
+      "v": 15.82,
+      "tag": "MEASURED",
+      "src": "lab notes:164"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 4,
+     "per_agent": {
+      "v": 5.96,
+      "tag": "MEASURED",
+      "src": "lab notes:164 (total / 4)"
+     },
+     "aggregate": {
+      "v": 23.82,
+      "tag": "MEASURED",
+      "src": "lab notes:164"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 8,
+     "per_agent": {
+      "v": 4.13,
+      "tag": "MEASURED",
+      "src": "lab notes:164 (total / 8)"
+     },
+     "aggregate": {
+      "v": 33.04,
+      "tag": "MEASURED",
+      "src": "lab notes:164"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "open",
+    "why": "2.3x single-stream (16.93 to 38.96, past layer split's 32.20) but nothing at B=2-8: batched decode records no graph"
+   }
+  }
+ ]
+}

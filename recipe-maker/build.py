@@ -102,7 +102,8 @@ EVIDENCE = {
                # the serving priors' labels (data/priors-serving.json): our own logged number, someone else's published one, arithmetic
                'MEASURED-HERE': SEEN, 'MEASURED-ELSEWHERE': INFERRED, 'INFERRED': INFERRED,
                'DATASHEET': INFERRED,  # a vendor spec-sheet figure (data/roofline.json card ceilings)
-               'TRACED': INFERRED},  # derived from an engine's source at a cited revision (file:line), not measured
+               'TRACED': INFERRED,  # derived from an engine's source at a cited revision (file:line), not measured
+               'PREDICTED': INFERRED},  # a summit-path point a layout note or the planner predicts before it runs (data/paths)
     # a src that opens with one of these words declares its own class: a tag that disagrees is a build error (10-19 audit:
     # fnx dense_gib was MEASURED with an M-ext source, strata overlap ESTIMATE with an UNKNOWN one)
     'src_words': {'MEASURED': SEEN, 'M-ext': INFERRED, 'ESTIMATE': INFERRED, 'INFERRED': INFERRED, 'PRIOR': INFERRED, 'CLAIMED': INFERRED,
@@ -1558,6 +1559,9 @@ def load_behaviour_levers(path):
 
 
 behaviour_levers = load_behaviour_levers(os.path.join(HERE, BL_SRC))
+import paths as PATHS  # noqa: E402  (src/ is on sys.path above)
+# summit paths per target (data/paths): lineage, composed serving levers, tagged points, verdicts (src/paths.py)
+paths = PATHS.load_paths(HERE, {r['id'] for r in RUNS})
 _sp = os.path.join(HERE, SCREEN_SRC)
 screen = {'file': SCREEN_SRC, 'rows': [json.loads(x) for x in open(_sp) if x.strip()] if os.path.exists(_sp) else []}
 _nocard = sorted({r['card'] for r in screen['rows']} - set(cards))
@@ -2519,7 +2523,7 @@ data = {
     'meta': {'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'by': 'fit-viz build.py', 'home': PUBLIC_HOME,
              'tags': {M: 'we ran it or read it live', R: 'read from a doc, file header or spec', P: 'community prior', E: 'our estimate', FIT: 'fitted to measured points'}, 'left_out': left_out},
     'types': types, 'engines': engines, 'models': models, 'boxes': boxes, 'b70move': b70move, 'anchors': anchors, 'assume': assume, 'knobs': knobs, 'conditions': conditions, 'accuracy': accuracy, 'causes': causes, 'external': external, 'bench': bench,
-    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'behaviour_levers': behaviour_levers, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'multibox': MULTIBOX, 'curves': curves, 'workload': workload, 'priors': priors, 'dense_cal': dense_cal, 'moe_cal': moe_cal, 'layer_maps': layer_maps, 'upgrade': upgrade, 'roofline': roofline,
+    'checks': checks, 'cards': cards, 'screen': screen, 'levers': levers, 'behaviour_levers': behaviour_levers, 'paths': paths, 'recipes': recipes, 'placements': placements, 'draft_twins': draft_twins, 'decode_fits': decode_fits, 'prefill': prefill, 'dllm': dllm, 'batch': batch, 'window': window, 'network': network, 'multibox': MULTIBOX, 'curves': curves, 'workload': workload, 'priors': priors, 'dense_cal': dense_cal, 'moe_cal': moe_cal, 'layer_maps': layer_maps, 'upgrade': upgrade, 'roofline': roofline,
     'routing_skew': [HM.skew_evidence(HEAT_MAPS, spec) for spec in HM.jload(os.path.join(HERE, 'tools', 'heat_sources.json')).get('skew', [])],
     'alloc3': {'src': 'homelab dsv41/skew/results/2026-10-08-alloc-3bpw.json (' + alloc['rule'] + ')', 'layers': alloc_layers, 'count': sum(len(x) for x in alloc_layers)} if alloc else None,
     'siblings': {'quant_priors': sibling('quant-priors.json'), 'quant_recipes': sibling('quant-recipes.json'),
@@ -2626,7 +2630,7 @@ data['meta']['calibration'] = calibration_identity(data, _po.get('calibration_sp
 json.dump(data, open(os.path.join(HERE, 'data.json'), 'w'), separators=(',', ':'))
 PAGE_DIR = os.path.join(HERE, 'page')   # the page's data scripts (generated, never in git); index.html loads them
 PAGE_FILE_LIMIT = 1 << 20                # no page file is larger: a part over it is a build error, so split it further
-PAGE_CODE = ('src/model.js', 'src/app.js')
+PAGE_CODE = ('src/model.js', 'src/paths.js', 'src/app.js')
 
 
 def page_assignment_parts(name, target, value):

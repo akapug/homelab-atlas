@@ -52,6 +52,22 @@ day). Results that change a headline number say so.
   a local model from calling tools. New model in the README's best-result table and in `atlas.json`.
 
 ### Changed
+- Recipe Maker export at fit-viz 0df9781: summit paths (`data/paths/`, a Summit paths tab, `node report.js --paths`).
+  A target (a model, an agent band, the speed each agent must get) holds a lineage of layouts. Each node has its
+  parents, the serving levers it composed (from the catalog `data/paths/levers.json`), its recipe, per-agent and total
+  tok/s and TTFT at each agent count (MEASURED with its source line, or a PREDICTED range) and a verdict. The chart draws
+  each path on tok/s each agent gets against tok/s in total, with the goal shaded, and lists the lever pairs the target
+  never composed. Three seeded targets: GLM-5.3-Flash at 4-8 agents (glm-flash-lite 25.9 tok/s for one agent, 28.5 with a B70
+  expert tier and 40.0 total at 4 agents; llama.cpp SYCL on odie 13.07; the expert-parallel layouts as predicted
+  ranges, the all-in-VRAM one at 16-23 each at 8 agents), Qwen3.8 Flash-Next serving 16-40 real coding agents on two
+  B70s (83.4 useful tok/s at 16; an admission door holds 63-67 at 33-40, where 33 agents
+  without it fall to 5.7); upstream llama.cpp SYCL as a decode-bench sibling path:
+  SYCL graphs take tensor split from 16.93 to 38.96 tok/s single-stream but add nothing at 2-8 streams, where layer
+  split's 52.5 at 8 stays faster), and DeepSeek V4.1
+  Flash for one agent at 25+ (27.4 on a 3090 Ti with IQ2_XS experts; 13.1-13.2 elsewhere; CED prefill 1.71x faster to
+  the first token on CPU and 1.74x on the 3090 Ti + DRAM recipe at 11,569 tokens, 34.5 to 19.9 s, decode unchanged). Also in this export: the coder-myopia v3 H2 replicates and the tail-trainer follow-up arms
+  in the behaviour-lever catalog, the CED snoopy run as a held-out roofline cell, and the
+  updated SYCL launch-bound serving prior.
 - Recipe Maker export at fit-viz 2bd624e: the behaviour-lever catalog is public (`data/behaviour-levers.json`, nulls
   included): nine levers with their measured rows (the 27B LoRA edits and their tool-call correction, the CTO control
   vector's harm, the QFN-Coder shared-expert edit and its factorial, the trained tail LoRA NULL, the quant-repair

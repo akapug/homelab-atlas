@@ -138,6 +138,7 @@ node report.js --curve               # agents vs decode speed on a synthetic loa
 node report.js --workload            # real agents: turns/agent-minute, useful tok/s, tool gaps and server prefix re-read
 node report.js --workload --n 1,16 --warmup-s 300 --window-s 600 # explicit agent counts and window seconds
 node report.js --roofline            # per-phase bounds, the binding term, rearrangements and the B = 1..128 landscape
+node report.js --paths               # summit paths: each target's lineage of layouts, levers composed, pairs never tried
 ```
 
 Open `index.html` after the build. It shows our boxes, models and runs. The same page, built from this folder, is at
@@ -257,6 +258,23 @@ with its layers, dose, the system prompt and harness it was measured under, and 
 
 The catalog is not in the public copy yet: its rows point into our private lab repo.
 
+### Summit paths (`--paths`)
+
+A summit path is the climb toward one target: a model, an agent band and the speed each agent must get (GLM-5.3-Flash at
+4-8 agents and 15+ tok/s each, say). `data/paths/<target>.json` holds its nodes, one per layout tried. A node names its
+parent nodes, the serving levers it composed (engine, quant, where the experts live, the link, decode and batching
+levers, the scheduler), its recipe (a ledger run id, a file here, or `none:` and why), its points (tok/s each agent gets,
+tok/s in total and TTFT at each agent count, each MEASURED with its `path:line` or PREDICTED, a range allowed), its
+results and a verdict: kept, dropped and why, or open. The levers come from the catalog `data/paths/levers.json`; an
+engine and a quant are exclusive, so a node has at most one of each.
+
+The Summit paths tab draws each target on tok/s each agent gets against tok/s in total. Rays mark 1-32 agents and the
+goal is shaded. Each node's points join as its load curve and predicted ranges are boxes. Its head point (the best total
+inside the goal's agent band) carries a marker: filled kept, hollow open, grey with a cross dropped. Lineage edges join
+parent heads to child heads, dashed where a prediction is involved. Under the chart are the node table and the lever
+pairs this target never composed: two levers it tried, never together in one node. `node report.js --paths` prints the
+same lineages, and `--paths --json` prints the loaded data.
+
 ### Hot-expert maps
 
 The planner keeps the experts a model routes to most in the fastest tier. It reads that from hot-expert maps
@@ -269,16 +287,16 @@ capture one for your model with `tools/heat-capture/` and convert it with `tools
 | --- | --- |
 | `build.py`, `families/` | the planner's tables: boxes, models, quant types, fitted terms; one file per extra model family |
 | `src/model.js`, `src/app.js` | the solver and the gate (shared by the page and `report.js`), and the page |
-| `report.js` | the command line: report, `--check`, `--accuracy`, `--external`, `--advice`, `--batch`, `--window`, `--curve`, `--workload`, `--resident` |
+| `report.js` | the command line: report, `--check`, `--accuracy`, `--external`, `--advice`, `--batch`, `--window`, `--curve`, `--workload`, `--resident`, `--agent`, `--paths` |
 | `probe/` | the box probe, the model intake, and the batch-window spec and microbenchmark readers |
-| `data/` | probed boxes, model layouts, hot-expert maps, layer maps, the upgrade catalog, batch-window configs (`data/window/`) |
+| `data/` | probed boxes, model layouts, hot-expert maps, layer maps, the upgrade catalog, batch-window configs (`data/window/`), summit paths (`data/paths/`) |
 | `runs/` | the run ledger (`runs.jsonl`, older rows in numbered segments), bench terms, cause labels, community measurements |
 | `data/cards/` | each model's card conditions (sampling, thinking, template, context, output) with sources. The quality-round ledger the `verdict-ready` check reads (`runs/screen.jsonl`, `node report.js --screen`) is kept private and not shipped; without it that check reports unknown |
 | `recipes/` | example recipes: the fastest clean run per box and model, and the ones the tests use |
 | `results/RESULTS.md` | every measured run with its conditions, and the accuracy report |
 | `QUANT-PRIORS.md`, `QUANT-RECIPES.md` | desk research on published quants, with links; the build reads their JSON twins |
 | `tools/` | run recording, bench sweeps, routing capture, placement check |
-| `tests/` | `python3 build.py` first (several tests read the `data.json` it writes), then `python3 -m unittest discover -s tests`, `node tests/test_accuracy.js`, `node tests/test_advisor.js`, `node tests/test_decode_fit.js`, `node tests/test_batch.js`, `node tests/test_window.js`, `node tests/test_curve.js`, `node tests/test_workload.js`, `node tests/test_roofline.js` and `node tests/test_kv_host.js`; `node tests/test_screen.js` needs the private quality-round ledger and is not in the public copy |
+| `tests/` | `python3 build.py` first (several tests read the `data.json` it writes), then `python3 -m unittest discover -s tests`, `node tests/test_accuracy.js`, `node tests/test_advisor.js`, `node tests/test_decode_fit.js`, `node tests/test_batch.js`, `node tests/test_window.js`, `node tests/test_curve.js`, `node tests/test_workload.js`, `node tests/test_roofline.js`, `node tests/test_paths.js` and `node tests/test_kv_host.js`; `node tests/test_screen.js` needs the private quality-round ledger and is not in the public copy |
 | `docs/how-it-works.md` | the reference: evidence tags, the gate's checks, recipe fields, the models behind each number, honest limits |
 
 ---

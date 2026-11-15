@@ -1,0 +1,473 @@
+{
+ "about": "Summit path: GLM-5.3-Flash for 4-8 coding agents at 15-20+ tok/s each, on boxes that can stay on all day (odie, droopy, lassie). Per-agent and aggregate are decode tok/s; TTFT is for a turn that adds 4,096 new prompt tokens to a cached prefix. Points from one run at several agent counts belong to one node.",
+ "id": "glm53-batched",
+ "label": "GLM-5.3-Flash, 4-8 agents at 15-20+ tok/s each",
+ "model": "GLM-5.3-Flash (320B, 18B active)",
+ "metric": "decode tok/s",
+ "goal": {
+  "agents": [
+   4,
+   8
+  ],
+  "per_agent_min": 15,
+  "src": "lab notes:294"
+ },
+ "nodes": [
+  {
+   "id": "odie-sycl",
+   "label": "odie 2x B70, llama.cpp SYCL, experts in pinned host memory",
+   "parents": [],
+   "box": "odie",
+   "levers": [
+    "engine-llamacpp-sycl",
+    "quant-ud-q3kxl",
+    "experts-pinned-host",
+    "mtp"
+   ],
+   "recipe": "none: a lab run before the ledger kept GLM on odie",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 13.07,
+      "tag": "MEASURED",
+      "src": "lab notes:129"
+     },
+     "aggregate": {
+      "v": 13.07,
+      "tag": "MEASURED",
+      "src": "lab notes:129"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "dropped",
+    "why": "the pinned host experts (80+ GiB) passed odie's RAM; the xe driver burst got household services OOM-killed"
+   }
+  },
+  {
+   "id": "A0",
+   "label": "droopy alone: RTX 6000 + RAM experts, llama.cpp, MTP 1",
+   "parents": [],
+   "box": "droopy",
+   "levers": [
+    "engine-llamacpp-cuda",
+    "quant-ud-q3kxl",
+    "experts-host-ram",
+    "mtp"
+   ],
+   "recipe": "droopy-glm-glm-be1r1-1140",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 16.06,
+      "tag": "MEASURED",
+      "src": "lab notes:128"
+     },
+     "aggregate": {
+      "v": 16.06,
+      "tag": "MEASURED",
+      "src": "lab notes:128"
+     },
+     "ttft_s": {
+      "v": [
+       8,
+       14
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:155"
+     }
+    },
+    {
+     "agents": 2,
+     "per_agent": {
+      "v": 9,
+      "tag": "PREDICTED",
+      "src": "lab notes:155"
+     },
+     "aggregate": {
+      "v": 18,
+      "tag": "PREDICTED",
+      "src": "lab notes:155"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 4,
+     "per_agent": {
+      "v": 5,
+      "tag": "PREDICTED",
+      "src": "lab notes:155"
+     },
+     "aggregate": {
+      "v": 20,
+      "tag": "PREDICTED",
+      "src": "lab notes:155"
+     },
+     "ttft_s": {
+      "v": [
+       32,
+       56
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:155"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "kept",
+    "why": "the 24/7 GLM lane that is real today; about 5 tok/s each at 4 agents, a third of the bar"
+   }
+  },
+  {
+   "id": "glmlite-snoopy",
+   "label": "glm-flash-lite on snoopy (3090 Ti), route trim",
+   "parents": [],
+   "box": "snoopy",
+   "levers": [
+    "engine-glmlite",
+    "quant-exl3-3bpw",
+    "experts-host-ram",
+    "route-trim"
+   ],
+   "recipe": "none: a seat run (card page)",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 25.9,
+      "tag": "MEASURED",
+      "src": "lab notes:127"
+     },
+     "aggregate": {
+      "v": 25.9,
+      "tag": "MEASURED",
+      "src": "lab notes:127"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "dropped",
+    "why": "the fastest GLM so far, but snoopy is a gaming box, not a 24/7 server; kept as the ceiling"
+   }
+  },
+  {
+   "id": "glmlite-b70-tier",
+   "label": "glm-flash-lite + one B70 expert tier, 120 GiB RAM cap",
+   "parents": [
+    "glmlite-snoopy"
+   ],
+   "box": "an RTX 3090 + EPYC 7443P box with one B70",
+   "levers": [
+    "engine-glmlite",
+    "quant-exl3-3bpw",
+    "experts-host-ram",
+    "b70-expert-tier"
+   ],
+   "recipe": "none: the engine's own bench (b70-tier notes)",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 28.51,
+      "tag": "MEASURED",
+      "src": "lab notes:133"
+     },
+     "aggregate": {
+      "v": 28.51,
+      "tag": "MEASURED",
+      "src": "lab notes:133"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 2,
+     "per_agent": {
+      "v": 17.28,
+      "tag": "MEASURED",
+      "src": "lab notes:133 (total / 2)"
+     },
+     "aggregate": {
+      "v": 34.55,
+      "tag": "MEASURED",
+      "src": "lab notes:133"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 4,
+     "per_agent": {
+      "v": 10.0,
+      "tag": "MEASURED",
+      "src": "lab notes:133 (total / 4)"
+     },
+     "aggregate": {
+      "v": 39.99,
+      "tag": "MEASURED",
+      "src": "lab notes:133"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "kept",
+    "why": "the tier lifts 4-agent total from 24.6 to 40.0; its ring is same-host only, so it does not reach a second box yet"
+   }
+  },
+  {
+   "id": "d2",
+   "label": "d2: GLM in XeStrata on both B70s, helper expert tiers over IB, prefill on droopy",
+   "parents": [
+    "odie-sycl",
+    "glmlite-b70-tier"
+   ],
+   "box": "odie + droopy + lassie",
+   "levers": [
+    "engine-xestrata",
+    "quant-ud-q3kxl",
+    "superbatch",
+    "attention-dp",
+    "expert-parallel-link",
+    "experts-host-ram",
+    "prefill-node"
+   ],
+   "recipe": "none: a layout in the headroom notes",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": [
+       18,
+       26
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:150"
+     },
+     "aggregate": {
+      "v": [
+       18,
+       26
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:150"
+     },
+     "ttft_s": {
+      "v": [
+       7,
+       13
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:150"
+     }
+    },
+    {
+     "agents": 2,
+     "per_agent": {
+      "v": [
+       13,
+       18
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:150"
+     },
+     "aggregate": {
+      "v": [
+       26,
+       36
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:150"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 4,
+     "per_agent": {
+      "v": [
+       9,
+       12
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:150"
+     },
+     "aggregate": {
+      "v": [
+       36,
+       48
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:150"
+     },
+     "ttft_s": {
+      "v": [
+       28,
+       50
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:150"
+     }
+    },
+    {
+     "agents": 8,
+     "per_agent": {
+      "v": [
+       5,
+       7
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:150"
+     },
+     "aggregate": {
+      "v": [
+       40,
+       55
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:150"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "open",
+    "why": "GLM kernels are missing in XeStrata (about 4-7 weeks); misses the per-agent bar at 4-8 agents even if built"
+   }
+  },
+  {
+   "id": "d3",
+   "label": "d3: every expert resident in some card's VRAM, expert-parallel over RDMA",
+   "parents": [
+    "d2"
+   ],
+   "box": "odie + droopy + lassie",
+   "levers": [
+    "engine-xestrata",
+    "quant-ud-q3kxl",
+    "superbatch",
+    "experts-all-vram",
+    "expert-parallel-link",
+    "mtp"
+   ],
+   "recipe": "none: a layout in the headroom notes",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": [
+       27,
+       37
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:340"
+     },
+     "aggregate": {
+      "v": [
+       27,
+       37
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:340"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 4,
+     "per_agent": {
+      "v": [
+       21,
+       29
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:341"
+     },
+     "aggregate": {
+      "v": [
+       85,
+       117
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:341"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    },
+    {
+     "agents": 8,
+     "per_agent": {
+      "v": [
+       16,
+       23
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:342"
+     },
+     "aggregate": {
+      "v": [
+       130,
+       185
+      ],
+      "tag": "PREDICTED",
+      "src": "lab notes:342"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "open",
+    "why": "the only layout predicted to meet 15-20+ each at 4-8 agents; needs RDMA and the trunk card's 9 GB read cut"
+   }
+  }
+ ]
+}

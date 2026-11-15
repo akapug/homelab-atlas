@@ -1,0 +1,199 @@
+{
+ "about": "Serving levers a summit path composes (data/paths/<target>.json nodes name them by id; build.py data.paths, src/paths.py). A lever is one choice a recipe makes: an engine, a quant, where the experts live, a decode or prefill mechanism, a scheduler policy. Levers of an exclusive kind (one per recipe: an engine, a quant) never pair with each other; every other pair of levers a target has tried is either composed in some node of that target or listed as never composed. The behaviour levers (habit edits on one model file) are a separate catalog: data/behaviour-levers.json.",
+ "exclusive_kinds": [
+  "engine",
+  "quant"
+ ],
+ "kinds": {
+  "engine": "the serving engine",
+  "quant": "the weight format of the experts",
+  "placement": "where the weights live (VRAM, host RAM, another box)",
+  "decode": "a per-token decode mechanism (drafts, route trim)",
+  "batching": "how several agents share one step",
+  "prefill": "how prompt tokens are read",
+  "scheduler": "which agent gets a slot when",
+  "link": "how boxes exchange activations"
+ },
+ "levers": [
+  {
+   "id": "engine-llamacpp-sycl",
+   "kind": "engine",
+   "label": "llama.cpp SYCL (Intel)",
+   "what": "llama.cpp with its SYCL backend on Arc Pro B70 cards"
+  },
+  {
+   "id": "engine-llamacpp-cuda",
+   "kind": "engine",
+   "label": "llama.cpp / ik_llama.cpp (CUDA)",
+   "what": "llama.cpp or its ik_llama.cpp fork on an NVIDIA card with the CPU holding the rest"
+  },
+  {
+   "id": "engine-glmlite",
+   "kind": "engine",
+   "label": "glm-flash-lite (EXL3)",
+   "what": "the GLM-5.3-Flash offload engine with EXL3 weights on the GPU and CPU-lane expert kernels"
+  },
+  {
+   "id": "engine-xestrata",
+   "kind": "engine",
+   "label": "XeStrata (batched)",
+   "what": "the XeStrata engine on Arc Pro B70 with its batched decode (agents share one step, slots per agent)"
+  },
+  {
+   "id": "engine-strata",
+   "kind": "engine",
+   "label": "Strata (CUDA)",
+   "what": "the Strata engine for DeepSeek V4.1 Flash on an NVIDIA card"
+  },
+  {
+   "id": "quant-ud-q3kxl",
+   "kind": "quant",
+   "label": "UD-Q3_K_XL",
+   "what": "unsloth's dynamic 3-bit K-quant GGUF"
+  },
+  {
+   "id": "quant-exl3-3bpw",
+   "kind": "quant",
+   "label": "EXL3 3.05 bpw",
+   "what": "EXL3 weights at 3.05 bits per weight"
+  },
+  {
+   "id": "quant-gsq-iq3xxs",
+   "kind": "quant",
+   "label": "GSQ-RCO IQ3_XXS",
+   "what": "the GSQ-RCO calibrated IQ3_XXS GGUF of Qwen3.8 Flash-Next"
+  },
+  {
+   "id": "quant-gsq-iq2xs",
+   "kind": "quant",
+   "label": "GSQ-RCO IQ2_XS experts",
+   "what": "DeepSeek V4.1 Flash with GSQ-RCO IQ2_XS routed experts"
+  },
+  {
+   "id": "quant-release",
+   "kind": "quant",
+   "label": "release precision",
+   "what": "DeepSeek V4.1 Flash at its release precision (Q8-class experts)"
+  },
+  {
+   "id": "quant-ud-iq3xxs",
+   "kind": "quant",
+   "label": "UD-IQ3_XXS",
+   "what": "unsloth's dynamic 3-bit i-quant GGUF"
+  },
+  {
+   "id": "experts-host-ram",
+   "kind": "placement",
+   "label": "experts in host RAM",
+   "what": "routed experts in the box's CPU RAM, computed by CPU threads"
+  },
+  {
+   "id": "experts-pinned-host",
+   "kind": "placement",
+   "label": "experts in pinned host memory",
+   "what": "routed experts in pinned host memory the GPU reads over PCIe (SYCL host buffers)"
+  },
+  {
+   "id": "experts-pmem",
+   "kind": "placement",
+   "label": "experts on Optane PMem",
+   "what": "cold routed experts on Optane PMem below DRAM"
+  },
+  {
+   "id": "experts-all-vram",
+   "kind": "placement",
+   "label": "every expert in some card's VRAM",
+   "what": "every routed expert resident in the VRAM of one of several cards"
+  },
+  {
+   "id": "b70-expert-tier",
+   "kind": "placement",
+   "label": "B70 expert tier",
+   "what": "an Arc Pro B70 computes part of each layer's experts beside the primary card"
+  },
+  {
+   "id": "layer-split-2card",
+   "kind": "placement",
+   "label": "layer split over two cards",
+   "what": "the layers split between two cards, one stage after the other"
+  },
+  {
+   "id": "tensor-split-2card",
+   "kind": "placement",
+   "label": "tensor split over two cards",
+   "what": "each layer's matrices split between two cards, partial results reduced every layer"
+  },
+  {
+   "id": "expert-parallel-link",
+   "kind": "link",
+   "label": "expert-parallel over the link",
+   "what": "helper cards on other boxes compute experts each layer, over RDMA"
+  },
+  {
+   "id": "mtp",
+   "kind": "decode",
+   "label": "MTP drafts",
+   "what": "the model's own multi-token-prediction head drafts tokens"
+  },
+  {
+   "id": "dspark",
+   "kind": "decode",
+   "label": "DSpark drafts",
+   "what": "the DSpark draft model for DeepSeek V4"
+  },
+  {
+   "id": "route-trim",
+   "kind": "decode",
+   "label": "route trim",
+   "what": "fewer routed experts on some layers (GLM: keep 4 on layers 29-44)"
+  },
+  {
+   "id": "sycl-graphs",
+   "kind": "decode",
+   "label": "SYCL graphs",
+   "what": "the token's kernels recorded once and replayed per card, cutting host submission (llama.cpp GGML_SYCL_ENABLE_GRAPH with the multi-device patch)"
+  },
+  {
+   "id": "superbatch",
+   "kind": "batching",
+   "label": "one batched step",
+   "what": "all agents decode in one batched step"
+  },
+  {
+   "id": "attention-dp",
+   "kind": "batching",
+   "label": "attention data-parallel",
+   "what": "each card runs attention for its own agents; the experts are split between the cards"
+  },
+  {
+   "id": "prefill-node",
+   "kind": "prefill",
+   "label": "prefill on another box",
+   "what": "prompt reading runs on another box and hands the KV over"
+  },
+  {
+   "id": "ced",
+   "kind": "prefill",
+   "label": "CED compressed prefill",
+   "what": "compressed prefill: skips rows of the dense part during prompt reading"
+  },
+  {
+   "id": "comp1-set",
+   "kind": "batching",
+   "label": "the comp1 env set",
+   "what": "the comp1 set of batched-decode settings without the GDN change"
+  },
+  {
+   "id": "door32",
+   "kind": "scheduler",
+   "label": "admission door at 32",
+   "what": "an admission door holds agents to the engine's 32 slots"
+  },
+  {
+   "id": "conv-door",
+   "kind": "scheduler",
+   "label": "conversation door",
+   "what": "a conversation keeps its slot until it idles 60 s"
+  }
+ ]
+}

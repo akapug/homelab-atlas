@@ -1410,14 +1410,67 @@
      "compose": "held-out torch CE base 1.528, A 1.387, B 1.388, A+B parallel 1.458 (engine 1.164 vs base 1.144: worse than none); A + B' (B' trained with --lora A frozen) 1.3855, torch only. llama.cpp loads both adapters and matches torch (A+B gate PASS KL 0.00159).",
      "tag": "MEASURED",
      "src": "lab notes:83"
+    },
+    {
+     "card": "Quadro RTX 6000 24GB (+ Instinct MI25 16GB for split)",
+     "torch": "2.9.1+cu126; MI25 2.11.0+rocm7.13 TheRock gfx900",
+     "model": "Qwen3-30B-A3B Q4_K_S",
+     "tail": "--first 40 eval tail; arms on blk.40..47",
+     "arms": {
+      "base": {
+       "torch_ce": 1.5284,
+       "engine_ce": 1.1439
+      },
+      "a40 (44..47, 40 steps)": {
+       "torch_ce": 1.3866,
+       "engine_ce": 1.0819,
+       "step_s": 1.37,
+       "peak_gb": 6.33
+      },
+      "a80 (44..47, 80 steps)": {
+       "torch_ce": 1.409,
+       "engine_ce": 1.0979,
+       "step_s": 1.4,
+       "peak_gb": 6.33
+      },
+      "seq (a40 + 40..43 trained with a40 frozen)": {
+       "torch_ce": 1.387,
+       "engine_ce": 1.0747,
+       "step_s": 3.03,
+       "peak_gb": 10.99
+      },
+      "j80 (40..47 jointly, 80 steps, one card)": {
+       "torch_ce": 1.4203,
+       "engine_ce": 1.1055,
+       "step_s": 2.37,
+       "peak_gb": 11.02
+      },
+      "split (j80 over MI25 40..43 + RTX 6000 44..47+head, train --stage)": {
+       "torch_ce": 1.4194,
+       "engine_ce": 1.1079,
+       "step_s": 3.38,
+       "peak_gb": {
+        "mi25": 5.24,
+        "rtx6000": 6.33
+       },
+       "compute_s": {
+        "mi25": 1.82,
+        "rtx6000": 1.53
+       }
+      }
+     },
+     "gate": "every adapter set PASS engine vs torch (KL 0.0013-0.0015)",
+     "finding": "sequential compose confirmed in the engine (1.0747 vs 1.0819 a40 alone); 80 steps on 32 windows overfit (a80, j80 worse than a40); the two-card split reproduces one-card joint training (step loss within 0.0064) at 1.43x the step time: a second card adds memory, not speed, with one window in flight",
+     "tag": "MEASURED",
+     "src": "lab notes:131"
     }
    ],
    "unknown": [
     "any arch but qwen3moe on a real model (qwen2moe, olmoe, Mixtral-style llama implemented, gate unrun)",
-    "engine dump of A + B' (sequential pair)",
-    "an 80-step single-adapter control for the sequential pair",
     "B70 (XPU) and 1080 Ti runs of this tool",
-    "a quality claim beyond one domain smoke"
+    "a quality claim beyond one domain smoke",
+    "a pipelined split (two windows in flight) and a tail that fits no single card",
+    "whether seq's 0.007 engine gain over a40 at 248 rows exceeds noise; a larger training text"
    ]
   }
  },
@@ -1538,7 +1591,38 @@
    "verdict": "FIRST EDIT TARGET: with no file list the base model patches the file the report names (H2 0/4 pass, all fail hidden+must_change at 11-12 steps); the short prompt follows the call upstream (4/4, ~6 more steps). n=1 per item, Fisher p=0.029.",
    "edit_target": "H2 SYMPTOM, base arm, v3 tier: lever alone vs prompt, and the combined arm on the prompt's step cost",
    "next": "replicates: 4 H2 items x 4 seed bases x base/short on lassie 1080 Ti; then a headroom read (logit margin to open the upstream caller) before any lever",
-   "src": "lab notes:22 (grades.jsonl; a batch job)"
+   "src": "lab notes:22 (grades.jsonl; a batch job)",
+   "replicates": {
+    "items": [
+     "v3-H2-item",
+     "v3-H2-item",
+     "v3-H2-item",
+     "v3-H2-item"
+    ],
+    "seed_bases": "1000..4000 (4)",
+    "box": "lassie 1080 Ti",
+    "base": {
+     "v3-H2-item": "3/4",
+     "v3-H2-item": "2/4",
+     "v3-H2-item": "2/4",
+     "v3-H2-item": "4/4",
+     "pooled": "11/16 69% [44, 86]",
+     "median_steps": 14.5
+    },
+    "short": {
+     "v3-H2-item": "4/4",
+     "v3-H2-item": "4/4",
+     "v3-H2-item": "4/4",
+     "v3-H2-item": "4/4",
+     "pooled": "16/16 100% [81, 100]",
+     "median_steps": 17
+    },
+    "fisher_p": "0.043 pooled replicates; 0.0012 with seed base 0",
+    "predictions": "7 HIT / 3 MISS (base predicted 3/16, got 11/16; all misses from trusting the seed-0 split as a rate)",
+    "verdict": "the seed-0 0/4 overstated the habit (0.31^4 ~ 1% at the replicate rate): base misses 5/16 (31% [14, 56]), all hidden+must_change on the reported module; short 0/16. H2 stays the first edit target with ~5/16 headroom, weighted to hostname and cents",
+    "tag": "MEASURED",
+    "src": "lab notes:27 (a batch job)"
+   }
   }
  ],
  "null_searches": [

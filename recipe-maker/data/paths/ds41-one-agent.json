@@ -1,0 +1,327 @@
+{
+ "about": "Summit path: DeepSeek V4.1 Flash for one coding agent at 25+ tok/s decode. Per-agent and aggregate are decode tok/s for one request; TTFT is warm, on the prompt each node's label names (4,096 tokens on droopy, 11,569 on snoopy). The CED nodes ran CPU only with the engram tables on NVMe (about 1 tok/s): a measurement condition for the prefill lever, not a serving layout.",
+ "id": "ds41-one-agent",
+ "label": "DeepSeek V4.1 Flash: one coding agent at 25+ tok/s",
+ "model": "DeepSeek V4.1 Flash",
+ "metric": "decode tok/s",
+ "goal": {
+  "agents": [
+   1,
+   1
+  ],
+  "per_agent_min": 25,
+  "src": "lab notes:61"
+ },
+ "nodes": [
+  {
+   "id": "lassie-q8",
+   "label": "lassie: GTX 1080 Ti + MI25 + 1 TB RAM, release-precision experts",
+   "parents": [],
+   "box": "lassie",
+   "levers": [
+    "engine-llamacpp-cuda",
+    "quant-release",
+    "experts-host-ram"
+   ],
+   "recipe": "lassie-v41-q8-fs3dec",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 13.2,
+      "tag": "MEASURED",
+      "src": "lab notes:111"
+     },
+     "aggregate": {
+      "v": 13.2,
+      "tag": "MEASURED",
+      "src": "lab notes:111"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "dropped",
+    "why": "13.2 tok/s on the 1080 Ti + MI25 box; no lever on it has reached 25"
+   }
+  },
+  {
+   "id": "droopy-optane",
+   "label": "droopy: RTX 6000 + DRAM + Optane PMem",
+   "parents": [],
+   "box": "droopy",
+   "levers": [
+    "engine-llamacpp-cuda",
+    "quant-release",
+    "experts-host-ram",
+    "experts-pmem"
+   ],
+   "recipe": "droopy-v41-v41fs-ts1-0026",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 13.1,
+      "tag": "MEASURED",
+      "src": "lab notes:113"
+     },
+     "aggregate": {
+      "v": 13.1,
+      "tag": "MEASURED",
+      "src": "lab notes:113"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "open",
+    "why": "the experimental stretch target: 20-25+ is the goal, 13 so far"
+   }
+  },
+  {
+   "id": "droopy-dspark",
+   "label": "+ DSpark drafts (n 4)",
+   "parents": [
+    "droopy-optane"
+   ],
+   "box": "droopy",
+   "levers": [
+    "engine-llamacpp-cuda",
+    "quant-release",
+    "experts-host-ram",
+    "experts-pmem",
+    "dspark"
+   ],
+   "recipe": "none: a lab run of 10-19 (results notes)",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 10.58,
+      "tag": "MEASURED",
+      "src": "lab notes:113"
+     },
+     "aggregate": {
+      "v": 10.58,
+      "tag": "MEASURED",
+      "src": "lab notes:113"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "dropped",
+    "why": "slower than no drafts (10.58 against 13.1)"
+   }
+  },
+  {
+   "id": "snoopy-iq2xs",
+   "label": "snoopy: RTX 3090 Ti + DDR5, IQ2_XS experts, Strata",
+   "parents": [],
+   "box": "snoopy",
+   "levers": [
+    "engine-strata",
+    "quant-gsq-iq2xs",
+    "experts-host-ram"
+   ],
+   "recipe": "snoopy-v41-gsq-iq2xs-strata-ramcopy-eval",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 27.4,
+      "tag": "MEASURED",
+      "src": "lab notes:109"
+     },
+     "aggregate": {
+      "v": 27.4,
+      "tag": "MEASURED",
+      "src": "lab notes:109"
+     },
+     "ttft_s": {
+      "v": null,
+      "tag": "UNKNOWN",
+      "src": "not measured"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "kept",
+    "why": "the only node over 25 (13 of 15 agent tasks); snoopy is a test box, not a 24/7 server"
+   }
+  },
+  {
+   "id": "cpu-control",
+   "label": "CPU only, engram tables on NVMe (the CED control)",
+   "parents": [],
+   "box": "droopy",
+   "levers": [
+    "engine-llamacpp-cuda",
+    "quant-release",
+    "experts-host-ram"
+   ],
+   "recipe": "none: the CED repeats' off arm (results notes)",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 0.995,
+      "tag": "MEASURED",
+      "src": "lab notes:56"
+     },
+     "aggregate": {
+      "v": 0.995,
+      "tag": "MEASURED",
+      "src": "lab notes:56"
+     },
+     "ttft_s": {
+      "v": 459.7,
+      "tag": "MEASURED",
+      "src": "lab notes:41"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "kept",
+    "why": "the control for the prefill lever"
+   }
+  },
+  {
+   "id": "ced",
+   "label": "+ CED compressed prefill",
+   "parents": [
+    "cpu-control"
+   ],
+   "box": "droopy",
+   "levers": [
+    "engine-llamacpp-cuda",
+    "quant-release",
+    "experts-host-ram",
+    "ced"
+   ],
+   "recipe": "none: the CED repeats' on arm (results notes)",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 0.949,
+      "tag": "MEASURED",
+      "src": "lab notes:56"
+     },
+     "aggregate": {
+      "v": 0.949,
+      "tag": "MEASURED",
+      "src": "lab notes:56"
+     },
+     "ttft_s": {
+      "v": 268.6,
+      "tag": "MEASURED",
+      "src": "lab notes:41"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "kept",
+    "why": "1.71x faster to the first token at 4k (1.67-1.71x at 12k) for about -5 % decode; never composed with a GPU layout"
+   }
+  },
+  {
+   "id": "snoopy-ik-off",
+   "label": "snoopy: the same IQ2_XS store on ik_llama.cpp ced-compat, CED off (the control), prompt 11,569 tokens",
+   "parents": [
+    "snoopy-iq2xs"
+   ],
+   "box": "snoopy",
+   "levers": [
+    "engine-llamacpp-cuda",
+    "quant-gsq-iq2xs",
+    "experts-host-ram"
+   ],
+   "recipe": "none: the snoopy IQ2_XS recipe's store run on ik_llama.cpp instead of Strata (results notes)",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 14.8,
+      "tag": "MEASURED",
+      "src": "lab notes:52"
+     },
+     "aggregate": {
+      "v": 14.8,
+      "tag": "MEASURED",
+      "src": "lab notes:52"
+     },
+     "ttft_s": {
+      "v": 34.51,
+      "tag": "MEASURED",
+      "src": "lab notes:52"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "kept",
+    "why": "the control for CED on the GPU-hybrid recipe; ik decodes this store at 14.8 against Strata's 27.4"
+   }
+  },
+  {
+   "id": "snoopy-ced",
+   "label": "+ CED compressed prefill on snoopy (GPU-hybrid), prompt 11,569 tokens",
+   "parents": [
+    "snoopy-ik-off",
+    "ced"
+   ],
+   "box": "snoopy",
+   "levers": [
+    "engine-llamacpp-cuda",
+    "quant-gsq-iq2xs",
+    "experts-host-ram",
+    "ced"
+   ],
+   "recipe": "none: the CED A/B's on arm (results notes)",
+   "results": "lab notes",
+   "points": [
+    {
+     "agents": 1,
+     "per_agent": {
+      "v": 14.7,
+      "tag": "MEASURED",
+      "src": "lab notes:53"
+     },
+     "aggregate": {
+      "v": 14.7,
+      "tag": "MEASURED",
+      "src": "lab notes:53"
+     },
+     "ttft_s": {
+      "v": 19.88,
+      "tag": "MEASURED",
+      "src": "lab notes:53"
+     }
+    }
+   ],
+   "verdict": {
+    "state": "kept",
+    "why": "1.74x warm TTFT (34.51 to 19.88 s; 1.75x at 4,096 tokens), decode unchanged, top-1 1.000 against off; carries from droopy CPU-only to the GPU-hybrid recipe, not yet on Strata"
+   }
+  }
+ ]
+}
