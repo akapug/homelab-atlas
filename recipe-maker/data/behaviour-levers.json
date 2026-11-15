@@ -1,0 +1,1603 @@
+{
+ "about": "Behaviour levers: changes to what a model does (a prompt, a LoRA weight edit, a control vector, a neuron edit), each fit on one model file and measured as prompt + lever against the prompt alone. A recipe carries one in its levers list (by ref to an id here, or inline); report.js --check refuses a lever fit on another model file, a llama-server base arm that leaves a loaded adapter on, labels a lever with no prompt + lever vs prompt row UNMEASURED-ON-THIS-MODEL, and a gain inside session noise null. Prompt-only and lever-only rows are references, never the label.",
+ "kinds": [
+  "prompt",
+  "lora-edit",
+  "control-vector",
+  "neuron"
+ ],
+ "primary_compare": {
+  "default": "prompt+X vs prompt",
+  "prompt": "prompt vs base"
+ },
+ "noise": {
+  "cto": {
+   "v": 0.06,
+   "tag": "MEASURED",
+   "src": "lab notes:262 (same-session base vs base, dev screen: session noise about 0.06; base dev CTO read 0.67 and 0.50 in two sessions with the same seeds, :106)"
+  }
+ },
+ "lora_zero": {
+  "v": "a llama-server request with no lora field gets every loaded adapter at its load scale (1.0); --lora-init-without-apply does not stop it; a non-empty lora list zeroes every adapter it does not name",
+  "tag": "MEASURED",
+  "src": "lab notes:158-160 (llama-server b12015, from /lora-adapters and the source)"
+ },
+ "levers": [
+  {
+   "id": "habit-a3c-l50-lam3000",
+   "kind": "lora-edit",
+   "what": "phase 3c edit A3c: closed-form ffn_down edit at layer 50 (onset-only keys, 36,313-position protection set, lam 3000), refit on all three folds, served as a LoRA on the unchanged quantized model; the dose is the LoRA scale",
+   "fit_model": {
+    "name": "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+    "sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+    "tag": "READ",
+    "src": "lab notes:18 and lab notes:18 (MODEL_SHA our lanes check for this file); the habit-edit phases name the file only (lab notes:72, Qwen3.8-27B UD-Q4_K_XL on snoopy), so the hash is the one these lanes check for that name"
+   },
+   "artifact": {
+    "path": "select/a3-L50-lam3000-all.lora.gguf inside our lab archive",
+    "src": "lab notes:244; lab notes:1 (edit a3-L50-lam3000-all, dose 1.9)"
+   },
+   "layers": [
+    50
+   ],
+   "dose": 1.9,
+   "dose_unit": "LoRA scale",
+   "lam": 3000,
+   "kl_at_dose": {
+    "v": 0.023,
+    "tag": "MEASURED",
+    "src": "lab notes:266 (held-out KL at dose 1.9, cap 0.03)"
+   },
+   "measured_under": {
+    "systems": {
+     "default": {
+      "text_src": "lab notes:25 (SYSTEM_DEFAULT)",
+      "what": "the cto-steer default coding-assistant system prompt"
+     },
+     "short": {
+      "text_src": "lab notes:30 (SYSTEM_CTO = SYSTEM_DEFAULT + the short habit statement)",
+      "what": "default + the short CTO statement (~110-118 prompt tokens)"
+     },
+     "wh": {
+      "text_src": "lab notes:42 (HELDOUT)",
+      "what": "a held-out system wording the edit never saw"
+     },
+     "wh+short": {
+      "text_src": "lab notes:65-66",
+      "what": "the held-out wording + the short CTO statement"
+     },
+     "cc+short": {
+      "text_src": "lab notes:354-359",
+      "what": "Claude Code 2.1.287 system prompt from a proxy log + a no-tools line + the short CTO statement"
+     },
+     "pi+short": {
+      "text_src": "lab notes:354-359",
+      "what": "pi 1.0.2's own first-request system prompt + a no-tools line + the short statement"
+     },
+     "fleet+short": {
+      "text_src": "lab notes:354-359",
+      "what": "the fleet builder seat's system prompt + a no-tools line + the short statement"
+     },
+     "cc+short@16k": {
+      "text_src": "lab notes:360-362",
+      "what": "cc + short after 15,681 tokens of a real local-model agent Claude Code history, tool calls flattened to text"
+     },
+     "cc+short@64k": {
+      "text_src": "lab notes:360-362",
+      "what": "the same after 63,552 tokens of history"
+     }
+    },
+    "harness": "cto-steer run_arm (TEST 60 items x 3 samples, cto-steer sampling, thinking off); hybrid score: blind judge on 903 picked rows, rule scorer elsewhere",
+    "engine": "llama-server",
+    "build": "b12015",
+    "box": "snoopy",
+    "card": "RTX 3090 Ti",
+    "date": "2026-11-12",
+    "serving": "TEST arms: one server per arm, --lora-scaled FILE:1.9 for edit arms, no adapter for base arms (lab notes:96)",
+    "src": "lab notes:238-246; lab notes:36 (llama-b12015)",
+    "phase3d": "phase 3d (2026-11-12/13, snoopy RTX 3090 Ti, llama-server, KV q8_0 where 3c ran f16: cross-session reference only): TEST 60 x 3, every row judged blind (sonnet), text as sent (lab notes:346-352)"
+   },
+   "measured": [
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "wh+short",
+     "metric": "cto",
+     "diff": 0.18,
+     "ci": [
+      0.09,
+      0.29
+     ],
+     "won": 10,
+     "lost": 0,
+     "p": 0.002,
+     "normal_change": 0.1,
+     "extra_output_tokens": 166,
+     "extra_output_tokens_src": "lab notes:288-289 (531 - 365)",
+     "skill_gate": "A3c at dose 1.9: 0.97 (58/60) against default 1.00, passes the 0.95 selection bar (a selection threshold, not noninferiority; lab notes:274); the combined arm has no skill run of its own (lab notes:218)",
+     "tag": "MEASURED",
+     "src": "lab notes:228",
+     "correction": "lab notes:208-214 CORRECTION (outside review, counts confirmed on the 3c rows): the +0.18 on the unseen wording is mostly tool-call suppression, not better CTO judgment: wh + short wrote literal <tool_call> markup in 44/180 answers (short alone 3/180, every edit arm 0/180); 14 of the 16 CTO sample wins are a tool-call baseline failure replaced by a passing answer. The edit suppresses tool-call attempts in a no-tools task, which may hurt a real agent; phase 3d tests both sides"
+    },
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "short",
+     "metric": "cto",
+     "diff": -0.03,
+     "ci": [
+      -0.11,
+      0.03
+     ],
+     "won": 2,
+     "lost": 3,
+     "p": 1.0,
+     "normal_change": -0.02,
+     "extra_output_tokens": 130,
+     "extra_output_tokens_src": "lab notes:235 (544 vs 414)",
+     "skill_gate": "as above (lab notes:274)",
+     "note": "noninferiority not shown: the lower bound -0.11 is past the -0.08 margin (lab notes:232)",
+     "tag": "MEASURED",
+     "src": "lab notes:231"
+    },
+    {
+     "compare": "X vs prompt",
+     "role": "reference",
+     "prompt": "short",
+     "metric": "cto",
+     "diff": -0.18,
+     "won": 1,
+     "lost": 8,
+     "tag": "MEASURED",
+     "src": "lab notes:233"
+    },
+    {
+     "compare": "X vs base",
+     "role": "reference",
+     "prompt": "default",
+     "metric": "cto",
+     "diff": 0.2,
+     "ci": [
+      0.09,
+      0.31
+     ],
+     "won": 9,
+     "lost": 1,
+     "p": 0.021,
+     "tag": "MEASURED",
+     "src": "lab notes:296"
+    },
+    {
+     "compare": "X vs base",
+     "role": "reference",
+     "prompt": "wh",
+     "metric": "cto",
+     "diff": 0.09,
+     "ci": [
+      0.02,
+      0.17
+     ],
+     "won": 6,
+     "lost": 0,
+     "p": 0.031,
+     "tag": "MEASURED",
+     "src": "lab notes:298"
+    },
+    {
+     "compare": "X vs random control",
+     "role": "reference",
+     "prompt": "default",
+     "metric": "cto",
+     "diff": 0.19,
+     "won": 10,
+     "lost": 1,
+     "p": 0.012,
+     "tag": "MEASURED",
+     "src": "lab notes:297"
+    },
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "cc+short",
+     "diff": 0.24,
+     "ci": [
+      0.14,
+      0.36
+     ],
+     "won": 11,
+     "lost": 1,
+     "p": 0.006,
+     "normal_change": 0.08,
+     "extra_output_tokens": 158,
+     "extra_output_tokens_src": "lab notes:369-371 (428 - 270)",
+     "src": "lab notes:393",
+     "mechanism": "mostly tool-call suppression: tool-call rows 38% -> 13%; on rows where neither arm emitted markup the paired diff is -0.08 CTO / -0.08 NORMAL (lab notes:330-334). EXPLORATORY dev diag A with a clearer no-tools line on both arms: +0.14 [+0.03, +0.25] (6/1, p 0.125), all in clarify (lab notes:335, 425)",
+     "metric": "cto",
+     "tag": "MEASURED",
+     "phase": "3d",
+     "skill_gate": "combined skill gate (trained wording, 20 hidden-assert functions, A3c-all at dose 1.9): default 0.983, short 0.95, A3c + short 0.95; ties short; a selection gate, not noninferiority (lab notes:438)"
+    },
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "pi+short",
+     "diff": 0.52,
+     "ci": [
+      0.42,
+      0.62
+     ],
+     "won": 23,
+     "lost": 0,
+     "p": 0.001,
+     "p_note": "<0.001",
+     "normal_change": 0.24,
+     "extra_output_tokens": 205,
+     "extra_output_tokens_src": "lab notes:373-375 (347 - 142)",
+     "src": "lab notes:395",
+     "mechanism": "tool-call suppression: pi + short writes tool calls in 89% of rows, A3c + short 56%; rows-without-markup diff -0.12 CTO; NORMAL stays 0.46 (lab notes:375, 395)",
+     "metric": "cto",
+     "tag": "MEASURED",
+     "phase": "3d",
+     "skill_gate": "combined skill gate (trained wording, 20 hidden-assert functions, A3c-all at dose 1.9): default 0.983, short 0.95, A3c + short 0.95; ties short; a selection gate, not noninferiority (lab notes:438)"
+    },
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "fleet+short",
+     "diff": 0.64,
+     "ci": [
+      0.52,
+      0.77
+     ],
+     "won": 24,
+     "lost": 0,
+     "p": 0.001,
+     "p_note": "<0.001",
+     "normal_change": 0.17,
+     "extra_output_tokens": 349,
+     "extra_output_tokens_src": "lab notes:377-379 (458 - 109)",
+     "src": "lab notes:397",
+     "mechanism": "tool-call suppression: fleet + short 93% tool-call rows, A3c + short 50%; rows-without-markup diff +0.00; NORMAL 0.21 (lab notes:379, 397)",
+     "metric": "cto",
+     "tag": "MEASURED",
+     "phase": "3d",
+     "skill_gate": "combined skill gate (trained wording, 20 hidden-assert functions, A3c-all at dose 1.9): default 0.983, short 0.95, A3c + short 0.95; ties short; a selection gate, not noninferiority (lab notes:438)"
+    },
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "cc+short@16k",
+     "diff": 0.03,
+     "ci": [
+      -0.04,
+      0.11
+     ],
+     "won": 6,
+     "lost": 3,
+     "p": 0.508,
+     "normal_change": 0.01,
+     "src": "lab notes:399",
+     "note": "history flattened to text tool calls (77-92% of rows copy that form): a harness-format result, not a clean decay curve (lab notes:341-344)",
+     "metric": "cto",
+     "tag": "MEASURED",
+     "phase": "3d",
+     "skill_gate": "combined skill gate (trained wording, 20 hidden-assert functions, A3c-all at dose 1.9): default 0.983, short 0.95, A3c + short 0.95; ties short; a selection gate, not noninferiority (lab notes:438)"
+    },
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "cc+short@64k",
+     "diff": -0.09,
+     "ci": [
+      -0.17,
+      -0.02
+     ],
+     "won": 1,
+     "lost": 7,
+     "p": 0.07,
+     "normal_change": -0.08,
+     "src": "lab notes:402",
+     "note": "as @16k; at 64k many answers continue the old session's task (lab notes:341-344)",
+     "metric": "cto",
+     "tag": "MEASURED",
+     "phase": "3d",
+     "skill_gate": "combined skill gate (trained wording, 20 hidden-assert functions, A3c-all at dose 1.9): default 0.983, short 0.95, A3c + short 0.95; ties short; a selection gate, not noninferiority (lab notes:438)"
+    }
+   ],
+   "findings": [
+    "phase 3d: inspect-when-tools-exist is intact: with Claude Code tools served, 23/24 first actions inspect files on every arm, edit or not (lab notes:427-436)"
+   ]
+  },
+  {
+   "id": "habit-a3c-l50-lam3000-fold-stack",
+   "kind": "lora-edit",
+   "what": "phase 3c stacked-dose probe: the A3c cell's FOLD adapters (each item answered by the fold edit that never saw it), under the short statement, on dev; EXPLORATORY, rule-scored only, no pass rule. Different adapters from habit-a3c-l50-lam3000 (TEST ran the all-data refit)",
+   "fit_model": {
+    "name": "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+    "sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+    "tag": "READ",
+    "src": "lab notes:18 and lab notes:18 (MODEL_SHA our lanes check for this file); the habit-edit phases name the file only (lab notes:72, Qwen3.8-27B UD-Q4_K_XL on snoopy), so the hash is the one these lanes check for that name"
+   },
+   "artifact": {
+    "path": "the a3-L50-lam3000 fold adapters inside our lab archive",
+    "src": "lab notes:217 (fold adapters on dev, not the TEST refit); lab notes"
+   },
+   "layers": [
+    50
+   ],
+   "dose": 1.9,
+   "dose_unit": "LoRA scale",
+   "lam": 3000,
+   "measured_under": {
+    "systems": {
+     "short": {
+      "text_src": "lab notes:30 (SYSTEM_CTO = SYSTEM_DEFAULT + the short habit statement)",
+      "what": "default + the short CTO statement (~110-118 prompt tokens)"
+     }
+    },
+    "harness": "stack_probe.py: dev, 36 items x 3 under the short statement, rule-scored only",
+    "engine": "llama-server",
+    "build": "b12015",
+    "box": "snoopy",
+    "card": "RTX 3090 Ti",
+    "date": "2026-11-12",
+    "src": "lab notes:306"
+   },
+   "measured": [
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "short",
+     "metric": "cto",
+     "dose": 1.9,
+     "diff": 0.04,
+     "diff_src": "lab notes:310-312 (0.98 - 0.94; no CI reported)",
+     "won": 3,
+     "lost": 1,
+     "normal_change": 0.0,
+     "extra_output_tokens": 105,
+     "extra_output_tokens_src": "lab notes:310-312 (520 - 415)",
+     "skill_gate": "none for this probe",
+     "tag": "MEASURED",
+     "src": "lab notes:312",
+     "note": "EXPLORATORY; lab notes:314: within the roughly 0.06 session noise"
+    },
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "short",
+     "metric": "cto",
+     "dose": 0.95,
+     "diff": -0.03,
+     "diff_src": "lab notes:310-311 (0.91 - 0.94; no CI reported)",
+     "won": 1,
+     "lost": 3,
+     "normal_change": 0.04,
+     "extra_output_tokens": 56,
+     "extra_output_tokens_src": "lab notes:310-311 (471 - 415)",
+     "skill_gate": "none for this probe",
+     "tag": "MEASURED",
+     "src": "lab notes:311",
+     "note": "EXPLORATORY; a smaller dose does not stack better (lab notes:314)"
+    }
+   ]
+  },
+  {
+   "id": "habit-loop-lp-k8-qwen35-08b",
+   "kind": "neuron",
+   "what": "phase 1: the weight-space-lp authors' L1-LP loop edit reproduced, 8 neurons on Astra's direction (arm shift_k8), baked into an f32 GGUF of Qwen3.5-0.8B (gguf_edit.py)",
+   "fit_model": {
+    "name": "Qwen/Qwen3.5-0.8B (f32 GGUF converted by convert_hf_to_gguf.py)",
+    "hf_revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "tag": "READ",
+    "src": "lab notes:41 (pinned revision); lab notes:44 (f32 conversion)"
+   },
+   "artifact": {
+    "path": "shift_k8 edit (phase1 edits/*.safetensors -> gguf/shift_k8-f32.gguf on lassie)",
+    "src": "lab notes:34 (edit), :40-49 (bake into GGUF)"
+   },
+   "layers": null,
+   "layers_src": "UNKNOWN in our record: the weight-space-lp authors' scripts/e2_make_edits_sweep.py places the 8 neurons (lab notes:34); lab notes:33 reports the layer-15 fit (0.517 of held-out loop tokens caught)",
+   "dose": 1.0,
+   "dose_unit": "eps (the weight-space-lp authors' setting; a near-constant push at 1.0, lab notes:35)",
+   "measured_under": {
+    "systems": {
+     "default": {
+      "what": "the eval harness default (no habit prompt arm)",
+      "text_src": "lab notes"
+     }
+    },
+    "harness": "GSM8K + MATH, 128 problems, 8,192-token cap, paired 95 % bootstrap CIs vs base",
+    "engine": "llama.cpp",
+    "build": "b12015",
+    "box": "lassie",
+    "card": "GTX 1080 Ti",
+    "date": "2026-11-12",
+    "job": "a batch job (rc 0)",
+    "src": "lab notes:37; lab notes:3"
+   },
+   "measured": [
+    {
+     "compare": "X vs base",
+     "role": "reference",
+     "prompt": "default",
+     "metric": "accuracy",
+     "diff": 0.281,
+     "ci": [
+      0.203,
+      0.359
+     ],
+     "tag": "MEASURED",
+     "src": "lab notes:44"
+    },
+    {
+     "compare": "X vs base",
+     "role": "reference",
+     "prompt": "default",
+     "metric": "loop_share",
+     "diff": -0.5,
+     "ci": [
+      -0.586,
+      -0.414
+     ],
+     "extra_output_tokens": -1336,
+     "extra_output_tokens_src": "lab notes:43-44 (6359 - 7695 mean tokens)",
+     "tag": "MEASURED",
+     "src": "lab notes:44"
+    },
+    {
+     "compare": "random control vs base",
+     "role": "reference",
+     "prompt": "default",
+     "metric": "accuracy",
+     "diff": -0.008,
+     "ci": [
+      -0.055,
+      0.039
+     ],
+     "tag": "MEASURED",
+     "src": "lab notes:47"
+    }
+   ],
+   "note": "part of the accuracy gain is answers that end before the 8k cap instead of looping (lab notes:52); our 27B coding models loop rarely (qwen27 0.12 % of turns, QFN and GLM 0), so this lever matters for small models and Ornith (lab notes:55-57)"
+  },
+  {
+   "id": "cto-vector-v2-onset-perp",
+   "kind": "control-vector",
+   "what": "cto-vectors v2-onset-perp: the self-pair CTO contrast over the first 16 answer tokens, verbosity direction projected out, norm-matched to self; added at l_out over layers 19-39",
+   "fit_model": {
+    "name": "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+    "sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+    "tag": "READ",
+    "src": "lab notes:4 and lab notes:18"
+   },
+   "artifact": {
+    "path": "vec/v2-onset-perp.gguf (cto-vectors work dir; answer rows archived on odie)",
+    "src": "lab notes:67; lab notes:273"
+   },
+   "layers": [
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39
+   ],
+   "layers_src": "lab notes:34 (--control-vector-layer-range 19 39)",
+   "dose": 0.15,
+   "dose_unit": "control-vector scale",
+   "measured_under": {
+    "systems": {
+     "default": {
+      "text_src": "lab notes:25 (SYSTEM_DEFAULT)",
+      "what": "the cto-steer default coding-assistant system prompt"
+     }
+    },
+    "harness": "cto-steer TEST split, 3 samples; judge verdicts where present, rule scorer otherwise",
+    "engine": "llama-server",
+    "build": "stock llama.cpp server-intel SYCL image (ghcr.io/ggml-org/llama.cpp:server-intel)",
+    "box": "odie",
+    "card": "Arc Pro B70",
+    "date": "2026-11-12",
+    "src": "lab notes:33-34; lab notes:11"
+   },
+   "measured": [
+    {
+     "compare": "X vs base",
+     "role": "reference",
+     "prompt": "default",
+     "metric": "cto",
+     "diff": 0.16,
+     "ci": [
+      -0.01,
+      0.31
+     ],
+     "won": 13,
+     "lost": 5,
+     "normal_change": -0.06,
+     "extra_output_tokens": 45,
+     "skill_gate": "0.90 (n=60) against base 0.98",
+     "tag": "MEASURED",
+     "src": "lab notes:8"
+    }
+   ],
+   "note": "NORMAL fell 0.06: it refuses or asks on plain requests (lab notes:52-55); did not meet its TEST target (lab notes:10)",
+   "findings": [
+    "joint screen 11-13 (dev, in-sample, rule-scored): under short, CTO flat while NORMAL falls 0.94 -> 0.44/0.33/0.28 at scale 0.1/0.15/0.2 (p <= 0.002); harmful at every scale as prompt+X (lab notes:457)"
+   ]
+  },
+  {
+   "id": "habit-a3j-l56-lam1000",
+   "kind": "lora-edit",
+   "what": "joint-screen edit A3j: the A3c edit family at layer 56, lam 1000, refit on all folds, picked by the joint (prompt+X vs prompt) screen under the short statement; served as a LoRA at scale 0.9",
+   "fit_model": {
+    "name": "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+    "sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+    "tag": "READ",
+    "src": "lab notes:18 and lab notes:18 (MODEL_SHA our lanes check for this file); the habit-edit phases name the file only (lab notes:72, Qwen3.8-27B UD-Q4_K_XL on snoopy), so the hash is the one these lanes check for that name"
+   },
+   "artifact": {
+    "path": "select/a3-L56-lam1000-all.lora.gguf in our lab archive (sha256 cefa2974…)",
+    "src": "lab notes:457"
+   },
+   "layers": [
+    56
+   ],
+   "dose": 0.9,
+   "dose_unit": "LoRA scale",
+   "lam": 1000,
+   "kl_at_dose": {
+    "v": 0.022,
+    "tag": "MEASURED",
+    "src": "lab notes:459"
+   },
+   "measured_under": {
+    "systems": {
+     "short": {
+      "text_src": "lab notes:30 (SYSTEM_CTO = SYSTEM_DEFAULT + the short habit statement)",
+      "what": "default + the short CTO statement (~110-118 prompt tokens)"
+     }
+    },
+    "harness": "cto-steer run_arm (TEST 60 items x 3, every row judged blind by sonnet, text as sent)",
+    "engine": "llama-server",
+    "box": "snoopy",
+    "card": "RTX 3090 Ti",
+    "date": "2026-11-13",
+    "src": "lab notes:457"
+   },
+   "measured": [
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "short",
+     "metric": "cto",
+     "diff": -0.01,
+     "ci": [
+      -0.11,
+      0.09
+     ],
+     "won": 4,
+     "lost": 5,
+     "p": 1.0,
+     "normal_change": 0.02,
+     "extra_output_tokens": 69,
+     "tool_call_rows": "short 1/180, short+A3j 0/180",
+     "skill_gate": "combined skill gate: default, short and short+A3j all 0.967, gate 0.95 (lab notes:541)",
+     "heldout": "sealed held-out coding set (100 functions x 4, sha cda191ed): short+A3j 0.8975 vs short 0.91, -0.0125 [-0.0375, +0.0125], NONINFERIOR at margin -0.05 (lab notes:549)",
+     "note": "NULL: on the trained short wording the model emits almost no tool-call markup, so the 3c/3d suppression margin has nothing to act on; rows without markup also -0.01 (lab notes:462)",
+     "tag": "MEASURED",
+     "src": "lab notes:531"
+    }
+   ],
+   "findings": [
+    "the joint screen ranks by absolute score, which favours the short prompt's high baseline; ranked by gain it would pick a wh+short cell whose gain is tool-call suppression (lab notes:457)"
+   ]
+  },
+  {
+   "id": "qfn-coder-shexp-l47-r8",
+   "kind": "lora-edit",
+   "what": "CTO habit edit for QFN-Coder (MoE): a rank-8 LoRA on the shared-expert down projection blk.47.ffn_down_shexp, solved closed-form against the unprompted CTO contrast; switched per request in XeStrata",
+   "fit_model": {
+    "name": "Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00001-of-00002.gguf",
+    "size_bytes": 29608446496,
+    "sha256": "bfa3644db4adfff072fc946c20994f2909d2cf89879d83f80a4c811d4016c211",
+    "tag": "READ",
+    "src": "same file as the lever-run row (sha256 read from the GGUF, lab notes); this edit is the closed-form solve on it",
+    "shards": [
+     {
+      "name": "Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00002-of-00002.gguf",
+      "size_bytes": 28800138432,
+      "sha256": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113"
+     }
+    ]
+   },
+   "artifact": {
+    "path": "the closed-form solve output (layer 47, lam 1.0)",
+    "src": "lab notes:3"
+   },
+   "layers": [
+    47
+   ],
+   "dose": 1.0,
+   "dose_unit": "LoRA scale",
+   "lam": 1.0,
+   "kl_at_dose": {
+    "v": null,
+    "tag": "UNKNOWN",
+    "src": "lab notes"
+   },
+   "measured_under": {
+    "systems": {
+     "short": {
+      "what": "default + the short CTO statement"
+     }
+    },
+    "harness": "xestrata_shexp_eval (36 TRAIN dev screen at doses 1/2/4, then 60 TEST items, blind judge)",
+    "engine": "XeStrata SYCL image hl-shexp-79b9930",
+    "box": "odie",
+    "card": "Intel Arc Pro B70 (card a)",
+    "date": "2026-11-13",
+    "src": "lab notes:14"
+   },
+   "measured": [
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "short",
+     "metric": "cto",
+     "diff": 0.0,
+     "ci": [
+      -0.067,
+      0.067
+     ],
+     "won": 2,
+     "lost": 2,
+     "p": 1.0,
+     "normal_change": 0.017,
+     "src": "lab notes:14",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "prompt+X vs prompt+random adapter",
+     "prompt": "short",
+     "metric": "cto",
+     "diff": -0.017,
+     "ci": [
+      -0.083,
+      0.033
+     ],
+     "won": 1,
+     "lost": 2,
+     "src": "lab notes:13",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "prompt vs default",
+     "prompt": "short",
+     "metric": "cto",
+     "diff": 0.367,
+     "ci": [
+      0.233,
+      0.517
+     ],
+     "won": 15,
+     "lost": 0,
+     "p": 0.0001,
+     "src": "lab notes:14",
+     "tag": "MEASURED"
+    }
+   ],
+   "verdict": "NULL on top of the prompt. The prompt alone takes CTO from 0.533 to 0.900; the edit adds nothing. Next: fit to the prompted model's residual misses, or a habit the prompt cannot fix (coder-myopia).",
+   "identity_gate": "37/37 sessions with the switch off gave the lever-off answer (lab notes:38)",
+   "transfer": [
+    {
+     "habit": "code review false alarms (coder-falsealarm held-out, 6 clean + 6 planted)",
+     "engine": "llama.cpp b11175 CUDA, per-request --lora scale 1.0",
+     "box": "snoopy",
+     "card": "RTX 3090 Ti",
+     "date": "2026-11-14",
+     "arms": {
+      "base": {
+       "false_alarm": 1,
+       "safe": 0,
+       "no_answer": 5,
+       "recall": 6
+      },
+      "short": {
+       "false_alarm": 1,
+       "safe": 0,
+       "no_answer": 5,
+       "recall": 6
+      },
+      "short+edit": {
+       "false_alarm": 2,
+       "safe": 1,
+       "no_answer": 3,
+       "recall": 6
+      },
+      "short+rand": {
+       "false_alarm": 2,
+       "safe": 0,
+       "no_answer": 4,
+       "recall": 6
+      }
+     },
+     "denominator": 6,
+     "missing_cells": [
+      "base+edit",
+      "base+rand"
+     ],
+     "verdict": "NULL transfer: the edit beats the random control by one item. Both adapters move the same way, so the effect looks like perturbation size, not the CTO direction. On clean code the real failure is the cap: 5/6 hit 32k without a verdict.",
+     "graded": "blind, seed 20261113, frozen grades sha256 86d44e1b...",
+     "src": "lab notes"
+    }
+   ]
+  },
+  {
+   "id": "lever-2ba3e40c4f342e900f691898c6e29202b00c5acda1aa66bf3d16fe44e7af8ec4",
+   "kind": "lora-edit",
+   "what": "the short CTO statement (its text stays in lab notes)",
+   "fit_model": {
+    "name": "Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00001-of-00002.gguf",
+    "size_bytes": 29608446496,
+    "sha256": "bfa3644db4adfff072fc946c20994f2909d2cf89879d83f80a4c811d4016c211",
+    "tag": "READ",
+    "src": "lab notes",
+    "shards": [
+     {
+      "name": "Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00002-of-00002.gguf",
+      "size_bytes": 28800138432,
+      "sha256": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113"
+     }
+    ]
+   },
+   "artifact": {
+    "path": "the closed-form solve output (layer 47, lam 1.0), imported as prefit evidence",
+    "src": "lab notes"
+   },
+   "layers": [
+    47
+   ],
+   "site": "blk.47.ffn_down_shexp.weight",
+   "rank": 8,
+   "dose": 1.0,
+   "dose_unit": "LoRA scale",
+   "lam": 1.0,
+   "kl_at_dose": {
+    "v": null,
+    "tag": "UNKNOWN",
+    "src": "not measured by this instrument"
+   },
+   "measured_under": {
+    "systems": {
+     "short": {
+      "what": "the short CTO statement (its text stays in lab notes)"
+     }
+    },
+    "harness": "cto-steer",
+    "engine": "XeStrata SYCL image hl-shexp-79b9930",
+    "box": "odie",
+    "card": "Intel Arc Pro B70 (card a)",
+    "date": "2026-11-14",
+    "src": "lab notes"
+   },
+   "measured": [
+    {
+     "compare": "prompt+X vs prompt",
+     "prompt": "short",
+     "metric": "cto",
+     "diff": 0.0,
+     "ci": [
+      -0.06666666666666667,
+      0.06666666666666667
+     ],
+     "won": 2,
+     "lost": 2,
+     "p": 1.0,
+     "normal_change": 0.016666666666666666,
+     "src": "lab notes:1",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "prompt+X vs prompt+random adapter",
+     "prompt": "short",
+     "metric": "cto",
+     "diff": -0.016666666666666666,
+     "ci": [
+      -0.08333333333333333,
+      0.03333333333333333
+     ],
+     "won": 1,
+     "lost": 2,
+     "p": 1.0,
+     "normal_change": -0.016666666666666666,
+     "src": "lab notes:1",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "prompt vs default",
+     "prompt": "short",
+     "metric": "cto",
+     "diff": 0.36666666666666664,
+     "ci": [
+      0.23333333333333334,
+      0.5166666666666667
+     ],
+     "won": 15,
+     "lost": 0,
+     "p": 6.103515625e-05,
+     "normal_change": -0.06666666666666667,
+     "src": "lab notes:1",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "X vs default",
+     "prompt": null,
+     "metric": "cto",
+     "diff": 0.016666666666666666,
+     "ci": [
+      0.0,
+      0.05
+     ],
+     "won": 1,
+     "lost": 0,
+     "p": 1.0,
+     "normal_change": 0.016666666666666666,
+     "src": "lab notes:1",
+     "tag": "MEASURED"
+    }
+   ],
+   "synthetic_comparisons": [],
+   "factorial": {
+    "layer_order": [
+     "weights",
+     "runtime",
+     "decode",
+     "prompt",
+     "harness"
+    ],
+    "layers": [
+     {
+      "id": "edit",
+      "kind": "edit",
+      "tier": "weights"
+     },
+     {
+      "id": "short",
+      "kind": "prompt",
+      "tier": "prompt"
+     }
+    ],
+    "conditional_gains": [
+     {
+      "layer": "edit",
+      "underlying_stack": {
+       "edit": false,
+       "short": false
+      },
+      "arm": "default+edit",
+      "base": "default",
+      "diff": 0.016666666666666666,
+      "ci": [
+       0.0,
+       0.05
+      ],
+      "won": 1,
+      "lost": 0,
+      "p": 1.0,
+      "normal_change": 0.016666666666666666,
+      "src": "lab notes"
+     },
+     {
+      "layer": "short",
+      "underlying_stack": {
+       "edit": false,
+       "short": false
+      },
+      "arm": "short",
+      "base": "default",
+      "diff": 0.36666666666666664,
+      "ci": [
+       0.23333333333333334,
+       0.5166666666666667
+      ],
+      "won": 15,
+      "lost": 0,
+      "p": 6.103515625e-05,
+      "normal_change": -0.06666666666666667,
+      "src": "lab notes"
+     },
+     {
+      "layer": "edit",
+      "underlying_stack": {
+       "edit": false,
+       "short": true
+      },
+      "arm": "short+edit",
+      "base": "short",
+      "diff": 0.0,
+      "ci": [
+       -0.06666666666666667,
+       0.06666666666666667
+      ],
+      "won": 2,
+      "lost": 2,
+      "p": 1.0,
+      "normal_change": 0.016666666666666666,
+      "src": "lab notes"
+     },
+     {
+      "layer": "short",
+      "underlying_stack": {
+       "edit": true,
+       "short": false
+      },
+      "arm": "short+edit",
+      "base": "default+edit",
+      "diff": 0.35,
+      "ci": [
+       0.2,
+       0.5
+      ],
+      "won": 14,
+      "lost": 0,
+      "p": 0.0001220703125,
+      "normal_change": -0.06666666666666667,
+      "src": "lab notes"
+     }
+    ],
+    "interactions": [
+     {
+      "layers": [
+       "edit",
+       "short"
+      ],
+      "underlying_stack": {
+       "edit": false,
+       "short": false
+      },
+      "contrasts": [
+       {
+        "arm": "default+edit",
+        "base": "default",
+        "coefficient": -1
+       },
+       {
+        "arm": "short+edit",
+        "base": "short",
+        "coefficient": 1
+       }
+      ],
+      "diff": -0.016666666666666666,
+      "normal_change": 0.0
+     }
+    ],
+    "random_controls": [
+     {
+      "arm": "default+edit",
+      "random": "default+rand",
+      "diff": 0.0,
+      "ci": [
+       0.0,
+       0.0
+      ],
+      "won": 0,
+      "lost": 0,
+      "p": 1.0,
+      "normal_change": 0.03333333333333333,
+      "src": "lab notes"
+     },
+     {
+      "arm": "short+edit",
+      "random": "short+rand",
+      "diff": -0.016666666666666666,
+      "ci": [
+       -0.08333333333333333,
+       0.03333333333333333
+      ],
+      "won": 1,
+      "lost": 2,
+      "p": 1.0,
+      "normal_change": -0.016666666666666666,
+      "src": "lab notes"
+     }
+    ],
+    "tag": "MEASURED"
+   },
+   "verdict": "MEASURED: held-out arms complete; compare gains with session noise",
+   "identity_gate": {
+    "tag": "MEASURED",
+    "evidence": [
+     {
+      "status": "pass",
+      "off_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "reference_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "standard": "output_agreement: the greedy smoke answer's text equals the pilot S2-off answer under the same start-up choices (two processes; not a bitwise identity)",
+      "underlying_stack": {}
+     },
+     {
+      "status": "pass",
+      "off_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "reference_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "standard": "output_agreement: the greedy smoke answer's text equals the pilot S2-off answer under the same start-up choices (two processes; not a bitwise identity)",
+      "underlying_stack": {}
+     },
+     {
+      "status": "pass",
+      "off_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "reference_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "standard": "output_agreement: the greedy smoke answer's text equals the pilot S2-off answer under the same start-up choices (two processes; not a bitwise identity)",
+      "underlying_stack": {}
+     },
+     {
+      "status": "pass",
+      "off_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "reference_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "standard": "output_agreement: the greedy smoke answer's text equals the pilot S2-off answer under the same start-up choices (two processes; not a bitwise identity)",
+      "underlying_stack": {}
+     },
+     {
+      "status": "pass",
+      "off_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "reference_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "standard": "output_agreement: the greedy smoke answer's text equals the pilot S2-off answer under the same start-up choices (two processes; not a bitwise identity)",
+      "underlying_stack": {}
+     },
+     {
+      "status": "pass",
+      "off_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "reference_sha256": "e6d90e6b3d20916890e7c461cc495bf1e3e46024649b662f738177edd70f5b02",
+      "standard": "output_agreement: the greedy smoke answer's text equals the pilot S2-off answer under the same start-up choices (two processes; not a bitwise identity)",
+      "underlying_stack": {}
+     }
+    ]
+   },
+   "unknown": [
+    "kl_at_dose"
+   ],
+   "synthetic": false,
+   "note": "Full factorial of qfn-coder-shexp-l47-r8 through lever-run: default+edit and default+rand asked 2026-11-14, the other four cells reused from the 2026-11-13 TEST (same adapters, items, sampling, judge, image; identity gate holds across both sessions). Edit alone +0.017 [+0.000, +0.050] = its random twin: NULL."
+  },
+  {
+   "id": "qfn-coder-verdict-tail-lora-r8-2026-11-14",
+   "kind": "lora-edit",
+   "what": "trained tail LoRA (rank 8, 7 targets: attn_output of blk.43/47, ffn_down_shexp of blk.43..47) matching the teacher context's next-token distribution at every paragraph end of fit clean hunts, KL to the base on planted hunts (lam 1); habit: commit to a verdict on clean code instead of hunting to the cap",
+   "fit_model": {
+    "name": "Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00001-of-00002.gguf",
+    "size_bytes": 29608446496,
+    "sha256": "bfa3644db4adfff072fc946c20994f2909d2cf89879d83f80a4c811d4016c211",
+    "tag": "READ",
+    "src": "lab notes:6",
+    "shards": [
+     {
+      "name": "Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00002-of-00002.gguf",
+      "size_bytes": 28800138432,
+      "sha256": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113"
+     }
+    ]
+   },
+   "artifact": {
+    "path": "per-fold checkpoints in our lab archive (12 LOFO folds); smoke adapter one held-out fold as GGUF all.gguf sha256 4f198d92e93c2e5f9ec104ba2acb941eb4e20dc0b2eef0a7992bd70740595c6d, twin rand.gguf 21fd502d476e92db5de55599d121d1d6f1a7cb8b1362b91d17fd01b0ab247ba6; no fit-all adapter (stopped at the floor and the smoke)",
+    "src": "lab notes"
+   },
+   "layers": [
+    43,
+    44,
+    45,
+    46,
+    47
+   ],
+   "site": "blk.43..47 attn_output + ffn_down_shexp",
+   "rank": 8,
+   "dose": 1.0,
+   "dose_unit": "LoRA scale",
+   "lam": 1.0,
+   "kl_at_dose": {
+    "v": null,
+    "tag": "UNKNOWN",
+    "src": "planted-row KL to base per fold is in lofo.json (0.002-0.007 nats/row); no served KL measured"
+   },
+   "measured_under": {
+    "harness": "coder-falsealarm verdict habit (tail_train.py lofo; tail_smoke.py)",
+    "engine": "torch tail (offline) + llama.cpp b11175 CUDA (smoke)",
+    "box": "snoopy",
+    "card": "RTX 3090 Ti 24 GB",
+    "date": "2026-11-14",
+    "src": "lab notes:1"
+   },
+   "measured": [
+    {
+     "compare": "held-out closure, leave one family out (12 folds)",
+     "metric": "closure",
+     "mean": -0.017,
+     "best": 0.141,
+     "floor": 0.25,
+     "folds_at_floor": 0,
+     "src": "lab notes:26",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "overfit smoke: prompt+X vs prompt on 4 trained clean items, seed 0, 6,144 tokens",
+     "prompt": "short",
+     "metric": "commit",
+     "x": "0/4",
+     "base": "0/4",
+     "diff": 0,
+     "src": "lab notes:75",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "teacher ceiling: P(commit-path token) at decision rows, unedited vs teacher (training rows)",
+     "metric": "p_commit_token",
+     "base": 0.0125,
+     "teacher": 0.0137,
+     "src": "lab notes:57",
+     "tag": "MEASURED"
+    }
+   ],
+   "verdict": "NULL at the closure floor (mean held-out -0.017, 0/12 folds >= 0.25) and at the overfit smoke (0/4 vs 0/4 commits on its own training items). The teacher context itself barely moves the commit token (1.25 % -> 1.37 %), so even a perfect fit inherits a ~4-point per-hunt change. AdamW lr 1e-3 was unstable (one fold's epoch-2 spike; the last epoch rose in 11/12 folds).",
+   "unknown": [
+    "kl_at_dose"
+   ]
+  },
+  {
+   "id": "qfn-ud-iq3xxs-quant-repair-tail-headroom-2026-11-15",
+   "kind": "lora-edit",
+   "what": "quant-repair tail adapter: a rank-8 LoRA on the tail trainer's 7 targets (attn_output of blk.43/47, ffn_down_shexp of blk.43..47) to train a low-bit Qwen3.8-Flash-Next back toward its own Q8_0; gated by a headroom read first: the teacher's whole tail (blocks 43..47 + head) swapped onto the student's own block-42 residual",
+   "fit_model": {
+    "name": "Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00004.gguf",
+    "size_bytes": 10946618,
+    "tag": "READ",
+    "src": "lab notes:18",
+    "shards": [
+     {
+      "name": "Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00004.gguf",
+      "size_bytes": 49946027488
+     },
+     {
+      "name": "Qwen3.8-Flash-Next-UD-IQ3_XXS-00003-of-00004.gguf",
+      "size_bytes": 4869325888
+     },
+     {
+      "name": "Qwen3.8-Flash-Next-UD-IQ3_XXS-00004-of-00004.gguf",
+      "size_bytes": 28800138432
+     }
+    ],
+    "teacher": "unsloth Qwen3.8-Flash-Next Q8_0 (6 shards, 188 GB)"
+   },
+   "artifact": {
+    "path": "none: stopped at the headroom gate (no adapter trained)",
+    "src": "lab notes"
+   },
+   "layers": [
+    43,
+    44,
+    45,
+    46,
+    47
+   ],
+   "site": "blk.43..47 attn_output + ffn_down_shexp",
+   "rank": 8,
+   "dose": 1.0,
+   "dose_unit": "LoRA scale",
+   "lam": null,
+   "kl_at_dose": {
+    "v": null,
+    "tag": "UNKNOWN",
+    "src": "no adapter trained (headroom gate failed)"
+   },
+   "measured_under": {
+    "harness": "the quant-repair headroom read (llama-habit-dump b12015 CPU dumps + the torch tail)",
+    "engine": "llama.cpp b12015 CPU (dumps) + torch 2.10.0+xpu tail",
+    "box": "odie",
+    "card": "Arc Pro B70 32 GB (card 0)",
+    "date": "2026-11-15",
+    "src": "lab notes:1"
+   },
+   "measured": [
+    {
+     "compare": "the gap: KL(Q8_0 || UD-IQ3_XXS), both llama.cpp, 240 rows of 10 real coding-agent windows (2,048 tokens)",
+     "metric": "kl_mean_nats",
+     "base": 0.417,
+     "median": 0.0136,
+     "top1": 0.8,
+     "src": "lab notes:9",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "headroom: teacher tail on the student's block-42 residual (a perfect tail)",
+     "metric": "kl_mean_nats",
+     "x": 0.45,
+     "base": 0.417,
+     "closable": -0.081,
+     "floor": 0.2,
+     "src": "lab notes:98",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "the tail's own share: student tail on the teacher's residual",
+     "metric": "kl_mean_nats",
+     "x": 0.0425,
+     "share_of_gap": 0.102,
+     "src": "lab notes:99",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "torch tail vs engine (self-checks): student / teacher",
+     "metric": "kl_mean_nats",
+     "x": 0.00124,
+     "teacher": 0.00072,
+     "src": "lab notes:25",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "residual distance student vs teacher after block L (3 sequences, 72 rows)",
+     "metric": "rel_l2",
+     "after_block_0": 0.027,
+     "after_block_19": 0.195,
+     "after_block_27": 0.266,
+     "after_block_31": 0.438,
+     "after_block_42": 0.498,
+     "src": "lab notes:4",
+     "tag": "MEASURED"
+    },
+    {
+     "compare": "the served build's gap on the same 240 rows: KL(Q8_0 || GSQ-RCO IQ3_XXS) vs KL(Q8_0 || UD-IQ3_XXS)",
+     "metric": "kl_mean_nats",
+     "x": 0.725,
+     "base": 0.417,
+     "top1": 0.775,
+     "src": "lab notes:4",
+     "tag": "MEASURED"
+    }
+   ],
+   "verdict": "NULL at the headroom gate: the teacher's own tail on the student's residual closes -8 % of KL(Q8_0 || UD-IQ3_XXS) (bar ~20 %), and the student's tail on the teacher's residual carries only 10 % of the gap. The error is in the residual entering block 43, accumulated over the whole stack (steepest in blocks 28..31); a tail-only repair cannot reach it. Overfit smoke, held-out run and export not started (preregistered stop). Next shape: per-block repair against the teacher's residual. Side read: the served GSQ-RCO IQ3_XXS is further from Q8_0 than UD-IQ3_XXS on the same rows (KL 0.725 vs 0.417, top-1 0.775 vs 0.800).",
+   "unknown": [
+    "kl_at_dose",
+    "per-block repair headroom"
+   ]
+  }
+ ],
+ "port": {
+  "doc": "lab notes, section \"Port a lever to a new model\"",
+  "script": "lab notes (checks the model file and its GGUF header, prints the verdict and the pipeline; runs nothing on a card)",
+  "rule": "an adapter, vector or neuron edit is fit on one model file: a different file (other weights, other quant) needs a refit, never a reuse",
+  "card_hours": {
+   "v": [
+    4,
+    7
+   ],
+   "tag": "ESTIMATE",
+   "src": "ESTIMATE for a dense ~27B model on one RTX 3090 Ti: phases 3 + 3b + 3c of the 27B took about 2.0 + 2.3 + 2.7 GPU-hours (INFERRED from unit timestamps, lab notes:76-77, :153-154, :242-243); a port runs the teacher and rows of phase 3, all of 3b (with the joint screen) and the combined TEST arms of 3c once; it scales with parameter count on the same card; other cards are unmeasured, and the B70 (SYCL) path has no habit pipeline yet"
+  },
+  "trainer_cards": {
+   "doc": "QFN-Coder torch tail trainer (blocks 43..47 + head): 413-row gate vs llama.cpp and 24 rank-8 optimizer steps on 8.1k..14.1k-token sequences, per card (2026-11-14). torch 2.13..2.15+xpu fail the gate on the B70; pin 2.10. A habit port can now train its tail on any of these cards; card_hours above is still the 3090 Ti estimate.",
+   "rows": [
+    {
+     "card": "RTX 3090 Ti 24GB",
+     "torch": "CUDA",
+     "gate": "PASS (CPU run)",
+     "step_s": 5,
+     "peak_gb": 20.6,
+     "flags": "default, TF32",
+     "tag": "MEASURED",
+     "src": "lab notes:18"
+    },
+    {
+     "card": "Arc Pro B70 32GB",
+     "torch": "2.10.0+xpu",
+     "gate": "PASS 411/413",
+     "step_s": 9.8,
+     "peak_gb": 21.1,
+     "flags": "default, f32",
+     "tag": "MEASURED",
+     "src": "lab notes:19"
+    },
+    {
+     "card": "Arc Pro B70 32GB (card 1)",
+     "torch": "2.10.0+xpu",
+     "gate": null,
+     "step_s": 9.3,
+     "peak_gb": 21.1,
+     "flags": "default, f32",
+     "tag": "MEASURED",
+     "src": "lab notes:20"
+    },
+    {
+     "card": "Quadro RTX 6000 24GB",
+     "torch": "2.9.1+cu126",
+     "gate": "PASS 410/413",
+     "step_s": 18.2,
+     "peak_gb": 15.4,
+     "flags": "--fine 2 --save-on-cpu (5 GB held by the embedder), f32",
+     "tag": "MEASURED",
+     "src": "lab notes:22"
+    },
+    {
+     "card": "Instinct MI25 16GB",
+     "torch": "2.11.0+rocm7.13 TheRock gfx900",
+     "gate": "PASS 410/413",
+     "step_s": 77.2,
+     "peak_gb": 9.9,
+     "flags": "--offload-activations, f32; host load avg ~110 so step time is an upper bound",
+     "tag": "MEASURED",
+     "src": "lab notes:23"
+    },
+    {
+     "card": "GTX 1080 Ti 11GB",
+     "torch": "2.9.1+cu126",
+     "gate": "PASS 411/413",
+     "step_s": 45.1,
+     "peak_gb": 9.8,
+     "flags": "--offload-activations + PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True (without it the 14k step OOMs), f32",
+     "tag": "MEASURED",
+     "src": "lab notes:24"
+    }
+   ]
+  },
+  "huge_moe_tail": {
+   "doc": "Huge-MoE tail trainer: DeepSeek-V4.1-Flash 1017 (q3kL0-13-q2k, 384 experts) block 39's MoE half + head in torch, the 384 routed experts (27.2 GB f16) in pinned host RAM, on a 24 GB Turing card. Forward gate vs the ik_llama CPU engine's own logits (128 rows of a real agent prompt), then 24 rank-8 LoRA steps (shared + all routed experts' gate/up/down, 68.6M params, 4095 positions per step). Attention of block 39 not ported yet (compressed-stream consumer: ds4_attention yarn rope + sink softmax over raw window and carried top-512 + ROPE_BACK), about a day.",
+   "rows": [
+    {
+     "card": "Quadro RTX 6000 24GB",
+     "torch": "2.9.1+cu126",
+     "model": "DeepSeek-V4.1-Flash-1017 q3kL0-13-q2k",
+     "tail": "blk.39 MoE + head",
+     "gate": "PASS top-1 127/128, KL 1.7e-5, top-20 0.0088 (--match q8); first attempt FAIL from a misread block-input name, cured",
+     "step_s": 7.62,
+     "step_s_mean_after_first": 8.17,
+     "peak_gb": 8.34,
+     "rows_per_step": 4095,
+     "lora_params": 68597760,
+     "flags": "f32, experts pinned host, our assistant service stopped, embedder (5 GB) up",
+     "tag": "MEASURED",
+     "src": "lab notes"
+    }
+   ],
+   "unknown": [
+    "block-39 attention in torch",
+    "more than one block",
+    "engine run with an exported expert LoRA",
+    "multi-prompt training data"
+   ]
+  },
+  "tail_trainer": {
+   "doc": "Public tail-trainer tool (lab notes, Atlas tail-trainer/): any MoE GGUF's last blocks + head in torch from the file's metadata, a stock-llama.cpp CPU dump tool (residual + engine logits), gate top-1 >= 0.97 / KL <= 0.02 before training, LoRA exported as a llama.cpp adapter GGUF and re-gated against the engine running it. Stranger smoke on Qwen3-30B-A3B Q4_K_S (blocks 44..47, 20 steps of 1024 tokens, rank 8, attn q/k/v/o) from a clean dir per card, 2026-11-15. Two cards trained two tails at once from one dump; parallel-trained tails do not compose, sequential (second with the first frozen) does in torch.",
+   "rows": [
+    {
+     "card": "Quadro RTX 6000 24GB",
+     "torch": "2.9.1+cu126",
+     "model": "Qwen3-30B-A3B Q4_K_S",
+     "tail": "blk.44..47 + head",
+     "gate": "PASS top-1 0.992 (254/256), KL 0.00085 (--match q8); adapter gate vs engine --lora PASS KL 0.00083",
+     "step_s_mean_after_first": 1.79,
+     "peak_gb": 6.33,
+     "rows_per_step": 1024,
+     "flags": "f32, no expert offload",
+     "tag": "MEASURED",
+     "src": "lab notes:40"
+    },
+    {
+     "card": "Instinct MI25 16GB",
+     "torch": "2.11.0+rocm7.13 TheRock gfx900",
+     "model": "Qwen3-30B-A3B Q4_K_S",
+     "tail": "blk.44..47 + head",
+     "gate": "PASS top-1 0.992 (254/256), KL 0.00080 (--match q8); adapter gate vs engine --lora PASS KL 0.00089",
+     "step_s_mean_after_first": 2.46,
+     "peak_gb": 6.39,
+     "rows_per_step": 1024,
+     "flags": "f32, no expert offload, never expandable_segments (breaks every gfx900 allocation)",
+     "tag": "MEASURED",
+     "src": "lab notes:43"
+    },
+    {
+     "card": "Quadro RTX 6000 24GB + Instinct MI25 16GB (same time, one dump)",
+     "torch": "as above",
+     "model": "Qwen3-30B-A3B Q4_K_S",
+     "tail": "A: blk.44..47 on RTX 6000; B: blk.40..43 (44..47 frozen) on MI25",
+     "step_s_mean_after_first": {
+      "rtx6000": 1.33,
+      "mi25": 4.46
+     },
+     "peak_gb": {
+      "rtx6000": 6.33,
+      "mi25": 11.04
+     },
+     "compose": "held-out torch CE base 1.528, A 1.387, B 1.388, A+B parallel 1.458 (engine 1.164 vs base 1.144: worse than none); A + B' (B' trained with --lora A frozen) 1.3855, torch only. llama.cpp loads both adapters and matches torch (A+B gate PASS KL 0.00159).",
+     "tag": "MEASURED",
+     "src": "lab notes:83"
+    }
+   ],
+   "unknown": [
+    "any arch but qwen3moe on a real model (qwen2moe, olmoe, Mixtral-style llama implemented, gate unrun)",
+    "engine dump of A + B' (sequential pair)",
+    "an 80-step single-adapter control for the sequential pair",
+    "B70 (XPU) and 1080 Ti runs of this tool",
+    "a quality claim beyond one domain smoke"
+   ]
+  }
+ },
+ "baselines": [
+  {
+   "id": "qfn-coder-myopia-pilot-2026-11-14",
+   "instrument": "coder-myopia v1 (H1 duplicate, H2 symptom, H3 vacuous green, H4 one caller; 24 families, tool agent, graded on final repo state)",
+   "model": "QFN-Coder (Qwen3.8-Flash-Next GSQ-RCO) IQ1_M",
+   "engine": "llama.cpp b11175 CUDA",
+   "boxes": [
+    "droopy RTX 6000",
+    "lassie 1080 Ti",
+    "snoopy 3090 Ti"
+   ],
+   "date": "2026-11-14",
+   "arms": {
+    "base": {
+     "H1": "8/8",
+     "H2": "4/4",
+     "H3": "4/4",
+     "H4": "8/8",
+     "controls": "12/12"
+    },
+    "short": {
+     "H1": "8/8",
+     "H2": "4/4",
+     "H3": "2/4",
+     "H4": "8/8",
+     "controls": "12/12"
+    }
+   },
+   "verdict": "CEILING: base passes every habit, so there is no edit target on v1. Item repos are 4-8 files and the model reads them all. v2 needs 40-120-file repos with decoys and callers placed two or more directories away. The short H3 misses are a format miss (verdict only in reasoning) and overreach, not the habit.",
+   "edit_target": null,
+   "src": "lab notes (coder-myopia pilot README)"
+  },
+  {
+   "id": "qfn-coder-myopia-v2-pilot-2026-11-14",
+   "instrument": "coder-myopia v2 (86-97-file repos, decoys, far callers; H1 duplicate, H2 symptom, H3 vacuous green, H4 one caller; tool agent, graded on final repo state)",
+   "model": "QFN-Coder (Qwen3.8-Flash-Next GSQ-RCO) IQ1_M",
+   "engine": "llama.cpp b11175 CUDA",
+   "boxes": [
+    "lassie 1080 Ti",
+    "droopy RTX 6000"
+   ],
+   "date": "2026-11-14",
+   "arms": {
+    "base": {
+     "H1": "8/8",
+     "H2": "3/4",
+     "H3": "4/4",
+     "H4": "7/8",
+     "controls": "12/12"
+    },
+    "short": {
+     "H1": "8/8",
+     "H2": "4/4",
+     "H3": "4/4",
+     "H4": "8/8",
+     "controls": "12/12"
+    }
+   },
+   "predictions": "17 HIT / 5 MISS (v2 PREDICTION; H1 predicted myopic 1-3/4, got 0/4)",
+   "verdict": "NEAR CEILING: base misses 2/24 (one H4 retrieval miss behind an alias re-export, one H2 judgement miss), short misses 0. The prompt's file list does the retrieval: far helpers were opened in 11/12 base repo answers, by path name. No edit target with the prompt on.",
+   "edit_target": null,
+   "next": "v3: drop the file list, opaque helper paths, v2 repo sizes and controls; PREDICTION first",
+   "src": "lab notes",
+   "replicates": {
+    "items": [
+     "v2-H2-item",
+     "v2-H4-item"
+    ],
+    "seed_bases": "1000..9000 (9)",
+    "box": "lassie 1080 Ti",
+    "base": {
+     "v2-H2-item": "8/9",
+     "v2-H4-item": "8/9",
+     "pooled": "16/18 89% [67, 97]"
+    },
+    "short": {
+     "v2-H2-item": "9/9",
+     "v2-H4-item": "8/9",
+     "pooled": "17/18 94% [74, 99]"
+    },
+    "verdict": "the pilot's two base misses were one draw from an ~89% pass rate; short is not shown to help (+1 in 18, short missed the H4 item once)",
+    "tag": "MEASURED",
+    "src": "lab notes:13"
+   }
+  },
+  {
+   "id": "qfn-coder-myopia-v3-2026-11-14",
+   "instrument": "coder-myopia v3 (v2 repos, no file list in the prompt, opaque far paths and function names; H1 duplicate, H2 symptom, H3 vacuous green, H4 one caller; tool agent, graded on final repo state)",
+   "model": "QFN-Coder (Qwen3.8-Flash-Next GSQ-RCO) IQ1_M",
+   "engine": "llama.cpp b11175 CUDA sm61",
+   "boxes": [
+    "lassie 1080 Ti"
+   ],
+   "date": "2026-11-14",
+   "tag": "MEASURED",
+   "arms": {
+    "base": {
+     "H1": "8/8",
+     "H2": "0/4",
+     "H3": "4/4",
+     "H4": "7/8",
+     "controls": "12/12",
+     "median_steps": 12
+    },
+    "short": {
+     "H1": "8/8",
+     "H2": "4/4",
+     "H3": "4/4",
+     "H4": "8/8",
+     "controls": "12/12",
+     "median_steps": 15
+    }
+   },
+   "predictions": "H2 base predicted 1/4 myopic (0-2), got 4/4; H1 base predicted 3/4 myopic, got 0/4 (retrieval reading refuted, +0 repo-minus-prompt gap); H3, H4, controls and the no-answer limit hit",
+   "verdict": "FIRST EDIT TARGET: with no file list the base model patches the file the report names (H2 0/4 pass, all fail hidden+must_change at 11-12 steps); the short prompt follows the call upstream (4/4, ~6 more steps). n=1 per item, Fisher p=0.029.",
+   "edit_target": "H2 SYMPTOM, base arm, v3 tier: lever alone vs prompt, and the combined arm on the prompt's step cost",
+   "next": "replicates: 4 H2 items x 4 seed bases x base/short on lassie 1080 Ti; then a headroom read (logit margin to open the upstream caller) before any lever",
+   "src": "lab notes:22 (grades.jsonl; a batch job)"
+  }
+ ],
+ "null_searches": [
+  {
+   "id": "qfn-coder-verdict-habit-closed-form-2026-11-14",
+   "habit": "clean code: commit to a verdict instead of hunting to the 32k cap (5/6 clean held-out answers capped, snoopy false-alarm tier)",
+   "kind": "lora-edit",
+   "method": "closed-form teacher-context contrast (lever-run llama.cpp adapter), leave-one-family-out closure",
+   "model": "QFN-Coder (Qwen3.8-Flash-Next GSQ-RCO) IQ1_M",
+   "engine": "llama.cpp b11175 CUDA",
+   "box": "snoopy 3090 Ti",
+   "date": "2026-11-14",
+   "grid": {
+    "sites": [
+     "blk.31.attn_output",
+     "blk.31.ffn_down_shexp",
+     "blk.43.attn_output",
+     "blk.43.ffn_down_shexp"
+    ],
+    "rank": [
+     8,
+     32
+    ],
+    "lam": [
+     1,
+     10
+    ]
+   },
+   "gate": {
+    "mean_gain_nats": 0.6904,
+    "floor": 0.69,
+    "positive": "11/12"
+   },
+   "best_held_out_closure": -0.01,
+   "closure_floor": 0.25,
+   "cells_rejected": "16/16",
+   "verdict": "NULL offline (no answer asked). The teacher shifts every site by 21-34 % of RMS, but per item: family-mean cosine 0.05-0.33, a constant shift explains <=3 % held out, and no lambda up to 1e5 turns held-out closure positive. No single-site shared 'commit' direction exists at these sites.",
+   "do_not_repeat": "single-site closed-form edits at blk.31/43 attn_output or ffn_down_shexp for this habit on this model",
+   "next": "preregistered gradient fallback: an output-matched trained LoRA on blocks 43..47 (lab notes)",
+   "src": "lab notes"
+  },
+  {
+   "id": "qfn-coder-verdict-habit-tail-lora-2026-11-14",
+   "habit": "clean code: commit to a verdict instead of hunting to the cap",
+   "kind": "lora-edit",
+   "method": "trained tail LoRA (torch tail of blocks 43..47 from the GGUF, gate-admitted), output-matched to the teacher context, leave-one-family-out closure, then an overfit smoke",
+   "model": "QFN-Coder (Qwen3.8-Flash-Next GSQ-RCO) IQ1_M",
+   "engine": "torch tail + llama.cpp b11175 CUDA",
+   "box": "snoopy 3090 Ti",
+   "date": "2026-11-14",
+   "best_held_out_closure": 0.141,
+   "mean_held_out_closure": -0.017,
+   "closure_floor": 0.25,
+   "folds_rejected": "12/12",
+   "smoke": "0/4 vs 0/4 commits on trained items (6,144 tokens)",
+   "verdict": "NULL offline and at the smoke. The contrast's teacher carries almost no stopping signal at paragraph ends (P(commit token) 1.25 % -> 1.37 %).",
+   "do_not_repeat": "fitting any edit to this contrast set (cross-family worked-review demonstrations) for this habit on this model: the teacher is the ceiling",
+   "next": "a teacher that stops (a stronger demonstration set or a stop/budget rule outside the weights) before any further fit",
+   "src": "lab notes"
+  }
+ ]
+}

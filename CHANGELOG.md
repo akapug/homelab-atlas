@@ -42,6 +42,12 @@ day). Results that change a headline number say so.
   a local model from calling tools. New model in the README's best-result table and in `atlas.json`.
 
 ### Changed
+- Recipe Maker export at fit-viz 2bd624e: the behaviour-lever catalog is public (`data/behaviour-levers.json`, nulls
+  included): nine levers with their measured rows (the 27B LoRA edits and their tool-call correction, the CTO control
+  vector's harm, the QFN-Coder shared-expert edit and its factorial, the trained tail LoRA NULL, the quant-repair
+  headroom NULL), the trainer cards, the huge-MoE tail and tail-trainer rows, the coder-myopia v1-v3 baselines and two
+  null searches. A recipe's `levers` can now name a catalog lever by `ref`. Sources read `lab notes:N`; eval items,
+  prompt texts and where artifacts are stored stay private.
 - Recipe Maker export at fit-viz eaa20b3: behaviour levers in recipes (`levers`: a prompt, LoRA edit, control vector or
   neuron edit, each fit on one model file) with four `--check` checks: the lever's model file, a llama-server base arm
   that zeroes loaded adapters, prompt + lever measured against the prompt on this model, and a gain outside session
