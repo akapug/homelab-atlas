@@ -11,9 +11,37 @@ import os
 import re
 
 TAGS = ('MEASURED', 'PREDICTED', 'UNKNOWN')
-STATES = ('kept', 'dropped', 'open')
+STATES = ('kept', 'dropped', 'blocked', 'open')
 SRC_LINE = re.compile(r'\S+:\d+')
 VALUE_KEYS = ('per_agent', 'aggregate', 'ttft_s')
+
+
+def _negative(v, where, ids):
+    """A negative result is a lead until proven otherwise (owner 2026-11-15: "most negative results just mean we have
+    something else to tweak"). A node may be DROPPED only when a later node in the path carries its line on
+    (superseded_by), or when it names what binds it (binding: {what, tag MEASURED or INFERRED}), the configs it ruled
+    out (ruled_out, at least one) and no untried lever (untried empty). With levers left to try it is BLOCKED: it names
+    its binding and the untried levers."""
+    st = v.get('state')
+    if st == 'dropped' and v.get('superseded_by'):
+        if v['superseded_by'] not in ids:
+            raise ValueError('%s: superseded_by %r is no node of this path' % (where, v['superseded_by']))
+        return
+    if st not in ('dropped', 'blocked'):
+        return
+    b = v.get('binding')
+    if not isinstance(b, dict) or not b.get('what') or b.get('tag') not in ('MEASURED', 'INFERRED'):
+        raise ValueError('%s: a %s node names what binds it: binding {what, tag MEASURED|INFERRED}' % (where, st))
+    untried = v.get('untried')
+    if not isinstance(untried, list):
+        raise ValueError('%s: a %s node lists its untried levers (untried, [] when none is left)' % (where, st))
+    if st == 'blocked' and not untried:
+        raise ValueError('%s: blocked means levers are left: list them in untried, or drop it with what was ruled out' % where)
+    if st == 'dropped':
+        if untried:
+            raise ValueError('%s: dropped with untried levers left (%s): that is blocked, not dropped' % (where, ', '.join(map(str, untried))))
+        if not isinstance(v.get('ruled_out'), list) or not v['ruled_out']:
+            raise ValueError('%s: dropped needs ruled_out: the configs and confounders checked before giving up' % where)
 
 
 def _num(x, where):
@@ -123,8 +151,9 @@ def load_target(path, catalog, ledger_ids, root):
         if not nd.get('results'):
             raise ValueError('%s: name the results dir or file (results)' % where)
         v = nd.get('verdict') or {}
-        if v.get('state') not in STATES or (v['state'] == 'dropped' and not v.get('why')):
-            raise ValueError('%s: verdict.state is one of %s, and a dropped node says why' % (where, STATES))
+        if v.get('state') not in STATES or (v['state'] in ('dropped', 'blocked') and not v.get('why')):
+            raise ValueError('%s: verdict.state is one of %s, and a dropped or blocked node says why' % (where, STATES))
+        _negative(v, where, {n.get('id') for n in d['nodes']})
         if not nd.get('points'):
             raise ValueError('%s: a node has at least one point' % where)
         for p in nd['points']:

@@ -1,0 +1,577 @@
+{
+ "about": "Path tracker draft: model families -> models -> recipe lineages. Curated from homelab lab notes, the Recipe Maker summit paths (fit-viz data/paths/*.json, imported by id) and results docs. state: live | kept | open | caveat | dead | untested. 'limit' = the caveat that binds the best number, shown up front. 'next' = the test that shows the headroom.",
+ "families": [
+  {
+   "id": "glm",
+   "name": "GLM (Zhipu)",
+   "models": [
+    {
+     "id": "glm53",
+     "name": "GLM-5.3-Flash",
+     "size": "320B MoE, 18B active",
+     "state": "open",
+     "role": "Smartest local coder (owner, 11-15). Target: 4-8 agents at 15-20+ tok/s each, off snoopy.",
+     "rm_path": "glm53-batched",
+     "overlay": {
+      "odie-sycl": {
+       "short": "odie 2x B70, llama.cpp SYCL",
+       "limit": "pinned host experts (80+ GiB) passed odie's RAM; household services OOM-killed",
+       "state": "dead"
+      },
+      "A0": {
+       "short": "droopy alone, RTX 6000 + RAM",
+       "limit": "about 5 tok/s each at 4 agents (predicted)",
+       "state": "kept"
+      },
+      "glmlite-snoopy": {
+       "short": "glmlite on snoopy, EXL3 3.05",
+       "limit": "snoopy is a gaming box, never 24/7",
+       "state": "caveat"
+      },
+      "glmlite-b70-tier": {
+       "short": "glmlite + one B70 expert tier",
+       "limit": "the tier ring is same-host only",
+       "state": "kept"
+      },
+      "d2": {
+       "short": "d2: XeStrata on both B70s + IB tiers",
+       "limit": "predicted only; misses 15 each at 4 agents",
+       "state": "open"
+      },
+      "d3": {
+       "short": "d3: every expert in VRAM, over IB",
+       "limit": "predicted only; needs about 2 bits/weight to fit",
+       "state": "open"
+      }
+     },
+     "extra": [
+      {
+       "id": "xe-parity",
+       "parents": [],
+       "short": "XeStrata GLM bring-up",
+       "best": "KL 0.0139 vs llama.cpp's 0.0152 floor; long-context E4 pass (5 blocks)",
+       "state": "kept",
+       "limit": "correctness only, no speed yet",
+       "src": "b70-rig/bench/results/xestrata-glm5-bringup-2026-11-15/README.md",
+       "date": "2026-11-15"
+      },
+      {
+       "id": "d3-iq2",
+       "parents": [
+        "d3"
+       ],
+       "short": "d3 at pure UD-IQ2_XXS",
+       "best": "agent screen 3/5",
+       "state": "blocked",
+       "limit": "2-bit loses convergence: every miss ran out of a 32k budget; 3.05 bpw answers both",
+       "src": "b70-rig/bench/results/glm-2bit-screen-2026-11-15/README.md",
+       "date": "2026-11-15",
+       "ruled_out": [
+        "GLM style: the same model at 3.05 bpw answered both items 2-bit ran out on (48 % and 79 % of the budget)"
+       ],
+       "next": "untried: 3 attempts per item (one sample so far); a 64k budget"
+      },
+      {
+       "id": "d3-mixed",
+       "parents": [
+        "d3"
+       ],
+       "short": "d3-mixed: hot experts at IQ3_XXS",
+       "best": "artifact built: 1,209 hot experts at IQ3_XXS (11.8 GB overlay), correctness read READY",
+       "state": "open",
+       "next": "KL vs Q8 in three arms: cold, IQ3_XXS with flat importance, IQ3_XXS with the imatrix the cold quant used (a flat-importance arm alone could fake a negative); then re-ask p2/p5/c1 x3; then batched serving",
+       "date": "2026-11-15"
+      }
+     ],
+     "untested": [
+      {
+       "short": "GLM-5.4",
+       "note": "rumoured; Manifold 96 % before 12-01"
+      },
+      {
+       "short": "UD-Q4_K_XL (downloaded)",
+       "note": "186 GB; larger than snoopy RAM, fits only spread over IB"
+      }
+     ],
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=GLM-5.3-Flash"
+      ],
+      [
+       "atlas: 3090 Ti GLM",
+       "https://github.com/akapug/homelab-atlas/tree/main/3090-ti#glm-53-flash-a-route-trim-clears-25-toks"
+      ],
+      [
+       "glmlite",
+       "https://github.com/sybil-solutions/glm53-flash-offload"
+      ],
+      [
+       "lab: model history",
+       "homelab/lab notes"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ds",
+   "name": "DeepSeek",
+   "models": [
+    {
+     "id": "ds41",
+     "name": "DeepSeek V4.1 Flash",
+     "size": "748B MoE",
+     "state": "caveat",
+     "role": "Co-best quality (hosted 22/24). Goal: one agent at 25+.",
+     "rm_path": "ds41-one-agent",
+     "overlay": {
+      "lassie-q8": {
+       "short": "lassie: 1080 Ti + MI25 + 1 TB RAM",
+       "state": "dead"
+      },
+      "droopy-optane": {
+       "short": "droopy: RTX 6000 + DRAM + Optane",
+       "limit": "Optane/DRAM bandwidth",
+       "state": "open"
+      },
+      "droopy-dspark": {
+       "short": "+ DSpark drafts",
+       "limit": "drafts cost more than they save",
+       "state": "dead"
+      },
+      "snoopy-iq2xs": {
+       "short": "snoopy 3090 Ti, IQ2_XS, Strata",
+       "limit": "snoopy only (gaming box); 2-bit experts",
+       "state": "caveat"
+      },
+      "cpu-control": {
+       "short": "CPU-only control",
+       "limit": "engram tables on NVMe: only ratios carry",
+       "state": "kept"
+      },
+      "ced": {
+       "short": "+ CED compressed prefill",
+       "limit": "1.7x faster TTFT; decode unchanged",
+       "state": "kept"
+      },
+      "snoopy-ik-off": {
+       "short": "snoopy, ik_llama.cpp",
+       "state": "kept"
+      },
+      "snoopy-ced": {
+       "short": "+ CED on snoopy",
+       "state": "kept"
+      }
+     },
+     "untested": [
+      {
+       "short": "new DS4.1F quants / abliterations",
+       "note": "watch list (owner 11-15)"
+      }
+     ],
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=DeepSeek-V4.1-Flash"
+      ],
+      [
+       "atlas: 3090 Ti V4.1",
+       "https://github.com/akapug/homelab-atlas/tree/main/3090-ti#deepseek-v41-flash-27-toks-on-a-gaming-card"
+      ],
+      [
+       "atlas: RTX 6000",
+       "https://github.com/akapug/homelab-atlas/tree/main/rtx-6000"
+      ],
+      [
+       "ik_llama.cpp",
+       "https://github.com/ikawrakow/ik_llama.cpp"
+      ]
+     ]
+    },
+    {
+     "id": "ds40",
+     "name": "DeepSeek V4.0 Flash",
+     "size": "MoE",
+     "state": "dead",
+     "role": "\"Fast but still pretty dumb\" (10-16); dropped 10-17.",
+     "extra": [
+      {
+       "id": "lassie-cpu",
+       "parents": [],
+       "short": "lassie CPU + DSpark",
+       "best": "7.73 tok/s",
+       "state": "dead",
+       "limit": "model dropped on quality"
+      }
+     ],
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=DeepSeek-V4.0-Flash"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "qwen",
+   "name": "Qwen",
+   "models": [
+    {
+     "id": "qfn",
+     "name": "Qwen3.8 Flash-Next",
+     "size": "125B MoE, 6B active",
+     "state": "open",
+     "role": "Coding floor. Batch target: 16-40 agents on two B70s.",
+     "rm_path": "qfn-odie-agents",
+     "overlay": {
+      "comp1": {
+       "short": "XeStrata R8, layer split, 32 slots",
+       "limit": "prefill-bound: real agents read 4-5 prompt tokens per token written",
+       "state": "open",
+       "next": "read-phase timing, then the B4/B8 batch arms again"
+      },
+      "sweep-nodoor": {
+       "short": "1-33 agents, no door",
+       "state": "dead"
+      },
+      "door32": {
+       "short": "+ admission door, 32 slots",
+       "state": "kept"
+      },
+      "conv-door": {
+       "short": "+ conversation door",
+       "state": "kept"
+      },
+      "lease300": {
+       "short": "300 s lease (fairness)",
+       "limit": "starved agents: 0.06 tok/s each",
+       "state": "dead"
+      },
+      "sycl-layer": {
+       "short": "llama.cpp SYCL, layer split",
+       "state": "kept"
+      },
+      "sycl-tensor": {
+       "short": "llama.cpp SYCL, tensor split",
+       "limit": "host-submission bound: 7,270 kernels/token, cards 34 % busy",
+       "state": "dead"
+      },
+      "sycl-tensor-graphs": {
+       "short": "+ SYCL graphs (our patch)",
+       "limit": "one stream only: batched matmuls fall back to oneDNN",
+       "state": "caveat"
+      }
+     },
+     "extra": [
+      {
+       "id": "r8-synthetic",
+       "parents": [
+        "comp1"
+       ],
+       "short": "R8 synthetic decode, 32 agents",
+       "best": "347.5 tok/s total",
+       "state": "caveat",
+       "limit": "synthetic uniform decode; real agents get about 62 total at 40"
+      }
+     ],
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=Qwen3.8-Flash-Next"
+      ],
+      [
+       "atlas: many agents",
+       "https://github.com/akapug/homelab-atlas/blob/main/b70/many-agents.md"
+      ],
+      [
+       "atlas: host-bound decode",
+       "https://github.com/akapug/homelab-atlas/blob/main/b70/host-submission-bound-decode.md"
+      ]
+     ]
+    },
+    {
+     "id": "q27",
+     "name": "Qwen3.8-27B",
+     "size": "27B dense",
+     "state": "dead",
+     "role": "\"Not smart enough to be a real coder\" (10-19); parked.",
+     "extra": [
+      {
+       "id": "q27-cuda",
+       "parents": [],
+       "short": "3090 Ti, vLLM CUDA",
+       "best": "103-105 tok/s",
+       "state": "dead",
+       "limit": "quality, not speed: 22/24 battery but weak on real work",
+       "date": "2026-10"
+      }
+     ],
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=Qwen3.8-27B"
+      ],
+      [
+       "atlas: 3090 Ti",
+       "https://github.com/akapug/homelab-atlas/tree/main/3090-ti#qwen38-27b-on-vllm-cuda-about-104-toks"
+      ],
+      [
+       "vLLM",
+       "https://github.com/vllm-project/vllm"
+      ]
+     ]
+    },
+    {
+     "id": "q36",
+     "name": "Qwen3.6-35B-A3B",
+     "size": "35B MoE, 3B active",
+     "state": "dead",
+     "role": "First coder and household assistant; replaced by Ornith (09-29 / 10-05).",
+     "extra": [
+      {
+       "id": "q36-b70",
+       "parents": [],
+       "short": "B70 vLLM, MTP 3",
+       "best": "183-190 tok/s",
+       "state": "dead",
+       "limit": "replaced: 13-15/24"
+      }
+     ],
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=Qwen3.6-35B-A3B"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ornith",
+   "name": "Ornith (Qwen3.5 fine-tunes)",
+   "models": [
+    {
+     "id": "orn35",
+     "name": "Ornith-1.5-35B-A3B",
+     "size": "35B MoE, 3B active",
+     "state": "live",
+     "role": "Household assistant. \"Not SOTA enough for coding seats\" (10-27).",
+     "extra": [
+      {
+       "id": "orn35-b70",
+       "parents": [],
+       "short": "one B70, vLLM, MTP 3",
+       "best": "198 tok/s, 290 at 2 streams",
+       "state": "live",
+       "limit": "served with MTP off (about 118): MTP garbled 3 of 106 replies",
+       "date": "2026-10-04"
+      }
+     ],
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=Ornith-1.5-35B-A3B"
+      ],
+      [
+       "atlas: B70",
+       "https://github.com/akapug/homelab-atlas/tree/main/b70"
+      ],
+      [
+       "atlas: MI25",
+       "https://github.com/akapug/homelab-atlas/tree/main/mi25"
+      ]
+     ]
+    },
+    {
+     "id": "orn122",
+     "name": "Ornith-1.5-122B-A10B",
+     "size": "122B MoE, 10B active",
+     "state": "caveat",
+     "role": "Experiment: 0/3 then 1/3 real lanes.",
+     "extra": [
+      {
+       "id": "orn122-rtx6000",
+       "parents": [],
+       "short": "droopy RTX 6000, ik_llama.cpp, Q4_K_M",
+       "best": "31.6 tok/s with MTP (27.2 without)",
+       "state": "caveat",
+       "limit": "host-RAM bound: 40 of 49 layers' experts in DRAM",
+       "date": "2026-10-20"
+      },
+      {
+       "id": "orn122-b70-layer",
+       "parents": [],
+       "short": "odie 2x B70, layer split",
+       "best": "36.0 tok/s",
+       "state": "caveat",
+       "limit": "host-RAM bound: 14 of 49 layers' experts in 4-channel DDR4 set about 3/4 of each token (INFERRED)",
+       "src": "b70-rig/bench/results/sycl-launch-bound-2026-11-15/README.md",
+       "date": "2026-11-15"
+      },
+      {
+       "id": "orn122-b70-lg",
+       "parents": [
+        "orn122-b70-layer"
+       ],
+       "short": "+ SYCL graphs",
+       "best": "37.2 tok/s",
+       "state": "caveat",
+       "limit": "same DDR4 ceiling; not the B70s' speed",
+       "src": "b70-rig/bench/results/sycl-launch-bound-2026-11-15/README.md",
+       "date": "2026-11-15"
+      },
+      {
+       "id": "orn122-b70-tg",
+       "parents": [
+        "orn122-b70-layer"
+       ],
+       "short": "tensor split + graphs",
+       "best": "34.5 tok/s (stock tensor 21.6)",
+       "state": "caveat",
+       "limit": "CPU experts dominate, so tensor's GPU gain is small",
+       "src": "b70-rig/bench/results/sycl-launch-bound-2026-11-15/README.md",
+       "date": "2026-11-15"
+      },
+      {
+       "id": "orn122-allvram",
+       "parents": [
+        "orn122-b70-tg"
+       ],
+       "short": "~3-bit, every expert on 2x B70",
+       "best": "untested",
+       "state": "open",
+       "next": "the real B70 ceiling; tensor + graphs"
+      },
+      {
+       "id": "orn122-b70-allvram-tg",
+       "parents": [
+        "orn122-b70-tg"
+       ],
+       "short": "every expert on the cards (IQ3_XXS), tensor split + graphs",
+       "best": "46.1 tok/s (+24 % over 37.2)",
+       "state": "caveat",
+       "limit": "box not quiet (load 3-12): directional; IQ3_XXS quality vs Q4_K_M unmeasured; prefill 17 % lower than layer split",
+       "next": "quiet repeat; quality read vs Q4_K_M; MTP; 2-4 streams",
+       "detail": "Control: the same IQ3_XXS with CPU experts makes 26.9, so the gain is the placement (IQ3_XXS kernels cost more per byte). All-VRAM layer + graphs 33.6.",
+       "src": "b70-rig/bench/results/sycl-launch-bound-2026-11-15/README.md",
+       "date": "2026-11-15"
+      }
+     ],
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=Ornith-1.5-122B"
+      ],
+      [
+       "atlas: host-bound decode",
+       "https://github.com/akapug/homelab-atlas/blob/main/b70/host-submission-bound-decode.md#a-second-model-ornith-15-122b-with-experts-on-the-cpu"
+      ],
+      [
+       "atlas: RTX 6000",
+       "https://github.com/akapug/homelab-atlas/tree/main/rtx-6000"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "other",
+   "name": "Other",
+   "models": [
+    {
+     "id": "bonsai",
+     "name": "Ternary Bonsai 2 27B",
+     "size": "27B dense, 1.58-bit",
+     "state": "dead",
+     "role": "Offline since 10-03 (worst performer in use).",
+     "extra": [
+      {
+       "id": "bonsai-b70",
+       "parents": [],
+       "short": "one B70, SYCL PTQ1_0, MTP 2",
+       "best": "71.6 tok/s",
+       "state": "dead",
+       "limit": "quality: 17-18/24",
+       "date": "2026-09-28"
+      }
+     ],
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=Ternary-Bonsai"
+      ],
+      [
+       "atlas: Bonsai on B70",
+       "https://github.com/akapug/homelab-atlas/blob/main/b70/bonsai-2-27b.md"
+      ]
+     ]
+    },
+    {
+     "id": "flint",
+     "name": "Flint",
+     "size": "39.8B MoE, 2.5B active",
+     "state": "kept",
+     "role": "Speed record; no coding verdict.",
+     "extra": [
+      {
+       "id": "flint-3090",
+       "parents": [],
+       "short": "3090 Ti, UD-Q3_K_XL",
+       "best": "148.9 tok/s",
+       "state": "kept",
+       "limit": "speed only, no agent eval",
+       "date": "2026-10"
+      }
+     ],
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=Flint"
+      ]
+     ]
+    },
+    {
+     "id": "nanbeige",
+     "name": "Nanbeige4.3-33B",
+     "size": "33B",
+     "state": "dead",
+     "role": "Screen PASS, reliability 3/5; not adopted (10-25).",
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=Nanbeige4.3-33B"
+      ]
+     ]
+    },
+    {
+     "id": "kimi",
+     "name": "Kimi-K3",
+     "size": "MoE",
+     "state": "untested",
+     "role": "Target for lassie (10-17). Only a contaminated CPU smoke (0.71 tok/s).",
+     "links": [
+      [
+       "model",
+       "https://huggingface.co/models?search=Kimi-K3"
+      ]
+     ]
+    },
+    {
+     "id": "dlm",
+     "name": "Diffusion LMs (LLaDA, Dream, Ling-mini)",
+     "size": "small",
+     "state": "caveat",
+     "role": "Benched on odie 10-19; no agent eval.",
+     "links": [
+      [
+       "models",
+       "https://huggingface.co/models?search=LLaDA"
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

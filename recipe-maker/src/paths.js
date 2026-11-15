@@ -8,7 +8,7 @@
   const hi = x => { const v = x ? x.v : null; return v === null || v === undefined ? null : Array.isArray(v) ? v[1] : v; };
   const fv = x => { if (!x || x.v === null || x.v === undefined) return '-'; const r = y => (Math.abs(y) >= 100 ? y.toFixed(0) : y.toFixed(1)); return Array.isArray(x.v) ? r(x.v[0]) + '-' + r(x.v[1]) : r(x.v); };
   const tagShort = x => !x ? '' : x.tag === 'MEASURED' ? 'measured' : x.tag === 'PREDICTED' ? 'predicted' : 'unknown';
-  const STATE = { kept: 'kept', dropped: 'dropped', open: 'open' };
+  const STATE = { kept: 'kept', dropped: 'dropped', blocked: 'blocked (levers left)', open: 'open' };
   const point = (nd, n) => nd.points.find(p => p.agents === n);
   const headOf = nd => nd.head === null || nd.head === undefined ? null : point(nd, nd.head);
   const nodeOf = (t, id) => t.nodes.find(n => n.id === id);
@@ -78,8 +78,9 @@
       const p = headOf(nd);
       if (!p) return;
       const x = X(mid(p.per_agent)), y = Y(mid(p.aggregate)), st = nd.verdict.state;
-      const fill = st === 'kept' ? 'var(--s1, #2a6fdb)' : st === 'open' ? 'var(--surface-1, #fff)' : 'var(--neutral-2, #bbb)';
+      const fill = st === 'kept' ? 'var(--s1, #2a6fdb)' : st === 'open' || st === 'blocked' ? 'var(--surface-1, #fff)' : 'var(--neutral-2, #bbb)';
       s += `<circle class="head" data-node="${esc(nd.id)}" data-state="${st}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" fill="${fill}" stroke="var(--s1, #2a6fdb)" stroke-width="2"><title>${esc(nd.id)}: ${esc(nd.label)}. ${p.agents} agent${p.agents > 1 ? 's' : ''}: ${fv(p.per_agent)} each, ${fv(p.aggregate)} total (${tagShort(p.aggregate)}). ${esc(STATE[st])}${nd.verdict.why ? ': ' + esc(nd.verdict.why) : ''}</title></circle>`;
+      if (st === 'blocked') s += `<path d="M${x - 4} ${y}L${x + 4} ${y}" stroke="var(--text-primary, #222)" stroke-width="1.5" pointer-events="none"/>`;
       if (st === 'dropped') s += `<path d="M${x - 4} ${y - 4}L${x + 4} ${y + 4}M${x - 4} ${y + 4}L${x + 4} ${y - 4}" stroke="var(--text-primary, #222)" stroke-width="1.5" pointer-events="none"/>`;
       const lw = nd.id.length * 6.2, lx = x + 9 + lw > W - Rm ? x - 9 - lw : x + 9;   // flip left at the right edge
       let ly = y - 7;

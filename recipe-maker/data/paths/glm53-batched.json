@@ -47,8 +47,16 @@
     }
    ],
    "verdict": {
-    "state": "dropped",
-    "why": "the pinned host experts (80+ GiB) passed odie's RAM; the xe driver burst got household services OOM-killed"
+    "state": "blocked",
+    "why": "the pinned host experts (80+ GiB) passed odie's RAM; the xe driver burst got household services OOM-killed",
+    "binding": {
+     "what": "pinned host experts (80+ GiB) exceed odie's RAM; the xe driver burst got household services OOM-killed",
+     "tag": "MEASURED"
+    },
+    "untried": [
+     "host experts on another box over IB (the d3 line)",
+     "unpinned or smaller host expert sets (mixed quant)"
+    ]
    }
   },
   {
@@ -166,7 +174,15 @@
    ],
    "verdict": {
     "state": "dropped",
-    "why": "the fastest GLM so far, but snoopy is a gaming box, not a 24/7 server; kept as the ceiling"
+    "why": "the fastest GLM so far, but snoopy is a gaming box, not a 24/7 server; kept as the ceiling",
+    "binding": {
+     "what": "placement policy: snoopy is a gaming box, never a 24/7 server; not a performance limit",
+     "tag": "MEASURED"
+    },
+    "ruled_out": [
+     "not a speed or quality verdict: it stays the GLM speed ceiling and the multi-hour test box"
+    ],
+    "untried": []
    }
   },
   {

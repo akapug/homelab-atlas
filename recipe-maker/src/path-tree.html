@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Path tracker</title>
+<style>
+:root{--bg:#fcfcfb;--panel:#f4f4f1;--band:#efeee8;--lineA:#f8f8f5;--lineB:#f1f0ea;--hover:#e8e7e0;--card:#ffffff;--ink:#1f1f1e;--ink2:#55554f;--muted:#8a8a83;--rule:#e2e1db;--edge:#c9c8c0;
+ --good:#0b8f0b;--warn:#a46f00;--warnbg:#fff2cc;--crit:#c43737;--kept:#6b6b66;--link:#2a5db0}
+@media (prefers-color-scheme:dark){:root{--bg:#1a1a19;--panel:#222220;--band:#272725;--lineA:#1e1e1c;--lineB:#242422;--hover:#2f2f2c;--card:#2a2a27;--ink:#ecece8;--ink2:#b9b9b2;--muted:#85857e;--rule:#36362f;--edge:#4a4a44;
+ --good:#4cc24c;--warn:#f5b52a;--warnbg:#3a2f12;--crit:#e36464;--kept:#a3a39c;--link:#8ab4f8}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:13.5px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--rule);padding:12px 20px 10px}
+h1{font-size:17px;margin:0} .lede{color:var(--ink2);margin:2px 0 8px;max-width:1050px}
+.controls{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+input[type=search]{font:inherit;padding:4px 8px;border:1px solid var(--rule);border-radius:6px;background:var(--panel);color:var(--ink);width:220px}
+button{font:inherit;padding:3px 9px;border:1px solid var(--rule);border-radius:6px;background:var(--panel);color:var(--ink);cursor:pointer}
+button:hover{background:var(--hover)}
+.chip{display:inline-flex;gap:5px;align-items:center;padding:2px 9px;border:1px solid var(--rule);border-radius:999px;cursor:pointer;user-select:none;color:var(--ink2)}
+.chip.off{opacity:.4;text-decoration:line-through}
+.focusbar{display:none;margin-top:6px;color:var(--ink2)} .focusbar.on{display:block}
+main{padding:6px 20px 80px}
+.famhead{display:flex;gap:10px;align-items:baseline;padding:14px 8px 6px;border-bottom:2px solid var(--rule);cursor:pointer;user-select:none}
+.famhead h2{font-size:15px;margin:0} .famhead .sum{color:var(--muted);font-size:12px}
+.model{margin:10px 0 4px;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--bg)}
+.mhead{display:grid;grid-template-columns:22px minmax(230px,1.2fr) 2fr auto;gap:8px;align-items:start;padding:8px 10px;background:var(--band);cursor:pointer}
+.mname{font-weight:650} .msize{color:var(--muted);font-size:12px} .mrole{color:var(--ink2);font-size:12.5px}
+.links{display:flex;flex-wrap:wrap;gap:4px 10px;justify-content:flex-end;font-size:12px}
+.links a{color:var(--link);text-decoration:none;white-space:nowrap} .links a:hover{text-decoration:underline}
+.canvas{position:relative;overflow-x:auto;overflow-y:hidden}
+.inner{position:relative}
+.band{position:absolute;left:0;right:0}
+.band:nth-child(odd){background:var(--lineA)} .band:nth-child(even){background:var(--lineB)}
+svg.edges{position:absolute;left:0;top:0;pointer-events:none}
+svg.edges path{fill:none;stroke:var(--edge);stroke-width:2}
+svg.edges path.dash{stroke-dasharray:4 4}
+.node{position:absolute;width:var(--cw);height:74px;padding:6px 8px 6px 8px;border:1px solid var(--rule);border-left-width:4px;border-radius:6px;background:var(--card);cursor:pointer;overflow:hidden}
+.node:hover{box-shadow:0 1px 6px rgba(0,0,0,.12)}
+.node.sel{outline:2px solid var(--link)}
+.node.b-live,.node.b-open{border-left-color:var(--good)} .node.b-caveat{border-left-color:var(--warn)} .node.b-dead{border-left-color:var(--crit)}
+.node.b-kept{border-left-color:var(--kept)} .node.b-untested{border-left-color:var(--muted);border-style:dashed}
+.node .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px;font-weight:550}
+.node .b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.node .n{font-size:11.5px;color:var(--ink2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.n.caveat{color:var(--warn)} .n.dead{color:var(--crit)} .n.open{color:var(--good)}
+.node.s-dead .t,.node.s-dead .b{color:var(--muted)} .node.s-untested .t{color:var(--muted);font-style:italic}
+.node.dim{opacity:.22}
+.tag{font-size:10px;color:var(--muted);border:1px solid var(--rule);border-radius:4px;padding:0 4px;margin-left:4px;font-weight:400}
+.fold{position:absolute;top:4px;right:5px;font-size:11px;color:var(--muted);padding:0 4px;border-radius:4px}
+.fold:hover{background:var(--hover);color:var(--ink)}
+.more{color:var(--muted);font-size:11px}
+.g-live,.g-open{color:var(--good)} .g-blocked{color:var(--warn)} .g-caveat{color:var(--warn)} .g-dead{color:var(--crit)} .g-kept{color:var(--kept)} .g-untested{color:var(--muted)}
+#drawer{position:fixed;right:16px;bottom:16px;width:min(520px,calc(100vw - 32px));max-height:60vh;overflow:auto;background:var(--panel);border:1px solid var(--rule);border-radius:10px;
+ box-shadow:0 4px 24px rgba(0,0,0,.2);padding:12px 14px;font-size:12.5px;color:var(--ink2);display:none;z-index:10}
+#drawer.on{display:block} #drawer h3{margin:0 24px 6px 0;font-size:14px;color:var(--ink)} #drawer b{color:var(--ink)} #drawer a{color:var(--link)}
+#drawer .x{position:absolute;top:8px;right:10px;cursor:pointer;color:var(--muted)} #drawer div{margin:3px 0}
+mark{background:var(--warnbg);color:inherit}
+@media (max-width:900px){.mhead{grid-template-columns:22px 1fr}.mhead .mrole,.mhead .links{grid-column:2;justify-content:flex-start}}
+</style></head><body>
+<header>
+ <h1>Path tracker</h1>
+ <div class="lede">Every model we have tried, by family. Each model's recipes read left to right as a line of descent; each shaded band is one line.
+  The colored edge and note on a recipe say what limits it (<span class="g-caveat">&#9650; caveat</span>), why it ended (<span class="g-dead">&#10005; dead end</span>),
+  or where headroom is left (<span class="g-open">&#9670; next test</span>). Click a recipe for its full record and sources.</div>
+ <div class="controls">
+  <input type="search" id="q" placeholder="Search (e.g. B70, 2-bit, prefill)">
+  <span id="chips"></span>
+  <button id="expand">Expand all</button><button id="collapse">Collapse all</button>
+ </div>
+ <div class="focusbar" id="focusbar">Focused on <b id="focusname"></b> &middot; <button id="unfocus">Show all</button></div>
+</header>
+<main id="root"></main>
+<div id="drawer"><span class="x" id="dx">&#10005;</span><div id="dbody"></div></div>
+<script>
+const DATA=/*DATA*/null;
+const STATES={live:['\u25cf','live / serving'],open:['\u25c6','headroom left'],caveat:['\u25b2','best so far, with a caveat'],kept:['\u25cf','measured, still valid'],blocked:['\u25d0','blocked, levers left'],dead:['\u2715','dead end (evidence listed)'],untested:['\u25cb','available, untested']};
+const CW=262,GAP=34,RH=86,PADX=12,PADY=10;
+const LS='pathtree:v3:';
+const dimStates=new Set(JSON.parse(localStorage.getItem(LS+'dim')||'[]'));
+const collapsed=new Set(JSON.parse(localStorage.getItem(LS+'collapsed')||'[]'));
+let focus=localStorage.getItem(LS+'focus')||'';
+const save=()=>{localStorage.setItem(LS+'dim',JSON.stringify([...dimStates]));localStorage.setItem(LS+'collapsed',JSON.stringify([...collapsed]));localStorage.setItem(LS+'focus',focus)};
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const linkHtml=([t,u])=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`;
+const toggle=k=>{collapsed.has(k)?collapsed.delete(k):collapsed.add(k);save();render()};
+
+// Layout: a first child continues its parent's line (same row, next column); later children start new lines below.
+function layout(m){
+ const nodes=m.nodes,by=Object.fromEntries(nodes.map(n=>[n.id,n])),depth={};
+ const d=n=>depth[n.id]??(depth[n.id]=n.parents.length?1+Math.max(...n.parents.map(p=>d(by[p]))):0);
+ nodes.forEach(d);
+ const kids={};nodes.forEach(n=>kids[n.id]=[]);
+ nodes.forEach(n=>{if(n.parents.length){const p=n.parents.reduce((a,b)=>depth[a]>=depth[b]?a:b);n._p=p;kids[p].push(n.id)}});
+ const pos={};let row=0;const hiddenCount={};
+ const count=id=>kids[id].reduce((a,k)=>a+1+count(k),0);
+ const place=(id,r)=>{pos[id]={col:depth[id],row:r};
+  if(collapsed.has('n:'+m.id+':'+id)){hiddenCount[id]=count(id);return}
+  kids[id].forEach((k,i)=>{if(i===0)place(k,r);else{row++;place(k,row)}})};
+ const roots=nodes.filter(n=>!n.parents.length);
+ roots.forEach((n,i)=>{if(i>0)row++;place(n.id,row)});
+ return {pos,rows:row+1,kids,by,hiddenCount,maxcol:Math.max(0,...Object.values(pos).map(p=>p.col))};
+}
+
+function noteOf(n){
+ if(n.state==='caveat'&&n.limit)return['\u25b2 '+n.limit,'caveat'];
+ if(n.state==='dead'&&n.limit)return['\u2715 '+n.limit,'dead'];
+ if(n.state==='blocked'&&n.limit)return['\u25d0 '+n.limit,'blocked'];
+ if(n.next)return['\u2192 next: '+n.next,'open'];
+ return[n.limit||'',''];
+}
+
+function showDrawer(m,n){
+ const src=n.src?(n.src.startsWith('homelab/')?`<a href="${esc(n.src)}" target="_blank">${esc(n.src.slice(8))}</a> (private lab notes)`:esc(n.src)):'none recorded';
+ const [note]=noteOf(n);
+ document.getElementById('dbody').innerHTML=[`<h3><span class="g-${n.state}">${STATES[n.state][0]}</span> ${esc(n.short)}</h3>`,
+  `<div><b>Model:</b> ${esc(m.name)} &middot; <b>State:</b> ${esc(STATES[n.state][1])}${n.date?' &middot; '+esc(n.date):''}</div>`,
+  n.best&&`<div><b>Best:</b> ${esc(n.best)}${n.tag&&n.tag!=='MEASURED'?' ('+esc(n.tag.toLowerCase())+')':''}</div>`,
+  n.limit&&`<div><b>${n.state==='dead'?'Why it ended':'Limit'}:</b> ${esc(n.limit)}</div>`,
+  (n.ruled_out||[]).length&&`<div><b>Ruled out before giving up:</b> ${n.ruled_out.map(esc).join('; ')}</div>`,
+  n.superseded_by&&`<div><b>Carried on by:</b> ${esc(n.superseded_by)}</div>`,
+  n.next&&`<div><b>Next test:</b> ${esc(n.next)}</div>`,
+  n.detail&&`<div><b>Recipe:</b> ${esc(n.detail)}</div>`,n.box&&`<div><b>Where:</b> ${esc(n.box)}</div>`,
+  n.verdict&&`<div><b>Verdict:</b> ${esc(n.verdict)}</div>`,n.levers&&n.levers.length&&`<div><b>Levers:</b> ${n.levers.map(esc).join(', ')}</div>`,
+  n.recipe&&`<div><b>Recipe Maker recipe:</b> ${esc(n.recipe)}</div>`,`<div><b>Source:</b> ${src}</div>`,
+  n.parents.length>1&&`<div><b>Built from:</b> ${n.parents.map(p=>esc(m.nodes.find(x=>x.id===p).short)).join(' + ')}</div>`,
+  n.from_rm&&`<div><b>Data:</b> Recipe Maker summit path <code>${esc(n.from_rm)}</code>, node <code>${esc(n.id)}</code></div>`,
+  (m.links||[]).length&&`<div><b>Links:</b> ${(m.links||[]).map(linkHtml).join(' &middot; ')}</div>`].filter(Boolean).join('');
+ document.getElementById('drawer').classList.add('on');
+}
+
+function render(){
+ const root=document.getElementById('root');root.innerHTML='';
+ const q=document.getElementById('q').value.trim().toLowerCase();
+ const hl=s=>q?esc(s).replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'),x=>'<mark>'+x+'</mark>'):esc(s);
+ for(const fam of DATA.families){
+  const models=fam.models.filter(m=>!focus||m.id===focus);
+  if(!models.length)continue;
+  const c={};fam.models.forEach(m=>m.nodes.forEach(n=>c[n.state]=(c[n.state]||0)+1));
+  const fc=collapsed.has('f:'+fam.id);
+  const fh=el('div','famhead',`<h2>${fc?'\u25b8':'\u25be'} ${esc(fam.name)}</h2><span class="sum">${fam.models.length} model${fam.models.length>1?'s':''} &middot; ${c.open||0} with headroom &middot; ${c.caveat||0} caveated &middot; ${c.blocked||0} blocked &middot; ${c.dead||0} dead ends &middot; ${c.untested||0} untested</span>`);
+  fh.onclick=()=>toggle('f:'+fam.id);root.appendChild(fh);
+  if(fc)continue;
+  for(const m of models){
+   const M=el('div','model');const mc=collapsed.has('m:'+m.id);
+   const mh=el('div','mhead',`<span class="g-${m.state}" title="${esc(STATES[m.state][1])}">${STATES[m.state][0]}</span>
+    <div><div class="mname">${mc?'\u25b8':'\u25be'} ${esc(m.name)}</div><div class="msize">${esc(m.size)} &middot; ${m.nodes.length} recipe${m.nodes.length===1?'':'s'}${m.rm_path?' &middot; fed by Recipe Maker':''}</div></div>
+    <div class="mrole">${esc(m.role)}</div>
+    <div class="links">${(m.links||[]).map(linkHtml).join('')}<a href="#" data-focus="${esc(m.id)}">${focus===m.id?'unfocus':'focus'}</a></div>`);
+   mh.onclick=e=>{const f=e.target.dataset&&e.target.dataset.focus;if(f){e.preventDefault();focus=focus===f?'':f;save();render();return}
+     if(e.target.tagName==='A')return;toggle('m:'+m.id)};
+   M.appendChild(mh);
+   if(!mc&&m.nodes.length){
+    const L=layout(m);
+    const W=PADX*2+(L.maxcol+1)*(CW+GAP)-GAP,H=L.rows*RH;
+    const C=el('div','canvas');const I=el('div','inner');I.style.width=W+'px';I.style.height=H+'px';I.style.setProperty('--cw',CW+'px');
+    for(let r=0;r<L.rows;r++){const B=el('div','band');B.style.top=(r*RH)+'px';B.style.height=RH+'px';I.appendChild(B)}
+    const xy=id=>[PADX+L.pos[id].col*(CW+GAP),(RH-74)/2+L.pos[id].row*RH];
+    let paths='';
+    for(const n of m.nodes){if(!L.pos[n.id])continue;
+     for(const p of n.parents){if(!L.pos[p])continue;const [px,py]=xy(p),[x,y]=xy(n.id);const sy=py+37,ey=y+37;
+      const dash=p!==n._p?' class="dash"':'';
+      paths+=sy===ey?`<path${dash} d="M${px+CW},${sy} H${x}"/>`:`<path${dash} d="M${px+CW},${sy} H${px+CW+GAP/2} V${ey} H${x}"/>`}}
+    I.insertAdjacentHTML('beforeend',`<svg class="edges" width="${W}" height="${H}">${paths}</svg>`);
+    for(const n of m.nodes){if(!L.pos[n.id])continue;
+     const [x,y]=xy(n.id);const [note,cls]=noteOf(n);
+     const text=[n.short,n.best,n.limit,n.next,n.detail,n.verdict,n.box,(n.levers||[]).join(' '),m.name].join(' ').toLowerCase();
+     const dim=dimStates.has(n.state)||(q&&!text.includes(q));
+     const N=el('div',`node b-${n.state} s-${n.state}${dim?' dim':''}`);N.style.left=x+'px';N.style.top=y+'px';
+     const hasKids=L.kids[n.id].length>0,folded=collapsed.has('n:'+m.id+':'+n.id);
+     N.innerHTML=`<div class="t"><span class="g-${n.state}">${STATES[n.state][0]}</span> ${hl(n.short)}${n.date?` <span class="tag">${esc(n.date)}</span>`:''}</div>
+      <div class="b">${hl(n.best||'\u2014')}${n.tag&&n.tag!=='MEASURED'?`<span class="tag">${n.tag.toLowerCase()}</span>`:''}${folded?` <span class="more">+${L.hiddenCount[n.id]} later</span>`:''}</div>
+      <div class="n ${cls}">${hl(note)}</div>${hasKids?`<span class="fold" title="${folded?'show':'hide'} what grew from this">${folded?'\u25b8':'\u25c2'}</span>`:''}`;
+     N.title=[n.short,n.best,note].filter(Boolean).join('\n');
+     N.onclick=e=>{if(e.target.classList.contains('fold')){toggle('n:'+m.id+':'+n.id);return}
+       document.querySelectorAll('.node.sel').forEach(s=>s.classList.remove('sel'));N.classList.add('sel');showDrawer(m,n)};
+     I.appendChild(N)}
+    C.appendChild(I);M.appendChild(C);
+   }
+   root.appendChild(M);
+  }
+ }
+ document.getElementById('focusbar').classList.toggle('on',!!focus);
+ const fm=DATA.families.flatMap(f=>f.models).find(m=>m.id===focus);document.getElementById('focusname').textContent=fm?fm.name:'';
+}
+const chips=document.getElementById('chips');
+for(const [s,[g,t]] of Object.entries(STATES)){const c=el('span','chip'+(dimStates.has(s)?' off':''),`<span class="g-${s}">${g}</span>${t}`);
+ c.title='fade these out';c.onclick=()=>{dimStates.has(s)?dimStates.delete(s):dimStates.add(s);c.classList.toggle('off');save();render()};chips.appendChild(c)}
+document.getElementById('q').oninput=render;
+document.getElementById('expand').onclick=()=>{collapsed.clear();save();render()};
+document.getElementById('collapse').onclick=()=>{DATA.families.forEach(f=>f.models.forEach(m=>collapsed.add('m:'+m.id)));save();render()};
+document.getElementById('unfocus').onclick=()=>{focus='';save();render()};
+document.getElementById('dx').onclick=()=>document.getElementById('drawer').classList.remove('on');
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.getElementById('drawer').classList.remove('on')});
+render();
+</script></body></html>

@@ -167,7 +167,8 @@
    ],
    "verdict": {
     "state": "dropped",
-    "why": "past the engine's 32 slots agents evict each other and re-read their prompts: 64 tok/s at 24 falls to 5.7 at 33"
+    "why": "past the engine's 32 slots agents evict each other and re-read their prompts: 64 tok/s at 24 falls to 5.7 at 33",
+    "superseded_by": "door32"
    }
   },
   {
@@ -312,8 +313,16 @@
     }
    ],
    "verdict": {
-    "state": "dropped",
-    "why": "every agent served, but yielded slots re-read their prompts: 25x less useful output"
+    "state": "blocked",
+    "why": "every agent served, but yielded slots re-read their prompts: 25x less useful output",
+    "binding": {
+     "what": "a yielded slot loses its KV, so a returning agent re-reads its whole prompt (25x less useful output)",
+     "tag": "MEASURED"
+    },
+    "untried": [
+     "keep yielded KV in host RAM or the prefix cache and restore it instead of re-reading",
+     "lease length and priority sweep instead of one 300 s value"
+    ]
    }
   },
   {
@@ -495,7 +504,8 @@
    ],
    "verdict": {
     "state": "dropped",
-    "why": "host-submission bound: 7,270 kernels a token, one host thread at 100 %"
+    "why": "host-submission bound: 7,270 kernels a token, one host thread at 100 %",
+    "superseded_by": "sycl-tensor-graphs"
    }
   },
   {

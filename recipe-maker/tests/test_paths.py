@@ -77,7 +77,14 @@ class Load(unittest.TestCase):
             (lambda d: d['nodes'][0]['points'][0].pop('ttft_s'), 'a value is'),
             (lambda d: d['nodes'][0]['points'][0].update(agents=0), 'agent count'),
             (lambda d: d['nodes'][0].update(points=[]), 'at least one point'),
-            (lambda d: d['nodes'][0]['verdict'].update(state='dropped'), 'dropped node says why'),
+            (lambda d: d['nodes'][0]['verdict'].update(state='dropped'), 'dropped or blocked node says why'),
+            # a negative is a lead until proven otherwise (owner 2026-11-15)
+            (lambda d: d['nodes'][0]['verdict'].update(state='dropped', why='slower'), 'names what binds it'),
+            (lambda d: d['nodes'][0]['verdict'].update(state='dropped', why='slower', binding={'what': 'x', 'tag': 'GUESS'}, untried=[]), 'names what binds it'),
+            (lambda d: d['nodes'][0]['verdict'].update(state='dropped', why='slower', binding={'what': 'x', 'tag': 'INFERRED'}, untried=['graphs'], ruled_out=['a']), 'that is blocked, not dropped'),
+            (lambda d: d['nodes'][0]['verdict'].update(state='dropped', why='slower', binding={'what': 'x', 'tag': 'MEASURED'}, untried=[]), 'ruled_out'),
+            (lambda d: d['nodes'][0]['verdict'].update(state='blocked', why='slower', binding={'what': 'x', 'tag': 'MEASURED'}, untried=[]), 'levers are left'),
+            (lambda d: d['nodes'][0]['verdict'].update(state='dropped', why='slower', superseded_by='zz'), 'no node of this path'),
             (lambda d: d['nodes'][0]['verdict'].update(state='maybe'), 'verdict.state'),
             (lambda d: d['nodes'][0].update(recipe='odie-made-up-run'), 'neither a ledger run id'),
             (lambda d: d['nodes'][0].update(results=''), 'results'),
@@ -99,10 +106,15 @@ class Load(unittest.TestCase):
         d['nodes'][0]['recipe'] = 'data/paths/t.json'
         self.load(d)
 
-    def test_dropped_node_with_why_loads(self):
-        d = good()
-        d['nodes'][0]['verdict'] = {'state': 'dropped', 'why': 'slower'}
-        self.assertEqual(self.load(d)['nodes'][0]['verdict']['state'], 'dropped')
+    def test_negative_verdicts_that_carry_their_evidence_load(self):
+        cases = [{'state': 'dropped', 'why': 'slower', 'superseded_by': 'b'},
+                 {'state': 'dropped', 'why': 'slower', 'binding': {'what': 'host RAM', 'tag': 'MEASURED'}, 'ruled_out': ['sampling', 'KV'], 'untried': []},
+                 {'state': 'blocked', 'why': 'slower', 'binding': {'what': 'host submission', 'tag': 'INFERRED'}, 'untried': ['graphs']}]
+        for v in cases:
+            d = good()
+            d['nodes'][0]['verdict'] = v
+            with self.subTest(v=v):
+                self.assertEqual(self.load(d)['nodes'][0]['verdict']['state'], v['state'])
 
 
 class Heads(unittest.TestCase):

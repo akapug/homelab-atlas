@@ -46,8 +46,16 @@
     }
    ],
    "verdict": {
-    "state": "dropped",
-    "why": "13.2 tok/s on the 1080 Ti + MI25 box; no lever on it has reached 25"
+    "state": "blocked",
+    "why": "13.2 tok/s on the 1080 Ti + MI25 box; no lever on it has reached 25",
+    "binding": {
+     "what": "host-RAM bandwidth for the CPU experts on the old cards; never profiled, so the binding is a guess",
+     "tag": "INFERRED"
+    },
+    "untried": [
+     "profile one token (GPU busy %, host bandwidth, submission) before more levers",
+     "experts split across boxes over the 56G IB triangle"
+    ]
    }
   },
   {
@@ -125,8 +133,17 @@
     }
    ],
    "verdict": {
-    "state": "dropped",
-    "why": "slower than no drafts (10.58 against 13.1)"
+    "state": "blocked",
+    "why": "slower than no drafts (10.58 against 13.1)",
+    "binding": {
+     "what": "draft cost beat the accepted tokens; accept rate and draft placement were not measured",
+     "tag": "INFERRED"
+    },
+    "untried": [
+     "measure accept rate and draft cost per step",
+     "a smaller or better-matched draft, or MTP heads",
+     "draft on another card"
+    ]
    }
   },
   {

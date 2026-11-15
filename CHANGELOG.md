@@ -6,6 +6,15 @@ day). Results that change a headline number say so.
 
 ## [Unreleased]
 
+### Added
+- `recipe-maker/tools/path_tree.py`: the path tracker. One page per run of the tool, a collapsible tree of model
+  families, models and recipe lineages, read live from Recipe Maker's summit paths plus a curated families file
+  (`data/path-families.json`). Every best number carries what binds it and its next test. A negative result shows as
+  "dead" only with its evidence (what was ruled out, or what superseded it); otherwise it shows as "blocked, levers
+  left" with the untried levers. First entries include Ornith-1.5-122B with every expert on two Arc Pro B70s
+  (IQ3_XXS, tensor split + SYCL graphs): 46.1 tok/s decode, directional (the box was not quiet), +24 % over the
+  37.2 of the CPU-expert layout.
+
 ### Changed
 - `recipe-maker/`: refreshed from the Recipe Maker. The SYCL launch-bound serving prior now carries the
   Ornith-1.5-122B window-4 numbers (layer 36.0, tensor 21.6 -> 34.5 with graphs, layer + graphs 37.2, all with

@@ -28,7 +28,8 @@ t('GLM: every node with a total gets a head marker, every lineage edge is drawn,
   assert.match(s, /data-edge="d2 d3"[^>]*stroke-dasharray/, 'a predicted edge is dashed');
   assert.match(s, /data-edge="glmlite-snoopy glmlite-b70-tier"(?![^>]*stroke-dasharray)/, 'a measured edge is solid');
   assert.match(s, /data-node="d3" data-state="open"/);
-  assert.match(s, /data-node="odie-sycl" data-state="dropped"/);
+  assert.match(s, /data-node="odie-sycl" data-state="blocked"/);
+  assert.match(s, /data-node="glmlite-snoopy" data-state="dropped"/);
   assert.strictEqual(FP.headOf(g.nodes.find(x => x.id === 'd3')).agents, 8);
   assert.ok(count(s, /<rect class="range"/g) >= 5, 'predicted ranges draw their boxes (a single predicted number draws none)');
 });
