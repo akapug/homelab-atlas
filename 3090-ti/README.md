@@ -23,6 +23,7 @@ a step. Terms: [GLOSSARY](../GLOSSARY.md).
 | model | engine and weights | result | conditions | quality check | details |
 |---|---|---|---|---|---|
 | Qwen3.8-27B (dense) | vLLM 0.31.0 (official CUDA image) + [`draft-vocab`](../b70/vllm-xpu/draft-vocab.py) + [`length-finish`](../b70/vllm-xpu/length-finish.py); AutoRound int4 (the same checkpoint as the B70) | **103-105 decode** at 1 stream (one pass; 95-107 over 10 runs); **279-288** for 3 streams together; prefill 1,407-1,410 on a 16k prompt; 88-95 decode at 32k depth | MTP 3 with a 50,521-token draft vocabulary, fp8 KV, 57,344-token window, temperature 0, thinking off, 512 tokens out, idle server, 2026-10-07 | the checkpoint passed the [B70 entry's](../b70/#at-a-glance) correctness eval (41 of 41 exact) | [Qwen3.8-27B on vLLM CUDA](#qwen38-27b-on-vllm-cuda-about-104-toks) |
+| Ornith-1.5-35B-A3B (35B MoE) | vLLM 0.33.0 (official CUDA image, unpatched), AutoRound int4 GPTQ checkpoint, fp8 KV | **1,639 decode with 32 streams** (51 a stream); 824 at 8; 430 for 4 agents at 40k-token contexts with 0.3-0.4 s next-turn TTFT | short 75-token prompts, `max_tokens` 1,500, no speculation, 131,072-token window, 33 short streams is the KV pool's cap; 2026-11-16 | three-prompt sanity read only (template, thinking split, arithmetic, an `is_palindrome`); **no KL or agent gate** | [Ornith on vLLM](#ornith-15-35b-a3b-on-vllm-the-batched-decode-reference) |
 | GLM-5.3-Flash (321B MoE) | the `glm53-flash-offload` engine (exllamav3-based), EXL3 3.05 bpw, 1,600 experts cached in VRAM, the rest computed on the CPU from RAM (a CPU lane on 14 cores, the same in the base and the trim runs) | **26.69 decode** with a route trim (keep 4 of 8 picks that miss VRAM, layers 29-44; not yet published); 23.08 without | 3 coding prompts x 300 tokens, two rounds (the arm's 4 agent briefs: 24.65), greedy, thinking off, 32,768-token window, 2026-10-20 | KL 0.0154, top-1 0.975 against the same weights computed exactly on the GPU: **passes** our bar (KL at most 0.03, top-1 at least 0.97) | [GLM route trim](#glm-53-flash-a-route-trim-clears-25-toks), [moe-offload points 1-3](../moe-offload/#what-we-learned-measured) |
 | DeepSeek V4.1 Flash (748B MoE) | Strata built for sm_86 by us (not published yet), GSQ-RCO IQ2_XS experts; dense layers and hot experts in the card, the other 13,827 experts (134.2 GB) copied into RAM at load and computed on the CPU | **27.39 decode** (median over 217 agent requests with at least 50 tokens out; p10 25.57); prefill 240.5 (median over 85 reads of at least 1,000 tokens) | DSpark Q8_0 draft model (auto, confidence 0.65), 65,536-token window, served to a coding agent during our agent eval, 2026-10-24 | **13 of 15** agent tasks; no KL check against the release weights (not measured), and the experts are 2-bit | [V4.1 on a gaming card](#deepseek-v41-flash-27-toks-on-a-gaming-card) |
 | Qwen3.8 Flash-Next (125B MoE, 6B active) | [Strata](https://github.com/Niko1221/Strata) `477ac13c` built for sm_86, Q8_0, every expert in RAM, a VRAM expert cache | **49.1 decode** (upper median of 6 requests: 3 coding prompts x 2, 300 tokens each; 42.3-55.4); prefill about 1,620 at 15k | MTP 4, the model card's thinking sampling; speed at a 32,768-token window, agent runs at 131,072; 2026-10-18 | **23 of 24** agent tasks over 2 passes (21 of 24 inside the 20-minute limit) | [Flash-Next](#qwen38-flash-next-agent-work-from-ram) |
@@ -165,6 +166,31 @@ published, so this result cannot be rerun from public code yet.
   One failed its hidden check. In the other, the context was compacted twice on a 17,000-line file at the 65,536 window
   and the agent made no edit. A bigger window was not tried before the research paused. That is the same score as Flash-Next
   (Q8_0 + MTP, 131,072 window) on the same harness.
+
+## Ornith-1.5-35B-A3B on vLLM: the batched decode reference
+
+Measured 2026-11-16. Ornith-1.5-35B-A3B is a 35B MoE (about 3B active) whose layers are mostly Gated DeltaNet with
+full attention every fourth one. This is the same model the B70s serve as the house's assistant, on the 3090 Ti under
+a mature CUDA engine, at 1 to 32 concurrent streams. It is the number the B70s' experimental batched engine is judged
+against, not a like-for-like comparison: the B70 runs a different model (Qwen3.8 Flash-Next, larger) on two cards.
+
+- **Engine:** vLLM 0.33.0, the official `vllm/vllm-openai:v0.33.0` CUDA image, unpatched (neither of our any-GPU
+  patches is used here). Kernels: Marlin for the int4 MoE GEMMs, FlashInfer attention, FP8 KV, prefix caching (with
+  the DeltaNet groups in `align` mode), torch.compile and CUDA graphs.
+- **Weights:** `wiesion/Ornith-1.5-35B-A3B-int4-AutoRound-GPTQ-XPU` (symmetric int4, group 128), the checkpoint the B70
+  serves, under the original model's tokenizer. 18.24 GiB of weights leave 2.67 GiB of KV: 252,646 tokens.
+- **Short prompts** (a 75-token prompt each, 1,500 tokens out): **1,639 tok/s at 32 streams** (51 a stream), 1,178 at
+  16, 824 at 8, 536 at 4, 182 at one. Every stream finished its 1,500 tokens. The card reads 62-64 % of its
+  1,008 GB/s from 16 streams up, where the expert bytes a step reads make it expert-bandwidth bound.
+- **Agents at 40k-token contexts:** **4 agents x 107 = 430 tok/s** with the next turn's context still cached (TTFT
+  0.27-0.44 s). A 5th agent still fits in the KV pool but evicts the other four's cached prefixes, so 4 of 5 re-read
+  their whole 40k context every turn (8-17 s). 40k of context costs about 20 % of the short-context decode rate.
+- **Quality:** a three-prompt sanity read only (template, the thinking split, arithmetic, an `is_palindrome`). No KL
+  check and no agent evaluation on this card. The checkpoint passed the [B70 entry's](../b70/#at-a-glance)
+  correctness eval there.
+- **What it changes:** batching is what a CUDA engine buys that the B70's engine has to build. The KV pool, not the
+  kernels, is what stops an agent fleet at 40k: a 24 GB card holds four 40k agents, and the fifth costs the other
+  four their caches.
 
 ## Code-review rounds: four models on one card
 
