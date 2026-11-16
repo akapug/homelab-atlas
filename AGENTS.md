@@ -12,6 +12,7 @@ GitHub Pages site built from `docs/`. No build step for the Markdown.
 
 | path | holds | read it for |
 |---|---|---|
+| `TOOLS.md` | outside tools (engines, formats, agent harnesses, memory tools): what we ran, verdict, evidence | which tool to use; add a row when a result names a new tool |
 | `README.md` | hardware table, best result per card, pick-a-path, highlights | the overview |
 | `atlas.json` | boxes, cards, headline results with conditions, status and source page | machine-readable answers; keep in sync with README |
 | `3090-ti/README.md` | RTX 3090 Ti (box A): Qwen3.8-27B vLLM CUDA, GLM-5.3-Flash route trim, Flash-Next agent runs, code-review rounds | |

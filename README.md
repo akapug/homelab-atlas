@@ -195,6 +195,11 @@ Before you start:
 - To drive it from Claude Code: a proxy that translates Anthropic's API to OpenAI's, set up as in
   [Claude Code on it](b70/qwen36-35b-a3b.md#claude-code-on-it).
 
+## Tools we use
+
+[TOOLS.md](TOOLS.md) lists the outside software behind these results (serving engines, model formats, agent
+harnesses and memory tools), each with what we ran it on, our verdict and the evidence.
+
 ## Entries
 
 | folder | what is in it |
