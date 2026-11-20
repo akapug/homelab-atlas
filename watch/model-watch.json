@@ -1,6 +1,6 @@
 {
   "doc": "One record per current OpenRouter model with tools and >= 128K context (free and stealth first, then by id): id, family, free, stealth, tools, context, max_output, open_weights (Hugging Face id or null), listed, screen (status try = a public score at its board's bar or open weights that fit a local tier, skip = no reliable tool endpoint, watch = neither, unscreened = a source unreadable or out of scope; reason; each part with its source and fetch time). Refreshed daily by the homelab lead-scout; fetch https://raw.githubusercontent.com/akapug/homelab-atlas/main/watch/model-watch.json",
-  "generated": "2026-11-19T15:04:49+00:00",
+  "generated": "2026-11-20T15:02:15+00:00",
   "models": [
     {
       "context": 1024000,
@@ -13,7 +13,7 @@
       "screen": {
         "evals": [
           {
-            "fetched": "2026-11-19T15:04:43+00:00",
+            "fetched": "2026-11-20T15:02:05+00:00",
             "match": null,
             "name": null,
             "of": 68,
@@ -27,10 +27,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:44+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 160,
+            "of": 161,
             "possible": [],
             "published": null,
             "rank": null,
@@ -41,10 +41,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:45+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 257,
+            "of": 258,
             "possible": [],
             "published": null,
             "rank": null,
@@ -56,7 +56,7 @@
           }
         ],
         "reason": "no public score; open weights not public on Hugging Face under this id",
-        "screened": "2026-11-19T15:04:19+00:00",
+        "screened": "2026-11-20T15:02:01+00:00",
         "serving": {
           "endpoints": [
             {
@@ -71,7 +71,7 @@
               "uptime_30m": 100
             }
           ],
-          "fetched": "2026-11-19T15:04:19+00:00",
+          "fetched": "2026-11-20T15:02:01+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -91,7 +91,7 @@
         },
         "status": "watch",
         "weights": {
-          "fetched": "2026-11-19T15:04:45+00:00",
+          "fetched": "2026-11-20T15:02:12+00:00",
           "fits": null,
           "fits_try": null,
           "gb_4bit": null,
@@ -115,118 +115,6 @@
       "tools": true
     },
     {
-      "context": 256000,
-      "family": "cohere",
-      "free": true,
-      "id": "cohere/north-mini-code:free",
-      "listed": "2026-06-17",
-      "max_output": 64000,
-      "open_weights": "CohereLabs/North-Mini-Code-1.0",
-      "screen": {
-        "evals": [
-          {
-            "fetched": "2026-11-19T15:04:43+00:00",
-            "match": null,
-            "name": null,
-            "of": 68,
-            "possible": [],
-            "published": null,
-            "rank": null,
-            "reason": "not on the board",
-            "score": null,
-            "source": "LMArena agent",
-            "try_min": 0.0,
-            "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
-          },
-          {
-            "fetched": "2026-11-19T15:04:44+00:00",
-            "match": null,
-            "name": null,
-            "of": 160,
-            "possible": [],
-            "published": null,
-            "rank": null,
-            "reason": "not on the board",
-            "score": null,
-            "source": "LMArena webdev",
-            "try_min": 1600.0,
-            "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
-          },
-          {
-            "fetched": "2026-11-19T15:04:45+00:00",
-            "match": null,
-            "name": null,
-            "of": 257,
-            "possible": [],
-            "published": null,
-            "rank": null,
-            "reason": "not on the board",
-            "score": null,
-            "source": "Epoch ECI",
-            "try_min": 152.0,
-            "url": "https://epoch.ai/data/benchmark_data.zip"
-          }
-        ],
-        "reason": "open weights ~17 GB at 4.5 bits/weight: fits 24 GB VRAM; no public score",
-        "screened": "2026-11-19T15:04:45+00:00",
-        "serving": {
-          "endpoints": [
-            {
-              "latency_30m": null,
-              "provider": "Cohere",
-              "quantization": "unknown",
-              "status": 0,
-              "structured_outputs": false,
-              "throughput_30m": null,
-              "tools": true,
-              "uptime_1d": 99.79166666666667,
-              "uptime_30m": 100
-            }
-          ],
-          "fetched": "2026-11-19T15:04:45+00:00",
-          "latency_30m_best": null,
-          "nulls": {
-            "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
-            "throughput_30m_best": "null on every tool-capable endpoint in the keyless API"
-          },
-          "providers": 1,
-          "quantizations": [
-            "unknown"
-          ],
-          "source": "OpenRouter endpoints API (keyless)",
-          "structured_output_providers": 0,
-          "throughput_30m_best": null,
-          "tool_providers": 1,
-          "uptime_1d_best": 99.79166666666667,
-          "uptime_30m_best": 100,
-          "url": "https://openrouter.ai/api/v1/models/cohere/north-mini-code:free/endpoints"
-        },
-        "status": "try",
-        "weights": {
-          "fetched": "2026-11-19T15:04:45+00:00",
-          "fits": "24 GB VRAM",
-          "fits_try": true,
-          "gb_4bit": 17.1,
-          "hf": "CohereLabs/North-Mini-Code-1.0",
-          "hint": "~17 GB at 4.5 bits/weight: fits 24 GB VRAM",
-          "license": "apache-2.0",
-          "nulls": {
-            "params_active": "the HF API publishes no active count and the name gives none (dense, or unnamed MoE)"
-          },
-          "params_active": null,
-          "params_active_source": null,
-          "params_total": 30484303872,
-          "public": true,
-          "quantized_derivatives": 39,
-          "quantized_derivatives_capped": false,
-          "source": "Hugging Face model API (keyless)",
-          "url": "https://huggingface.co/api/models/CohereLabs/North-Mini-Code-1.0"
-        }
-      },
-      "stealth": false,
-      "tools": true
-    },
-    {
       "context": 512000,
       "family": "dots-studio",
       "free": true,
@@ -237,7 +125,7 @@
       "screen": {
         "evals": [
           {
-            "fetched": "2026-11-19T15:04:43+00:00",
+            "fetched": "2026-11-20T15:02:05+00:00",
             "match": null,
             "name": null,
             "of": 68,
@@ -251,10 +139,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:44+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 160,
+            "of": 161,
             "possible": [],
             "published": null,
             "rank": null,
@@ -265,10 +153,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:45+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 257,
+            "of": 258,
             "possible": [],
             "published": null,
             "rank": null,
@@ -280,7 +168,7 @@
           }
         ],
         "reason": "no public score; open weights ~162 GB fit 256 GB RAM (CPU tier), not a card",
-        "screened": "2026-11-19T15:04:45+00:00",
+        "screened": "2026-11-20T15:02:12+00:00",
         "serving": {
           "endpoints": [
             {
@@ -291,11 +179,11 @@
               "structured_outputs": true,
               "throughput_30m": null,
               "tools": true,
-              "uptime_1d": 98.125,
+              "uptime_1d": 97.77777777777777,
               "uptime_30m": 100
             }
           ],
-          "fetched": "2026-11-19T15:04:45+00:00",
+          "fetched": "2026-11-20T15:02:12+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -309,13 +197,13 @@
           "structured_output_providers": 1,
           "throughput_30m_best": null,
           "tool_providers": 1,
-          "uptime_1d_best": 98.125,
+          "uptime_1d_best": 97.77777777777777,
           "uptime_30m_best": 100,
           "url": "https://openrouter.ai/api/v1/models/dots-studio/dots-3-note-preview:free/endpoints"
         },
         "status": "watch",
         "weights": {
-          "fetched": "2026-11-19T15:04:45+00:00",
+          "fetched": "2026-11-20T15:02:12+00:00",
           "fits": "256 GB RAM",
           "fits_try": false,
           "gb_4bit": 162.2,
@@ -349,7 +237,7 @@
       "screen": {
         "evals": [
           {
-            "fetched": "2026-11-19T15:04:43+00:00",
+            "fetched": "2026-11-20T15:02:05+00:00",
             "match": null,
             "name": null,
             "of": 68,
@@ -363,36 +251,36 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:44+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": "exact",
             "name": "Gemma 4 26B A4B",
-            "of": 160,
+            "of": 161,
             "possible": [],
-            "published": "2026-11-18",
-            "rank": 126,
+            "published": "2026-11-19",
+            "rank": 127,
             "reason": null,
-            "score": 1357.757242478198,
+            "score": 1357.5650931707721,
             "source": "LMArena webdev",
             "try_min": 1600.0,
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:45+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": "exact",
             "name": "Gemma 4 26B A4B",
-            "of": 257,
+            "of": 258,
             "possible": [],
             "published": "2026-04-02",
-            "rank": 115,
+            "rank": 117,
             "reason": null,
-            "score": 141.58,
+            "score": 141.56,
             "source": "Epoch ECI",
             "try_min": 152.0,
             "url": "https://epoch.ai/data/benchmark_data.zip"
           }
         ],
-        "reason": "open weights ~15 GB at 4.5 bits/weight: fits 24 GB VRAM; LMArena webdev 1357.8 < 1600 (rank 126/160, exact 'Gemma 4 26B A4B'); Epoch ECI 141.6 < 152 (rank 115/257, exact 'Gemma 4 26B A4B')",
-        "screened": "2026-11-19T15:04:46+00:00",
+        "reason": "open weights ~15 GB at 4.5 bits/weight: fits 24 GB VRAM; LMArena webdev 1357.6 < 1600 (rank 127/161, exact 'Gemma 4 26B A4B'); Epoch ECI 141.6 < 152 (rank 117/258, exact 'Gemma 4 26B A4B')",
+        "screened": "2026-11-20T15:02:12+00:00",
         "serving": {
           "endpoints": [
             {
@@ -403,11 +291,11 @@
               "structured_outputs": false,
               "throughput_30m": null,
               "tools": true,
-              "uptime_1d": 99.26739926739927,
+              "uptime_1d": 100,
               "uptime_30m": 100
             }
           ],
-          "fetched": "2026-11-19T15:04:46+00:00",
+          "fetched": "2026-11-20T15:02:12+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -421,13 +309,13 @@
           "structured_output_providers": 0,
           "throughput_30m_best": null,
           "tool_providers": 1,
-          "uptime_1d_best": 99.26739926739927,
+          "uptime_1d_best": 100,
           "uptime_30m_best": 100,
           "url": "https://openrouter.ai/api/v1/models/google/gemma-4-26b-a4b-it:free/endpoints"
         },
         "status": "try",
         "weights": {
-          "fetched": "2026-11-19T15:04:46+00:00",
+          "fetched": "2026-11-20T15:02:12+00:00",
           "fits": "24 GB VRAM",
           "fits_try": true,
           "gb_4bit": 14.5,
@@ -459,7 +347,7 @@
       "screen": {
         "evals": [
           {
-            "fetched": "2026-11-19T15:04:43+00:00",
+            "fetched": "2026-11-20T15:02:05+00:00",
             "match": null,
             "name": null,
             "of": 68,
@@ -473,27 +361,27 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:44+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": "exact",
             "name": "Gemma 4 31B",
-            "of": 160,
+            "of": 161,
             "possible": [],
-            "published": "2026-11-18",
-            "rank": 121,
+            "published": "2026-11-19",
+            "rank": 122,
             "reason": null,
-            "score": 1370.2585811835,
+            "score": 1370.3640434238046,
             "source": "LMArena webdev",
             "try_min": 1600.0,
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:45+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": "exact",
             "name": "Gemma 4 31B IT",
-            "of": 257,
+            "of": 258,
             "possible": [],
             "published": "2026-04-02",
-            "rank": 101,
+            "rank": 102,
             "reason": null,
             "score": 144.12,
             "source": "Epoch ECI",
@@ -501,8 +389,8 @@
             "url": "https://epoch.ai/data/benchmark_data.zip"
           }
         ],
-        "reason": "open weights ~18 GB at 4.5 bits/weight: fits 24 GB VRAM; LMArena webdev 1370.3 < 1600 (rank 121/160, exact 'Gemma 4 31B'); Epoch ECI 144.1 < 152 (rank 101/257, exact 'Gemma 4 31B IT')",
-        "screened": "2026-11-19T15:04:46+00:00",
+        "reason": "open weights ~18 GB at 4.5 bits/weight: fits 24 GB VRAM; LMArena webdev 1370.4 < 1600 (rank 122/161, exact 'Gemma 4 31B'); Epoch ECI 144.1 < 152 (rank 102/258, exact 'Gemma 4 31B IT')",
+        "screened": "2026-11-20T15:02:13+00:00",
         "serving": {
           "endpoints": [
             {
@@ -513,11 +401,11 @@
               "structured_outputs": false,
               "throughput_30m": null,
               "tools": true,
-              "uptime_1d": 99.27536231884058,
+              "uptime_1d": 100,
               "uptime_30m": 100
             }
           ],
-          "fetched": "2026-11-19T15:04:46+00:00",
+          "fetched": "2026-11-20T15:02:13+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -531,13 +419,13 @@
           "structured_output_providers": 0,
           "throughput_30m_best": null,
           "tool_providers": 1,
-          "uptime_1d_best": 99.27536231884058,
+          "uptime_1d_best": 100,
           "uptime_30m_best": 100,
           "url": "https://openrouter.ai/api/v1/models/google/gemma-4-31b-it:free/endpoints"
         },
         "status": "try",
         "weights": {
-          "fetched": "2026-11-19T15:04:46+00:00",
+          "fetched": "2026-11-20T15:02:13+00:00",
           "fits": "24 GB VRAM",
           "fits_try": true,
           "gb_4bit": 17.6,
@@ -571,7 +459,7 @@
       "screen": {
         "evals": [
           {
-            "fetched": "2026-11-19T15:04:43+00:00",
+            "fetched": "2026-11-20T15:02:05+00:00",
             "match": null,
             "name": null,
             "of": 68,
@@ -585,10 +473,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:44+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 160,
+            "of": 161,
             "possible": [],
             "published": null,
             "rank": null,
@@ -599,10 +487,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:45+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 257,
+            "of": 258,
             "possible": [],
             "published": null,
             "rank": null,
@@ -614,14 +502,14 @@
           }
         ],
         "reason": "no public score; open weights not public on Hugging Face under this id",
-        "screened": "2026-11-19T15:04:46+00:00",
+        "screened": "2026-11-20T15:02:13+00:00",
         "serving": {
           "endpoints": [
             {
               "latency_30m": null,
               "provider": "Ant Digital",
               "quantization": "fp8",
-              "status": 0,
+              "status": -2,
               "structured_outputs": true,
               "throughput_30m": null,
               "tools": true,
@@ -629,7 +517,7 @@
               "uptime_30m": 100
             }
           ],
-          "fetched": "2026-11-19T15:04:46+00:00",
+          "fetched": "2026-11-20T15:02:13+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -649,7 +537,7 @@
         },
         "status": "watch",
         "weights": {
-          "fetched": "2026-11-19T15:04:46+00:00",
+          "fetched": "2026-11-20T15:02:13+00:00",
           "fits": null,
           "fits_try": null,
           "gb_4bit": null,
@@ -681,67 +569,24 @@
       "max_output": 8192,
       "open_weights": "LiquidAI/LFM3-1.7B",
       "screen": {
-        "evals": [
-          {
-            "fetched": "2026-11-19T15:04:43+00:00",
-            "match": null,
-            "name": null,
-            "of": 68,
-            "possible": [],
-            "published": null,
-            "rank": null,
-            "reason": "not on the board",
-            "score": null,
-            "source": "LMArena agent",
-            "try_min": 0.0,
-            "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
-          },
-          {
-            "fetched": "2026-11-19T15:04:44+00:00",
-            "match": null,
-            "name": null,
-            "of": 160,
-            "possible": [],
-            "published": null,
-            "rank": null,
-            "reason": "not on the board",
-            "score": null,
-            "source": "LMArena webdev",
-            "try_min": 1600.0,
-            "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
-          },
-          {
-            "fetched": "2026-11-19T15:04:45+00:00",
-            "match": null,
-            "name": null,
-            "of": 257,
-            "possible": [],
-            "published": null,
-            "rank": null,
-            "reason": "not on the board",
-            "score": null,
-            "source": "Epoch ECI",
-            "try_min": 152.0,
-            "url": "https://epoch.ai/data/benchmark_data.zip"
-          }
-        ],
-        "reason": "open weights ~1 GB at 4.5 bits/weight: fits 24 GB VRAM; no public score",
-        "screened": "2026-11-19T15:04:46+00:00",
+        "evals": [],
+        "reason": "best tool endpoint uptime 40.9% < 90%",
+        "screened": "2026-11-20T15:02:13+00:00",
         "serving": {
           "endpoints": [
             {
               "latency_30m": null,
               "provider": "Liquid",
               "quantization": "fp8",
-              "status": 0,
+              "status": -5,
               "structured_outputs": true,
               "throughput_30m": null,
               "tools": true,
-              "uptime_1d": 100,
-              "uptime_30m": 100
+              "uptime_1d": 40.90277777777778,
+              "uptime_30m": 3.3333333333333335
             }
           ],
-          "fetched": "2026-11-19T15:04:46+00:00",
+          "fetched": "2026-11-20T15:02:13+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -755,31 +600,12 @@
           "structured_output_providers": 1,
           "throughput_30m_best": null,
           "tool_providers": 1,
-          "uptime_1d_best": 100,
-          "uptime_30m_best": 100,
+          "uptime_1d_best": 40.90277777777778,
+          "uptime_30m_best": 3.3333333333333335,
           "url": "https://openrouter.ai/api/v1/models/liquid/lfm-3-1.7b:free/endpoints"
         },
-        "status": "try",
-        "weights": {
-          "fetched": "2026-11-19T15:04:47+00:00",
-          "fits": "24 GB VRAM",
-          "fits_try": true,
-          "gb_4bit": 1.0,
-          "hf": "LiquidAI/LFM3-1.7B",
-          "hint": "~1 GB at 4.5 bits/weight: fits 24 GB VRAM",
-          "license": "other",
-          "nulls": {
-            "params_active": "the HF API publishes no active count and the name gives none (dense, or unnamed MoE)"
-          },
-          "params_active": null,
-          "params_active_source": null,
-          "params_total": 1728801536,
-          "public": true,
-          "quantized_derivatives": 100,
-          "quantized_derivatives_capped": true,
-          "source": "Hugging Face model API (keyless)",
-          "url": "https://huggingface.co/api/models/LiquidAI/LFM3-1.7B"
-        }
+        "status": "skip",
+        "weights": null
       },
       "stealth": false,
       "tools": true
@@ -795,7 +621,7 @@
       "screen": {
         "evals": [
           {
-            "fetched": "2026-11-19T15:04:43+00:00",
+            "fetched": "2026-11-20T15:02:05+00:00",
             "match": null,
             "name": null,
             "of": 68,
@@ -809,10 +635,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:44+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 160,
+            "of": 161,
             "possible": [],
             "published": null,
             "rank": null,
@@ -823,10 +649,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:45+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 257,
+            "of": 258,
             "possible": [],
             "published": null,
             "rank": null,
@@ -838,7 +664,7 @@
           }
         ],
         "reason": "open weights ~19 GB at 4.5 bits/weight: fits 24 GB VRAM; no public score",
-        "screened": "2026-11-19T15:04:47+00:00",
+        "screened": "2026-11-20T15:02:13+00:00",
         "serving": {
           "endpoints": [
             {
@@ -849,11 +675,11 @@
               "structured_outputs": false,
               "throughput_30m": null,
               "tools": true,
-              "uptime_1d": 98.61111111111111,
+              "uptime_1d": 98.40277777777777,
               "uptime_30m": 100
             }
           ],
-          "fetched": "2026-11-19T15:04:47+00:00",
+          "fetched": "2026-11-20T15:02:13+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -867,13 +693,13 @@
           "structured_output_providers": 0,
           "throughput_30m_best": null,
           "tool_providers": 1,
-          "uptime_1d_best": 98.61111111111111,
+          "uptime_1d_best": 98.40277777777777,
           "uptime_30m_best": 100,
           "url": "https://openrouter.ai/api/v1/models/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free/endpoints"
         },
         "status": "try",
         "weights": {
-          "fetched": "2026-11-19T15:04:47+00:00",
+          "fetched": "2026-11-20T15:02:13+00:00",
           "fits": "24 GB VRAM",
           "fits_try": true,
           "gb_4bit": 18.6,
@@ -905,7 +731,7 @@
       "screen": {
         "evals": [
           {
-            "fetched": "2026-11-19T15:04:43+00:00",
+            "fetched": "2026-11-20T15:02:05+00:00",
             "match": "exact",
             "name": "Nemotron 3 Ultra",
             "of": 68,
@@ -919,10 +745,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:44+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 160,
+            "of": 161,
             "possible": [],
             "published": null,
             "rank": null,
@@ -933,22 +759,22 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:45+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": "exact",
             "name": "Nemotron 3 Ultra",
-            "of": 257,
+            "of": 258,
             "possible": [],
             "published": "2026-06-04",
-            "rank": 85,
+            "rank": 86,
             "reason": null,
-            "score": 147.0,
+            "score": 147.02,
             "source": "Epoch ECI",
             "try_min": 152.0,
             "url": "https://epoch.ai/data/benchmark_data.zip"
           }
         ],
-        "reason": "LMArena agent -0.168 < 0 (rank 64/68, exact 'Nemotron 3 Ultra'); Epoch ECI 147 < 152 (rank 85/257, exact 'Nemotron 3 Ultra'); open weights ~315 GB at 4.5 bits/weight: fits no tier (largest 256 GB RAM)",
-        "screened": "2026-11-19T15:04:47+00:00",
+        "reason": "LMArena agent -0.168 < 0 (rank 64/68, exact 'Nemotron 3 Ultra'); Epoch ECI 147 < 152 (rank 86/258, exact 'Nemotron 3 Ultra'); open weights ~315 GB at 4.5 bits/weight: fits no tier (largest 256 GB RAM)",
+        "screened": "2026-11-20T15:02:14+00:00",
         "serving": {
           "endpoints": [
             {
@@ -959,11 +785,11 @@
               "structured_outputs": false,
               "throughput_30m": null,
               "tools": true,
-              "uptime_1d": 100,
+              "uptime_1d": 99.86111111111111,
               "uptime_30m": 100
             }
           ],
-          "fetched": "2026-11-19T15:04:47+00:00",
+          "fetched": "2026-11-20T15:02:14+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -977,13 +803,13 @@
           "structured_output_providers": 0,
           "throughput_30m_best": null,
           "tool_providers": 1,
-          "uptime_1d_best": 100,
+          "uptime_1d_best": 99.86111111111111,
           "uptime_30m_best": 100,
           "url": "https://openrouter.ai/api/v1/models/nvidia/nemotron-3-ultra-550b-a55b:free/endpoints"
         },
         "status": "watch",
         "weights": {
-          "fetched": "2026-11-19T15:04:47+00:00",
+          "fetched": "2026-11-20T15:02:14+00:00",
           "fits": null,
           "fits_try": false,
           "gb_4bit": 315.3,
@@ -1015,7 +841,7 @@
       "screen": {
         "evals": [
           {
-            "fetched": "2026-11-19T15:04:43+00:00",
+            "fetched": "2026-11-20T15:02:05+00:00",
             "match": null,
             "name": null,
             "of": 68,
@@ -1029,10 +855,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:44+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 160,
+            "of": 161,
             "possible": [],
             "published": null,
             "rank": null,
@@ -1043,10 +869,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:45+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 257,
+            "of": 258,
             "possible": [],
             "published": null,
             "rank": null,
@@ -1058,7 +884,7 @@
           }
         ],
         "reason": "open weights ~18 GB at 4.5 bits/weight: fits 24 GB VRAM; no public score",
-        "screened": "2026-11-19T15:04:47+00:00",
+        "screened": "2026-11-20T15:02:14+00:00",
         "serving": {
           "endpoints": [
             {
@@ -1069,11 +895,11 @@
               "structured_outputs": false,
               "throughput_30m": null,
               "tools": true,
-              "uptime_1d": 99.30555555555556,
+              "uptime_1d": 98.75,
               "uptime_30m": 100
             }
           ],
-          "fetched": "2026-11-19T15:04:47+00:00",
+          "fetched": "2026-11-20T15:02:14+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -1087,13 +913,13 @@
           "structured_output_providers": 0,
           "throughput_30m_best": null,
           "tool_providers": 1,
-          "uptime_1d_best": 99.30555555555556,
+          "uptime_1d_best": 98.75,
           "uptime_30m_best": 100,
           "url": "https://openrouter.ai/api/v1/models/nvidia/nemotron-3.5-lightning:free/endpoints"
         },
         "status": "try",
         "weights": {
-          "fetched": "2026-11-19T15:04:47+00:00",
+          "fetched": "2026-11-20T15:02:14+00:00",
           "fits": "24 GB VRAM",
           "fits_try": true,
           "gb_4bit": 17.8,
@@ -1125,7 +951,7 @@
       "screen": {
         "evals": [
           {
-            "fetched": "2026-11-19T15:04:43+00:00",
+            "fetched": "2026-11-20T15:02:05+00:00",
             "match": null,
             "name": null,
             "of": 68,
@@ -1141,10 +967,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:44+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 160,
+            "of": 161,
             "possible": [
               "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)"
             ],
@@ -1157,10 +983,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:45+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 257,
+            "of": 258,
             "possible": [],
             "published": null,
             "rank": null,
@@ -1172,7 +998,7 @@
           }
         ],
         "reason": "open weights ~70 GB at 4.5 bits/weight: fits 96 GB VRAM; no public score; possible LMArena agent match NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) (no score taken)",
-        "screened": "2026-11-19T15:04:48+00:00",
+        "screened": "2026-11-20T15:02:14+00:00",
         "serving": {
           "endpoints": [
             {
@@ -1187,7 +1013,7 @@
               "uptime_30m": 100
             }
           ],
-          "fetched": "2026-11-19T15:04:48+00:00",
+          "fetched": "2026-11-20T15:02:14+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -1207,7 +1033,7 @@
         },
         "status": "try",
         "weights": {
-          "fetched": "2026-11-19T15:04:48+00:00",
+          "fetched": "2026-11-20T15:02:14+00:00",
           "fits": "96 GB VRAM",
           "fits_try": true,
           "gb_4bit": 70.0,
@@ -1239,7 +1065,7 @@
       "screen": {
         "evals": [
           {
-            "fetched": "2026-11-19T15:04:43+00:00",
+            "fetched": "2026-11-20T15:02:05+00:00",
             "match": null,
             "name": null,
             "of": 68,
@@ -1253,10 +1079,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:44+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 160,
+            "of": 161,
             "possible": [],
             "published": null,
             "rank": null,
@@ -1267,10 +1093,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:45+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 257,
+            "of": 258,
             "possible": [],
             "published": null,
             "rank": null,
@@ -1282,7 +1108,7 @@
           }
         ],
         "reason": "no public score; closed weights",
-        "screened": "2026-11-19T15:04:48+00:00",
+        "screened": "2026-11-20T15:02:14+00:00",
         "serving": {
           "endpoints": [
             {
@@ -1293,11 +1119,11 @@
               "structured_outputs": true,
               "throughput_30m": null,
               "tools": true,
-              "uptime_1d": 98.05555555555556,
+              "uptime_1d": 100,
               "uptime_30m": 100
             }
           ],
-          "fetched": "2026-11-19T15:04:48+00:00",
+          "fetched": "2026-11-20T15:02:14+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -1311,7 +1137,7 @@
           "structured_output_providers": 1,
           "throughput_30m_best": null,
           "tool_providers": 1,
-          "uptime_1d_best": 98.05555555555556,
+          "uptime_1d_best": 100,
           "uptime_30m_best": 100,
           "url": "https://openrouter.ai/api/v1/models/particle-ai/particle-1:free/endpoints"
         },
@@ -1332,7 +1158,7 @@
       "screen": {
         "evals": [
           {
-            "fetched": "2026-11-19T15:04:43+00:00",
+            "fetched": "2026-11-20T15:02:05+00:00",
             "match": null,
             "name": null,
             "of": 68,
@@ -1346,10 +1172,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=agent&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:44+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 160,
+            "of": 161,
             "possible": [],
             "published": null,
             "rank": null,
@@ -1360,10 +1186,10 @@
             "url": "https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderboard-dataset&config=webdev&split=latest"
           },
           {
-            "fetched": "2026-11-19T15:04:45+00:00",
+            "fetched": "2026-11-20T15:02:12+00:00",
             "match": null,
             "name": null,
-            "of": 257,
+            "of": 258,
             "possible": [],
             "published": null,
             "rank": null,
@@ -1375,7 +1201,7 @@
           }
         ],
         "reason": "open weights ~22 GB at 4.5 bits/weight: fits 32 GB VRAM; no public score",
-        "screened": "2026-11-19T15:04:48+00:00",
+        "screened": "2026-11-20T15:02:15+00:00",
         "serving": {
           "endpoints": [
             {
@@ -1390,7 +1216,7 @@
               "uptime_30m": 100
             }
           ],
-          "fetched": "2026-11-19T15:04:48+00:00",
+          "fetched": "2026-11-20T15:02:15+00:00",
           "latency_30m_best": null,
           "nulls": {
             "latency_30m_best": "null on every tool-capable endpoint in the keyless API",
@@ -1410,7 +1236,7 @@
         },
         "status": "try",
         "weights": {
-          "fetched": "2026-11-19T15:04:48+00:00",
+          "fetched": "2026-11-20T15:02:15+00:00",
           "fits": "32 GB VRAM",
           "fits_try": true,
           "gb_4bit": 22.4,
@@ -2399,7 +2225,7 @@
       "free": false,
       "id": "deepseek/deepseek-v4.1-flash",
       "listed": "2026-09-10",
-      "max_output": 393216,
+      "max_output": 943718,
       "open_weights": "deepseek-ai/DeepSeek-V4.1-Flash",
       "screen": {
         "reason": "outside the screen scope (openrouter.screen.scope free_or_stealth)",
@@ -2444,7 +2270,7 @@
       "free": false,
       "id": "deepseek/deepseek-v4.1-flash:batch",
       "listed": "2026-09-10",
-      "max_output": 131072,
+      "max_output": 384000,
       "open_weights": "deepseek-ai/DeepSeek-V4.1-Flash",
       "screen": {
         "reason": "outside the screen scope (openrouter.screen.scope free_or_stealth)",
@@ -3808,6 +3634,21 @@
       "family": "moonshotai",
       "free": false,
       "id": "moonshotai/kimi-k3.1-pro",
+      "listed": "2026-10-23",
+      "max_output": 943718,
+      "open_weights": "moonshotai/Kimi-K3.1-Pro",
+      "screen": {
+        "reason": "outside the screen scope (openrouter.screen.scope free_or_stealth)",
+        "status": "unscreened"
+      },
+      "stealth": false,
+      "tools": true
+    },
+    {
+      "context": 1048576,
+      "family": "moonshotai",
+      "free": false,
+      "id": "moonshotai/kimi-k3.1-pro:batch",
       "listed": "2026-10-23",
       "max_output": 943718,
       "open_weights": "moonshotai/Kimi-K3.1-Pro",
@@ -5309,7 +5150,7 @@
       "free": false,
       "id": "openai/gpt-oss-120b",
       "listed": "2025-08-05",
-      "max_output": 65536,
+      "max_output": 117964,
       "open_weights": "openai/gpt-oss-120b",
       "screen": {
         "reason": "outside the screen scope (openrouter.screen.scope free_or_stealth)",
@@ -6074,7 +5915,7 @@
       "free": false,
       "id": "reflection/beam-1.0-501b-a23b",
       "listed": "2026-10-16",
-      "max_output": 943718,
+      "max_output": 131072,
       "open_weights": "reflection/Beam-1.0-501B-A23B",
       "screen": {
         "reason": "outside the screen scope (openrouter.screen.scope free_or_stealth)",
@@ -6534,21 +6375,6 @@
       "tools": true
     },
     {
-      "context": 256000,
-      "family": "x-ai",
-      "free": false,
-      "id": "x-ai/grok-build-0.1",
-      "listed": "2026-05-20",
-      "max_output": 230400,
-      "open_weights": null,
-      "screen": {
-        "reason": "outside the screen scope (openrouter.screen.scope free_or_stealth)",
-        "status": "unscreened"
-      },
-      "stealth": false,
-      "tools": true
-    },
-    {
       "context": 1000000,
       "family": "xiaomi",
       "free": false,
@@ -6809,7 +6635,7 @@
       "free": false,
       "id": "z-ai/glm-5.3-flash",
       "listed": "2026-08-26",
-      "max_output": 943717,
+      "max_output": 131072,
       "open_weights": "zai-org/GLM-5.3-Flash",
       "screen": {
         "reason": "outside the screen scope (openrouter.screen.scope free_or_stealth)",
@@ -6824,7 +6650,7 @@
       "free": false,
       "id": "z-ai/glm-5.3-flash:batch",
       "listed": "2026-08-26",
-      "max_output": 943718,
+      "max_output": 943717,
       "open_weights": "zai-org/GLM-5.3-Flash",
       "screen": {
         "reason": "outside the screen scope (openrouter.screen.scope free_or_stealth)",
@@ -6884,7 +6710,7 @@
       "free": false,
       "id": "z-ai/glm-5.3:batch",
       "listed": "2026-08-18",
-      "max_output": 943718,
+      "max_output": 943717,
       "open_weights": "zai-org/GLM-5.3",
       "screen": {
         "reason": "outside the screen scope (openrouter.screen.scope free_or_stealth)",
