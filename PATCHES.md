@@ -286,11 +286,40 @@ What we had to set for Claude Code to run on a local model through a proxy, on a
 Details: [Claude Code on it](b70/qwen36-35b-a3b.md#claude-code-on-it) and
 [coming from llama-server](b70/vllm-xpu/README.md#if-you-are-coming-from-llama-server).
 
+### Setting: close the thinking at 10k tokens, then let the model answer
+
+- **Symptom.** On hard problems a reasoning model loops inside its thinking until the token cap and never answers.
+  Raising the cap mostly buys more loop.
+- **For.** Any GPU, any engine that can continue a reply; measured with vLLM on two B70s with Inkling 2 Mini. When a
+  reply stops on length while still in its thinking block, send one more request with the reply so far plus the
+  model's own end-of-thinking markers, `continue_final_message: true`, `add_generation_prompt: false` and
+  `max_tokens` 2,048 (keep the same tools). In an agent harness this belongs where the client sees
+  `finish_reason: "length"` on a reply that holds only thinking.
+- **Measured.** LiveCodeBench, 104 problems, greedy: effort high 53.8 % -> **64.4 %** with the close at 10k (+9.6 points
+  against effort low's 54.8 %, p 0.031) at 1.27x low's tokens; a 31.5k cap instead gave 58.7 % at 3.12x. 6k and 14k
+  closes score lower than 10k. [Details](b70/inkling-2-mini.md#quality-is-the-b70-stack-the-model)
+- **Check, undo.** Count the replies that end on length inside thinking before and after; to undo, drop the second
+  request. We have measured it one request at a time, not yet inside the pool's agent traffic.
+
+### llama.cpp: Inkling 2 Mini's NVFP4 GGUFs need 690b87d88 or newer
+
+- **Symptom.** A mainline NVFP4 GGUF of Inkling 2 Mini (unsloth's UD-Q4_K_XL) loads and writes fluent-looking noise:
+  38 % top-1 agreement with the official weights on llama.cpp e58e0c7f7.
+- **Fix.** Upstream: the loop-slot scale bug fixed by 690b87d88 (#32704). Bisected on an RTX 3090 Ti: the parent
+  commit at 58.9 % top-1 (KL 1.879), the fix at 99.0 % (KL 0.0032). The converter change #33062 is not the cause.
+- **Check.** `llama-perplexity --kl-divergence` against a conversion of the official checkpoint; top-1 well under 95 % on
+  code means the old build.
+
 ## 2. Intel Arc Pro B70 with vLLM
 
 For Intel GPUs only, with `intel/llm-scaler-vllm:0.26.0-b2`. Read
 [Before you patch vLLM](#before-you-patch-vllm) first. Full notes:
 [`b70/vllm-xpu/`](b70/vllm-xpu/README.md).
+
+Newer (2026-11-27), not on that image: the Inkling 2 Mini pool runs vLLM nightly for XPU (0.34.0rc1.dev1133) with
+[mgaruccio/vllm-inkling2-xpu](https://github.com/mgaruccio/vllm-inkling2-xpu) at 2e9d28b and vLLM PR #69186, fp8 K/V,
+prefix caching on and the draft head at k=7; flags and what each setting is worth are on
+[the pool page](b70/inkling-2-mini.md#the-two-b70-pool). No patch of ours is in that stack.
 
 ### `fix-699.py`: compiled mode starts
 
@@ -555,6 +584,16 @@ Notes and numbers: [`b70/split-modes-and-backends.md`](b70/split-modes-and-backe
 
 ### NVIDIA RTX 3090 Ti (Ampere, 24 GB)
 
+Newer settings (2026-11-25 to 11-27), each measured on [its entry](3090-ti/):
+- **Ornith-1.5-35B-A3B with DFlash on vLLM nightly: put the target's attention on FlashInfer** (drafter on FA2). The
+  verify step then grows 0.076 ms per 1k tokens of context instead of 0.475, and the drafter keeps 1.42x at 63k
+  instead of losing its gain by 12-16k. Short turns lose 9 %. FlashInfer needed `CUDA_HOME` pointed at the pip CUDA
+  packages. [Details](3090-ti/#ornith-15-35b-a3b-with-dflash-one-agent-at-417-toks)
+- **Inkling 2 Mini on vLLM nightly below sm_90:** [agent2x0r/inkling2-sm86-kernels](https://github.com/agent2x0r/inkling2-sm86-kernels)
+  patches 19 files; every anchor matched on our nightly. On 24 GB the official checkpoint leaves too little KV room
+  for 16 agents and none for the draft head; re-quantizing layers 20-23's MXFP8 experts to NVFP4 frees 1.8 GiB (our
+  script, not published yet). [Details](b70/inkling-2-mini.md#rtx-3090-ti-snoopy-vllm-nightly-cuda)
+
 Measured: [its entry](3090-ti/). Of the section 1 patches, `draft-vocab.py` and the non-streaming half of
 `length-finish.py` run on vLLM's official 0.31.0 CUDA image, built by [one Dockerfile](3090-ti/vllm-cuda/Dockerfile);
 with them Qwen3.8-27B decodes 103-105 tok/s at one stream (MTP 3; the reduced draft vocabulary adds 28 %).
@@ -565,6 +604,11 @@ and `0016` are untested here.
 
 Measured with big MoE models through our ik_llama.cpp fork: [its entry](rtx-6000/). The section 1 vLLM patches are
 untested on it.
+
+- **Inkling 2 Mini as an agent replica: upstream llama.cpp 4c7344447 or newer, 8 slots, q8_0 K/V.** 1.41x the agent
+  throughput of 212c547fe (66.0 against 46.8 tok/s for 8 agents), prompt reading at 8k depth 2.2x. At 16 slots the
+  flash-attention compute buffer, sized by the whole pool, runs the card out of room.
+  [Details](rtx-6000/#inkling-2-mini-a-small-pool-replica)
 
 - **Usable as is** (nothing GPU-specific in them): the
   [Claude Code settings](#claude-code-on-a-local-model-settings-not-patches), the

@@ -18,6 +18,7 @@ Terms: [GLOSSARY](../GLOSSARY.md).
 
 | model | engine and weights | result | conditions | quality check | details |
 |---|---|---|---|---|---|
+| Inkling 2 Mini (looped MoE) | llama.cpp 4c7344447 CUDA, ggml-org IQ4_NL, per-slot K/V | **66.0 server tok/s for 8 real coding agents** at 32,768 tokens a slot (q4_0 K/V); 62.8 at 28,672 a slot with q8_0 K/V; 72.4 for 16 agents at 22,528 a slot | 20 min an arm, the agents on another box, the host quiet; 2026-11-27 | K/V KL divergence against f16: q8_0 0.0061, q4_0 0.0113; agent tasks accepted 38.6 an hour (8 agents) | [Inkling 2 Mini](#inkling-2-mini-a-small-pool-replica) |
 | DeepSeek V4.1 Flash | ik_llama.cpp with our changes; hot experts MXFP4, cold experts q2_K; 7.0 GiB of hot experts on the GPU, the rest in DRAM and PMem | **12.69 decode** (n4), 10.29 (n0), prefill 69.0 (this phase; the ledger's run summary gives 67.9) | DSpark draft model, n_max 4; 3 coding-agent prompts x 300 tokens; 2026-10-22. The build adds two of our changes (expert pre-binding, the tier split; public in our fork's branch `tier-split`) and one upstream change | **Not re-measured on this build.** On the same store and layout with the earlier 10.6 tok/s build ([moe-offload point 21](../moe-offload/#what-we-learned-measured)): KL 0.0169, top-1 0.975 against the release-precision store (1,376 positions), which passes our bar. Upstream #2712 changes the indexer's arithmetic (draft acceptance moved from 0.890 to 0.908), so read this as the earlier build's check | [V4.1, the best run](#deepseek-v41-flash-the-best-run) |
 | DeepSeek V4.1 Flash, same recipe on the public fork | as above, without pre-binding, the tier split and #2712 (our fork's branch `mixed-cuda-vulkan-expert-banks`) | **11.88** (n4), 9.72 (n0), prefill 64.9 | as above, 2026-10-21 | as above | [Reproduce](#reproduce-the-best-v41-run) |
 | DeepSeek V4.1 Flash at 189k tokens | the same store on our fork's branch `prebind-f32-indexer` (no tier split); 2.2 GiB of hot experts, 212,992-token window | **16 of 16 facts recalled** from a 189,454-token prompt; decode 7.18 at that depth (n0), prefill 57.7 at 110-190k | `--swa-compress`, micro-batch 2048, greedy, 2026-10-21 | the recall itself | [Long context](#v41-at-189k-tokens-every-fact-recalled) |
@@ -25,6 +26,37 @@ Terms: [GLOSSARY](../GLOSSARY.md).
 | GLM-5.3-Flash (321B) | ik_llama.cpp with our changes, unsloth UD-Q4_K_XL; hot experts on the GPU, CPU experts row-split over both sockets | **16.06 decode** (mean of 4 prompts x 3 rounds), 12.30 without the draft | MTP 3 with a reduced draft vocabulary, p_min 0.75, expert chunking off; 4 coding-agent briefs (ours, private), raw completion without a chat template, greedy, 256 tokens out, 34,816-token window, 39 threads; 2026-10-20 | KL 0.030, top-1 0.960 against a 3-bit reference: a measured miss of that reference; fidelity to BF16 unmeasured | [moe-offload points 2, 4-6, 13-14](../moe-offload/#what-we-learned-measured) |
 | Ornith-1.5-35B-A3B | llama.cpp b11175 CUDA, Q4_K_M plus its vision projector; experts of 12 layers on the CPU, bound to DRAM node 0 | **59.6 decode** on a short reply, thinking off | 32,768-token window, 2 slots, beside an embedding server on the same card (21.6 of 23.0 GB used); 2026-10-24 | none on this box; it serves a household assistant | [No silent fallback](#no-silent-fallback-experts-on-optane-by-accident) |
 | Qwen3.6-35B-A3B | llama.cpp b11175 CUDA, UD-Q4_K_XL (22.9 GB), experts of 19 layers in RAM | 38 decode fresh, 28.5 at 165k depth; 81-119 on edit output with n-gram drafting | 262,144-token window, 2026-09-29 | - | served as a coding agent's model in late September 2026 |
+
+## Inkling 2 Mini: a small pool replica
+
+Can this card add agents to the [Inkling 2 Mini pool](../b70/inkling-2-mini.md)? A few (2026-11-27). vLLM has no path for
+this model on Turing, so it runs llama.cpp CUDA with ggml-org's IQ4_NL file.
+
+| build | llama-bench decode (tg128) | prompt reading (pp512) | at 8k depth, q4_0 K/V: decode / prompt |
+|---|---:|---:|---|
+| 212c547fe | 40.8 | 911 | 37.6 / 450 |
+| **4c7344447** | **53.7** | **1,555** | **50.2 / 991** |
+
+The prompt-reading gain at depth is upstream's flash-attention change in 2d5b3ddde. Served to real pi coding agents on
+our coding-task set, 20 minutes an arm, the agents on another box:
+
+| arm | server tok/s | reply median (p10) | agents at 10 tok/s or more | accepted tasks an hour |
+|---|---:|---|---:|---:|
+| 8 x 32,768, q4_0 K/V, 212c547fe | 46.8 | 9.5 (3.0) | - | 31.6 |
+| **8 x 32,768, q4_0 K/V, 4c7344447** | **66.0** | 10.8 (4.9) | 4 of 8 | 38.6 |
+| 8 x 28,672, q8_0 K/V | 62.8 | 11.2 | 6 of 8 | 44.5 |
+| 16 x 22,528, q4_0 K/V | 72.4 | 5.7 | 0 of 16 | 65.3 |
+
+- **16 x 24,576 does not fit, by 63 MiB.** llama.cpp's flash-attention compute buffer holds an f16 copy of one
+  full-attention layer's K/V for every cell of the pool (1,646 MiB at 393,216 cells, ~4.1 KB a cell; our reading from
+  how it scales with the pool, not traced). Sized by the active stream instead it would be ~100 MiB: enough for 16 x
+  32,768 at q4_0.
+- **16 agents buy 1.10x the tokens at half the speed each**; 8 slots at q8_0 halve the K/V error at the same speed.
+  This card's replica: 8 x 28,672, q8_0.
+- The two builds' 8-agent arms ran 900 s (old) and 1,212 s (new); on their common first 900 s the new build still
+  leads, 1.21x on tokens in finished replies (37.6 against 31.2) and 10 against 7 accepted tasks.
+- An earlier 16-agent arm fell to 30.5 tok/s while the box's CPUs were busy with other work; with the host quiet the
+  card was 85 % busy and did not collapse.
 
 ## DeepSeek V4.1 Flash: the best run
 

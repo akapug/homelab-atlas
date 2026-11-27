@@ -16,18 +16,45 @@ were measured in tokens per second, and some in pages of confident garbage text.
 Pick one of our four boxes and see which layouts of a big MoE model fit it, how fast each should run, and how
 the predictions compare with our measured runs. Nothing to install.
 
-## Where it stands (2026-11-15)
+## Where it stands (2026-11-27)
 
-Research resumed on 11-10. The current target is several coding agents at once from the boxes that run around the
-clock: GLM-5.3-Flash at 15-20+ tok/s each for 4-8 agents, over the 56 Gb/s links. Two new lessons:
+The target since 11-10: many coding agents at once from the boxes that run around the clock. Newest first:
 
-- **On Intel GPUs, count kernel launches before tuning kernels.** Two B70s splitting a MoE by tensor spent most of
-  each token waiting on one CPU thread sending ~7,300 small kernels. Recording them as SYCL graphs took decode from
-  16.9 to 39.0 tok/s. [Host-bound decode](b70/host-submission-bound-decode.md)
-- **2 bits is too few for GLM-5.3-Flash as a coding agent.** At UD-IQ2_XXS it found 3 of 5 planted bugs in our
-  code-review screen, then kept second-guessing correct answers until it ran out of a 32k-token budget. At 3.05 bits
-  it answered both of the bugs it had missed and finished on its own. The screen is 8 private items, one sample each,
-  so this shows a direction, not a rate.
+- **32 real coding agents on two B70s: 645.1 tok/s for two hours.** Inkling 2 Mini on vLLM for XPU, 16 pi agents a
+  card on our coding-task set, no drift between quarters (630 to 647), 943 of 1,073 attempts accepted; the B70 stack
+  agrees with a CUDA reference at that reference's own noise floor (98.8 % top-1). Adding the RTX 3090 Ti as a third
+  card: 874.7 tok/s for 40 agents in a 20-minute smoke. [Inkling 2 Mini pool](b70/inkling-2-mini.md)
+- **Close the thinking instead of lengthening it.** On LiveCodeBench (104 problems), ending a reply's thinking at
+  10,000 tokens and letting it answer took effort high from 53.8 % to 64.4 % (p 0.031 against effort low's 54.8 %), at
+  1.27x low's tokens; a 31.5k cap gave 58.7 % at 3.12x. Effort low with the same close: 63.5 %, the best hard score, at
+  1.15x. [LiveCodeBench](b70/inkling-2-mini.md#quality-is-the-b70-stack-the-model)
+- **KV room, not compute, is what each replica ran out of.** Re-quantizing Inkling's MXFP8 tail to NVFP4 freed 1.8 GiB
+  on the 3090 Ti, enough for its draft head (155.6 -> 231.1 tok/s for 16 agents, 98.3 % top-1 agreement); the RTX 6000
+  is held to 8 slots by a llama.cpp buffer sized by the whole pool (66.0 tok/s for 8 agents); the MI25 is too hot
+  (11-15 tok/s at 8 streams against the 80 needed). [Replicas](b70/inkling-2-mini.md#replicas-on-other-cards)
+- **A scripted load can hide a collapse.** QFN-Coder reached 310.2 tok/s over two hours for 64 agents on a scripted
+  assistant workload; on real coding tasks the same pool served 96.4 tok/s and accepted none of 86 attempts, because 64
+  fresh agents queued ~644k prompt tokens behind its serial prompt reads. Its idle time was named first: 51 of 52 long
+  stops were one serial read. [QFN-Coder pool](b70/many-agents.md#qfn-coder-pool-2026-11-16-to-11-26)
+- **One fast agent: Ornith-1.5-35B-A3B with its DFlash drafter, 416.6 tok/s on a 3090 Ti** (2.17x without it), and still
+  1.42x at 63k tokens of context once the target's attention runs on FlashInfer; 296.6 on one B70.
+  [Ornith + DFlash](3090-ti/#ornith-15-35b-a3b-with-dflash-one-agent-at-417-toks)
+- **Peers' engines, measured on our cards.** maya-inkling-mini decodes Inkling 2 Mini at 140.3 tok/s on our 3090 Ti
+  (their 3090: 128.7), 2.2-2.6x our llama.cpp from short to 128k context.
+  [Inkling 2 Mini on maya-ik2](3090-ti/#inkling-2-mini-one-fast-agent-and-a-pool-replica)
+- **GLM-5.3-Flash: one agent at ~30 tok/s on the 3090 Ti, parked on the B70s.** On Maya with its 1.73-bit quant one
+  pi agent gets ~30 tok/s, and more seats do not pay (4 seats: 35.1 in total). On a B70 with a CPU expert lane the best
+  was 7.07 against a 14 tok/s bar, bound by host work outside the expert kernels. A block drafter (DFly2) forecasts
+  0.75-0.95x on the 3090 Ti, so we did not port it. [GLM on Maya](3090-ti/#glm-53-flash-on-maya-one-agent-at-about-30-toks),
+  [GLM on a B70](b70/many-agents.md#glm-53-flash-on-a-b70-with-a-cpu-expert-lane-parked)
+- **Losers, kept:** the Inkblot-2-mini edit is terser, not smarter (faster agent work, -10.6 points on
+  LiveCodeBench); LoopCD-Logits gave nothing measurable; DFlash2 in vLLM accepts no drafted token; a fine-tuned Ornith
+  drafter gained 0.035 tokens a step against a 0.30 bar; llama.cpp before 690b87d88 decodes Inkling's NVFP4 GGUFs to
+  noise. [What did not work](b70/inkling-2-mini.md#what-did-not-work)
+
+On 11-15: on Intel GPUs, count kernel launches before tuning kernels (SYCL graphs took two-B70 decode 16.9 -> 39.0
+tok/s, [host-bound decode](b70/host-submission-bound-decode.md)); 2 bits is too few for GLM-5.3-Flash as a coding
+agent (3 of 5 planted bugs at UD-IQ2_XXS, a direction from 8 private items, not a rate).
 
 Older lessons that still shape how to read everything below:
 
@@ -50,6 +77,8 @@ measured it, what agents doing real work get. The card pages hold every conditio
 
 | model | best one-request decode | prompt reading | where | real agent work | quality evidence | date |
 |---|---|---|---|---|---|---|
+| Inkling 2 Mini (looped MoE, NVFP4) | **140.3** | 3,020 at 4k | [RTX 3090 Ti](3090-ti/#inkling-2-mini-one-fast-agent-and-a-pool-replica), alesha-pro's maya-ik2 engine, every expert in VRAM; 115.8 at 64k | **645.1** tok/s in total for **32 real coding agents** over two hours (28.2 each at the median) on [two B70s](b70/inkling-2-mini.md), vLLM XPU with its draft head; 874.7 for 40 on three cards (20 min) | B70 stack 98.8 % top-1 against a CUDA reference (its floor 98.8 %); LiveCodeBench 104: 64.4 % with thinking closed at 10k | 2026-11-27 |
+| Ornith-1.5-35B-A3B with its DFlash drafter | **416.6** on short agent turns; 215.5 at 63k | not measured in this run | [RTX 3090 Ti](3090-ti/#ornith-15-35b-a3b-with-dflash-one-agent-at-417-toks), vLLM nightly, int4 + DFlash K=7, FlashInfer target attention; 296.6 on [one B70](3090-ti/#ornith-15-35b-a3b-with-dflash-one-agent-at-417-toks) | 226.0 tok/s a turn over a replayed 29-49k pi session (1.43x without the drafter) | planted-defect screen passes in this config | 2026-11-26 |
 | DeepSeek V4.1 Flash (748B MoE) | **27.39** | 240.5 | [RTX 3090 Ti](3090-ti/#deepseek-v41-flash-27-toks-on-a-gaming-card) + 192 GB DDR5, 2-bit experts; our sm_86 Strata build, not published | not measured | 13 of 15 agent tasks; no KL check | 2026-10-24 |
 | the same, release-precision hot experts | 12.69 (4,096-token window); 7.18 at 189k tokens | 69.0; 57.7 at 110-190k | [Quadro RTX 6000](rtx-6000/#deepseek-v41-flash-the-best-run) + DDR4 + Optane, public fork | not measured | KL 0.0169, top-1 0.975 (earlier build of the same store); 16 of 16 facts at 189k | 2026-10-22 |
 | the same, no GPU | 7.02 | 36.2 | [2x EPYC 7601](epyc-cpu/), public fork | not measured | release-precision weights | 2026-10-20 |
@@ -77,7 +106,7 @@ at a time unless it says otherwise.
 |---|---|---|---|
 | **AM5 desktop** | Ryzen 9 9950X3D (16 cores), 192 GB DDR5 | [**RTX 3090 Ti** 24 GB](3090-ti/) | Qwen3.8-27B at **103-105 tok/s** (95-107 over 10 runs); DeepSeek V4.1 Flash (748B MoE) at **27.39 tok/s** with 2-bit experts; GLM-5.3-Flash (321B MoE) at **26.69 tok/s** |
 | **2019 workstation** (HP Z8 G4) | 2x Xeon Gold 5215, 192 GB DDR4 + 256 GB Optane PMem | [**Quadro RTX 6000** 24 GB](rtx-6000/) | DeepSeek V4.1 Flash (748B MoE) at **12.69 tok/s** in a 4,096-token window; **16 of 16** facts recalled from a 189k-token prompt at 7.18 tok/s, prompt reading 57.7 tok/s (the same store, the build before the tier split) |
-| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Qwen3.8 Flash-Next at **87.1 tok/s** decode for one request, **11 of 12** agent tasks (one card); on real agent traffic, **32.6 tok/s** for one agent and **80-86** in total over 16 (about 5 each), both cards (377.9 decode over 32 agents on a synthetic load); Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams in a compiled mode Intel does not support, on 1.5k-token prompts (the 27B was measured with the cards in the AM5 box, before they moved here) |
+| **Threadripper workstation** | Threadripper 3960X (24 cores), 128 GB DDR4 | [**2x Arc Pro B70** 32 GB](b70/) | Inkling 2 Mini serving **32 real coding agents at 645.1 tok/s** in total for two hours ([pool](b70/inkling-2-mini.md)); Qwen3.8 Flash-Next at **87.1 tok/s** decode for one request, **11 of 12** agent tasks (one card); on real agent traffic, **32.6 tok/s** for one agent and **80-86** in total over 16 (about 5 each), both cards (377.9 decode over 32 agents on a synthetic load); Qwen3.8-27B at **74.6 tok/s**, **351** summed over 8 streams in a compiled mode Intel does not support, on 1.5k-token prompts (the 27B was measured with the cards in the AM5 box, before they moved here) |
 | **2017 two-socket server** (Supermicro H11DSi) | 2x EPYC 7601, 1 TB DDR4 on 16 channels | [**GTX 1080 Ti** 11 GB](1080-ti/) and [**Radeon Instinct MI25** 16 GB](mi25/) | Ornith-1.5-35B-A3B at **59-60 tok/s** with every expert on the two retired cards; DeepSeek V4.1 Flash at **12.09 tok/s** (11.74 without a draft) |
 | the same server | [**its CPUs alone**](epyc-cpu/) | none | DeepSeek V4.1 Flash at **7.02 tok/s**, no GPU at all |
 
@@ -116,7 +145,7 @@ lived in that box until 2026-10-07; their older pages say so where it matters.
 | A model that finishes real repository work, locally | [the agent eval](b70/agent-eval/), then Flash-Next on [a 3090 Ti](3090-ti/#qwen38-flash-next-agent-work-from-ram) or [a B70](moe-offload/#what-we-learned-measured): 11 of 12 everyday tasks, but 4 of 11 harder ones at the highest effort and 0 of 3 multi-file changes without our thinking cap |
 | A frontier-size MoE (DeepSeek V4.1 Flash, GLM-5.3-Flash) on a box with lots of RAM | [MoE offload](moe-offload/), then [the RTX 6000 + Optane page](rtx-6000/#reproduce-the-best-v41-run) for the full command; at 36-70 tok/s of prompt reading these suit chat and batch work, not an interactive coding agent |
 | To plan a layout before downloading 400 GB of weights | [Recipe Maker](recipe-maker/), or [in the browser](https://akapug.github.io/homelab-atlas/) |
-| To serve many coding agents from one box | [many agents on two B70s](b70/many-agents.md): on real agent traffic 16 agents got 80-86 tok/s in total, about 5 each, limited by prompt reading: at that rate a turn takes minutes, fine for unattended batch agents, slow for an interactive one; measure your box with replays of real agent sessions, not a one-prompt load |
+| To serve many coding agents from one box | [the Inkling 2 Mini pool on two B70s](b70/inkling-2-mini.md): 32 real coding agents at 645.1 tok/s in total over two hours, 28 tok/s each at the median, first tokens about 1 s; size the KV pool before adding agents, and test on real tasks, not a scripted load ([why](b70/many-agents.md#qfn-coder-pool-2026-11-16-to-11-26)) |
 | A fast link between boxes for little money | [a 56 Gb/s triangle from three $10 cards](network/), no switch |
 | To make an Intel Arc Pro B70 go fast | [the B70 entry](b70/) and its [patches](PATCHES.md#2-intel-arc-pro-b70-with-vllm) |
 | To put a cheap old card to work | [MI25](mi25/) ($50, 16 GB HBM2, Vulkan), [GTX 1080 Ti](1080-ti/) |
@@ -127,6 +156,13 @@ lived in that box until 2026-10-07; their older pages say so where it matters.
 
 The ones we are proudest of, each with its conditions and quality check one click away.
 
+- **32 coding agents from two Intel cards, for two hours.** Inkling 2 Mini on two Arc Pro B70s served 32 real pi
+  agents working coding tasks at 645.1 tok/s in total, 28 tok/s each at the median, first tokens about a second, no
+  drift over two hours and no GPU fault; the Intel stack matches a CUDA reference at that reference's own noise floor.
+  With a 3090 Ti as a third card, 40 agents at 874.7. [Inkling 2 Mini pool](b70/inkling-2-mini.md)
+- **One coding agent at 417 tok/s on a gaming card.** Ornith-1.5-35B-A3B with its DFlash drafter on an RTX 3090 Ti,
+  and still 1.42x faster than without the drafter at 63k tokens of context.
+  [3090 Ti](3090-ti/#ornith-15-35b-a3b-with-dflash-one-agent-at-417-toks)
 - **A 748B model on a 2019 workstation, at long context.** DeepSeek V4.1 Flash decodes 12.69 tok/s on one Quadro
   RTX 6000 plus DDR4 and Optane, from public code, in a 4,096-token window; at 189k tokens it decodes 7.18 and reads
   prompts at 57.7 tok/s, so a long prompt takes many minutes. [One folder](rtx-6000/v41-recipe/) holds every input the run
@@ -204,9 +240,9 @@ harnesses and memory tools), each with what we ran it on, our verdict and the ev
 
 | folder | what is in it |
 |---|---|
-| [`3090-ti/`](3090-ti/) | RTX 3090 Ti: Qwen3.8-27B on vLLM CUDA, GLM-5.3-Flash with a route trim, Flash-Next agent runs, four models reviewing code |
+| [`3090-ti/`](3090-ti/) | RTX 3090 Ti: Ornith with DFlash for one fast agent, Inkling 2 Mini on maya-ik2 and as a pool replica, GLM-5.3-Flash on Maya, Qwen3.8-27B on vLLM CUDA, GLM-5.3-Flash with a route trim, Flash-Next agent runs, four models reviewing code |
 | [`rtx-6000/`](rtx-6000/) | Quadro RTX 6000 + Optane: DeepSeek V4.1 Flash best run and its full command, 189k-token recall, GLM, Ornith-1.5-122B |
-| [`b70/`](b70/) | Arc Pro B70: [many agents on two cards](b70/many-agents.md), vLLM and llama.cpp patches, Qwen3.8-27B, [Qwen3.6-35B-A3B](b70/qwen36-35b-a3b.md), [Ornith-1.5-35B-A3B](b70/ornith-35b-a3b.md) serving a household assistant and a coding agent from one card, [Ternary Bonsai 2 27B](b70/bonsai-2-27b.md) on PrismML's llama.cpp fork, [Flint and attention sinks on llama.cpp SYCL](b70/llama.cpp-sycl-fa-sinks/), [tensor against layer split on two cards and three outside claims](b70/split-modes-and-backends.md), [the agent eval](b70/agent-eval/), [benchmarks](b70/bench/) |
+| [`b70/`](b70/) | Arc Pro B70: [the Inkling 2 Mini coding-agent pool](b70/inkling-2-mini.md), [many agents on two cards](b70/many-agents.md), vLLM and llama.cpp patches, Qwen3.8-27B, [Qwen3.6-35B-A3B](b70/qwen36-35b-a3b.md), [Ornith-1.5-35B-A3B](b70/ornith-35b-a3b.md) serving a household assistant and a coding agent from one card, [Ternary Bonsai 2 27B](b70/bonsai-2-27b.md) on PrismML's llama.cpp fork, [Flint and attention sinks on llama.cpp SYCL](b70/llama.cpp-sycl-fa-sinks/), [tensor against layer split on two cards and three outside claims](b70/split-modes-and-backends.md), [the agent eval](b70/agent-eval/), [benchmarks](b70/bench/) |
 | [`tail-trainer/`](tail-trainer/) | train a LoRA on the last blocks of a MoE GGUF in torch on any card, checked against llama.cpp and loaded back with `llama-server --lora`; smoke on an RTX 6000 and an MI25, two cards at once |
 | [`tail-portable/`](tail-portable/) | one PyTorch trainer on a B70, an RTX 6000, an MI25 and a 1080 Ti: which torch build works on each, an op probe, a B70 wrong-result repro (driver 26.05 with torch 2.13-2.15) |
 | [`behaviour-levers/`](behaviour-levers/) | changing a local coding model's habits: a trained LoRA that changes nothing (NULL), and the habit a harder task set exposes |

@@ -219,6 +219,35 @@ numactl --interleave=0-7 build/bin/llama-server -m Ornith-1.5-35B-Q4_K_M.gguf --
 - **The MTP layer in the heat file.** If the heat file also names the MTP layer, the load aborts with "already
   device-resident".
 
+## Ornith-1.5-35B-A3B on the MI25 alone, and a 3-bit mix (2026-11-26)
+
+A Q2_K_L GGUF of Ornith-1.5-35B-A3B (13.6 GB) fits the MI25 by itself, so the GTX 1080 Ti is no longer needed for it:
+llama.cpp Vulkan 7790a92, **58.3 tok/s decode** (tg128; the two-card split above gave 59.5), prompt reading 461
+(pp512), batched decode flat at ~82 tok/s from 4 to 8 sequences. Current llama.cpp (fa9f928) reads prompts 7 % faster
+(498 against 465) and decodes the same: every newer Vulkan decode kernel needs cooperative matrix, which Vega lacks.
+
+Our own 3-bit K-quant mix (13.88 GB: Q3_K down projections everywhere, Q2_K gate/up with Q3_K on the first and last
+layer, Q5_K attention, Q8_0 shared expert; re-quantized from bartowski's Q8_0 with his importance matrix) has 0.61x
+the Q2_K_L's KL divergence against Q8_0 and scores higher on our private chat eval (9.13 against 8.72, graded blind),
+for 0.92x the decode and 0.91x the prompt reading. Widening the Q3_K edge to four layers each side cut KL divergence
+a further 9 % but did not move the eval. With the fans at full, the thermal guard paused the server 10-16 % of the
+time at 4-8 sequences.
+
+## Inkling 2 Mini as a pool replica: too hot
+
+Could the MI25 add a few agents to the [Inkling 2 Mini pool](../b70/inkling-2-mini.md)? No (2026-11-26).
+AtomicChat's AD-IQ3_S, Atomic Engine e110381 (a llama.cpp fork) with a strided SCALE patch, Vulkan RADV, q8_0 K/V,
+8 slots of 2,560 tokens, streams of ~2,057-token prompts with 256 tokens out:
+
+- **11.4 tok/s** with every prompt fresh, **15.4** with a shared ~1,900-token prefix, 26.5 decode alone at 8
+  sequences. The pool's bar was 80.
+- **Heat binds it.** HBM reaches the card's 93 C guard and the junction 97-103 C within 1-2 s of load; the guard held
+  the server stopped 20-30 % of every 4- and 8-stream run. Without the pauses decode scales 17.7 -> 34.6 -> 44.5 at 1 / 4 / 8
+  sequences, still a quarter of the bar.
+- **Prompt reading binds it next:** ~190 tok/s, so each new 2k prompt holds the whole card ~11 s.
+
+The card stays a research card until it has a sealed shroud and stronger airflow.
+
 ## The card and the stack
 
 | item | value |

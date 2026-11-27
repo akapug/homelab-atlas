@@ -11,6 +11,10 @@ both cards on PCIe 4 x16); the [MoE offload entry](../moe-offload/) calls it box
 Ryzen 9 9950X3D box that now holds the [RTX 3090 Ti](../3090-ti/), and the results under "Results" below were
 measured there.
 
+**Newest (2026-11-27):** both cards ran the coding-agent pool: [Inkling 2 Mini, 32 real coding agents at 645.1
+tok/s for two hours](inkling-2-mini.md) on vLLM for XPU. Ornith-1.5-35B-A3B with its DFlash drafter decodes 296.6 tok/s
+for one agent on one card ([3090 Ti page](../3090-ti/#ornith-15-35b-a3b-with-dflash-one-agent-at-417-toks)).
+
 ## At a glance
 
 One B70 per row, one request at a time unless the row says otherwise. Terms: [GLOSSARY](../GLOSSARY.md).
@@ -64,6 +68,9 @@ in [`llama.cpp-sycl/`](llama.cpp-sycl/). The speed-up from speculation depends o
 
 ## Contents
 
+- [`inkling-2-mini.md`](inkling-2-mini.md): the coding-agent pool on both cards (Inkling 2 Mini on vLLM XPU, 645.1
+  tok/s for 32 real agents over two hours), the three-card pool, quality against a CUDA reference, LiveCodeBench with
+  the thinking closed at 10k, replicas on the 3090 Ti, RTX 6000 and MI25, and what did not work.
 - [`vllm-xpu/`](vllm-xpu/): compiled mode for llm-scaler (issue #699), AutoRound int4 on the fast
   kernels (`inc-q40`), a smaller vocabulary for the MTP drafter, two tool-call fixes for agent
   clients, a chat-template fix for `reasoning_effort`, a guard that keeps other work off the server's

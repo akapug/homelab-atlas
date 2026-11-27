@@ -1,7 +1,7 @@
 {
  "schema": "homelab-atlas/1",
- "updated": "2026-10-30",
- "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). quality_on_this_build: false marks a result whose quality check ran on another build, card or configuration than the speed figure (its conditions and quality text say which); absent means the check ran on the configuration the result names. A result that needs several cards lists them all in cards; card is the one whose page it cites. workload: bench (fixed prompts, one request at a time), agent-served (per-request decode measured while serving a coding agent; the agent's wall time also holds prompt reading and tool time), synthetic-many-agents (every agent reads one prompt once, then writes: decode capacity, not what agents doing real work get), agent-replay (recorded coding-agent sessions replayed with their own prompts, outputs and tool time; agent_useful_tps is output tokens over the measured window, summed over agents). agent_useful_tps: what agents got, prompt reading and tool time included.",
+ "updated": "2026-11-27",
+ "notes": "Mirrors the card pages; if they disagree the card page wins. decode_tps/prefill_tps are tokens per second for one request unless streams>1 (then summed). status: measured | unpublished-code (the build includes changes not in public branches). quality_on_this_build: false marks a result whose quality check ran on another build, card or configuration than the speed figure (its conditions and quality text say which); absent means the check ran on the configuration the result names. A result that needs several cards lists them all in cards; card is the one whose page it cites. workload: bench (fixed prompts, one request at a time), agent-served (per-request decode measured while serving a coding agent; the agent's wall time also holds prompt reading and tool time), synthetic-many-agents (every agent reads one prompt once, then writes: decode capacity, not what agents doing real work get), agent-pool (live coding agents, each its own session, working a task set with a grader; decode_tps is the server's generated tokens summed over agents over the window, prompt reading and tool time included in the window), agent-replay (recorded coding-agent sessions replayed with their own prompts, outputs and tool time; agent_useful_tps is output tokens over the measured window, summed over agents). agent_useful_tps: what agents got, prompt reading and tool time included.",
  "boxes": [
   {
    "id": "snoopy",
@@ -189,7 +189,7 @@
    "engine": "ik_llama.cpp, our fork's branch tier-split (expert pre-binding + tier split + upstream #2712)",
    "decode_tps": 12.69,
    "decode_tps_no_draft": 10.29,
-   "prefill_tps": 69.0,
+   "prefill_tps": 69,
    "streams": 1,
    "conditions": "DSpark draft n_max 4, 7.0 GiB hot experts on GPU, rest DRAM+PMem, 3 coding-agent prompts x 300 tokens; -c 4096; ledger id droopy-v41-v41fs-ts2-0127 (its run summary prefill 67.9); layout recipe-maker/recipes/droopy-v41-fs1c.json",
    "quality": "KL 0.0169, top-1 0.975 vs release-precision store: pass; measured with the earlier 10.6 build of the same store and layout, not re-measured on this build",
@@ -462,7 +462,7 @@
    "streams": 16,
    "agent_useful_tps": [
     79.6,
-    86.0
+    86
    ],
    "conditions": "16 recorded coding-agent sessions (923 turns) replayed with their own prompts, outputs and tool time; 600 s warm-up, then a 600 s window; 3.9-4.9 new prompt tokens read per token written; prompt reading about 0.87k tok/s; three runs 86.0, 84.6, 79.6 (mean 83.4); 0 errors",
    "quality": "none on this build",
@@ -540,6 +540,101 @@
    "date": "2026-10-30",
    "status": "measured",
    "source": "b70/llama.cpp-sycl-fa-sinks/#flint-on-two-b70s-and-on-an-rtx-3090-ti",
+   "workload": "bench"
+  },
+  {
+   "card": "arc-pro-b70-1",
+   "cards": [
+    "arc-pro-b70-1",
+    "arc-pro-b70-2"
+   ],
+   "model": "Inkling 2 Mini",
+   "weights": "the official NVFP4/MXFP8 checkpoint with layers 20-23's MXFP8 experts re-quantized to NVFP4 (our script, unpublished)",
+   "engine": "vLLM nightly XPU 0.34.0rc1.dev1133 + mgaruccio/vllm-inkling2-xpu 2e9d28b + vLLM PR #69186, DSpark k=7, one server a card",
+   "decode_tps": 645.08,
+   "streams": 32,
+   "conditions": "32 real pi coding agents (16 a card) on our private coding-task set, temperature 1, effort high, 24,576-token history budget with our fold fix (unpublished), fp8 K/V, prefix caching on, --max-model-len 32768 --max-num-batched-tokens 2048, gpu-memory-utilization 0.97; server tok/s (engine counters) over 7,210 s; 636.75 counted from delivered replies; reply decode median 28.21 (p10 16.92), first token p50 1.11 s; quarters 630 / 641 / 629 / 647; 0 preemptions, 0 xe faults",
+   "quality": "943 of 1,073 task attempts accepted by the grader; the B70 stack's greedy token matches the same checkpoint on vLLM CUDA (RTX 3090 Ti) at 98.76 % against that reference's own 98.83 %; LiveCodeBench 104 on this stack: 54.8 % effort low, 64.4 % effort high with the thinking closed at 10k",
+   "date": "2026-11-27",
+   "status": "unpublished-code",
+   "source": "b70/inkling-2-mini.md#the-two-b70-pool",
+   "workload": "agent-pool"
+  },
+  {
+   "card": "arc-pro-b70-1",
+   "cards": [
+    "arc-pro-b70-1",
+    "arc-pro-b70-2",
+    "rtx-3090-ti"
+   ],
+   "model": "Inkling 2 Mini",
+   "weights": "as the two-B70 pool, on all three cards",
+   "engine": "the two-B70 pool's servers + vLLM nightly CUDA with agent2x0r's sm_86 patch on the RTX 3090 Ti, behind our sticky router (unpublished)",
+   "decode_tps": 874.67,
+   "streams": 40,
+   "conditions": "40 real pi coding agents, 16 : 16 : 8 by card, our private coding-task set, 20 minutes, one run; 829.53 counted from delivered replies; reply median 40.25 (p10 18.66); first token p50 2.74 s",
+   "quality": "214 of 280 attempts accepted; quality as the two-B70 pool",
+   "date": "2026-11-27",
+   "status": "unpublished-code",
+   "source": "b70/inkling-2-mini.md#three-cards",
+   "workload": "agent-pool"
+  },
+  {
+   "card": "rtx-3090-ti",
+   "model": "Ornith-1.5-35B-A3B",
+   "weights": "AutoRound int4 GPTQ + the stock DFlash drafter",
+   "engine": "vLLM nightly 0.34.1rc1.dev119 (g93873e7ac), DFlash K=7, target attention on FlashInfer, drafter on FA2",
+   "decode_tps": 416.6,
+   "decode_tps_no_draft": 191.6,
+   "streams": 1,
+   "conditions": "14 short agent-shaped coding turns x 2 interleaved reps, T=0, 32k context (95 % CI 366-513, paired 2.17x); the 416.6 run used FA2 target attention; with FlashInfer the drafter keeps 1.42x at 63k (215.5 against 151.9) and short turns run 378.7",
+   "quality": "planted-defect screen passes in this config",
+   "date": "2026-11-26",
+   "status": "measured",
+   "source": "3090-ti/#ornith-15-35b-a3b-with-dflash-one-agent-at-417-toks",
+   "workload": "bench"
+  },
+  {
+   "card": "rtx-3090-ti",
+   "model": "Inkling 2 Mini",
+   "weights": "unsloth UD-Q4_K_XL GGUF",
+   "engine": "alesha-pro/maya-inkling-mini (maya-ik2, Project Maya 1.1.70), unmodified",
+   "decode_tps": 140.3,
+   "prefill_tps": 3020,
+   "streams": 1,
+   "conditions": "FP8 K/V, every expert in VRAM, the engine's own command per row, cold process a row; decode after a 47-token prompt, prefill at 4,096; 115.8 decode at 64k, 72.6 at 340k",
+   "quality": "planted-defect screen passes",
+   "date": "2026-11-26",
+   "status": "measured",
+   "source": "3090-ti/#inkling-2-mini-one-fast-agent-and-a-pool-replica",
+   "workload": "bench"
+  },
+  {
+   "card": "quadro-rtx-6000",
+   "model": "Inkling 2 Mini",
+   "weights": "ggml-org IQ4_NL GGUF",
+   "engine": "llama.cpp 4c7344447 CUDA",
+   "decode_tps": 66,
+   "streams": 8,
+   "conditions": "8 real pi coding agents at 32,768 tokens a slot, per-slot q4_0 K/V, our private coding-task set, 1,212 s, the agents on another box; reply median 10.8 (p10 4.9); 38.6 accepted tasks an hour",
+   "quality": "K/V KL divergence against f16: q4_0 0.0113, q8_0 0.0061; 13 distinct tasks accepted of 25 attempts",
+   "date": "2026-11-27",
+   "status": "measured",
+   "source": "rtx-6000/#inkling-2-mini-a-small-pool-replica",
+   "workload": "agent-pool"
+  },
+  {
+   "card": "mi25",
+   "model": "Inkling 2 Mini",
+   "weights": "AtomicChat AD-IQ3_S GGUF",
+   "engine": "Atomic Engine e110381 (llama.cpp fork) + a strided SCALE patch, Vulkan RADV",
+   "decode_tps": 11.4,
+   "streams": 8,
+   "conditions": "8 streams of ~2,057-token fresh prompts, 256 tokens out each, q8_0 K/V, under the card's 93 C thermal guard (paused 20-30 % of the run); 15.4 with a shared prefix",
+   "quality": "not screened",
+   "date": "2026-11-26",
+   "status": "measured",
+   "source": "mi25/#inkling-2-mini-as-a-pool-replica-too-hot",
    "workload": "bench"
   }
  ]

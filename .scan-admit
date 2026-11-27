@@ -19,3 +19,9 @@ lab notes pointer | docs/README.md | docs/README.md | this repository's own docs
 internal id | recipe-maker/data/priors-serving.json | https://code.claude.com/docs/en/ | a public vendor docs page a Recipe Maker serving prior cites (the coding-agent CLI's timeouts and context window)
 internal id | recipe-maker/.scan-admit | https://code.claude.com/docs/en/ | Recipe Maker's own admission of that docs page
 internal id | docs/page/data.js | https://code.claude.com/docs/en/ | the built Pages copy of that serving prior
+internal id | TOOLS.md | [Claude Code](https://github.com/anthropics/claude-code) | the public harness and its repository
+internal id | watch/model-watch.json | "id": "anthropic/claude- | public OpenRouter model ids in the published model watch
+internal id | watch/model-watch.json | "id": "openai/gpt-5.1-codex | public OpenRouter model ids in the published model watch
+internal id | watch/model-watch.json | "id": "openai/gpt-5.2-codex" | public OpenRouter model id in the published model watch
+internal id | watch/model-watch.json | "id": "openai/gpt-5.3-codex" | public OpenRouter model id in the published model watch
+internal id | TOOLS.md | (PATCHES.md#claude-code-on-a-local-model-settings-not-patches) | anchor of a public heading in PATCHES.md

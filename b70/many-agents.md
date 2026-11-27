@@ -2,8 +2,10 @@
 
 How many coding agents can one box serve at once, each fast enough to work with? We spent a week on that question
 with the Threadripper box (a 2019 Threadripper 3960X, 128 GB DDR4, two Arc Pro B70 32 GB cards), Qwen3.8 Flash-Next
-(125B MoE, 6B active) at IQ3_XXS, and the XeStrata engine plus our batching changes. The work is paused as of
-2026-10-26. This page is where it stopped.
+(125B MoE, 6B active) at IQ3_XXS, and the XeStrata engine plus our batching changes. That work paused on
+2026-10-26, and most of this page is where it stopped. The pool since then: [QFN-Coder](#qfn-coder-pool-2026-11-16-to-11-26)
+to 310 tok/s on a scripted load (and why it failed on coding work), then
+[Inkling 2 Mini](inkling-2-mini.md): **32 real coding agents at 645.1 tok/s for two hours** (2026-11-27).
 
 **On real coding-agent traffic, 16 agents get 80 to 86 tok/s in total (mean 83.4, three runs), about 5 tok/s each, and one agent alone gets
 32.6 tok/s.** That is the number to plan with. At about 5 tok/s each, a typical turn takes minutes: fine for
@@ -17,6 +19,49 @@ the half of the page we measured first. See [Decode ceiling](#the-decode-ceiling
 
 The engine changes are published as an experimental fork, each one behind its own switch, with the measured effect of
 every switch on real traffic: [Engine code](#engine-code-experimental).
+
+## QFN-Coder pool, 2026-11-16 to 11-26
+
+From 2026-11-16 the two B70s served a different model to many agents: QFN-Coder, the expert-pruned Coder release of
+Qwen3.8 Flash-Next (256 of its 512 experts) at IQ1_M, about 58 GB, so every expert fits on the two cards (layer split
+25 + 23, q4_0 K/V). Engine: our XeStrata build with a two-stage batched pipeline (not published). The load was pi
+agents on a **scripted assistant-style workload**: each agent works through the same seeded script of 320 turns
+(mostly reading a file and answering in a sentence, plus questions, facts to remember and a few code and tool turns),
+a 37,500-token history budget. It is a speed control, not coding work.
+
+| date | agents | server tok/s | window | note |
+|---|---:|---:|---|---|
+| 2026-11-17 | 16 | 107.3 (ledger) | 6,013 s | first long run; reply median 9.8 |
+| 2026-11-26 | 32 | 259.48 | 20 min | the same engine as the next rows |
+| 2026-11-26 | 64 | 306.00 | 20 min | +17.9 % over 32 |
+| 2026-11-26 | 64 | **310.22** | **2 h** (7,210 s) | 64 of 64 agents to the bound, 0 errors; inside the 306 [287-320] forecast frozen before it |
+
+**What stops the pipeline.** On one clock over 35 minutes, the time with neither stage in a batch window was 12.6 % of
+the wall, and 51 of the 52 gaps of 250 ms or more were one thing: a serial read of a ~4,100-token prompt suffix (4.6 to
+5.5 s each) that both cards wait on. Letting those reads into the batch windows (prefill admission cap 512 -> 4,608
+tokens) removed the stops (serial reads over 512 tokens 50 -> 1, idle 267 -> 112 s) and **lost 12.3 %** (265.53
+against 302.80 tok/s): the reads then took prompt rows from the decode rows of every window (decode rows a window
+18.1 -> 15.0), and first-token p99 went 57.8 -> 370.4 s. Keep 512. The cure we are building instead reads the prompt
+on a separate engine lease while both stages keep decoding (forecast 314 [306-320], not measured).
+
+**On coding work it collapses.** On the coding-task set of the
+[Inkling 2 Mini pool](inkling-2-mini.md), 16 QFN-Coder agents served 217.6 tok/s, and 64 served 96.4 tok/s with
+first tokens at 24.6 s at the median (p90 170.8 s) and **0 of 86 attempts accepted**: 64 fresh agents sent ~644k new
+prompt tokens through the 512-token serial reads. The scripted workload hid it because its agents re-read almost
+nothing (35 uncached tokens a turn at the median). Inkling 2 Mini on the same two cards, the same tasks: 645.1 tok/s
+for two hours with 32 agents. That is why the pool moved.
+
+## GLM-5.3-Flash on a B70 with a CPU expert lane: parked
+
+GLM-5.3-Flash (321B MoE) does not fit two B70s, so we tried one card with the experts that miss VRAM computed on the
+Threadripper's CPUs (XeStrata's CPU lane, 23 workers, 2026-11-23 and 11-24). The bar was 14 tok/s for one agent; the
+best we measured was **7.07 tok/s** with the host quiet (5.37-7.67 in a controlled pair, 2.97 when the page cache held
+less than half the 95.6 GiB file). Per token, 18.6 CPU expert dispatches take 76-82 % of the time. Inside a dispatch
+the worker pool is only 1.4-1.6 ms of 5.9-12.4 ms; the rest is host work outside the pool, it grows with host load and
+with what the page cache holds, and 14 tok/s needs a whole dispatch at about 2 ms. Serving GLM's experts from the
+two-socket EPYC box over InfiniBand instead does not reach it either: that box's CPU expert tier peaks at 11.6 tok/s
+in total at 8 streams against ~40 needed for 16 agents. Parked: GLM's one-agent seat stays the
+[RTX 3090 Ti](../3090-ti/#glm-53-flash-on-maya-one-agent-at-about-30-toks), and the B70s serve Inkling 2 Mini.
 
 ## Real coding-agent traffic: the number to plan with
 

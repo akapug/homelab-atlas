@@ -25,11 +25,83 @@ a step. Terms: [GLOSSARY](../GLOSSARY.md).
 | Qwen3.8-27B (dense) | vLLM 0.31.0 (official CUDA image) + [`draft-vocab`](../b70/vllm-xpu/draft-vocab.py) + [`length-finish`](../b70/vllm-xpu/length-finish.py); AutoRound int4 (the same checkpoint as the B70) | **103-105 decode** at 1 stream (one pass; 95-107 over 10 runs); **279-288** for 3 streams together; prefill 1,407-1,410 on a 16k prompt; 88-95 decode at 32k depth | MTP 3 with a 50,521-token draft vocabulary, fp8 KV, 57,344-token window, temperature 0, thinking off, 512 tokens out, idle server, 2026-10-07 | the checkpoint passed the [B70 entry's](../b70/#at-a-glance) correctness eval (41 of 41 exact) | [Qwen3.8-27B on vLLM CUDA](#qwen38-27b-on-vllm-cuda-about-104-toks) |
 | Ornith-1.5-35B-A3B (35B MoE) | vLLM 0.33.0 (official CUDA image, unpatched), AutoRound int4 GPTQ checkpoint, fp8 KV | **1,639 decode with 32 streams** (51 a stream); 824 at 8; 430 for 4 agents at 40k-token contexts with 0.3-0.4 s next-turn TTFT | short 75-token prompts, `max_tokens` 1,500, no speculation, 131,072-token window, 33 short streams is the KV pool's cap; 2026-11-16 | three-prompt sanity read only (template, thinking split, arithmetic, an `is_palindrome`); **no KL or agent gate** | [Ornith on vLLM](#ornith-15-35b-a3b-on-vllm-the-batched-decode-reference) |
 | GLM-5.3-Flash (321B MoE) | the `glm53-flash-offload` engine (exllamav3-based), EXL3 3.05 bpw, 1,600 experts cached in VRAM, the rest computed on the CPU from RAM (a CPU lane on 14 cores, the same in the base and the trim runs) | **26.69 decode** with a route trim (keep 4 of 8 picks that miss VRAM, layers 29-44; not yet published); 23.08 without | 3 coding prompts x 300 tokens, two rounds (the arm's 4 agent briefs: 24.65), greedy, thinking off, 32,768-token window, 2026-10-20 | KL 0.0154, top-1 0.975 against the same weights computed exactly on the GPU: **passes** our bar (KL at most 0.03, top-1 at least 0.97) | [GLM route trim](#glm-53-flash-a-route-trim-clears-25-toks), [moe-offload points 1-3](../moe-offload/#what-we-learned-measured) |
+| Ornith-1.5-35B-A3B (35B MoE) | vLLM nightly 0.34.1rc1.dev119, AutoRound int4 GPTQ + the stock DFlash drafter, K=7, target attention on FlashInfer | **416.6 decode** for one agent on short agent-shaped turns (2.17x without the drafter); **1.42x at 63k** tokens of context (215.5 against 151.9); 226.0 against 157.6 over a real 29-49k agent session | T=0, 14 prompts x 2 interleaved reps; depth rows 8 agent turns; 64k is the deepest bf16 K/V this card holds; 2026-11-25/26 | planted-defect screen passes in this exact config | [Ornith + DFlash](#ornith-15-35b-a3b-with-dflash-one-agent-at-417-toks) |
+| Inkling 2 Mini (looped MoE) | maya-ik2 (alesha-pro/maya-inkling-mini), UD-Q4_K_XL, FP8 K/V, every expert in VRAM | **140.3 decode** one request (2.24x our llama.cpp); 115.8 at 64k, 72.6 at 340k; 3,020 prompt reading at 4k | the engine's own command per row, cold process a row; 2026-11-26 | planted-defect screen passes | [Inkling 2 Mini](#inkling-2-mini-one-fast-agent-and-a-pool-replica) |
+| Inkling 2 Mini, pool replica | vLLM nightly CUDA + agent2x0r's sm_86 patch, our NVFP4 re-quantized tail, DSpark k=7 | **279.8 server tok/s for 16 real coding agents** (231.1 with the desktop up) | 20 min, 32k window; 2026-11-27 | 98.34 % top-1 agreement with the official checkpoint (its own floor 98.44 %) | [the pool page](../b70/inkling-2-mini.md#rtx-3090-ti-snoopy-vllm-nightly-cuda) |
+| GLM-5.3-Flash (321B MoE) on Maya | Maya 1.1.70's GLM engine, Maya-XS (1.73 bits), CPU lane for the experts that miss VRAM | **~30 tok/s for one agent** (pi median 29.9); 25.4 after a 210k-token prompt read at 1,543 tok/s | 131k / 262k windows, effort low, box booked; 2026-11-24 | screen passes with thinking off; pi agent 4 of 4 at effort low | [GLM on Maya](#glm-53-flash-on-maya-one-agent-at-about-30-toks) |
 | DeepSeek V4.1 Flash (748B MoE) | Strata built for sm_86 by us (not published yet), GSQ-RCO IQ2_XS experts; dense layers and hot experts in the card, the other 13,827 experts (134.2 GB) copied into RAM at load and computed on the CPU | **27.39 decode** (median over 217 agent requests with at least 50 tokens out; p10 25.57); prefill 240.5 (median over 85 reads of at least 1,000 tokens) | DSpark Q8_0 draft model (auto, confidence 0.65), 65,536-token window, served to a coding agent during our agent eval, 2026-10-24 | **13 of 15** agent tasks; no KL check against the release weights (not measured), and the experts are 2-bit | [V4.1 on a gaming card](#deepseek-v41-flash-27-toks-on-a-gaming-card) |
 | Qwen3.8 Flash-Next (125B MoE, 6B active) | [Strata](https://github.com/Niko1221/Strata) `477ac13c` built for sm_86, Q8_0, every expert in RAM, a VRAM expert cache | **49.1 decode** (upper median of 6 requests: 3 coding prompts x 2, 300 tokens each; 42.3-55.4); prefill about 1,620 at 15k | MTP 4, the model card's thinking sampling; speed at a 32,768-token window, agent runs at 131,072; 2026-10-18 | **23 of 24** agent tasks over 2 passes (21 of 24 inside the 20-minute limit) | [Flash-Next](#qwen38-flash-next-agent-work-from-ram) |
 | sabi-noema (a Qwen3.8-27B fine-tune) | llama.cpp `d454a20` CUDA, i1-Q4_K_M (16.55 GB) | 35.9-47.3 decode | no speculation, f16 KV, 49,152-token window, card sampling, thinking on, 2026-10-21 | **5 of 5** planted defects caught, each with a working test; 1 soft false positive on 2 clean controls | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
 | Qwen3.8-27B and a coding fine-tune (GGUF) | the same llama.cpp build, UD-Q4_K_XL and Q3 GGUFs | 38.0-46.1 decode | as above | 4 of 5 each | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
 | Sage-A1.5 | the same llama.cpp build, Q4_K_M (21.7 GB) | **154-171 decode**, no speculation; 202-215 with its MTP head in a separate speed-only probe over the first 4k output tokens (quality not screened with MTP) | card conditions: thinking on, 131,072-token context, up to 118,000 tokens out | 2 of 5 with 2 false claims: **fails** our bar. Fast, not reliable enough to review code | [Code-review rounds](#code-review-rounds-four-models-on-one-card) |
+
+## Ornith-1.5-35B-A3B with DFlash: one agent at 417 tok/s
+
+One quality coding agent, as fast as this card can serve it (2026-11-25/26). vLLM nightly 0.34.1rc1.dev119
+(g93873e7ac), Ornith-1.5-35B-A3B AutoRound int4 GPTQ plus its stock DFlash drafter at K=7, 32k context.
+
+- **416.6 tok/s** median decode over 14 short agent-shaped coding turns (95 % CI 366-513), **2.17x** the same engine
+  without the drafter (191.6; paired, 14 of 14 faster), 5.0 tokens a verify step. Code-writing turns run 569, the fastest
+  prompt 634. Both this config and Qwen3.8-27B int4 pass our planted-defect screen.
+- **The depth falloff was the attention backend.** On FA2 the gain was gone by 12-16k (184.5 against 172.5). With the
+  target model's attention on FlashInfer (drafter left on FA2) a verify step grows 0.076 ms per 1k tokens instead of
+  0.475, and the drafter pays at every depth this card holds:
+
+  | context | 3k | 16k | 32k | 48k | 63k |
+  |---|---:|---:|---:|---:|---:|
+  | drafter on, tok/s | 323.5 | 294.8 | 290.8 | 250.9 | 215.5 |
+  | off | 191.8 | 180.2 | 169.3 | 159.8 | 151.9 |
+  | ratio (8 of 8 turns faster at each) | 1.69x | 1.63x | 1.72x | 1.57x | 1.42x |
+
+  Tokens a step fall only 4.51 -> 3.71 over that range; the ratio extrapolates to 1.0 near 106k, past the 64k this
+  card fits at bf16 K/V. Short turns lose 9 % on FlashInfer (378.7 against 414.9).
+- **Over a real session: 1.43x.** An 8-turn replay of a recorded pi coding session (29.2k -> 49.4k tokens, thinking
+  on, T 0.6, prefix caching on): 226.0 against 157.6 tok/s a turn, first tokens equal (0.48 against 0.50 s warm).
+- **On one B70** (vLLM 0.32.0 b70.7 build, the same weights and drafter): 296.64 against 140.88 without it (2.11x,
+  14 of 14), 5.08 tokens a step; depth not measured there.
+- FlashInfer on this box needed `CUDA_HOME` pointed at the pip CUDA packages.
+
+## Inkling 2 Mini: one fast agent and a pool replica
+
+**One agent on maya-ik2** ([alesha-pro/maya-inkling-mini](https://github.com/alesha-pro/maya-inkling-mini), Project
+Maya 1.1.70, run unmodified), UD-Q4_K_XL, FP8 K/V, every expert in VRAM, their own command per row (2026-11-26):
+
+| prompt (cold) | 47 tokens | 4k | 64k | 128k | 340k |
+|---|---:|---:|---:|---:|---:|
+| decode tok/s | 140.3 | 136.6 | 115.8 | 100.8 | 72.6 |
+| their RTX 3090 figure | 128.7 | 124.2 | 105.6 | 90.6 | 62.3 |
+| our llama.cpp (IQ4_NL, q8_0 K/V) | 62.59 | 59.39 | 47.01 | 38.23 | not run |
+| prompt reading | 233 | 3,020 | 2,770 | 2,475 | 1,814 |
+
+Their claims hold, and this card beats them by about its bandwidth and clock ratio (1.09-1.17x). The planted-defect
+screen passes. maya is 2.2-2.6x our llama.cpp because a token is 757-781 fused launches there against 12,402 ggml
+nodes in llama.cpp (our reading; not traced), and at depth its tensor-core attention is the lever (off, 64k decode
+falls to 0.61x). Its DSpark drafter adds 1.45-1.53x on code at 4k-64k (198.5 / 184.2 / 165.0 tok/s). On one pi agent
+working 18 of our coding tasks it is still slower than Ornith with DFlash: 15-17 of 18 tasks in 602-663 s against 15
+of 18 in 241 s.
+
+**As a pool replica** this card runs vLLM nightly with the official kernels patched for sm_86; the KV room, the
+re-quantized tail and the KV-shape arms are on [the pool page](../b70/inkling-2-mini.md#rtx-3090-ti-snoopy-vllm-nightly-cuda).
+The tail's re-quantization script is not published yet.
+
+## GLM-5.3-Flash on Maya: one agent at about 30 tok/s
+
+GLM's best home here is now Maya 1.1.70's GLM engine with Maya's own 1.73-bit quant (Maya-XS), the box booked for
+the run (2026-11-24): **one pi agent ~30 tok/s** (median 29.9, 2 of 2 tasks), 32.1 / 31.4 short at 131k / 262k
+windows, 25.4 after reading a 210k-token prompt at 1,543 tok/s. CPU-lane threads are flat from 8 to 24 (28.1-29.5)
+and worse at 32 (21.2).
+
+- **Batching does not pay on this box:** 2 seats 33.4 tok/s in total (16.7 each), 4 seats 35.1 (8.8 each), against
+  ~30-32 alone. Each extra stream adds its own experts' misses to the CPU lane.
+- **Quality:** Maya-XS failed our planted-defect screen with thinking on at a budget, and passed with thinking off (5
+  of 5 planted, nothing invented); a pi agent at effort low with no thinking budget passed 4 of 4 tasks. A static
+  mixed-bits file (UD-IQ2_XXS with the unpinned experts re-encoded) failed (0 of 5).
+- **A block drafter cannot pay here (2026-11-27).** We read Tencent AngelSpec's DFly2 against Maya's engines: no engine
+  serves a GLM DFly2 drafter yet, and a port is ~2,000 lines. Using Maya's DFlash2 drafter as the stand-in for the
+  verify cost: a window of two drafted tokens costs 2.13 single tokens (89.3 against 41.9 ms), because each row's
+  experts that miss VRAM are nearly disjoint and all land on the CPU lane. Drafting against off: 1.017 on code,
+  0.89-0.90 at 4k-64k. Forecast for DFly2 here 0.75-0.95x: not worth porting for this box; it pays only where every
+  expert is resident.
 
 ## Qwen3.8-27B on vLLM CUDA: about 104 tok/s
 
@@ -245,6 +317,13 @@ Banked with their conditions, because a loser on this box can be the right answe
   that passes.
 - **The most aggressive route trim fails**: 27.60 tok/s, top-1 0.969 (table above).
 - **Sage-A1.5 as a code reviewer**: fast, but 2 of 5 under every configuration we tried.
+- **Ornith DFlash drafter fine-tune**: 100k on-policy tokens, the stock drafter fine-tuned on one rented L4: +0.035
+  tokens a step against a +0.30 bar, not worth scaling (2026-11-24). DFlash K=8 shrank the KV pool 65,536 -> 4,312
+  tokens.
+- **Qwen3.8-27B block drafters** (DFlash2, DSpark, DSpine) do not load on 24 GB beside the int4 target: vLLM gives
+  each drafter its own 2.37 GiB vocabulary tensor.
+- **The Inkblot-2-mini edit on Inkling 2 Mini**: terser and faster on agent work, 10.6 points worse on LiveCodeBench
+  ([pool page](../b70/inkling-2-mini.md#what-did-not-work)). LoopCD-Logits: no gain (same page).
 
 ## Not measured yet
 

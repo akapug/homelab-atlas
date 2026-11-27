@@ -127,6 +127,36 @@ day). Results that change a headline number say so.
   source-tree checks, per-patch numbers, and which PrismML changes merged since overlap them. PATCHES.md section 3
   and the glossary (ternary, PTQ1_0, XMX) point to them.
 
+## [2026.11.27] - 2026-11-27
+
+Twelve days of results, newest first. Headline numbers changed: the B70 row, the best-result table (two new rows) and
+"Where it stands".
+
+### Added
+- `b70/inkling-2-mini.md`: Inkling 2 Mini as the coding-agent pool on two B70s: 32 real pi coding agents at 645.08
+  tok/s for two hours (943 of 1,073 attempts accepted, no drift, no GPU fault), the settings sweep behind it, 874.67 for
+  40 agents on three cards (20 min), the B70 stack against a CUDA reference (98.76 % top-1 against its own 98.83 %),
+  LiveCodeBench 104 with the thinking closed at 10k (64.4 % against 54.8 %, p 0.031), replicas on the 3090 Ti
+  (re-quantized tail, KV shapes), RTX 6000 and MI25, and the losers (Inkblot-2-mini graft, LoopCD-Logits, DFlash2 in
+  vLLM, GSQ-RCO GGUFs, llama.cpp before 690b87d88).
+- `b70/many-agents.md`: the QFN-Coder pool to 310.22 tok/s over two hours on a scripted load, what stops its
+  pipeline (serial ~4.1k-token prompt reads), the admission-cap trade (-12.3 %), its collapse on real coding tasks
+  (96.4 tok/s, 0 of 86 accepted), and GLM-5.3-Flash on a B70 with a CPU expert lane, parked (7.07 against 14 tok/s).
+- `3090-ti/`: Ornith-1.5-35B-A3B with its DFlash drafter, 416.6 tok/s for one agent and 1.42x at 63k with FlashInfer
+  target attention (296.64 on one B70); Inkling 2 Mini on maya-ik2 (140.3 decode, 2.24-2.64x our llama.cpp); GLM-5.3-Flash
+  on Maya (~30 tok/s for one agent; batching does not pay; DFly2 not worth porting here).
+- `rtx-6000/`: Inkling 2 Mini on llama.cpp 4c7344447 as a small replica (66.0 tok/s for 8 agents; the 16-slot fit
+  limit is the flash-attention compute buffer).
+- `mi25/`: Ornith-1.5-35B-A3B on the MI25 alone (58.3 decode) and a 3-bit mix; Inkling 2 Mini as a replica fails on
+  heat (11.4-15.4 tok/s at 8 streams).
+- `PATCHES.md`: closing the thinking at 10k (any GPU); llama.cpp 690b87d88 for Inkling NVFP4 GGUFs; FlashInfer target
+  attention for Ornith DFlash and the sm_86 Inkling patch (3090 Ti); the RTX 6000 Inkling replica settings; the Inkling
+  vLLM XPU stack (B70).
+- `atlas.json`: six results and the `agent-pool` workload.
+
+### Changed
+- README "Where it stands (2026-11-27)", highlights, pick-a-path and entries; `b70/README.md` points to the pool.
+
 ## [2026.10.26.1]
 
 ### Changed
