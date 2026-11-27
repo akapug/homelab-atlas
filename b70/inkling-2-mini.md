@@ -39,7 +39,9 @@ checkpoint with the MXFP8 tail re-quantized to NVFP4 (below; our script, not pub
 **Agents.** pi with a 24,576-token history budget and a fix to how it folds old history (ours, not published), effort
 high for the certificate, sixteen agents a card.
 
-The settings that got there, each a 20-minute arm on the same task set unless marked:
+The settings that got there, each a 20-minute arm on the same task set unless marked. The rows below the first five ran
+earlier configurations (the smaller history budget, before the fold fix; some at 1,024 batched tokens), so read each row
+against its neighbours, not as one change from the top row:
 
 | arm | agents | server tok/s | reply median / p10 | first token p50 / p95 | accepted |
 |---|---:|---:|---|---|---|
@@ -48,7 +50,7 @@ The settings that got there, each a 20-minute arm on the same task set unless ma
 | the same at 20 agents a card | 40 | 603.60 | 22.07 / 13.66 | 1.78 / 11.21 s | 144 / 186 |
 | effort medium | 32 | 603.39 | 27.20 / 16.11 | 1.22 / 8.35 s | 206 / 233 |
 | effort low | 32 | 527.55 | 25.44 / 14.27 | 1.66 / 9.17 s | 443 / 470 |
-| before the fold fix, 2 h | 32 | 492.80 | 23.24 / 13.10 | 2.13 / 16.27 s | 740 / 861 |
+| the earlier config (1,024 batched tokens, before the budget and fold change), 2 h | 32 | 492.80 | 23.24 / 13.10 | 2.13 / 16.27 s | 740 / 861 |
 | 12 agents a card, 2 h | 24 | 439.32 | 27.47 / 14.03 | 1.49 / 9.94 s | 676 / 775 |
 | adaptive draft length (k 7 then 5) | 32 | 514.72 | 24.80 / 13.44 | 1.38 / 14.08 s | 127 / 168 |
 | 512 batched tokens | 32 | 485.93 | 25.25 / 15.36 | 3.96 / 22.78 s | 121 / 157 |
@@ -56,12 +58,13 @@ The settings that got there, each a 20-minute arm on the same task set unless ma
 
 How to read it:
 - **16 agents a card is the knee.** 20 a card serves less (603.6 against 660.7) and slows every reply.
-- **The history fold fix is worth 1.31x over two hours** (645.08 against 492.80). With it the pool held its rate for the
-  whole window: quarters 630, 641, 629 and 647 tok/s.
+- **The final config is 1.31x the earlier one over two hours** (645.08 against 492.80: the 24,576-token budget with the
+  fold fix, and 2,048 batched tokens). It held its rate for the whole window: quarters 630, 641, 629 and 647 tok/s.
 - **Effort trades tokens for tasks.** At effort low the same 32 agents write fewer tokens (527.6 tok/s) but finish
   far more tasks (443 accepted in 20 minutes, against 162 at effort high). A pool that is paid in finished work should
   start at low and raise effort per request; LiveCodeBench below says where high pays.
-- **Prefix caching is not optional for agents:** off, the pool fell to 342.7 tok/s with first tokens at 8.5 s.
+- **Prefix caching is not optional for agents:** an earlier arm with it off served 342.7 tok/s with first tokens at
+  8.5 s.
 - The cards stayed fault-free: the `xe` driver logged no page fault before or after any arm.
 
 ## Three cards
@@ -96,7 +99,7 @@ on the certified two-B70 stack, graded by lcb_runner's own grader:
 | effort low, thinking closed at 10k (+2k answer) | 63.5 % (66) | 100 / 71.0 / **38.3 %** | 1.15x | +8.7 points (p 0.064) |
 
 **Closing the thinking, not lengthening it, is the lever.** When a reply reaches 10,000 tokens still thinking, the
-server ends the thinking block and lets the model write a 2,000-token answer: in vLLM, a second request with
+harness ends the thinking block and lets the model write a 2,000-token answer: in vLLM, a second request with
 `continue_final_message: true` that appends the model's own end-of-thinking markers. On the hard problems the model
 otherwise loops in its reasoning until the cap; with the close, effort high gains 9.6 points at 1.27x the tokens, more
 than raising the cap to 31.5k (3.12x the tokens, +3.8). 10k is the knee: 6k and 14k both score lower. Effort low with
